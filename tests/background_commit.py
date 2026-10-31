@@ -1801,6 +1801,81 @@ worker.resume(parallel=False)
             release.touch()
             child.wait(timeout=15)
 
+    def test_manual_title_between_active_generated_titles_backfills_in_order(self):
+        first = self.queue(message='', push=True)
+        started, release = self.root / 'first-title-started', self.root / 'release-first-title'
+        script = '''
+import sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import background_commit as worker
+calls = 0
+def generate(*args, **kwargs):
+    global calls
+    calls += 1
+    if calls == 1:
+        Path(sys.argv[2]).touch()
+        deadline = time.monotonic() + 20
+        while not Path(sys.argv[3]).exists():
+            if time.monotonic() > deadline: raise RuntimeError('Test release timed out')
+            time.sleep(.02)
+        return '🧪 Finish first automatic title', ''
+    return '🧪 Finish last automatic title', ''
+worker.core.generate_message = generate
+worker.resume(parallel=False)
+'''
+        child = subprocess.Popen([sys.executable, '-c', script,
+                                  str(Path(worker.__file__).parent), str(started), str(release)])
+        try:
+            deadline = time.monotonic() + 10
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(.02)
+            self.assertTrue(started.exists(), 'the first title generator must be active')
+
+            (self.repo / 'story.txt').write_text('Manual middle change\n')
+            self.git('add', 'story.txt')
+            manual_message = ('🧪 Preserve middle manual title\n\n'
+                              'Co-authored-by: Codex <noreply@openai.com>')
+            middle = self.queue(message=manual_message, push=True)
+
+            (self.repo / 'story.txt').write_text('Last automatic change\n')
+            self.git('add', 'story.txt')
+            last = self.queue(message='', push=True)
+            original = [self.job(directory) for directory in (first, middle, last)]
+            self.assertTrue(original[0]['provisional'])
+            self.assertFalse(original[1].get('provisional', False))
+            self.assertTrue(original[2]['provisional'])
+            self.assertIsNone(child.poll(), 'both later commits must queue during first generation')
+            self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'),
+                                      'for-each-ref'), '', 'never publish unfinished titles')
+
+            release.touch()
+            self.assertEqual(child.wait(timeout=25), 0)
+            expected = ['🧪 Finish first automatic title', '🧪 Preserve middle manual title',
+                        '🧪 Finish last automatic title']
+            self.assertEqual(self.git('log', '--reverse', '--format=%s'), '\n'.join(expected))
+            self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '3')
+            directories = (first, middle, last)
+            for index, directory in enumerate(directories):
+                job = self.job(directory)
+                self.assertEqual(job['phase'], 'done')
+                self.assertNotEqual(job['sha'], original[index]['sha'])
+                self.assertEqual(self.git('show', '-s', '--format=%T', job['sha']),
+                                 original[index]['tree'])
+                if index:
+                    self.assertEqual(self.git('show', '-s', '--format=%P', job['sha']),
+                                     self.job(directories[index - 1])['sha'])
+            self.assertEqual(self.git('show', '-s', '--format=%B', self.job(middle)['sha']),
+                             manual_message, 'backfilling must not replace manual text or trailer')
+            remote_tip = self.git('--git-dir=' + str(self.root / 'remote'),
+                                  'rev-parse', 'refs/heads/main')
+            self.assertEqual(remote_tip, self.git('rev-parse', 'HEAD'))
+            self.assert_no_placeholder_titles(remote_tip)
+            self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+        finally:
+            release.touch()
+            child.wait(timeout=25)
+
     def test_parallel_worker_cannot_duplicate_commit(self):
         directory = self.queue(push=True)
         children = [subprocess.Popen([sys.executable, str(Path(worker.__file__)), '--resume']) for _ in range(3)]
