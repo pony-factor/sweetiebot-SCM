@@ -239,6 +239,54 @@ def graph_open_working_file_edits(js):
     return [(original, replacement)]
 
 
+def graph_open_commit_action_edits(js):
+    """Replace only the native graph row's inline action; keep its context menu."""
+    ident = r"[A-Za-z_$][\w$]*"
+    # Workbench's history-item renderer has the native hover content and the
+    # inline action together. Capture those locals from the same renderer.
+    actions_pattern = re.compile(
+        rf"(?P<template>{ident})\.actionBar\.context=(?P<item>{ident})[,;]"
+        rf"(?P=template)\.actionBar\.setActions\("
+        rf"(?P<actions>{ident}\({ident},(?P<quote>[\x22\x27])inline(?P=quote)\)\.primary)\)"
+    )
+    hover_pattern = re.compile(
+        rf"(?P<service>this\.{ident})\.setupDelayedHover\("
+        rf"(?P<template>{ident})\.element,\{{\.\.\.(?P<options>{ident}),"
+        rf"content(?::(?P<content>{ident}))?\}}"
+    )
+    # Reject duplicate native action renderers even when only one has a
+    # matching nearby hover. Otherwise an unrelated or changed renderer could
+    # silently receive the patch, leaving another renderer inconsistent.
+    actions = list(actions_pattern.finditer(js))
+    if len(actions) != 1:
+        raise ValueError(
+            "Unsupported VS Code build: Source Control Graph inline action is ambiguous."
+        )
+    possible = []
+    for action in actions:
+        nearby = js[max(0, action.start() - 6000):action.start()]
+        hovers = [
+            match for match in hover_pattern.finditer(nearby)
+            if match.group("template") == action.group("template")
+        ]
+        if len(hovers) == 1:
+            possible.append((action, hovers[0]))
+    if len(possible) != 1:
+        raise ValueError(
+            "Unsupported VS Code build: Source Control Graph inline commit action or native hover changed."
+        )
+    action, hover = possible[0]
+    content = hover.group("content") or "content"
+    replacement = (
+        f'{action.group("template")}.actionBar.context={action.group("item")},'
+        f'{action.group("template")}.actionBar.setActions('
+        f'scmToolkitGraphCommitActions({action.group("actions")},'
+        f'{hover.group("service")},{action.group("template")}.element,'
+        f'{content},{hover.group("options")}))'
+    )
+    return [(action.group(0), replacement)]
+
+
 def source_control_label_edits(js, label):
     if label == "Source Control":
         return []
@@ -714,6 +762,9 @@ def edits(js=None, settings=None):
 
     if js is not None and settings and settings.get("graphOpenWorkingFile"):
         changes.extend(graph_open_working_file_edits(js))
+
+    if js is not None and settings and settings.get("graphPreferOpenCommit"):
+        changes.extend(graph_open_commit_action_edits(js))
 
     if js is not None and settings and settings.get("browserGlobeNewTab"):
         home_url = None
@@ -1305,6 +1356,8 @@ def transform(js, css, remove=False, settings=None):
         + json.dumps(changes)
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
+        + "\n"
+        + (WORKBENCH_ASSETS / "graph_commit_actions.js").read_text()
         + "\n"
         + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
         + "\n"

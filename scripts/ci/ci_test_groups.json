@@ -303,6 +303,8 @@
         "notification_timeout.js",
         "reload_notification_icon.js",
         "settings_browser.js",
+        "graph_commit_action.py",
+        "graph_commit_actions.js",
         "git_graph_relative_dates.js",
         "spellcheck_popup.js",
         "spellcheck_popup_viewport.js",
@@ -318,6 +320,7 @@
         "scripts/model_picker.py",
         "scripts/window_title_configurator.py",
         "assets/workbench/live_runtime.js",
+        "assets/workbench/graph_commit_actions.js",
         "extension/ui/git_graph_relative_dates.js"
       ]
     },
