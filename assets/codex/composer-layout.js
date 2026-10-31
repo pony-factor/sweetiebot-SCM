@@ -6,8 +6,8 @@
   globalThis.scmToolkitCodexComposerLayout = true;
   const layout = __SCM_TOOLKIT_COMPOSER_LAYOUT__;
   const names = {
-    input: "Message input", attachments: "Attachments / usage",
-    access: "Access permissions", location: "Computer / location",
+    input: "Message input", attachments: "Attachments",
+    access: "Access permissions", location: "Computer / location / usage",
     clipboard: "Clipboard Send / Queue", send: "Send / Stop"
   };
   const hidden = new Set(layout.hidden);
