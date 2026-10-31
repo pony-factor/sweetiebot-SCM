@@ -147,7 +147,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
-        match = re.search(r"  function relativeTime\\(.*?^  \\}", dashboard.DIAGNOSTICS_SCRIPT,
+        match = re.search(r"  function relativeTime\(.*?^  \}", dashboard.DIAGNOSTICS_SCRIPT,
                           flags=re.MULTILINE | re.DOTALL)
         self.assertIsNotNone(match)
         check = """
