@@ -10,6 +10,7 @@ import re
 import shutil
 import tempfile
 import workspace_search
+import wrapper_dependencies
 import codex_colors
 import codex_label
 import codex_composer
@@ -66,48 +67,27 @@ def legacy_ai_wrapper_path():
 
 def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary = Path(destination) if destination is not None else ai_wrapper_path()
-    primary_files = [
-        (HERE / "ai_commit.py", primary),
-        (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
-        (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
-        (HERE / "background_commit.py", primary.with_name("background_commit.py")),
-        (HERE.parent / "extension/commits/pony_git_publish.js", primary.with_name("pony_git_publish.js")),
-        (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
-        (HERE / "cloud_repo_sync.py", primary.with_name("cloud_repo_sync.py")),
-        (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),
-        (
-            HERE / "post_commit_spellcheck.py",
-            primary.with_name(primary.name + "-spellcheck.py"),
-        ),
-    ]
+    # Validate the entire source import closure before any managed files change.
+    if not remove:
+        wrapper_dependencies.validate_imports(HERE)
+    primary_files = wrapper_dependencies.wrapper_files(HERE, primary)
 
-    # The normal installer passes destination=ai_wrapper_path(). Treat that
-    # exact call as the canonical install path too, so legacy wrappers cannot
-    # escape refresh merely because the destination was supplied explicitly.
     manage_legacy = destination is None or primary == ai_wrapper_path()
     legacy = legacy_ai_wrapper_path()
     legacy_links = []
-    if (
-        manage_legacy
-        and legacy != primary
-        and (legacy.exists() or legacy.is_symlink())
-    ):
+    if manage_legacy and legacy != primary and (legacy.exists() or legacy.is_symlink()):
         legacy_links = [
             (legacy, primary),
-            (
-                legacy.with_name(legacy.name + "-spellcheck.py"),
-                primary.with_name(primary.name + "-spellcheck.py"),
-            ),
+            (legacy.with_name(legacy.name + "-spellcheck.py"),
+             primary.with_name(primary.name + "-spellcheck.py")),
         ]
 
-    # The canonical wrapper remains a managed regular file. Existing legacy
-    # names are allowed to be symlinks because they are migrated below.
-    for _, target in primary_files:
+    for target in primary_files:
         if not remove and target.is_symlink():
             raise RuntimeError(f"Refusing to overwrite symlinked AI wrapper: {target}")
 
     changed = False
-    for source, target in primary_files:
+    for target, source in primary_files.items():
         if remove:
             exists = target.exists() or target.is_symlink()
             changed |= exists
@@ -131,7 +111,6 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
             if exists and not check:
                 legacy_target.unlink()
             continue
-
         points_to_canonical = (
             legacy_target.is_symlink()
             and legacy_target.resolve(strict=False)
@@ -144,7 +123,10 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
             legacy_target.parent.mkdir(parents=True, exist_ok=True)
             legacy_target.symlink_to(canonical_target)
 
+    if not remove and not check:
+        wrapper_dependencies.validate_imports(primary.parent)
     return changed
+
 
 def ai_model_picker_path():
     configured = os.environ.get(

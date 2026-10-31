@@ -14,6 +14,7 @@ import branch_names
 import build_installer_app
 import install
 import toolkit_settings
+import wrapper_dependencies
 
 
 SETTINGS = {
@@ -996,6 +997,11 @@ class AiWrapperTests(unittest.TestCase):
 
             self.assertTrue(install.sync_ai_wrapper(destination=destination))
             self.assertEqual(destination.read_bytes(), (install.HERE / "ai_commit.py").read_bytes())
+            sources = wrapper_dependencies.wrapper_files(install.HERE, destination)
+            for target, source in sources.items():
+                self.assertEqual(target.read_bytes(), source.read_bytes())
+                self.assertTrue(target.stat().st_mode & 0o111)
+            wrapper_dependencies.validate_imports(destination.parent)
             backend = destination.with_name("coreml_backend.py")
             self.assertEqual(backend.read_bytes(), (install.HERE / "coreml_backend.py").read_bytes())
             # Exercise the installed wrapper without source-tree imports.
@@ -1012,6 +1018,51 @@ class AiWrapperTests(unittest.TestCase):
             self.assertEqual(async_worker.read_bytes(), (install.HERE / "sweetiebot_async_commit.py").read_bytes())
             self.assertTrue(destination.stat().st_mode & 0o111)
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
+
+    def test_missing_transitive_dependencies_are_detected_and_repaired(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "bin" / "scm-toolkit-git"
+            install.sync_ai_wrapper(destination=destination)
+            for name in ("toolkit_settings.py", "codex_composer_layout.py",
+                         "message_bar.py", "branch_names.py", "branch_name_packs.json"):
+                self.assertTrue(destination.with_name(name).is_file(), name)
+            missing = destination.with_name("toolkit_settings.py")
+            missing.unlink()
+            self.assertTrue(install.sync_ai_wrapper(check=True, destination=destination))
+            with self.assertRaisesRegex(RuntimeError, "dependencies cannot load"):
+                wrapper_dependencies.validate_imports(destination.parent)
+            install.sync_ai_wrapper(destination=destination)
+            self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
+
+    def test_index_only_reset_works_even_when_a_dependency_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "bin" / "scm-toolkit-git"
+            install.sync_ai_wrapper(destination=destination)
+            destination.with_name("toolkit_settings.py").unlink()
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            real_git = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
+            def git(*args):
+                return subprocess.run([real_git, *args], cwd=repo, check=True,
+                                      text=True, capture_output=True)
+            git("init", "-q")
+            git("config", "user.name", "Sweetiebot Test")
+            git("config", "user.email", "test@example.invalid")
+            (repo / "file.txt").write_text("initial")
+            git("add", "file.txt")
+            git("commit", "-qm", "Initial commit")
+            (repo / "file.txt").write_text("changed")
+            git("add", "file.txt")
+            env = {**os.environ, "PYTHONPATH": "", "SCM_TOOLKIT_REAL_GIT": real_git}
+            result = subprocess.run([sys.executable, str(destination), "reset", "-q", "HEAD", "--", "."],
+                                    cwd=repo, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("diff", "--cached", "--quiet").returncode, 0)
+            blocked = subprocess.run([sys.executable, str(destination), "reset", "--hard", "HEAD"],
+                                     cwd=repo, env=env, text=True, capture_output=True)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("installation is incomplete", blocked.stderr)
+            self.assertNotIn("Traceback", blocked.stderr)
 
     def test_canonical_installer_call_migrates_existing_legacy_wrapper(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -20,6 +20,7 @@ from sweetiebot_async_commit import (write_journal as _write_journal, read_journ
                                     get_placeholder_prefix, alive, related_pending_jobs, new_job_id,
                                     BASE58_ID_PATTERN, PLACEHOLDER_SUBJECT_PATTERN)
 from sweetiebot_diagnostics import log_event
+from wrapper_dependencies import runtime_sources
 
 MARKER = 'sweetiebot-background-commit.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
@@ -312,9 +313,8 @@ def state():
 def runtime():
     target = jobs_home() / 'runtime'
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
-    for name in ('background_commit.py', 'ai_commit.py', 'sweetiebot_async_commit.py',
-                 'sweetiebot_diagnostics.py', 'post_commit_spellcheck.py', 'merged_branch.py'):
-        source = Path(__file__).with_name(name)
+    # Copy the complete runtime import closure, including shared settings.
+    for name, source in runtime_sources(Path(__file__).resolve().parent).items():
         if source.resolve() == (target / name).resolve():
             continue
         fd, temporary = tempfile.mkstemp(dir=target)

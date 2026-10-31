@@ -11,6 +11,7 @@ import sys
 import tarfile
 from pathlib import Path
 from workspace_search import default_extensions_dir, source_files
+from wrapper_dependencies import wrapper_files
 
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
 THINKING_ASSET = Path('assets/browser/maximize_thinking.js')
@@ -72,18 +73,13 @@ def installed_sources_match(candidate, extensions_dir):
         if target.is_symlink() or not target.is_file() or target.read_bytes() != source.read_bytes():
             return False
     wrapper = Path(os.environ.get("SCM_TOOLKIT_AI_WRAPPER_PATH", "~/.local/bin/scm-toolkit-git")).expanduser()
-    for name, target in (
-        ("ai_commit.py", wrapper),
-        ("sweetiebot_async_commit.py", wrapper.with_name("sweetiebot_async_commit.py")),
-        ("background_commit.py", wrapper.with_name("background_commit.py")),
-        ("cloud_repo_sync.py", wrapper.with_name("cloud_repo_sync.py")),
-        ("sweetiebot_diagnostics.py", wrapper.with_name("sweetiebot_diagnostics.py")),
-        ("post_commit_spellcheck.py", wrapper.with_name(wrapper.name + "-spellcheck.py")),
-    ):
-        source = candidate / "scripts" / name
-        if source.is_file() and (target.is_symlink() or not target.is_file()
-                or (name != "sweetiebot_diagnostics.py" and not os.access(target, os.X_OK))
-                or target.read_bytes() != source.read_bytes()):
+    try:
+        expected = wrapper_files(candidate / "scripts", wrapper)
+    except (OSError, RuntimeError, SyntaxError):
+        return False
+    for target, source in expected.items():
+        if (target.is_symlink() or not target.is_file() or
+                not os.access(target, os.X_OK) or target.read_bytes() != source.read_bytes()):
             return False
     legacy = Path.home() / ".local/bin/git-auto-title"
     pony_source = candidate / "extension/commits/pony_git_publish.js"
