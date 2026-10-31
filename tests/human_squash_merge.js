@@ -127,6 +127,13 @@ async function main() {
     })).merged, name + ' must be accepted as valid Codex web credit');
   }
 
+  const withoutCredit = '🐛 Fix placement (#12)';
+  const noCredit = fixture({
+    commits:[{...oneHuman,commit:{...oneHuman.commit,message:withoutCredit}}],
+    mergedMessage:withoutCredit
+  });
+  assert((await humanSquashMerge('owner/repo',12,{api:noCredit.api})).merged,
+    'A human-authored commit without any coauthor must not require invented Codex Web credit');
   for (const [style,divider] of [['hyphens','---------'],['none','']]) {
     const differentMessage = originalMessage.replace('\n\n__________\n\n',
       divider ? '\n\n'+divider+'\n\n' : '\n\n');
@@ -145,7 +152,7 @@ async function main() {
     [{ ...oneHuman, commit: { ...oneHuman.commit,
       message: originalMessage.replace('__________', '---------') } }, /configured co-author separator/],
     [{ ...oneHuman, commit: { ...oneHuman.commit, message: 'Different title' } }, /exact PR title/],
-    [{ ...oneHuman, commit: { ...oneHuman.commit, message: '🐛 Fix placement (#12)' } }, /required Codex Web credit/],
+    [{ ...oneHuman, commit: { ...oneHuman.commit, message: originalMessage.replace('Codex Web <noreply@openai.com>', 'invalid trailer') } }, /configured co-author separator/],
     [{ ...oneHuman, author: { login: 'codex-pony[bot]', type:'Bot' } }, /No verified original human/],
     [{ ...oneHuman, sha: 'f'.repeat(40) }, /head does not match/]
   ]) {

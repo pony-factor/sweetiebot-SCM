@@ -117,7 +117,6 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
      summaries.push('- '+subject.trim()+(body?'\n\n'+formatCommitBody(body):''));
    }
  }
- add(who('Codex Web','noreply@openai.com'));
  // The actual squash Git author is never repeated as a Co-authored-by trailer.
  const trailers=[...names.values()].filter(p=>!primaryAuthor || !(p.name.toLowerCase()===primaryAuthor.name.toLowerCase() || (isCodex(p.name,p.email) && isCodex(primaryAuthor.name,primaryAuthor.email))))
    // Keep human authors and co-authors in first-seen order, before bot tiers.
@@ -129,7 +128,8 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
  const summaryText = entries.reduce((text, entry, index) => text +
    (index ? (unbulleted || entries[index - 1].includes('\n') ? '\n\n' : '\n') : '') + entry, '');
  const divider = squashSeparatorForStyle(trailerSeparatorStyle);
- return {title:finalTitle,message:(summaries.length?summaryText+'\n\n'+(divider?divider+'\n\n':''):'')+trailers.join('\n'),trailers};
+ const prefix = summaries.length && trailers.length ? '\n\n' + (divider ? divider + '\n\n' : '') : '';
+ return {title:finalTitle,message:summaryText+prefix+trailers.join('\n'),trailers};
 }
 async function readCommits(api,repo,num){
  const all=[];
