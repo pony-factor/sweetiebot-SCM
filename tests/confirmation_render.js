@@ -383,7 +383,7 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
     if(options?.method==='POST'){merges++;return {ok:true,json:async()=>({merged:true})};}
     return {ok:true,json:async()=>state};
   };
-  context.refresh=async()=>{};
+  context.refresh=async()=>state;
   context.confirm=()=>{prompts++;return false;};
   await getElementById('merge').onclick();
   assert.equal(prompts,1,'Default mode asks before merging');
@@ -441,6 +441,29 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
     : {ok:true,json:async()=>state};
   await getElementById('merge').onclick();
   assert.equal(closes,1,'Unconfirmed merge leaves the window open');
+  // Keep the existing close-after-merge preference for ordinary PRs, but
+  // never auto-close a confirmation before independent pony research finishes.
+  context.fetch=async (_url,options)=>options?.method==='POST'
+    ? {ok:true,json:async()=>({merged:true})}
+    : {ok:true,json:async()=>state};
+  state.pony={slug:'maud-pie'};
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Pending pony research keeps the merged PR confirmation visible');
+  state.profile='Research has completed.';
+  state.ponyCachePending=true;
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Pending pony cache storage keeps the confirmation visible');
+  state.ponyCachePending=false;
+  state.errors={ponyCache:'Publication failed'};
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Failed pony cache publication remains inspectable');
+  state.errors={};
+  context.refresh=async()=>undefined;
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Failed status refresh must not close the confirmation');
+  context.refresh=async()=>state;
+  await getElementById('merge').onclick();
+  assert.equal(closes,2,'Confirmed merge closes after pony profile and cache finish');
   getElementById('close-confirmation').onclick=originalClose;
   let nativeCloses=0;
   mockWindow.close=()=>{nativeCloses++;};

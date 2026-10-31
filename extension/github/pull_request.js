@@ -728,17 +728,20 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       timers.delete(kind);
       await closers.get(kind)?.();
       if (kind === 'pony' && pony && typeof profile === 'string') {
-        // A save must never block or contaminate independent PR publication,
-        // but failures to commit or push should not disappear silently.
-        void Promise.resolve().then(() => cachePony({ action: 'put', pony, profile }))
-          .then(saved => {
-            if (saved?.publicationError) {
-              void vscode.window.showWarningMessage(
-                `Pony profile saved in Kafania but not pushed${saved.retryScheduled ? '; automatic retry scheduled' : ''}: ${saved.publicationError}`);
-            }
-          }).catch(error => {
-            void vscode.window.showWarningMessage(`Could not save the pony profile in Kafania: ${error.message}`);
-          });
+        // The callback remains active until the cache is stored and its
+        // durable Git publication job is handed off. PR merging is independent.
+        try {
+          const saved = await cachePony({ action: 'put', pony, profile });
+          if (saved?.publicationError) {
+            throw new Error(`Pony profile saved in Kafania but not pushed: ${saved.publicationError}`);
+          }
+          if (saved?.stored !== true && saved?.reason !== 'existing-profile-preserved') {
+            throw new Error('Kafania did not confirm the pony profile cache save.');
+          }
+        } catch (error) {
+          void vscode.window.showWarningMessage(`Could not finish caching the pony profile: ${error.message}`);
+          throw error;
+        }
       }
     } });
     const prepareDraft = () => prepare('draft', () => {

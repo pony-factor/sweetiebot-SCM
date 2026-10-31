@@ -279,6 +279,7 @@ function applyAppearance(colors){
     else root.style.removeProperty('--kefania-'+key);
   }
 }
+function keepOpenForPony(state){return Boolean(state?.pony&&(!state.profile||state.ponyCachePending||state.errors?.ponyCache))}
 async function refresh(){try{const response=await fetch(root+'/state');const state=await response.json();if(!response.ok)throw new Error(state.error);
 applyAppearance(state.appearance);
 if(state.draft){if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
@@ -321,10 +322,11 @@ const subtitle=state.result?(state.mergeResult?'Pull request merged. Review the 
 document.querySelector('.subtitle').textContent=subtitle+(state.pony?' and supporting character research':'')+'.';
 if(state.pony)el('pony-title').textContent=state.pony.name||String(state.pony.slug).split('-').map(part=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');
 const packLabel=state.pony?.packLabel||state.pony?.packId||'';
-el('pony-status').textContent=state.profile?packLabel:state.errors.pony||'Researching the pony…';
-el('pony-status').hidden=!!state.profile&&!packLabel;
-el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel);
+el('pony-status').textContent=state.errors?.ponyCache?'Cache save failed: '+state.errors.ponyCache:state.ponyCachePending?'Saving pony profile to cache…':state.profile?packLabel:state.errors.pony||'Researching the pony…';
+el('pony-status').hidden=!!state.profile&&!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache;
+el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache);
 if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile)))}
+return state;
 }catch(error){el('title').textContent='Could not update status';el('draft-status').hidden=false;el('draft-status').textContent=error.message}}
 el('merge').onclick=async()=>{
   const state=await (await fetch(root+'/state')).json();
@@ -332,8 +334,10 @@ el('merge').onclick=async()=>{
   if(state.ludicrousMode!==true&&!confirm('Squash and merge PR #'+state.result.number+' into '+(state.result.base||'its base branch')+'? This cannot be undone.'))return;
   el('merge').disabled=true;el('merge-error').textContent='';
   try{const response=await fetch(root+'/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Merge failed.');await refresh();
-    if(result.merged===true&&state.closeAfterMerge===true)await el('close-confirmation').onclick();
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Merge failed.');const updated=await refresh();
+    // A merge must not dispose the research chat or hide a result that has
+    // not yet reached Kefania's durable pony cache publication queue.
+    if(result.merged===true&&state.closeAfterMerge===true&&!keepOpenForPony(state)&&updated&&!keepOpenForPony(updated))await el('close-confirmation').onclick();
   }catch(error){el('merge').disabled=false;el('merge-error').textContent=error.message||'Merge failed. Check GitHub.';}
 };
 el('merge-help').onclick=async()=>{
@@ -354,8 +358,8 @@ el('merge-local-signed').onclick=async()=>{
   if(!confirm('Sign a squash commit locally and rewrite only the PR branch for #'+state.result.number+' with --force-with-lease? Its existing commit history will change. Main will not be force-pushed.'))return;
   el('merge-local-signed').disabled=true;el('merge-error').textContent='';
   try{const response=await fetch(root+'/merge-local-signed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Local signed squash failed.');await refresh();
-    if(result.merged===true&&state.closeAfterMerge===true)await el('close-confirmation').onclick();
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Local signed squash failed.');const updated=await refresh();
+    if(result.merged===true&&state.closeAfterMerge===true&&!keepOpenForPony(state)&&updated&&!keepOpenForPony(updated))await el('close-confirmation').onclick();
   }catch(error){el('merge-error').textContent=error.message||'Local signing failed. Check your Git signing configuration.';}
   finally{el('merge-local-signed').disabled=false;}
 };
