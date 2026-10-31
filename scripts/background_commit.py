@@ -744,7 +744,7 @@ def finalize_message(directory, job):
             write_journal(directory / 'job.json', current)
             job.update(current)
             log_event('background_commit', 'published_title_preserved',
-                      outcome='warning')
+                      outcome='warning', commit_sha=current['sha'])
             return
         require_unpublished_extension(current, extension)
         parent = current['parent']
@@ -1298,7 +1298,7 @@ def work(directory, commit_only=False):
                 write_journal(file, job)
                 save_queue(marker, queue_entries(marker))
             git('update-ref', '-d', 'refs/sweetiebot/jobs/' + job['id'], job['tree'], check=False)
-            log_event('background_commit', 'completed', outcome='success')
+            log_event('background_commit', 'completed', outcome='success', commit_sha=job['sha'])
             # Optional post-commit spellcheck is scheduled once by start_spellcheck.
         except (OSError, subprocess.TimeoutExpired):
             log_event('background_commit', 'interrupted', outcome='retry')
@@ -1318,7 +1318,8 @@ def work(directory, commit_only=False):
                     current['mergedBranch'] = exc.info
                     current['push'] = False
                 write_journal(file, current)
-            log_event('background_commit', 'blocked', error_type=type(exc).__name__, outcome='blocked')
+            log_event('background_commit', 'blocked', error_type=type(exc).__name__,
+                      outcome='blocked', commit_sha=job.get('sha'))
         finally:
             os.chdir(previous_cwd)
             os.environ.clear()
