@@ -364,8 +364,14 @@ assert.equal(context.scmToolkitIsUntimedRateLimitWarning(warningCopy.replace('Tr
 // Timed warnings belong to the separate hide-reset-times preference, not to
 // the generic untimed-message compactor. Retain the deadline in normal mode.
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), false);
+const timedCopy = "You've hit your usage limit. Upgrade your plan or add credits to continue, or try again at Nov 4, 2026, 3:03 AM.";
+assert.equal(context.scmToolkitIsHiddenTimedRateLimitWarning(timedCopy), false);
 context.scmToolkitHideRateLimitTimes = true;
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning("You've hit your usage limit. Try again at 3:30 AM."), false);
+assert.equal(context.scmToolkitIsHiddenTimedRateLimitWarning(timedCopy), true);
+assert.equal(context.scmToolkitIsHiddenTimedRateLimitWarning(
+    "You've hit your usage limit. Upgrade your plan or add credits to continue, or Try again later, 3:03 AM."), true);
+assert.equal(context.scmToolkitIsHiddenTimedRateLimitWarning('Upgrade your plan or add credits'), false);
 context.scmToolkitHideRateLimitTimes = false;
 assert.equal(context.scmToolkitIsUntimedRateLimitWarning('Upgrade your plan or add credits'), false);
 const warningParts = [
@@ -396,6 +402,20 @@ warningParts[0].textContent = warningCopy;
 const textChange = {nodeType: 3, parentElement: warningParagraph};
 context.scmToolkitCompactUntimedRateLimitBranch(textChange);
 assert.equal(warningParagraph.textContent, 'Rate limited');
+
+// A timed warning collapses only while the reset-time hiding setting is on.
+warningParts[0].textContent = timedCopy;
+context.scmToolkitHideRateLimitTimes = true;
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), true);
+assert.equal(warningParagraph.textContent, 'Rate limited');
+warningParts[0].textContent = timedCopy;
+context.scmToolkitHideRateLimitTimes = false;
+assert.equal(context.scmToolkitCompactUntimedRateLimitNode(warningParagraph), false);
+assert.equal(warningParagraph.textContent, timedCopy);
+context.scmToolkitHideRateLimitTimes = true;
+context.scmToolkitCompactUntimedRateLimitBranch({nodeType: 9, querySelectorAll: () => [warningParagraph]});
+assert.equal(warningParagraph.textContent, 'Rate limited');
+context.scmToolkitHideRateLimitTimes = false;
 
 // Preserve actionable cards, reset timestamps, and unrelated messages.
 warningParts[0].textContent = warningCopy;
