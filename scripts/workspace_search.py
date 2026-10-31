@@ -168,7 +168,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("branch_name_packs.json")] = here / "branch_name_packs.json"
     files[Path("local_setup.py")] = here / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
-    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("extension", {".js", ".json", ".svg", ".md", ".html"})):
+    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("extension", {".js", ".json", ".svg", ".md", ".html", ".css"})):
         for source in (here.parent / directory).rglob("*"):
             if source.is_file() and source.suffix.lower() in suffixes:
                 files[Path("codex-customizations") / source.relative_to(here.parent)] = source

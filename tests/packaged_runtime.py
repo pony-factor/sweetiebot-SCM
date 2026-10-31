@@ -17,6 +17,31 @@ class PackagedRuntimeTests(unittest.TestCase):
             self.assertIn(key, files)
             self.assertTrue(files[key].read_bytes().startswith(b'\x89PNG\r\n\x1a\n'))
 
+
+    def test_installer_bundles_merge_dashboard_styles_for_install_and_repair(self):
+        # Check the signed app payload as well as the extension's saved repair sources.
+        import build_installer_app
+
+        stylesheet = Path('extension/merge/header.css')
+        bundled = build_installer_app.source_files()
+        self.assertIn(stylesheet, bundled)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            payload = Path(temporary)
+            for relative, source in bundled.items():
+                if relative.parts[0] != 'extension':
+                    continue
+                target = payload / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+
+            extension_files = workspace_search.source_files(payload)
+            for relative in (Path('merge/header.css'),
+                             Path('codex-customizations') / stylesheet):
+                self.assertIn(relative, extension_files)
+                self.assertEqual(extension_files[relative].read_bytes(),
+                                 bundled[stylesheet].read_bytes())
+
     def test_all_installed_relative_javascript_dependencies_resolve(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
