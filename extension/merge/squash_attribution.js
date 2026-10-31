@@ -68,7 +68,8 @@ function exactSquashTitle(title, num) {
  return originalTitle.endsWith(suffix) ? originalTitle : originalTitle + suffix;
 }
 function formatCommitBody(body, width = 88) {
- const indent = '    ';
+ const indent = '        ';
+ // Preserve existing nested indentation; give each squash description a clearer offset.
  let fenced = false;
  return body.split('\n').map(line => {
    if (/^\s*```/.test(line)) { fenced = !fenced; return indent + line; }
@@ -113,7 +114,7 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    if(!subject.trim())throw Error('Original PR commit subject unavailable');
    const body=bodyLines.join('\n').replace(COAUTHOR,'').trim();
    if (!(filterSyncCommitSummaries && SYNC_MAIN_SUBJECT.test(subject.trim()))) {
-     summaries.push('- '+subject.trim()+(body?'\n'+formatCommitBody(body):''));
+     summaries.push('- '+subject.trim()+(body?'\n\n'+formatCommitBody(body):''));
    }
  }
  add(who('Codex Web','noreply@openai.com'));
@@ -124,8 +125,9 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    .map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');
  const unbulleted = omitBulletsForEmojiTitles && summaries.length > 0 &&
    summaries.every(summary => EMOJI_PREFIX.test(summary.slice(2).split('\n', 1)[0]));
- const summaryText = summaries.map(summary => unbulleted ? summary.slice(2) : summary)
-   .join(unbulleted ? '\n\n' : '\n');
+ const entries = summaries.map(summary => unbulleted ? summary.slice(2) : summary);
+ const summaryText = entries.reduce((text, entry, index) => text +
+   (index ? (unbulleted || entries[index - 1].includes('\n') ? '\n\n' : '\n') : '') + entry, '');
  const divider = squashSeparatorForStyle(trailerSeparatorStyle);
  return {title:finalTitle,message:(summaries.length?summaryText+'\n\n'+(divider?divider+'\n\n':''):'')+trailers.join('\n'),trailers};
 }
