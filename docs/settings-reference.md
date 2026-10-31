@@ -19,6 +19,7 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | `scmToolkit.autoCommitWithCodex` | `false` | Optional 30-second local co-authored commits, **never auto-push** |
 | `scmToolkit.durableBackgroundCommits` | `false` | Temporary title, ordered finalization, guarded push |
 | `scm-toolkit.placeholder-prefix` | `hoof_` | Custom prefix for temporary background commit titles; configure in the Source control settings panel. |
+| `scm-toolkit.graph-prefer-open-commit` | `false` | Switch the built-in Source Control Graph's inline action from Open Changes to Open Commit, displaying native commit metadata; right-click Open Changes remains available |
 | `scmToolkit.cloudRepositorySync` | `false` | 15-minute clean-main sync |
 | `scmToolkit.automaticBranchCleanup` | `true` | Eligible merged branch cleanup |
 | `scmToolkit.automaticWorkspaceCleanup` | `true` | Guarded managed workspace/worktree pruning |
