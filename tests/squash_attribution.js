@@ -18,7 +18,8 @@ async function run(){
    author:{name:'John Wooten',email:'noreply@wooten.link'},
    message:'Verify model\n\nCo-authored-by: Codex (6.1 Med) <noreply@openai.com>'
  }}]);
- assert(modeled.trailers.includes('Co-authored-by: Codex (6.1 Med, Web) <noreply@openai.com>'));
+ assert(modeled.trailers.includes('Co-authored-by: Codex (6.1 Med) <noreply@openai.com>'),
+  'Only explicitly recorded Codex qualifiers may appear in attribution');
  assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex (Web)']);
  assert.equal(prepared.message, [
   '- Change',
@@ -71,13 +72,24 @@ async function run(){
   'Co-authored-by: Mara Example <mara@example.org>',
   'Co-authored-by: John Wooten <noreply@wooten.link>',
   'Co-authored-by: Alice Example <alice@example.org>',
-  'Co-authored-by: Zoe Example <zoe@example.org>',
-  'Co-authored-by: Codex (Web) <noreply@openai.com>'
+  'Co-authored-by: Zoe Example <zoe@example.org>'
  ], 'Keep first-seen human order, name spelling and email despite later author or trailer matches');
  const excluded=squashMessage('🧪 Exclude primary human',270,firstSeen,
    {primaryAuthor:{name:'MARA EXAMPLE',email:'mara@example.org'}});
  assert.deepEqual(excluded.trailers,chronological.trailers.slice(1),
    'Removing the squash Git author must not reorder other contributors');
+ const humanOnly=squashMessage('🧪 Verify real credits',271,[{commit:{
+   author:{name:'John Wooten',email:'noreply@wooten.link'},message:'🐛 Fix without AI'
+ }}],{primaryAuthor:{name:'John Wooten',email:'noreply@wooten.link'},omitBulletsForEmojiTitles:false});
+ assert.deepEqual(humanOnly.trailers,[], 'Never invent a Codex Web coauthor without source evidence');
+ assert.equal(humanOnly.message,'- 🐛 Fix without AI',
+   'Do not leave a trailing separator when the original Git author is the only contributor');
+ const actualWeb=squashMessage('🧪 Verify real credits',272,[{commit:{
+   author:{name:'John Wooten',email:'noreply@wooten.link'},
+   message:'Fix with Codex Web\n\nCo-authored-by: Codex Web <noreply@openai.com>'
+ }}],{primaryAuthor:{name:'John Wooten',email:'noreply@wooten.link'}});
+ assert.deepEqual(actualWeb.trailers,['Co-authored-by: Codex (Web) <noreply@openai.com>'],
+   'Preserve explicitly supplied Codex Web attribution');
  assert(!/(^|\n)\* /.test(formatted.message), 'Commit list must use hyphens, not asterisks');
  assert(!formatted.message.includes('\n\n\n'), 'No extra blank lines between entries');
  assert.equal((formatted.message.match(/^Co-authored-by:/gm)||[]).length,2,
@@ -114,7 +126,7 @@ async function run(){
  assert(!filtered.message.includes('Sync brach to main'));
  assert(!filtered.message.includes('Sync branch to main'));
  assert(!filtered.message.includes('latest request timeout changes'));
- assert(filtered.trailers.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
+ assert(filtered.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'),
    'Filtering sync summaries never loses co-author attribution');
  const unfiltered=squashMessage('🖌️ Update merge settings',393,[feature,syncCommit,correctSpelling],{filterSyncCommitSummaries:false});
  assert(unfiltered.message.includes('- 🔄 Sync brach to main'));
@@ -139,7 +151,7 @@ async function run(){
  assert(emojiOnly.message.startsWith('🐛 Fix panel resizing\n    Avoid overflowing the viewport.\n\n🧪 Cover small windows'));
  assert(!emojiOnly.message.includes('- 🐛'));
  assert(!emojiOnly.message.includes('Sync brach to main'));
- assert(emojiOnly.trailers.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'));
+ assert(emojiOnly.trailers.includes('Co-authored-by: Codex <noreply@openai.com>'));
  const legacyBullets=squashMessage('🖌️ Improve resize handling',395,emojiTitles,
    {filterSyncCommitSummaries:true,omitBulletsForEmojiTitles:false});
  assert(legacyBullets.message.includes('- 🐛 Fix panel resizing'));
