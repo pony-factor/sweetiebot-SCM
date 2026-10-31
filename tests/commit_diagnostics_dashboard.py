@@ -30,6 +30,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                 "id": "abcdef123456", "root": "/private/example-repo",
                 "branch": "refs/heads/feature/report", "gitdir": str(gitdir),
                 "phase": "generating", "message": "SECRET GENERATED TITLE",
+                "sha": "a" * 40,
                 "context": "SECRET CHAT", "diff": "SECRET DIFF",
             }
             (active / "job.json").write_text(json.dumps(current))
@@ -47,6 +48,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                  "outcome": "retry", "prompt": "SECRET PROMPT"},
                 {"timestamp": "2026-10-22T01:01:00+00:00", "component": "commit_title",
                  "event": "generation_completed", "duration_ms": 1200,
+                 "repository": "example-repo", "job_id": "abcdef123456",
                  "outcome": "success", "title": "🖌️ Show final titles",
                  "rule": "priority",
                  "explanation": "This wording reflects the added title history.",
@@ -64,6 +66,11 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             self.assertEqual(len(result["jobs"]), 1)
             self.assertEqual(result["jobs"][0]["repository"], "example-repo")
             self.assertEqual(result["jobs"][0]["branch"], "feature/report")
+            self.assertEqual(result["jobs"][0]["id"], "abcdef123456")
+            self.assertEqual(result["jobs"][0]["commit"], "a" * 40)
+            correlated = next(e for e in result["events"] if e.get("job_id"))
+            self.assertEqual(correlated["job_id"], "abcdef123456")
+            self.assertEqual(correlated["repository"], "example-repo")
             self.assertEqual(result["summary"]["pending"], 1)
             self.assertEqual(result["summary"]["generating"], 1)
             self.assertEqual(result["summary"]["blocked"], 0)
@@ -139,6 +146,13 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
         self.assertIn("Why this title?", page)
         self.assertIn("AI explanation:", page)
         self.assertIn("diagnostics-auto-refresh", page)
+        self.assertIn("diagnostics-relative-times", page)
+        self.assertIn("<th>Job ID</th>", page)
+        self.assertIn("cell(row, job.id)", page)
+        self.assertIn("cell(row, event.job_id || '—')", page)
+        self.assertIn("relativeFormatter.format(", page)
+        self.assertIn("time.title = valid ? date.toLocaleString()", page)
+        self.assertIn("relativeTimes.addEventListener('change', renderEventRows)", page)
         self.assertIn("diagnostics-export", page)
         self.assertIn(Path("commit_diagnostics_dashboard.py"), workspace_search.source_files())
 
