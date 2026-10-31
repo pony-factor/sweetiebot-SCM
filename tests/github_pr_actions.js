@@ -61,6 +61,61 @@ async function main() {
     }
   })).merged, true, 'Active rulesets also use the native protected-branch merge');
 
+  // A bot-opened PR against a protected base may use GitHub's merge-commit
+  // API only after explicit confirmation, preserving the source commits.
+  const protectedConfirm = mockMerge({
+    views: [open, open, open, { ...open, state: 'MERGED' }],
+    stackMetadata: { stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' } }
+  });
+  const mergedSha = 'c'.repeat(40);
+  let nativeMergeSubmitted = false;
+  const protectedExecute = async args => {
+    if (args.includes('repos/owner/repo/pulls/12/merge')) {
+      nativeMergeSubmitted = true;
+      assert(args.includes('merge_method=merge'));
+      assert(args.includes('sha=' + open.headRefOid));
+      assert(args.includes('commit_title=🐛 Correct caching (#12)'));
+      return { stdout: JSON.stringify({ merged: true, sha: mergedSha }) };
+    }
+    if (args.includes('repos/owner/repo/git/commits/' + mergedSha)) {
+      const originals = [{
+        author: { login: 'JFWooten4', type: 'User' },
+        commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' },
+          committer: { name: 'GitHub', email: 'noreply@github.com' },
+          message: 'Change\\n\\nCo-authored-by: Codex <noreply@openai.com>' }
+      }];
+      const prepared = squashMessage(open.title, 12, originals);
+      return { stdout: JSON.stringify({ parents: [{ sha: 'b'.repeat(40) }, { sha: open.headRefOid }],
+        message: prepared.title + '\\n\\n' + prepared.message }) };
+    }
+    return protectedConfirm.execute(args);
+  };
+  let confirmedChoice = false;
+  const mergePreserving = await squashMergePullRequest(url, protectedExecute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => ({ merged: false, reason: 'The base branch is protected; local Git cannot bypass its merge policy.' }),
+    confirmPreserveCommits: async target => {
+      assert.deepEqual(target, { repo: 'owner/repo', number: '12', base: 'main' });
+      confirmedChoice = true;
+      return true;
+    }
+  });
+  assert(confirmedChoice && nativeMergeSubmitted && mergePreserving.merged);
+  assert.equal(mergePreserving.method, 'merge');
+  assert.equal(mergePreserving.authorsPreserved, true);
+
+  const declined = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
+  } });
+  const cancelledProtected = await squashMergePullRequest(url, declined.execute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => ({ merged: false, reason: 'The base branch is protected; local Git cannot bypass its merge policy.' }),
+    confirmPreserveCommits: async () => false
+  });
+  assert.equal(cancelledProtected.cancelled, true);
+  assert(!declined.calls.some(args => args.includes('--method')),
+    'Declining the alternative must not merge or rewrite anything');
+
   const protectedBot = mockMerge({ stackMetadata: {
     stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
   } });
@@ -68,7 +123,7 @@ async function main() {
     ...quickPoll, preferLocalGit: true,
     humanMerge: async () => ({ merged: false, status: 'blocked',
       reason: 'The base branch is protected; local Git cannot bypass its merge policy.' })
-  }), /native squash would credit the bot as Git author/);
+  }), /The base is protected/);
   assert(!protectedBot.calls.some(args => args.includes('--method')),
     'Bot-opened PRs cannot silently replace the original human author');
 
@@ -79,7 +134,7 @@ async function main() {
     ...quickPoll, preferLocalGit: true,
     humanMerge: async () => ({ merged: false, status: 'blocked',
       reason: 'The base branch is protected; local Git cannot bypass its merge policy.' })
-  }), /replace the verified original human Git author/);
+  }), /The base is protected/);
   assert(!protectedOtherHuman.calls.some(args => args.includes('--method')));
 
   const localFailure = mockMerge();

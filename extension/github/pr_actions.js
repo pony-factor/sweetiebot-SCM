@@ -27,7 +27,7 @@ const protectedLocalBase = reason => [
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
   { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000,
-    humanMerge = humanSquashMerge, readAPI, preferLocalGit = true } = {}) {
+    humanMerge = humanSquashMerge, readAPI, preferLocalGit = true, confirmPreserveCommits } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -106,10 +106,52 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     // GitHub alone enforces the protected base's merge policy. Its native
     // squash path is safe only when the opener matches the original Git author.
   }
-  if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
-    if (protectedBase) {
-      throw new Error('GitHub protects this base branch, and native squash would credit the bot as Git author. Use GitHub’s Merge pull request option to preserve the original commits, or a separately approved human-author squash workflow; no branch was changed.');
+  const mergeProtectedPreservingCommits = async () => {
+    if (typeof confirmPreserveCommits !== 'function') {
+      throw new Error('The base is protected. Squash merging this PR would replace the verified original human Git author. Use GitHub’s Merge pull request option to preserve the original commits; local Git cannot bypass the rules.');
     }
+    // Do not offer a merge that would preserve only bot-authored commits.
+    const originals = await readCommits(api, repo, Number(number));
+    verifiedHumanAuthor(originals);
+    const accepted = await confirmPreserveCommits({ repo, number, base: pr.baseRefName });
+    if (!accepted) return { merged: false, cancelled: true, repo, number, base: pr.baseRefName };
+    const fresh = await read();
+    if (fresh.state !== 'OPEN' || fresh.isDraft ||
+        fresh.baseRefName !== pr.baseRefName || fresh.headRefName !== pr.headRefName ||
+        fresh.headRefOid !== pr.headRefOid || fresh.title !== pr.title) {
+      throw new Error(`PR #${number} changed before the approved merge; refresh and try again.`);
+    }
+    if (fresh.mergeable === 'CONFLICTING') throw conflict();
+    const prepared = squashMessage(pr.title, Number(number), originals);
+    const response = await api(['--method', 'PUT', `repos/${repo}/pulls/${number}/merge`,
+      '-f', `sha=${pr.headRefOid}`, '-f', 'merge_method=merge',
+      '-f', `commit_title=${prepared.title}`, '-f', `commit_message=${prepared.message}`]);
+    if (response?.merged !== true || !/^[a-f0-9]{40}$/i.test(response.sha || '')) {
+      throw new Error(`GitHub did not confirm the protected-branch merge for PR #${number}.`);
+    }
+    const commit = await api([`repos/${repo}/git/commits/${response.sha}`]);
+    const parents = commit?.parents?.map(parent => parent.sha) || [];
+    if (!parents.includes(pr.headRefOid) || parents.length !== 2 ||
+        String(commit?.message || '').replace(/\r\n/g, '\n').trimEnd() !==
+          `${prepared.title}\n\n${prepared.message}`.trimEnd()) {
+      throw new Error(`PR #${number} was merged, but its original head ancestry or commit message could not be verified. Review GitHub before any cleanup.`);
+    }
+    let confirmed;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      confirmed = await read();
+      if (confirmed.state === 'MERGED') break;
+      await wait(500);
+    }
+    if (confirmed.state !== 'MERGED' ||
+        confirmed.baseRefName !== pr.baseRefName || confirmed.headRefName !== pr.headRefName ||
+        confirmed.headRefOid !== pr.headRefOid) {
+      throw new Error(`GitHub accepted PR #${number}, but its merged state could not be verified. Branch cleanup was skipped.`);
+    }
+    return { merged: true, repo, number, base: pr.baseRefName, pr: confirmed,
+      sha: response.sha, method: 'merge', authorsPreserved: true };
+  };
+  if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
+    if (protectedBase) return mergeProtectedPreservingCommits();
     const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
@@ -128,9 +170,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const commits = await readCommits(api, repo, Number(number));
   const human = verifiedHumanAuthor(commits);
   if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
-    if (protectedBase) {
-      throw new Error('GitHub protects this base branch, and native squash would replace the verified original human Git author with the PR opener. Use GitHub’s Merge pull request option to preserve the original commits; no branch was changed.');
-    }
+    if (protectedBase) return mergeProtectedPreservingCommits();
     const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
@@ -388,6 +428,15 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       };
       const result = await merge(url, execute, confirmNonMain, {
         readAPI: appRead,
+        confirmPreserveCommits: async ({ number, base }) => {
+          const action = 'Merge preserving commits';
+          const choice = await vscode.window.showWarningMessage(
+            `PR #${number} targets protected \`${base}\`. GitHub squash would change the original human Git author. Merge with the original commits instead?`,
+            { modal: true, detail: 'Uses GitHub’s native merge API. Required checks, reviews, and branch rules still apply. No local push or history rewrite.' },
+            action
+          );
+          return choice === action;
+        },
         // The sidebar merge button must never authorize history rewrites, even if a
         // future caller accidentally requests one. Explicit author-handoff is separate.
         humanMerge: (repo, number, options) => humanSquashMerge(repo, number,
