@@ -242,13 +242,20 @@ const run = promisify(execFile);
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
-    assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'),
-      'Expected explicit Codex attribution in merged commit: ' + JSON.stringify(message));
+    // A conflict decision explicitly credits Codex Web; a clean human squash
+    // must retain the original plain Codex credit without inventing Web work.
+    const creditedCodex = 'Co-authored-by: ' + (resolving ? 'Codex (Web)' : 'Codex') +
+      ' <noreply@openai.com>';
+    assert(message.includes(creditedCodex),
+      'Expected source-accurate Codex attribution in merged commit: ' + JSON.stringify(message));
+    assert.equal(message.split('\n').filter(line => line === creditedCodex).length,
+      1, 'Consolidate the credited Codex identity exactly once');
     assert(message.includes('\n\n__________\n\n'));
-    assert(!message.includes('Co-authored-by: Codex (Web) <'), 'Do not invent Web attribution');
+    assert(!message.includes('Co-authored-by: ' + (resolving ? 'Codex <' : 'Codex (Web) <')),
+      'Do not invent an additional Codex identity or Web qualification');
     assert(!message.includes('Co-authored-by: John Wooten'));
     assert(message.includes('Co-authored-by: codex-pony[bot] <326443430+codex-pony[bot]@users.noreply.github.com>'));
-    assert(message.indexOf('Co-authored-by: Codex <') < message.indexOf('Co-authored-by: codex-pony[bot] <'));
+    assert(message.indexOf(creditedCodex) < message.indexOf('Co-authored-by: codex-pony[bot] <'));
     assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('executor-')), [], 'All isolated checkouts are cleaned up');
     assert.equal(await repo('status', '--porcelain'), '', 'Source working tree remains untouched');
     assert.equal(await repo('rev-parse', 'HEAD'), baseSha, 'Source branch does not move');
@@ -388,9 +395,10 @@ async function successiveMerges(checkState) {
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
-   assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
-   assert.equal(message.split('\n').filter(line => line === 'Co-authored-by: Codex <noreply@openai.com>').length,
-     1, 'Only one credited Codex trailer');
+   assert(message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
+     'The recorded AI-assisted conflict decision retains its explicit Web credit');
+   assert.equal(message.split('\n').filter(line => line === 'Co-authored-by: Codex (Web) <noreply@openai.com>').length,
+     1, 'Only one credited Codex Web trailer');
    const beforeThird = await branch('main');
    const third = await submit(final.continueUrl, 3);
    const integratedThird = await branch('feature-3');
