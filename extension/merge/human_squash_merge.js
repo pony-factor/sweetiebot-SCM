@@ -6,7 +6,6 @@
 // PR commit with the exact intended title and verified credits. Rebase-merging
 // that commit preserves its original Git author while leaving the PR head alone.
 const { execFile } = require('node:child_process');
-const { isCodex } = require('../codex/attribution');
 const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
 const { splitSquashTrailers, squashMessage, readCommits } = require('./squash_attribution');
@@ -116,15 +115,12 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
   const existing = String(originalCommit.commit?.message || '').replace(/\r\n?/g, '\n').trimEnd();
   const expectedTitle = squashMessage(original.title, number, commits, { primaryAuthor: author }).title;
   const sections = splitSquashTrailers(existing, trailerSeparatorStyle);
-  if (existing.split('\n', 1)[0] !== expectedTitle ||
-      sections.length !== 2 ||
-      !existing.split('\n').some(line => {
-        const coauthor = /^Co-authored-by: (.+?) <(noreply@openai\.com)>$/i.exec(line.trim());
-        return coauthor && isCodex(coauthor[1], coauthor[2]) &&
-          (/(?:\bWeb|\bWeb\))$/i.test(coauthor[1]));
-      })) {
+  const validTrailers = sections.length === 2
+    ? sections[1].split('\n').every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line))
+    : sections.length === 1 && !existing.split('\n').some(line => /^Co-authored-by:/i.test(line));
+  if (existing.split('\n', 1)[0] !== expectedTitle || !validTrailers) {
     if (allowHistoryRewrite) return prepareSquash();
-    throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title, configured co-author separator and required Codex Web credit. No push was attempted. Use Merge preserving commits rather than rewriting this PR branch.');
+    throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title and valid configured co-author separator/trailers. No push was attempted. Use Merge preserving commits rather than rewriting this PR branch.');
   }
   const repositoryInfo = await api(root);
   if (repositoryInfo?.allow_rebase_merge !== true) {
