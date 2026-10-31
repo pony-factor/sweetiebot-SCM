@@ -168,6 +168,20 @@ if (diagnosticsRoot) {
   const jobRows = document.getElementById('diagnostics-jobs');
   const eventRows = document.getElementById('diagnostics-events');
   const exportButton = document.getElementById('diagnostics-export');
+  const relativeTimes = document.getElementById('diagnostics-relative-times');
+  const relativeFormatter = new Intl.RelativeTimeFormat(undefined, {numeric: 'auto'});
+  function relativeTime(timestamp, now = Date.now()) {
+    const diff = (new Date(timestamp).getTime() - now) / 1000;
+    if (!Number.isFinite(diff)) return timestamp;
+    const abs = Math.abs(diff);
+    if (abs < 45) return 'now';
+    const [unit, seconds] = abs < 2700 ? ['minute', 60]
+      : abs < 79200 ? ['hour', 3600]
+      : abs < 2160000 ? ['day', 86400]
+      : abs < 27648000 ? ['month', 2592000]
+      : ['year', 31536000];
+    return relativeFormatter.format(Math.round(diff / seconds), unit);
+  }
   const cell = (row, value) => {
     const td = document.createElement('td');
     td.textContent = String(value);
@@ -179,47 +193,25 @@ if (diagnosticsRoot) {
     cell(row, message).colSpan = columns;
     parent.appendChild(row);
   };
-  async function refreshDiagnostics() {
-    if (loadingDiagnostics) return;
-    loadingDiagnostics = true;
-    try {
-      const response = await fetch('/diagnostics' + location.search, {cache: 'no-store'});
-      if (!response.ok) throw new Error('Local diagnostics request failed (' + response.status + ').');
-      diagnosticsReport = await response.json();
-      const summary = diagnosticsReport.summary;
-      for (const [id, value] of [
-        ['diag-pending', summary.pending],
-        ['diag-generating', summary.generating],
-        ['diag-blocked', summary.blocked],
-        ['diag-retries', summary.retries],
-        ['diag-duration', summary.averageGenerationMs === null ? '—' : (summary.averageGenerationMs / 1000).toFixed(1) + 's']
-      ]) document.getElementById(id).textContent = String(value);
-      jobRows.replaceChildren();
-      eventRows.replaceChildren();
-      if (!diagnosticsReport.jobs.length) placeholder(jobRows, 4, 'No pending background commits.');
-      for (const job of diagnosticsReport.jobs) {
-        const row = document.createElement('tr');
-        cell(row, job.repository);
-        cell(row, job.branch);
-        const phase = cell(row, job.phase);
-        phase.className = 'diagnostics-phase';
-        phase.dataset.phase = job.phase;
-        if (job.error) {
-          const error = document.createElement('span');
-          error.className = 'diagnostics-error';
-          error.textContent = job.error;
-          phase.appendChild(error);
-        }
-        cell(row, job.id.slice(0, 8));
-        jobRows.appendChild(row);
-      }
-      if (!diagnosticsReport.events.length) placeholder(eventRows, 5, 'No recorded diagnostic events.');
-      for (const event of diagnosticsReport.events) {
-        const row = document.createElement('tr');
-        const date = new Date(event.timestamp);
-        cell(row, Number.isNaN(date.getTime()) ? event.timestamp : date.toLocaleString());
-        cell(row, (event.component || 'Sweetiebot') + ' · ' + event.event);
-        const titleCell = cell(row, event.title || '—');
+  function renderEventRows() {
+    eventRows.replaceChildren();
+    if (!diagnosticsReport || !diagnosticsReport.events.length) {
+      placeholder(eventRows, 7, 'No recorded diagnostic events.');
+      return;
+    }
+    for (const event of diagnosticsReport.events) {
+      const row = document.createElement('tr');
+      const date = new Date(event.timestamp);
+      const valid = !Number.isNaN(date.getTime());
+      const time = cell(row, relativeTimes.checked ? relativeTime(event.timestamp)
+        : (valid ? date.toLocaleString() : event.timestamp));
+      time.className = 'diagnostics-event-time';
+      time.title = valid ? date.toLocaleString() : event.timestamp;
+      cell(row, event.repository || '—');
+      const id = cell(row, event.job_id || '—');
+      id.className = 'diagnostics-job-id';
+      cell(row, (event.component || 'Sweetiebot') + ' · ' + event.event);
+      const titleCell = cell(row, event.title || '—');
         if (event.title && (event.explanation || event.rule)) {
           const details = document.createElement('details');
           details.className = 'diagnostics-explanation';
@@ -249,7 +241,47 @@ if (diagnosticsRoot) {
           event.http_status && ('HTTP ' + event.http_status)
         ].filter(Boolean).join(' · ') || '—');
         eventRows.appendChild(row);
+    }
+  }
+  relativeTimes.addEventListener('change', renderEventRows);
+  async function refreshDiagnostics() {
+    if (loadingDiagnostics) return;
+    loadingDiagnostics = true;
+    try {
+      const response = await fetch('/diagnostics' + location.search, {cache: 'no-store'});
+      if (!response.ok) throw new Error('Local diagnostics request failed (' + response.status + ').');
+      diagnosticsReport = await response.json();
+      const summary = diagnosticsReport.summary;
+      for (const [id, value] of [
+        ['diag-pending', summary.pending],
+        ['diag-generating', summary.generating],
+        ['diag-blocked', summary.blocked],
+        ['diag-retries', summary.retries],
+        ['diag-duration', summary.averageGenerationMs === null ? '—' : (summary.averageGenerationMs / 1000).toFixed(1) + 's']
+      ]) document.getElementById(id).textContent = String(value);
+      jobRows.replaceChildren();
+      if (!diagnosticsReport.jobs.length) placeholder(jobRows, 5, 'No pending background commits.');
+      for (const job of diagnosticsReport.jobs) {
+        const row = document.createElement('tr');
+        cell(row, job.repository);
+        cell(row, job.branch);
+        const phase = cell(row, job.phase);
+        phase.className = 'diagnostics-phase';
+        phase.dataset.phase = job.phase;
+        if (job.error) {
+          const error = document.createElement('span');
+          error.className = 'diagnostics-error';
+          error.textContent = job.error;
+          phase.appendChild(error);
+        }
+        const id = cell(row, job.id);
+        id.className = 'diagnostics-job-id';
+        const commit = cell(row, job.commit ? job.commit.slice(0, 8) : '—');
+        commit.title = job.commit || '';
+        commit.className = 'diagnostics-job-id';
+        jobRows.appendChild(row);
       }
+      renderEventRows();
       exportButton.disabled = false;
       diagStatus.textContent = 'Updated ' + new Date().toLocaleTimeString()
         + ' · ' + summary.eventsRetained + ' retained events · '
