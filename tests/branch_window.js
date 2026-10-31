@@ -49,6 +49,30 @@ const { findLiveBranchWindow, focusExistingBranchWindow, SESSION_MAX_AGE_MS } =
     assert.deepEqual(calls.map(call => call[0]), ['vscode.openFolder'],
       'Never close the source when the target cannot be opened');
 
+    // Flat legacy clone groups may not be named after the checkout.
+    const legacyGroup = path.join(baseDirectory, 'historic-workspace');
+    const legacyCheckout = path.join(legacyGroup, 'legacy-repository');
+    const legacyWorkspace = path.join(legacyGroup, 'historic.code-workspace');
+    await fs.mkdir(legacyCheckout, { recursive: true });
+    await fs.writeFile(legacyWorkspace, JSON.stringify({ folders: [{ path: legacyCheckout }] }));
+    await fs.writeFile(path.join(legacyGroup, '.sweetiebot-session-2345-legacy.json'),
+      JSON.stringify({ pid: 2345, roots: [legacyCheckout], workspaceFile: legacyWorkspace }));
+    assert.equal((await findLiveBranchWindow(legacyCheckout, options)).target, legacyWorkspace,
+      'Focus a legacy window even when its managed group name differs');
+
+    // A multi-root workspace can contain a second repository whose name does
+    // not match the parent bucket chosen for the first repository.
+    const multiGroup = path.join(baseDirectory, 'first-repo', 'main-azure');
+    const secondCheckout = path.join(multiGroup, 'second-repo');
+    const multiWorkspace = path.join(multiGroup, 'main-azure.code-workspace');
+    await fs.mkdir(secondCheckout, { recursive: true });
+    await fs.writeFile(multiWorkspace,
+      JSON.stringify({ folders: [{ path: secondCheckout }] }));
+    await fs.writeFile(path.join(multiGroup, '.sweetiebot-session-2345-multi.json'),
+      JSON.stringify({ pid: 2345, roots: [secondCheckout], workspaceFile: multiWorkspace }));
+    assert.equal((await findLiveBranchWindow(secondCheckout, options)).target, multiWorkspace,
+      'Focus a secondary checkout in a differently named workspace bucket');
+
     await writeSession({ roots: [path.join(baseDirectory, 'other')] });
     assert.equal(await findLiveBranchWindow(destination, options), null,
       'A live PID without a matching checkout cannot own this branch');

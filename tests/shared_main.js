@@ -6,6 +6,8 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { openIndependentWorkspace } = require('../extension/branches/new_workspace');
 const { routeBranch, originalRepository, reconnectManagedMain } = require('../extension/branches/shared_main');
+const { registerManagedWindowActivity, stopManagedWindowActivity } =
+  require('../extension/branches/workspace_activity');
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const editor = root => ({
@@ -88,6 +90,40 @@ async function openedRoot(result) {
     await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
 
+    // End-to-end integration using the real session publisher rather than a
+    // handcrafted marker: routing to an occupied branch focuses its existing
+    // live workspace and only then closes the initiating window.
+    const ownerWindow = editor(topic);
+    ownerWindow.workspace.workspaceFile = { scheme: 'file', fsPath: topicWorkspace };
+    const activityContext = { subscriptions: [] };
+    await registerManagedWindowActivity(ownerWindow, activityContext, {
+      groups: [path.dirname(topic)], uuid: 'ci-live-window', pid: process.pid
+    });
+    try {
+      const sessionFile = path.join(path.dirname(topic),
+        '.sweetiebot-session-' + process.pid + '-ci-live-window.json');
+      const published = JSON.parse(await fs.readFile(sessionFile, 'utf8'));
+      assert.deepEqual(published.roots, [topic]);
+      assert.equal(published.workspaceFile, topicWorkspace);
+      const switchingWindow = editor(root);
+      assert.equal(await routeBranch(switchingWindow, { rootUri: { fsPath: root } },
+        { ...options, sourcePid: process.pid + 1, branch: 'topic' }), true);
+      assert.deepEqual(switchingWindow.commands.calls.map(call => call[0]),
+        ['vscode.openFolder', 'workbench.action.closeWindow'],
+        'Live owner receives focus before the initiating window closes');
+      assert.equal(switchingWindow.commands.calls[0][1].fsPath, topicWorkspace);
+      assert.deepEqual(switchingWindow.commands.calls[0][2], { forceNewWindow: true });
+      assert.equal(switchingWindow.workspace.workspaceFolders[0].uri.fsPath, root,
+        'Do not mutate source workspace folders while a destination window owns the branch');
+      assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+      assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
+    } finally {
+      await stopManagedWindowActivity();
+    }
+    assert.equal(await fs.stat(path.join(path.dirname(topic),
+      '.sweetiebot-session-' + process.pid + '-ci-live-window.json')).then(
+      () => true, () => false), false, 'Stopping the owner removes its live-session marker');
+
     // A failed destination apply must retain the source and a recovery copy.
     await fs.writeFile(path.join(root, 'file.txt'), 'preserve on failed transfer\n');
     git('-C', root, 'add', 'file.txt');
@@ -145,17 +181,39 @@ async function openedRoot(result) {
         'Save the same-chat handoff before an extension-host restart');
       return true;
     };
-    // Existing windows must not steal this branch switch or its Codex chat.
-    await fs.writeFile(path.join(path.dirname(topic), '.sweetiebot-session-2345-test.json'),
+    // A live topic owner should be focused, preserving its editors and chat.
+    const topicSession = path.join(path.dirname(topic), '.sweetiebot-session-2345-test.json');
+    await fs.writeFile(topicSession,
       JSON.stringify({ pid: process.pid + 1, roots: [topic], workspaceFile: topicWorkspace }));
-    await fs.writeFile(path.join(first.directory, '.sweetiebot-session-2345-test.json'),
-      JSON.stringify({ pid: process.pid + 1, roots: [root], workspaceFile: first.target }));
+    await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
+    assert.deepEqual(moving.commands.calls.map(call => call[0]),
+      ['vscode.openFolder', 'workbench.action.closeWindow'],
+      'Focus the live worktree owner before closing this window');
+    assert.equal(moving.commands.calls[0][1].fsPath, topicWorkspace);
+    assert.deepEqual(moving.commands.calls[0][2], { forceNewWindow: true });
+    assert.equal(folderUpdate, undefined, 'Do not repoint a window while its target is already open');
+
+    // A failed focus must not close the source window or change its workspace.
+    const failedFocus = editor(root);
+    failedFocus.commands.executeCommand = async function (...args) {
+      this.calls.push(args);
+      if (args[0] === 'vscode.openFolder') throw new Error('Cannot focus existing window');
+    };
+    await assert.rejects(routeBranch(failedFocus, { rootUri: { fsPath: root } },
+      { ...options, branch: 'topic' }), /Cannot focus existing window/);
+    assert.deepEqual(failedFocus.commands.calls.map(call => call[0]), ['vscode.openFolder']);
+    assert.equal(folderUpdate, undefined);
+
+    // When the owner is gone, keep this window and its Codex handoff.
+    const expired = new Date(Date.now() - 200000);
+    await fs.utimes(topicSession, expired, expired);
+    moving.commands.calls.length = 0;
     await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: topic }, name: 'Repo' }]);
     assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'),
-      'An existing saved workspace must not reopen the window');
+      'A stale owner must not prevent reopening an existing worktree');
     assert(!moving.commands.calls.some(call => call[0] === 'workbench.action.closeWindow'),
-      'Keep the initiating window and chat even when the topic is open elsewhere');
+      'Keep the initiating window when no live topic window exists');
     const saved = moving.commands.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1];
     assert.equal(saved.workspace, first.target, 'Keep the existing workspace identity');
     assert.equal(saved.plan.destination, topic);
@@ -173,6 +231,19 @@ async function openedRoot(result) {
     assert.equal(homeHandoff.plan.destination, root);
     assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'private topic edit\n');
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
+
+    // Returning home focuses its existing window rather than taking over main.
+    const mainSession = path.join(first.directory, '.sweetiebot-session-2345-test.json');
+    await fs.writeFile(mainSession,
+      JSON.stringify({ pid: process.pid + 1, roots: [root], workspaceFile: first.target }));
+    const mainSwitcher = editor(topic);
+    assert.equal(await routeBranch(mainSwitcher, { rootUri: { fsPath: topic } },
+      { ...options, branch: 'main' }), true);
+    assert.deepEqual(mainSwitcher.commands.calls.map(call => call[0]),
+      ['vscode.openFolder', 'workbench.action.closeWindow']);
+    assert.equal(mainSwitcher.commands.calls[0][1].fsPath, first.target);
+    assert.deepEqual(mainSwitcher.commands.calls[0][2], { forceNewWindow: true });
+    await fs.rm(mainSession);
     moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
 
     await fs.writeFile(path.join(root, 'draft.txt'), 'untracked task work\n');
@@ -248,6 +319,19 @@ async function openedRoot(result) {
     assert.equal(await fs.readFile(path.join(legacy, 'file.txt'), 'utf8'), 'separate old edits\n');
     git('-C', legacy, 'add', 'file.txt');
     git('-C', legacy, 'commit', '-m', 'Unpublished legacy-only commit');
+    // A legacy clone can own linked worktrees too. Selecting an occupied
+    // branch must navigate to its existing checkout, not Git checkout again.
+    const legacyTopic = path.join(temporary, 'legacy-linked-topic');
+    git('-C', legacy, 'worktree', 'add', '-b', 'legacy-topic', legacyTopic);
+    await fs.writeFile(path.join(legacyTopic, 'only-here.txt'), 'pending topic file\n');
+    const legacySwitcher = editor(legacy);
+    assert.equal(await routeBranch(legacySwitcher, { rootUri: { fsPath: legacy } },
+      { ...options, branch: 'legacy-topic' }), true);
+    assert.equal(await openedRoot({ target: legacySwitcher.commands.calls.at(-1)[1].fsPath }),
+      legacyTopic, 'Legacy clone reuses the worktree in its own Git database');
+    assert.equal(git('-C', legacy, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(legacyTopic, 'only-here.txt'), 'utf8'),
+      'pending topic file\n', 'Existing untracked files remain in that worktree');
     await assert.rejects(reconnectManagedMain(editor(legacy), options), /separate commits/,
       'A legacy clone cannot be reconnected just because its own main contains its commit');
     assert.equal(await reconnectManagedMain(editor(topic), options), false, 'Topic windows stay disconnected');

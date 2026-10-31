@@ -21,11 +21,8 @@ async function findLiveBranchWindow(destination, {
   const resolved = await io.realpath(destination).catch(() => null);
   if (!resolved) return null;
   const repositoryDirectory = path.join(baseDirectory, path.basename(resolved));
-  const groups = await io.readdir(repositoryDirectory, { withFileTypes: true }).catch(() => []);
   let newest = null;
-  for (const group of groups) {
-    if (!group.isDirectory() || group.isSymbolicLink()) continue;
-    const directory = path.join(repositoryDirectory, group.name);
+  const inspect = async directory => {
     const names = await io.readdir(directory).catch(() => []);
     for (const name of names) {
       if (!name.startsWith(SESSION_PREFIX) || !name.endsWith('.json')) continue;
@@ -54,6 +51,28 @@ async function findLiveBranchWindow(destination, {
         }
       } catch { /* Stale or malformed session markers do not control navigation. */ }
     }
+  };
+  const inspectNested = async parent => {
+    const groups = await io.readdir(parent, { withFileTypes: true }).catch(() => []);
+    for (const group of groups) {
+      if (!group.isDirectory() || group.isSymbolicLink()) continue;
+      await inspect(path.join(parent, group.name));
+    }
+  };
+  // The common layout groups workspaces by repository basename. Search this
+  // fast path before falling back to less conventional historical layouts.
+  await inspectNested(repositoryDirectory);
+  if (newest) return newest;
+
+  // Legacy flat groups and multi-root windows need not use the selected
+  // checkout's basename. Search only managed groups, at most two levels deep,
+  // while preserving PID, timestamp, and canonical-root ownership checks.
+  const buckets = await io.readdir(baseDirectory, { withFileTypes: true }).catch(() => []);
+  for (const bucket of buckets) {
+    if (!bucket.isDirectory() || bucket.isSymbolicLink()) continue;
+    const directory = path.join(baseDirectory, bucket.name);
+    await inspect(directory);
+    if (directory !== repositoryDirectory) await inspectNested(directory);
   }
   return newest;
 }

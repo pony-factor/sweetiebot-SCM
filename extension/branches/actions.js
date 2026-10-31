@@ -15,7 +15,7 @@ const { listBranchStrip, checkoutBranchStrip } = require('./strip');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
 const { recoveryPlan } = require('../commits/finalized_commit_recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
-const { routeBranch } = require('./shared_main');
+const { routeBranch, routeExistingBranchWorktree } = require('./shared_main');
 const { createStackedBranch } = require('./stacked_branch');
 
 const repositoryOperations = new WeakMap();
@@ -1326,7 +1326,11 @@ function registerBranchCommands(vscode, context) {
         return await queueRepositoryOperation(repository, async () => {
           await requireFinalizedCommit(repository, { background: false });
           if (await routeBranch(vscode, repository, options)) return options.branch;
-          return checkoutBranchStrip(repository, options);
+          return checkoutBranchStrip(repository, {
+            ...options,
+            onOccupiedWorktree: destination =>
+              routeExistingBranchWorktree(vscode, repository, destination, options)
+          });
         });
       } catch (error) {
         throw explainGitError(error);
