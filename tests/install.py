@@ -1038,7 +1038,6 @@ class AiWrapperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "bin" / "scm-toolkit-git"
             install.sync_ai_wrapper(destination=destination)
-            destination.with_name("toolkit_settings.py").unlink()
             repo = Path(tmp) / "repo"
             repo.mkdir()
             real_git = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
@@ -1054,15 +1053,22 @@ class AiWrapperTests(unittest.TestCase):
             (repo / "file.txt").write_text("changed")
             git("add", "file.txt")
             env = {**os.environ, "PYTHONPATH": "", "SCM_TOOLKIT_REAL_GIT": real_git}
-            result = subprocess.run([sys.executable, str(destination), "reset", "-q", "HEAD", "--", "."],
-                                    cwd=repo, env=env, text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(git("diff", "--cached", "--quiet").returncode, 0)
-            blocked = subprocess.run([sys.executable, str(destination), "reset", "--hard", "HEAD"],
-                                     cwd=repo, env=env, text=True, capture_output=True)
-            self.assertNotEqual(blocked.returncode, 0)
-            self.assertIn("installation is incomplete", blocked.stderr)
-            self.assertNotIn("Traceback", blocked.stderr)
+            for missing in ("toolkit_settings.py", "coreml_backend.py",
+                            "sweetiebot_diagnostics.py", "background_commit.py"):
+                install.sync_ai_wrapper(destination=destination)
+                destination.with_name(missing).unlink()
+                version = subprocess.run([sys.executable, str(destination), "--version"],
+                                         cwd=repo, env=env, text=True, capture_output=True)
+                self.assertEqual(version.returncode, 0, version.stderr)
+                result = subprocess.run([sys.executable, str(destination), "reset", "-q", "HEAD", "--", "."],
+                                        cwd=repo, env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, (missing, result.stderr))
+                self.assertEqual(git("diff", "--cached", "--quiet").returncode, 0)
+                blocked = subprocess.run([sys.executable, str(destination), "reset", "--hard", "HEAD"],
+                                         cwd=repo, env=env, text=True, capture_output=True)
+                self.assertNotEqual(blocked.returncode, 0)
+                self.assertIn("installation is incomplete", blocked.stderr)
+                self.assertNotIn("Traceback", blocked.stderr)
 
     def test_canonical_installer_call_migrates_existing_legacy_wrapper(self):
         with tempfile.TemporaryDirectory() as tmp:
