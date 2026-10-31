@@ -13,6 +13,7 @@ const {
   const root = path.join(group, 'pony');
   const records = new Map();
   let timerCallback, timerDuration, cleared = false;
+  const scheduled = [];
   const io = {
     async lstat(folder) { return { isDirectory: () => folder === path.join(base, 'pony') || folder === group || folder === root }; },
     async readFile(file) {
@@ -82,19 +83,22 @@ const {
       assert.equal(id, 100); cleared = true;
     };
     await registerManagedWindowActivity(vscode, context, {
-      io, groups, pid: 3456, uuid: 'test'
+      io, groups, pid: 3456, uuid: 'test',
+      scheduleCleanup: closed => scheduled.push(closed)
     });
     assert.equal(timerDuration, HEARTBEAT_MS);
     assert(records.has(path.join(group, '.sweetiebot-activated')));
     assert(records.has(path.join(group, '.sweetiebot-session-3456-test.json')));
     await timerCallback();
     await stopManagedWindowActivity();
+    assert.deepEqual(scheduled, [[group]], 'Shutdown schedules its last managed group');
     assert(cleared);
     assert(!records.has(path.join(group, '.sweetiebot-session-3456-test.json')));
     assert(records.has(path.join(group, '.sweetiebot-activated')),
       'An earlier activation remains distinguishable from Restricted Mode');
     await registerManagedWindowActivity(savedWindow, { subscriptions: [] }, {
-      io: savedIo, groups: tracked, pid: 3456, uuid: 'saved'
+      io: savedIo, groups: tracked, pid: 3456, uuid: 'saved',
+      scheduleCleanup: closed => scheduled.push(closed)
     });
     for (const activeGroup of tracked) {
       assert(savedRecords.has(path.join(activeGroup, '.sweetiebot-activated')),
@@ -104,6 +108,7 @@ const {
     }
     await timerCallback();
     await stopManagedWindowActivity();
+    assert.deepEqual(new Set(scheduled.at(-1)), new Set(tracked));
     for (const activeGroup of tracked) {
       assert(!savedRecords.has(path.join(activeGroup, '.sweetiebot-session-3456-saved.json')));
     }

@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
+const { spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace_trust');
 const { isWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
@@ -12,6 +13,24 @@ const { MANIFEST, ACTIVATED, SESSION_PREFIX } = require('./workspace_prune');
 const exec = promisify(execFile);
 const HEARTBEAT_MS = 60 * 1000;
 let stopCurrent = async () => {};
+
+
+function scheduleClosedWorktreeCleanup(groups) {
+  if (!groups.length) return;
+  try {
+    // Deactivation also happens on reload: do not detach until a delayed,
+    // separately revalidated check confirms no destination window exists.
+    const child = spawn(process.execPath,
+      [path.join(__dirname, 'closed_worktree.js'), ...groups], {
+        detached: true, stdio: 'ignore',
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+      });
+    child.on('error', error => console.warn('Sweetiebot closed-worktree cleanup:', error.message));
+    child.unref();
+  } catch (error) {
+    console.warn('Sweetiebot could not schedule closed-worktree cleanup:', error.message);
+  }
+}
 
 async function findManagedGroups(vscode, {
   baseDirectory = independentWorkspaceParent(), io = fs, gitRoot
@@ -60,7 +79,7 @@ async function findManagedGroups(vscode, {
 
 async function registerManagedWindowActivity(vscode, context, {
   io = fs, groups, pid = process.pid, uuid = randomUUID(), now = () => new Date(),
-  findGroups = findManagedGroups
+  findGroups = findManagedGroups, scheduleCleanup = scheduleClosedWorktreeCleanup
 } = {}) {
   const sessions = new Map();
   let disposed = false;
@@ -142,10 +161,13 @@ async function registerManagedWindowActivity(vscode, context, {
     // A heartbeat refresh may still be writing the session file. Wait for it
     // before deleting markers so shutdown cannot recreate stale sessions.
     await refreshFinished;
+    const closingGroups = [...sessions.keys()];
     await Promise.all([...sessions.values()].map(entry =>
       io.rm(entry.session, { force: true }).catch(() => {})
     ));
     sessions.clear();
+    if (vscode.workspace.getConfiguration?.('scmToolkit')?.get('automaticWorkspaceCleanup', true) !== false)
+      scheduleCleanup(closingGroups);
   };
   stopCurrent = stop;
   context.subscriptions.push({ dispose() { void stop(); } });

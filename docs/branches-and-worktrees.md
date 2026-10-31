@@ -16,7 +16,7 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 **Automatically pull clean branches** uses guarded fast-forward behavior and does not silently merge divergent histories. The distinct `scmToolkit.cloudRepositorySync=false` option schedules eligible clean-main checkouts every 15 minutes via macOS; it skips dirty/divergent work. `scmToolkit.autoPublishNewBranches=false` controls publishing newly created branches, not PR creation.
 
-Branch cleanup (`scmToolkit.automaticBranchCleanup=true`) and managed workspace cleanup (`scmToolkit.automaticWorkspaceCleanup=true`) require **eligibility**. Active windows, dirty/unknown files, unpushed work and missing verified merge evidence prevent deletion. Unavailable GitHub evidence is not permission to prune.
+Branch cleanup (`scmToolkit.automaticBranchCleanup=true`) and managed workspace cleanup (`scmToolkit.automaticWorkspaceCleanup=true`) require **eligibility**. Active windows, dirty/unknown files, unpushed work and missing verified merge evidence prevent **branch deletion**. Unavailable GitHub evidence is not permission to prune. After a managed window closes, a detached check runs following a two-minute grace period: it detaches only inactive, fully clean linked worktrees **without deleting their local branches**, including unmerged or unpublished commits. Reloads, other active windows, edited or saved workspace references, stashes, and pending or ignored files prevent automatic detachment. The existing one-hour merged-workspace pruning remains separate; a preserved checkout is reopened in place by the branch picker.
 
 Check **Output → Sweetiebot Workspace Cleanup** and:
 
