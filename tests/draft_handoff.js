@@ -68,6 +68,9 @@ const {createDraftHandoff} = require('../extension/codex/draft_handoff');
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
     assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\)\)\)/, 'The confirmation window renders the independent pony profile as Markdown, including timestamped moment links');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
+    assert.match(pageHtml, /function keepOpenForPony\(state\)/, 'Automatic merge close must inspect pony research and pending cache writes');
+    assert.equal((pageHtml.match(/!keepOpenForPony\(state\)&&updated&&!keepOpenForPony\(updated\)/g)||[]).length, 2,
+      'Normal and locally signed squash merges both retain pending pony research');
     assert.equal(writes,0,'Opening a draft must not publish it');
     const detailsId = '44444444-2222-4333-8444-555555555555';
     handoff.register(detailsId, {decorateDraft: draft => ({
@@ -81,6 +84,21 @@ const {createDraftHandoff} = require('../extension/codex/draft_handoff');
     assert.match((await (await fetch(detailsUrl+'/state')).json()).draft.body, /<summary>Source details<\/summary>/);
     assert.equal(writes,0,'Decorating a preview does not publish');
     assert.equal((await fetch(url+'/close')).status,405,'Closing requires an explicit local POST');
+    const savingId = '77777777-2222-4333-8444-555555555555';
+    let finishCache;
+    const cacheGate = new Promise(resolve => { finishCache = resolve; });
+    handoff.register(savingId, { pony: { slug: 'flitter' }, onResult: () => cacheGate });
+    const savingUrl = handoff.origin + '/kefania-draft/' + savingId;
+    const savingState = async () => (await (await fetch(savingUrl + '/state')).json());
+    assert.equal((await savingState()).ponyCachePending, false, 'No cache operation has started before research returns');
+    const saveResponse = await fetch(savingUrl + '/pony', { method: 'POST',
+      headers: { Origin: handoff.origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: 'Flitter research.' }) });
+    assert.equal(saveResponse.status, 200);
+    assert.equal((await savingState()).ponyCachePending, true, 'Research results keep the window open while cache publication is queued');
+    finishCache();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal((await savingState()).ponyCachePending, false, 'The confirmation state observes completed durable cache handoff');
     assert.equal((await fetch(url.replace(/555555555555$/, '666666666666'))).status,410);
     const post = (path, value) => fetch(url+path,{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:JSON.stringify(value)});
     assert.equal((await post('/pony', {profile:'Bushel profile with a source.'})).status,200);

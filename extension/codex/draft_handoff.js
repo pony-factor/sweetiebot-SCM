@@ -56,7 +56,7 @@ async function createDraftHandoff(publish) {
       state.expires = Math.min(now + DRAFT_IDLE_MS, state.registeredAt + DRAFT_MAX_AGE_MS);
     }
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
       if (kind === 'close' || kind === 'merge' || kind === 'merge-history' || kind === 'merge-local-signed' || kind === 'merge-help') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
@@ -114,9 +114,14 @@ async function createDraftHandoff(publish) {
         chunks.push(chunk);
       }
       const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      let newPonyProfile = false;
       if (kind === 'pony') {
         if (typeof input.profile !== 'string' || !input.profile.trim() || Buffer.byteLength(input.profile) > 60000) return fail(400, 'Invalid pony profile.');
-        state.profile ||= input.profile;
+        newPonyProfile = !state.profile;
+        if (newPonyProfile) {
+          state.profile = input.profile;
+          state.ponyCachePending = true;
+        }
       } else if (kind === 'draft') {
         if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 256 || typeof input.body !== 'string' || !input.body.trim() || Buffer.byteLength(input.body) > 60000) return fail(400, 'Invalid PR draft.');
         const draft = typeof state.decorateDraft === 'function'
@@ -135,7 +140,16 @@ async function createDraftHandoff(publish) {
         return json(200, await publishDraft(match[1], state));
       }
       json(200, { collected: kind });
-      Promise.resolve().then(() => state.onResult?.(kind, kind === 'pony' ? state.profile : undefined)).catch(() => {});
+      // Accept duplicate pony callbacks without enqueuing duplicate cache writes.
+      if (kind === 'pony' && !newPonyProfile) return;
+      const callback = Promise.resolve().then(() => state.onResult?.(kind, kind === 'pony' ? state.profile : undefined));
+      if (kind === 'pony') {
+        void callback.then(() => { state.ponyCachePending = false; },
+          error => {
+            state.ponyCachePending = false;
+            state.errors.ponyCache = String(error?.message || error);
+          });
+      } else void callback.catch(() => {});
       if (kind === 'draft' && state.autoPublish && !state.attempted) void publishDraft(match[1], state).catch(() => {});
     } catch { fail(400, 'Request failed. Check the VS Code notification before retrying publication.'); }
   });
