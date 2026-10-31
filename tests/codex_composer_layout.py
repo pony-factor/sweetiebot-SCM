@@ -21,6 +21,9 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertIn("Available controls", page)
         self.assertLess(page.index("Send / Stop (wing)"), page.index("Clipboard Send / Queue"))
         self.assertIn("Access permissions", page)
+        self.assertIn("Attachments", page)
+        self.assertNotIn("Attachments / usage", page)
+        self.assertIn("Computer / location / usage", page)
 
     def test_missing_duplicate_unknown_and_hidden_input_are_rejected(self):
         base = layout.parse_layout(layout.DEFAULT_LAYOUT_JSON)

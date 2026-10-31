@@ -30,7 +30,11 @@ const context = vm.createContext({
         hidden: false,
         createElement(name) {
             const Element = components.get(name);
-            return Element ? new Element() : { textContent: "", style: {} };
+            return Element ? new Element() : {
+                textContent: "", style: {}, attrs: {},
+                setAttribute(key, value) { this.attrs[key] = String(value); },
+                getAttribute(key) { return this.attrs[key] ?? null; },
+            };
         },
         addEventListener(type, fn) { listeners[`document:${type}`] = fn; },
     },
@@ -118,6 +122,29 @@ indicator.removeAttribute('kind');
 indicator.setAttribute('percent', 'unavailable');
 indicator.update();
 assert.equal(indicator.style.background, 'transparent');
+// Usage and attachments must remain separate controls. At zero allowance the
+// dedicated meter shows a plain rate-limit label instead of a misleading pie.
+const Meter = components.get('scm-toolkit-usage-meter');
+const meter = new Meter();
+meter.closest = () => null;
+meter.connectedCallback();
+meter.setAttribute('percent', 42);
+meter.update();
+assert.equal(meter.pie.style.display, 'inline-block');
+assert.equal(meter.limitLabel, undefined);
+meter.setAttribute('percent', 0);
+meter.update();
+assert.equal(meter.pie.style.display, 'none');
+assert.equal(meter.limitLabel.textContent, 'Rate limited');
+assert.equal(meter.limitLabel.getAttribute('role'), 'status');
+meter.setAttribute('percent', 75);
+meter.update();
+assert.equal(meter.pie.style.display, 'inline-block');
+assert.equal(meter.limitLabel.style.display, 'none');
+assert.equal(meter.limitLabel.textContent, '');
+const usageSource = fs.readFileSync(path.join(__dirname, '../assets/codex/usage.js'), 'utf8');
+assert.doesNotMatch(usageSource, /scm-toolkit-usage-add-button|scm-toolkit-usage-replaced|attachToAddButton/);
+assert.doesNotMatch(usageSource, /button\[aria-label="Add files and more"\]/);
 const MenuReset = components.get('scm-toolkit-menu-reset');
 const resetMenu = new MenuReset();
 resetMenu.setAttribute('window-minutes', '300');

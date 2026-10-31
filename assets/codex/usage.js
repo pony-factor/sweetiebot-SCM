@@ -257,9 +257,6 @@ function scmToolkitKeepUsageFresh(refetch) {
         }
         disconnectedCallback() {
             const surface = this.bar?.parentElement;
-            this.addPie?.remove();
-            this.addButton?.classList.remove('scm-toolkit-usage-add-button');
-            this.closest('button')?.classList.remove('scm-toolkit-usage-replaced');
             this.bar?.remove();
             this.bar = null;
             if (surface && !surface.querySelector('.scm-toolkit-usage-bar')) {
@@ -270,8 +267,19 @@ function scmToolkitKeepUsageFresh(refetch) {
         update() {
             const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
             this.pie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
-            this.attachToAddButton();
-            this.addPie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
+            // A depleted allowance is a status, not an attachment action.
+            // Keep it on the dedicated usage control and show only its label.
+            if (this.pie) this.pie.style.display = percent === 0 ? 'none' : 'inline-block';
+            if (percent === 0 && !this.limitLabel) {
+                this.limitLabel = document.createElement('span');
+                this.limitLabel.setAttribute('role', 'status');
+                this.limitLabel.setAttribute('data-scm-toolkit-rate-limit-label', 'true');
+                this.append(this.limitLabel);
+            }
+            if (this.limitLabel) {
+                this.limitLabel.textContent = percent === 0 ? 'Rate limited' : '';
+                this.limitLabel.style.display = percent === 0 ? 'inline' : 'none';
+            }
             if (!this.bar) return;
             const weekly = this.hasAttribute('weekly-percent');
             const barPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : percent;
@@ -285,24 +293,10 @@ function scmToolkitKeepUsageFresh(refetch) {
             this.bar.style.width = `${barPercent}%`;
             // Resolve currentColor at the same control as the pie, rather than
             // inheriting a potentially different color from the outer surface.
-            this.bar.style.color = getComputedStyle(this.addButton || this).color;
+            this.bar.style.color = getComputedStyle(this).color;
             this.bar.style.background = scmToolkitUsageColor(barPercent);
         }
-        attachToAddButton() {
-            const surface = this.closest('[data-composer-surface-variant]');
-            const button = surface?.querySelector('button[aria-label="Add files and more"], button[data-composer-navigation-target="attachments"]');
-            if (!button) return;
-            if (this.addButton !== button || !this.addPie?.isConnected) {
-                this.addPie?.remove();
-                this.addButton?.classList.remove('scm-toolkit-usage-add-button');
-                this.addButton = button;
-                this.addPie = document.createElement('scm-toolkit-usage-pie');
-                this.addPie.setAttribute('percent', this.getAttribute('percent') ?? 'unavailable');
-                button.append(this.addPie);
-                button.classList.add('scm-toolkit-usage-add-button');
-            }
-            this.closest('button')?.classList.add('scm-toolkit-usage-replaced');
-        }
+
     });
 })();
 
@@ -371,12 +365,9 @@ function scmToolkitKeepUsageFresh(refetch) {
       [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
       }
-      button.scm-toolkit-usage-add-button { position:relative; }
-      button.scm-toolkit-usage-add-button > svg { visibility:hidden; }
-      button.scm-toolkit-usage-add-button > scm-toolkit-usage-pie {
-        position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); pointer-events:none;
+      scm-toolkit-usage-meter > [data-scm-toolkit-rate-limit-label] {
+        white-space:nowrap; font-size:12px;
       }
-      button.scm-toolkit-usage-replaced { display:none !important; }
       scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; }
       .scm-toolkit-usage-surface { position:relative; }
       .scm-toolkit-usage-bar {
@@ -397,11 +388,10 @@ function scmToolkitKeepUsageFresh(refetch) {
     const refresh = () => {
         if (localOnly) for (const button of document.querySelectorAll('button[data-composer-navigation-target="run-location"]')) {
             if (!button.disabled) button.disabled = true;
-            if (button.getAttribute('aria-label') !== 'Five-hour Codex usage remaining') {
-                button.setAttribute('aria-label', 'Five-hour Codex usage remaining');
-            }
+            const exhausted = button.querySelector('scm-toolkit-usage-meter[percent="0"]');
+            const label = exhausted ? 'Rate limited' : 'Five-hour Codex usage remaining';
+            if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
         }
-        for (const meter of document.querySelectorAll('scm-toolkit-usage-meter')) meter.attachToAddButton?.();
         scmToolkitApplyUsageDialogRelativeTimes(document);
         scmToolkitCorrectLastMinuteUsageLabels(document);
     };
