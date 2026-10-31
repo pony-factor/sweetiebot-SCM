@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { publishPonyProfile, pendingPonyProfiles } = require('../extension/commits/pony_git_publish');
-const { createPonyPublishQueue } = require('../extension/commits/pony_publish_queue');
+const { createPonyPublishQueue, resolvePonyWorkerScript } = require('../extension/commits/pony_publish_queue');
 
 const pony = { packId: 'g4-mares', slug: 'stardom' };
 const stored = 'g4-mares/stardom.json';
@@ -131,6 +131,24 @@ async function fixture(check) {
     assert.equal(state.adds, 0); assert.equal(state.commits, 0); assert.equal(state.pushes, 0);
     assert.equal((await pendingPonyProfiles(root, { run })).length, 1, 'Retry after the manual commit is published');
   });
+
+  // The packaged worker lives at the installed extension root, not in the
+  // parent ~/.vscode/extensions/scripts directory from the old bad path.
+  const installedCommits = '/fixture/.vscode/extensions/pony-factor.sweetiebot-scm-0.3.2/commits';
+  const installedWorker = path.resolve(installedCommits, '../background_commit.py');
+  const wrongWorker = path.resolve(installedCommits, '../../scripts/background_commit.py');
+  assert.notEqual(installedWorker, wrongWorker);
+  assert.equal(resolvePonyWorkerScript(installedCommits, candidate => candidate === installedWorker),
+    installedWorker, 'Installed extensions use their own packaged worker');
+  assert.throws(() => resolvePonyWorkerScript(installedCommits, candidate => candidate === wrongWorker),
+    /worker is missing/, 'Never execute a worker outside the installed extension root');
+
+  const sourceCommits = path.resolve(__dirname, '../extension/commits');
+  const sourceWorker = path.resolve(sourceCommits, '../../scripts/background_commit.py');
+  assert.equal(resolvePonyWorkerScript(sourceCommits, candidate => candidate === sourceWorker),
+    sourceWorker, 'Running the extension from a source checkout remains supported');
+  assert.throws(() => resolvePonyWorkerScript(installedCommits, () => false),
+    /Repair the Sweetiebot extension/, 'A missing installed worker gets an actionable error');
 
   const calls = [];
   let failQueue = false;
