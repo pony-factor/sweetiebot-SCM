@@ -12,6 +12,16 @@ const run = promisify(execFile);
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 const executeGh = args => run(gh, args, { timeout: 120000 });
 
+// Local Git refuses protected bases and active rulesets. Retry through GitHub
+// only for these exact policy failures; unrelated local errors remain fatal.
+const protectedLocalBase = reason => [
+  'The base branch is protected; local Git cannot bypass its merge policy.',
+  'The base branch is protected; a locally signed squash cannot bypass its merge policy.',
+  'The base has active branch rules; local Git will not bypass them.',
+  'The base has active branch rules; a locally signed squash cannot bypass them.'
+].includes(typeof reason === 'string' ? reason : reason?.message);
+
+
 // The asynchronous endpoint is recommended for ordinary PRs as well as stacks.
 // Keep one-off squash merges scoped to the selected PR and let GitHub enforce
 // branch protections and merge-queue requirements.
@@ -73,18 +83,33 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
   }
+  let protectedBase = false;
   if (preferLocalGit && !pr.isCrossRepository) {
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true,
-      expected: { headSha: pr.headRefOid, head: pr.headRefName, base: pr.baseRefName, title: pr.title } });
-    if (landed.status === 'waiting') return { merged: false, pending: true, repo, number, base: pr.baseRefName };
-    if (!landed.merged) throw new Error(landed.reason || 'The local Git merge did not complete.');
-    const finished = await read();
-    if (finished.state !== 'MERGED' || finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
-      throw new Error('Local Git merge landed but its GitHub PR state could not be verified.');
+    let landed;
+    try {
+      landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true,
+        expected: { headSha: pr.headRefOid, head: pr.headRefName, base: pr.baseRefName, title: pr.title } });
+    } catch (error) {
+      if (!protectedLocalBase(error)) throw error;
+      protectedBase = true;
     }
-    return { merged: true, repo, number, base: pr.baseRefName, pr: finished, sha: landed.sha, author: landed.author };
+    if (landed && !landed.merged && protectedLocalBase(landed.reason)) protectedBase = true;
+    if (!protectedBase) {
+      if (landed.status === 'waiting') return { merged: false, pending: true, repo, number, base: pr.baseRefName };
+      if (!landed.merged) throw new Error(landed.reason || 'The local Git merge did not complete.');
+      const finished = await read();
+      if (finished.state !== 'MERGED' || finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
+        throw new Error('Local Git merge landed but its GitHub PR state could not be verified.');
+      }
+      return { merged: true, repo, number, base: pr.baseRefName, pr: finished, sha: landed.sha, author: landed.author };
+    }
+    // GitHub alone enforces the protected base's merge policy. Its native
+    // squash path is safe only when the opener matches the original Git author.
   }
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
+    if (protectedBase) {
+      throw new Error('GitHub protects this base branch, and native squash would credit the bot as Git author. Use GitHub’s Merge pull request option to preserve the original commits, or a separately approved human-author squash workflow; no branch was changed.');
+    }
     const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();
@@ -103,6 +128,9 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const commits = await readCommits(api, repo, Number(number));
   const human = verifiedHumanAuthor(commits);
   if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
+    if (protectedBase) {
+      throw new Error('GitHub protects this base branch, and native squash would replace the verified original human Git author with the PR opener. Use GitHub’s Merge pull request option to preserve the original commits; no branch was changed.');
+    }
     const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
     const finished = await read();

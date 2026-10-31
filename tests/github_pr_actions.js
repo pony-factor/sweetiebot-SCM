@@ -41,6 +41,55 @@ async function main() {
   }});
   assert(localResult.merged&&delegated,'The sidebar defaults to its verified local Git executor');
   assert(!local.calls.some(args=>args.includes('--method')),'The sidebar does not submit an async merge before local checks');
+  // A protected base cannot accept local integration pushes. Retry using
+  // GitHub's native squash only when the verified human author is the opener.
+  const protectedHuman = mockMerge();
+  const protectedResult = await squashMergePullRequest(url, protectedHuman.execute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => ({ merged: false, status: 'blocked',
+      reason: 'The base branch is protected; local Git cannot bypass its merge policy.' })
+  });
+  assert.equal(protectedResult.merged, true);
+  assert(protectedHuman.calls.some(args => args.includes('--method')),
+    'Protected bases merge through GitHub, not a direct local push');
+
+  const protectedRules = mockMerge();
+  assert.equal((await squashMergePullRequest(url, protectedRules.execute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => {
+      throw new Error('The base has active branch rules; local Git will not bypass them.');
+    }
+  })).merged, true, 'Active rulesets also use the native protected-branch merge');
+
+  const protectedBot = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'codex-pony[bot]', type: 'Bot' }
+  } });
+  await assert.rejects(squashMergePullRequest(url, protectedBot.execute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => ({ merged: false, status: 'blocked',
+      reason: 'The base branch is protected; local Git cannot bypass its merge policy.' })
+  }), /native squash would credit the bot as Git author/);
+  assert(!protectedBot.calls.some(args => args.includes('--method')),
+    'Bot-opened PRs cannot silently replace the original human author');
+
+  const protectedOtherHuman = mockMerge({ stackMetadata: {
+    stack: null, user: { login: 'OtherHuman', type: 'User' }
+  } });
+  await assert.rejects(squashMergePullRequest(url, protectedOtherHuman.execute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => ({ merged: false, status: 'blocked',
+      reason: 'The base branch is protected; local Git cannot bypass its merge policy.' })
+  }), /replace the verified original human Git author/);
+  assert(!protectedOtherHuman.calls.some(args => args.includes('--method')));
+
+  const localFailure = mockMerge();
+  await assert.rejects(squashMergePullRequest(url, localFailure.execute, undefined, {
+    ...quickPoll, preferLocalGit: true,
+    humanMerge: async () => ({ merged: false, reason: 'Required checks have not passed' })
+  }), /Required checks have not passed/);
+  assert(!localFailure.calls.some(args => args.includes('--method')),
+    'Unrelated local failures never trigger a native fallback');
+
   const happy = mockMerge();
   const result = await squashMergePullRequest(url, happy.execute,
     async () => { throw new Error('Main must not request alternate-base confirmation'); }, quickPoll);
