@@ -13,9 +13,12 @@ async function checkPages(api, endpoint, field) {
 
 async function readMergeChecks(api, repository, sha, { expectChecks = false, collectEvidence = false } = {}) {
   const root = 'repos/' + repository + '/commits/' + sha;
-  const runs = await checkPages(api, root + '/check-runs', 'check_runs');
-  const suites = await checkPages(api, root + '/check-suites', 'check_suites');
-  const statuses = await checkPages(api, root + '/status', 'statuses');
+  // These three independent GitHub endpoints need no serial round trips.
+  const [runs, suites, statuses] = await Promise.all([
+    checkPages(api, root + '/check-runs', 'check_runs'),
+    checkPages(api, root + '/check-suites', 'check_suites'),
+    checkPages(api, root + '/status', 'statuses')
+  ]);
   // Installed apps can leave queued suites with no jobs indefinitely. These
   // are not checks to wait for; GitHub's merge endpoint still enforces any
   // required checks that have not been created. Keep running/failed suites.
@@ -54,19 +57,25 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false, col
 }
 
 async function waitForMergeChecks(api, repository, sha, { expectChecks = false,
-  collectEvidence = false, timeoutMs = 8 * 60 * 1000, intervalMs = 15000, now = Date.now,
+  collectEvidence = false, timeoutMs = 8 * 60 * 1000, intervalMs = 15000,
+  initialPollIntervalMs = 5000, initialPollWindowMs = 30000, now = Date.now,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), onPoll } = {}) {
-  const deadline = now() + timeoutMs;
+  const startedAt = now();
+  const deadline = startedAt + timeoutMs;
   for (;;) {
     const result = await readMergeChecks(api, repository, sha, { expectChecks, collectEvidence: collectEvidence || typeof onPoll === 'function' });
+    const checkedAt = now();
+    const canRetry = result.state === 'pending' && checkedAt < deadline;
+    const interval = checkedAt - startedAt < initialPollWindowMs
+      ? Math.min(intervalMs, initialPollIntervalMs) : intervalMs;
+    const waitMs = canRetry ? Math.min(interval, deadline - checkedAt) : 0;
     try { onPoll?.({ state: result.state, hasChecks: result.hasChecks,
       evidence: (result.evidence || []).slice(0, 20).map(check => ({
         name: String(check.name || '').slice(0, 160), result: String(check.result || '').slice(0, 48) })),
-      checkedAt: new Date(now()).toISOString(),
-      nextPollAt: result.state === 'pending' && now() < deadline ? now() + intervalMs : 0 }); }
+      checkedAt: new Date(checkedAt).toISOString(), nextPollAt: canRetry ? checkedAt + waitMs : 0 }); }
     catch { /* Display callbacks cannot change check enforcement. */ }
-    if (result.state !== 'pending' || now() >= deadline) return result;
-    await sleep(intervalMs);
+    if (!canRetry) return result;
+    await sleep(waitMs);
   }
 }
 
