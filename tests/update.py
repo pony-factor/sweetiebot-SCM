@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import update
+import wrapper_dependencies
 
 
 def archive(entries):
@@ -201,6 +202,13 @@ class UpdateTests(unittest.TestCase):
                 'extension/commits/post_commit_spellcheck_notice.js': 'current notice handler',
                 'extension/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
+            # Model a complete published runtime, not only the historically
+            # hard-coded three modules. The updater checks every local import.
+            script_dir = Path(update.__file__).resolve().parent
+            payload.update({f"scripts/{name}": source.read_text()
+                            for name, source in wrapper_dependencies.runtime_sources(script_dir).items()})
+            payload["extension/commits/pony_git_publish.js"] = (
+                script_dir.parent / "extension/commits/pony_git_publish.js").read_text()
             destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'
             installed = destination / 'codex-customizations'
             wrapper = root / 'bin/scm-toolkit-git'
@@ -228,6 +236,11 @@ class UpdateTests(unittest.TestCase):
             self.assertIsNotNone(prepare())
             async_helper.write_text(payload['scripts/sweetiebot_async_commit.py'])
             async_helper.chmod(0o755)
+            self.assertIsNotNone(prepare())
+            for target, source in wrapper_dependencies.wrapper_files(cache / 'candidate/scripts', wrapper).items():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+                target.chmod(0o755)
             self.assertIsNone(prepare())
             legacy = root / '.local/bin/git-auto-title'
             legacy.parent.mkdir(parents=True)
