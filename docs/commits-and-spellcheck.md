@@ -16,6 +16,8 @@ Background recovery is in [worker](../scripts/background_commit.py), [extension 
 
 When durable background mode is enabled, a queued job retains the staged tree captured at submission; changes staged afterward belong to a later operation. The worker resumes interrupted title generation and optional publication using the completed commit rather than staging current workspace files again. An offline remote can delay the push without requiring a new commit. Branch movement, authentication failures, and rejected pushes require guarded recovery; the worker does not force-push or merge remote history automatically. The login agent can retry only while the Mac is awake and the user session permits it.
 
+Sweetiebot Settings → Diagnostics shows the complete queued job ID and its Git commit SHA so you can match an unfinished commit to the Source Control Graph. New diagnostic events include the repository name and durable job ID when available, without saving absolute checkout paths or commit bodies. The event timeline can display relative timestamps (default) or absolute local times; hovering a relative time shows the exact timestamp. Previously saved events cannot retroactively acquire job IDs, and the built-in VS Code Git graph does not itself display Sweetiebot's diagnostic fields.
+
 A co-author action adds `Co-authored-by` after a **blank line**, without replacing the Git author. Optional Codex draft/context features may read a local conversation snapshot for text generation but do not authorize unstaged changes.
 
 ## Four separate spellcheck paths
