@@ -40,6 +40,7 @@ const { registerPostCommitSpellcheckNotice } = require('./commits/post_commit_sp
 const { registerFilenameSpellcheck } = require('./commits/filename_spellcheck');
 const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python_runtime');
 const { registerLegacyCommandAliases } = require('./ui/command_aliases');
+const { registerGitGraphRelativeDates } = require('./ui/git_graph_relative_dates');
 const { kefaniaClosePosition } = require('./codex/kefania_close_position');
 const { invalidateUserExtensionCache } = require('./ui/extension_cache');
 
@@ -143,6 +144,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       autoCommitWithCodex: scm.get('autoCommitWithCodex', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
+      gitGraphRelativeDates: scm.get('gitGraphRelativeDates', false),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
       codexKeepAwake: scm.get('codexKeepAwake', true),
       codexHidePermissionsIcon: scm.get('codexHidePermissionsIcon', false),
@@ -399,6 +401,7 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  registerGitGraphRelativeDates(vscode, context);
   void require('./branches/commit_drafts').registerCommitDrafts(vscode, context)
     .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
   registerCodexWorkspaceHandoff(vscode, context);

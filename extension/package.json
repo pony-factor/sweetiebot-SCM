@@ -297,6 +297,12 @@
           "default": true,
           "description": "Automatically remove eligible merged local branches on startup and every ten minutes."
         },
+        "scmToolkit.gitGraphRelativeDates": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Keep the Git Graph extension (mhutchie.git-graph) date column in Relative format, including after changes to its date format. Disabling enforcement does not reset an existing Git Graph preference."
+        },
         "scmToolkit.cloudRepositorySync": {
           "type": "boolean",
           "default": false,
