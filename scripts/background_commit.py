@@ -659,7 +659,8 @@ def enqueue(request, start=True):
                              start_new_session=True, close_fds=True)
         except OSError:
             # The registered agent will pick up the already accepted job.
-            log_event('background_commit', 'worker_start_pending', outcome='retry')
+            log_event('background_commit', 'worker_start_pending', outcome='retry',
+                      repository=Path(job['root']).name, job_id=job['id'])
     return {'queued': True, 'id': job['id']}
 
 
@@ -1439,7 +1440,8 @@ def drain_parallel(meta):
                     active[job['id']] = launch_job(Path(entry['directory']))
                     launched = True
                 except OSError:
-                    log_event('background_commit', 'worker_start_pending', outcome='retry')
+                    log_event('background_commit', 'worker_start_pending', outcome='retry',
+                              repository=Path(job['root']).name, job_id=job['id'])
             if not active and not launched:
                 return
             time.sleep(.1)
