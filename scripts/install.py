@@ -9,6 +9,8 @@ import os
 import re
 import shutil
 import tempfile
+import subprocess
+import sys
 import workspace_search
 import wrapper_dependencies
 import codex_colors
@@ -126,6 +128,39 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
     if not remove and not check:
         wrapper_dependencies.validate_imports(primary.parent)
     return changed
+
+
+def resume_stalled_background_jobs():
+    """Restore a detached runtime left stale by earlier installations."""
+    import background_commit
+
+    home = background_commit.jobs_home()
+    if not home.is_dir():
+        return False
+    pending = False
+    for file in home.glob("*/job.json"):
+        if file.is_symlink() or file.parent.is_symlink():
+            continue
+        try:
+            job = background_commit.read_journal(file)
+        except (OSError, ValueError, TypeError):
+            continue
+        if (isinstance(job, dict) and isinstance(job.get("gitdir"), str)
+                and isinstance(job.get("root"), str)
+                and job.get("phase") not in ("done", "cancelled")):
+            pending = True
+            break
+    if not pending:
+        return False
+
+    # The already-installed LaunchAgent runs this detached copy, not the
+    # freshly installed wrapper. Refresh it before resuming old journals.
+    script = background_commit.runtime()
+    wrapper_dependencies.validate_imports(script.parent)
+    subprocess.Popen([sys.executable, str(script), "--resume"],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+    return True
 
 
 def ai_model_picker_path():
@@ -1838,6 +1873,8 @@ def main():
             sync_live_components(workbench_paths[0].parent, remove=args.uninstall)
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
             workspace_search.sync_extension(remove=args.uninstall, settings=settings)
+            if not args.uninstall and resume_stalled_background_jobs():
+                print("Refreshed and resumed unfinished Sweetiebot background commits.")
         if not args.codex_only and not args.repair:
             sync_model_picker(
                 enabled=settings["aiModelPicker"],
