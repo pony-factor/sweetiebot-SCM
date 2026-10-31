@@ -83,6 +83,12 @@ def _events():
                             "attempts", "duration_ms", "title", "rule", "explanation")
                 if isinstance((value := item.get(key)), (str, int)) and not isinstance(value, bool)
             }
+            repository = event.get("repository", "")
+            if repository and (Path(repository).name != repository or "\\" in repository):
+                event.pop("repository", None)
+            job_id = event.get("job_id", "")
+            if job_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", job_id):
+                event.pop("job_id", None)
             if event.get("timestamp") and event.get("event"):
                 result.append(event)
     return sorted(result, key=lambda e: e["timestamp"], reverse=True)
