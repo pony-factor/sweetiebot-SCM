@@ -1034,6 +1034,49 @@ class AiWrapperTests(unittest.TestCase):
             install.sync_ai_wrapper(destination=destination)
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
 
+    def test_install_restarts_stranded_committed_jobs_with_complete_runtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "commit-jobs"
+            directory = home / "example-job"
+            directory.mkdir(parents=True)
+            file = directory / "job.json"
+            job = {
+                "id": "example-job", "root": str(Path(tmp) / "repo"),
+                "gitdir": str(Path(tmp) / "repo/.git"),
+                "phase": "done",
+            }
+            file.write_text(json.dumps(job))
+            with patch.dict(os.environ, {"SWEETIEBOT_COMMIT_JOBS": str(home)}):
+                self.assertFalse(install.resume_stalled_background_jobs())
+                self.assertFalse((home / "runtime").exists())
+
+                # A crashed worker must not be treated as successful merely
+                # because the initial Git commit already exists.
+                job["phase"] = "committed"
+                file.write_text(json.dumps(job))
+                with patch.object(wrapper_dependencies, "validate_imports") as verify, \
+                        patch.object(install.subprocess, "Popen") as launch:
+                    self.assertTrue(install.resume_stalled_background_jobs())
+                    verify.assert_called_once_with(home / "runtime")
+                    args, kwargs = launch.call_args
+                    self.assertEqual(args[0][-1], "--resume")
+                    self.assertEqual(Path(args[0][1]), home / "runtime/background_commit.py")
+                    self.assertTrue(kwargs["start_new_session"])
+                self.assertEqual(json.loads(file.read_text())["phase"], "committed")
+                self.assertTrue((home / "runtime/toolkit_settings.py").is_file())
+                self.assertTrue((home / "runtime/wrapper_dependencies.py").is_file())
+                wrapper_dependencies.validate_imports(home / "runtime")
+
+    def test_install_ignores_untrusted_stale_job_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "commit-jobs"
+            directory = home / "invalid"
+            directory.mkdir(parents=True)
+            (directory / "job.json").write_text("not JSON")
+            with patch.dict(os.environ, {"SWEETIEBOT_COMMIT_JOBS": str(home)}):
+                self.assertFalse(install.resume_stalled_background_jobs())
+                self.assertFalse((home / "runtime").exists())
+
     def test_index_only_reset_works_even_when_a_dependency_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "bin" / "scm-toolkit-git"
