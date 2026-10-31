@@ -64,6 +64,16 @@ function pullRequestFromTreeNode(node) {
   return { url: undefined, number: numberHint };
 }
 
+// Prefer the PR model's title, then the displayed tree row label. The list
+// always includes a canonical number/URL even if GitHub has not loaded a title.
+function pullRequestTitle(node) {
+  for (const value of [node?.pullRequestModel?.title, node?.title, node?.label]) {
+    const text = typeof value === 'string' ? value : value?.label;
+    if (typeof text === 'string' && text.trim()) return text.trim().replace(/\s+/g, ' ');
+  }
+  return undefined;
+}
+
 // Folder rows in GitHub's PR tree share the same merge context as PR rows.
 // Snapshot the descendants in displayed order before merging; never treat a
 // category/folder as a pull request or substitute the currently selected row.
@@ -76,18 +86,23 @@ async function pullRequestsInFolder(owner, folder) {
     if (!node || seenNodes.has(node)) return;
     seenNodes.add(node);
     let model = pullRequestFromTreeNode(node);
-    if (!model.url && typeof owner.getTreeItem === 'function') {
+    let title = pullRequestTitle(node);
+    if ((!model.url || !title) && typeof owner.getTreeItem === 'function') {
       try {
-        const rendered = pullRequestFromTreeNode(await owner.getTreeItem(node));
-        if (rendered.url && (model.number == null || model.number === rendered.number)) model = rendered;
+        const item = await owner.getTreeItem(node);
+        const rendered = pullRequestFromTreeNode(item);
+        if (!model.url && rendered.url && (model.number == null || model.number === rendered.number)) {
+          model = rendered;
+        }
+        if (!title && model.url) title = pullRequestTitle(item);
       } catch {
-        // A non-PR folder may not provide a rendered item.
+        // A non-PR folder or stale PR may not provide a rendered item.
       }
     }
     if (model.url) {
       if (!seenUrls.has(model.url)) {
         seenUrls.add(model.url);
-        requests.push({ node, url: model.url, number: model.number });
+        requests.push({ node, url: model.url, number: model.number, title });
       }
       return;
     }
@@ -223,7 +238,7 @@ function installPullRequestRefresh(vscode, view, owner) {
   // rows. Run its PR children one at a time through the same guarded action,
   // preserving each PR's own eligibility checks, attribution, and base.
   const mergingFolders = new Set();
-  const mergeFolder = async (folder, progress) => {
+  const mergeFolder = async folder => {
     let requests;
     try {
       requests = await pullRequestsInFolder(owner, folder);
@@ -235,23 +250,39 @@ function installPullRequestRefresh(vscode, view, owner) {
       vscode.window.showErrorMessage('No pull requests were found in the selected folder.');
       return { state: 'failed', total: 0 };
     }
-    const counts = { merged: 0, queued: 0, pending: 0, cancelled: 0, failed: 0 };
-    for (const [index, request] of requests.entries()) {
-      progress?.report?.({ message: `PR ${index + 1}/${requests.length}: #${request.number}` });
-      try {
-        const result = await mergeTreeRow(request.node);
-        const state = result?.state;
-        if (Object.hasOwn(counts, state)) counts[state]++;
-        else counts.failed++;
-      } catch (error) {
-        counts.failed++;
-        vscode.window.showErrorMessage(`Unable to merge PR #${request.number}: ${error.message}`);
+    const count = requests.length;
+    const action = `Merge ${count} PR${count === 1 ? '' : 's'}`;
+    const detail = requests.map(request =>
+      `#${request.number} — ${request.title || request.url}`).join('\n');
+    const confirmed = await vscode.window.showWarningMessage(
+      `Squash merge ${count} pull request${count === 1 ? '' : 's'}?`,
+      { modal: true, detail }, action
+    );
+    if (confirmed !== action) return { state: 'cancelled', total: count };
+
+    return vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: 'Squash merge folder pull requests',
+      cancellable: false
+    }, async progress => {
+      const counts = { merged: 0, queued: 0, pending: 0, cancelled: 0, failed: 0 };
+      for (const [index, request] of requests.entries()) {
+        progress?.report?.({ message: `PR ${index + 1}/${count}: #${request.number}` });
+        try {
+          const result = await mergeTreeRow(request.node);
+          const state = result?.state;
+          if (Object.hasOwn(counts, state)) counts[state]++;
+          else counts.failed++;
+        } catch (error) {
+          counts.failed++;
+          vscode.window.showErrorMessage(`Unable to merge PR #${request.number}: ${error.message}`);
+        }
       }
-    }
-    const summary = `Folder merge: ${counts.merged} merged, ${counts.queued} queued, ${counts.pending} pending, ${counts.cancelled} cancelled, ${counts.failed} failed (${requests.length} PRs attempted).`;
-    if (counts.failed || counts.cancelled) vscode.window.showWarningMessage(summary);
-    else vscode.window.showInformationMessage(summary);
-    return { state: 'completed', total: requests.length, ...counts };
+      const summary = `Folder merge: ${counts.merged} merged, ${counts.queued} queued, ${counts.pending} pending, ${counts.cancelled} cancelled, ${counts.failed} failed (${count} PRs attempted).`;
+      if (counts.failed || counts.cancelled) vscode.window.showWarningMessage(summary);
+      else vscode.window.showInformationMessage(summary);
+      return { state: 'completed', total: count, ...counts };
+    });
   };
   owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', node => {
     const clicked = pullRequestFromTreeNode(node);
@@ -261,11 +292,7 @@ function installPullRequestRefresh(vscode, view, owner) {
     if (node && !clicked.url && clicked.number == null && typeof owner.getChildren === 'function') {
       if (mergingFolders.has(node)) return;
       mergingFolders.add(node);
-      return vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: 'Squash merge folder pull requests',
-        cancellable: false
-      }, progress => mergeFolder(node, progress).finally(() => mergingFolders.delete(node)));
+      return mergeFolder(node).finally(() => mergingFolders.delete(node));
     }
     // Show feedback synchronously, even when the extension needs to hydrate a
     // stale row before it can safely identify the requested pull request.
