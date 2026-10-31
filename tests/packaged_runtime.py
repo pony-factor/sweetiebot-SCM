@@ -7,9 +7,19 @@ import unittest
 
 import toolkit_settings
 import workspace_search
+import wrapper_dependencies
 
 
 class PackagedRuntimeTests(unittest.TestCase):
+    def test_all_git_wrapper_python_dependencies_are_packaged(self):
+        runtime = wrapper_dependencies.runtime_sources(Path(__file__).resolve().parents[1] / "scripts")
+        packaged = workspace_search.source_files()
+        self.assertIn("toolkit_settings.py", runtime)
+        for name, source in runtime.items():
+            key = Path("codex-customizations/scripts") / name
+            self.assertIn(key, packaged, name)
+            self.assertEqual(packaged[key].read_bytes(), source.read_bytes())
+
     def test_installed_repair_payload_contains_cannon_and_stop_artwork(self):
         files = workspace_search.source_files()
         for name in ('activity-cannon.png', 'twi-stop.png'):

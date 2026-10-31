@@ -19,8 +19,20 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-from sweetiebot_diagnostics import log_event
-import coreml_backend
+# Defer missing optional helpers until an operation actually needs them.
+# Plain Git commands must still work in a partially installed environment.
+BOOTSTRAP_IMPORT_ERRORS = []
+try:
+    from sweetiebot_diagnostics import log_event
+except ImportError as exc:
+    BOOTSTRAP_IMPORT_ERRORS.append(str(exc))
+    def log_event(*_args, **_kwargs):
+        pass
+try:
+    import coreml_backend
+except ImportError as exc:
+    BOOTSTRAP_IMPORT_ERRORS.append(str(exc))
+    coreml_backend = None
 
 REAL_GIT = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
 GIT_GLOBAL_ARGS: list[str] = []
@@ -2310,7 +2322,17 @@ def main() -> None:
     if len(argv) == 3 and argv[0] == "--sweetiebot-finalize":
         # The installed Git wrapper is a script, not an importable ai_commit.py.
         sys.modules.setdefault("ai_commit", sys.modules[__name__])
-        from sweetiebot_async_commit import run_worker
+        try:
+            from sweetiebot_async_commit import run_worker
+        except (ImportError, SyntaxError) as exc:
+            print(f"Sweetiebot: Git wrapper installation is incomplete ({exc}). "
+                  "Repair SweetieBot before finalizing a commit.", file=sys.stderr)
+            raise SystemExit(1) from exc
+        if BOOTSTRAP_IMPORT_ERRORS:
+            print("Sweetiebot: Git wrapper installation is incomplete ("
+                  + "; ".join(BOOTSTRAP_IMPORT_ERRORS) + "). Repair SweetieBot.",
+                  file=sys.stderr)
+            raise SystemExit(1)
         run_worker(REAL_GIT, argv[1], argv[2])
         return
 
@@ -2320,6 +2342,22 @@ def main() -> None:
     index, subcommand = found
 
     GIT_GLOBAL_ARGS = argv[:index]
+    if subcommand == "reset" and "--" in argv[index + 1:]:
+        # A pathspec reset cannot move HEAD. Keep index-only operations usable
+        # even when optional async-commit dependencies are missing.
+        reset_options = argv[index + 1:argv.index("--", index + 1)]
+        if not any(option in {"--hard", "--soft", "--merge", "--keep"}
+                   for option in reset_options):
+            os.execv(REAL_GIT, [REAL_GIT, *argv])
+    if BOOTSTRAP_IMPORT_ERRORS and subcommand in {
+            "commit", "push", "pull", "merge", "rebase", "reset",
+            "switch", "checkout", "cherry-pick"
+    }:
+        print("Sweetiebot: Git wrapper installation is incomplete ("
+              + "; ".join(BOOTSTRAP_IMPORT_ERRORS)
+              + "). Repair SweetieBot before changing Git history.",
+              file=sys.stderr)
+        raise SystemExit(1)
     if subcommand in {"commit", "push", "pull", "merge", "rebase", "reset",
                       "switch", "checkout", "cherry-pick"}:
         # The installed wrapper is a script named scm-toolkit-git. Its local
@@ -2327,8 +2365,14 @@ def main() -> None:
         sys.modules.setdefault("ai_commit", sys.modules.get(__name__, sys.modules["__main__"]))
         # A push, another commit, or a ref-changing operation must wait until
         # the provisional commit has been atomically rewritten.
-        from sweetiebot_async_commit import wait_for_completion, operation_refs
-        from background_commit import wait_for_background, queue_plain_push
+        try:
+            from sweetiebot_async_commit import wait_for_completion, operation_refs
+            from background_commit import wait_for_background, queue_plain_push
+        except (ImportError, SyntaxError) as exc:
+            print(f"Sweetiebot: Git wrapper installation is incomplete ({exc}). "
+                  "Repair SweetieBot before changing or publishing Git history.",
+                  file=sys.stderr)
+            raise SystemExit(1) from exc
         try:
             if subcommand == "push":
                 from merged_branch import guard_push_arguments
