@@ -149,11 +149,12 @@ async function humanSquashMerge(repository, number, {
   // the same PR head again: doing so would restart checks on every click.
   const existing = commits.length === 1 ? commits[0].commit.message.replace(/\r\n/g, '\n').trimEnd() : '';
   const sections = splitSquashTrailers(existing);
-  const alreadyPrepared = sections.length === 2 &&
-    existing.split('\n', 1)[0] === prepared.title &&
-    sections[1].split('\n').every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line)) &&
-    sections[1].includes('Co-authored-by: Codex Web <noreply@openai.com>') &&
-    !sections[1].includes('Co-authored-by: ' + author.name + ' <');
+  const preparedTrailers = sections.length === 2 ? sections[1].split('\n') : [];
+  const validTrailers = sections.length === 2
+    ? preparedTrailers.every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line))
+    : sections.length === 1 && !existing.split('\n').some(line => /^Co-authored-by:/i.test(line));
+  const alreadyPrepared = existing.split('\n', 1)[0] === prepared.title && validTrailers &&
+    !preparedTrailers.some(line => line.startsWith('Co-authored-by: ' + author.name + ' <'));
   const message = alreadyPrepared ? existing : preparedMessage;
   let operationCommitTitle = commits.at(-1)?.commit?.message?.split('\n')[0] || prepared.title;
   progress('reading-checks', { sha: originalSha });
