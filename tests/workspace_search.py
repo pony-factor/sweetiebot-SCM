@@ -282,6 +282,51 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
 
+    def test_installed_tree_matches_all_runtime_sources_including_unknown_formats(self):
+        import shutil
+        import extension_assets
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "sources/extension"
+            shutil.copytree(workspace_search.SOURCE, source)
+            nested = source / "merge/deeply/nested"
+            nested.mkdir(parents=True)
+            (nested / "view.wasm").write_bytes(b"arbitrary runtime asset")
+            (source / ".DS_Store").write_bytes(b"unwanted metadata")
+            junk = source / "__pycache__"
+            junk.mkdir()
+            (junk / "local.pyc").write_bytes(b"temporary")
+            installed_root = root / "installed"
+            with patch.object(workspace_search, "SOURCE", source):
+                self.assertTrue(workspace_search.sync_extension(
+                    extensions_dir=installed_root, settings=DEFAULTS))
+                destination = workspace_search.extension_destination(installed_root)
+                sources = workspace_search.source_files()
+                runtime = extension_assets.runtime_files(source)
+                actual = {
+                    path.relative_to(destination)
+                    for path in destination.rglob("*") if path.is_file()
+                }
+                # Compare the entire actual install with the expected managed
+                # inventory (including generated package defaults and icons).
+                self.assertEqual(actual, set(sources))
+                for relative, source_path in sources.items():
+                    self.assertEqual(
+                        (destination / relative).read_bytes(),
+                        workspace_search.expected_bytes(relative, source_path, DEFAULTS),
+                    )
+                # Every nonexcluded runtime source must be present; new file
+                # extensions cannot disappear just because an allowlist is stale.
+                self.assertTrue(set(runtime).issubset(actual))
+                self.assertEqual((destination / "merge/deeply/nested/view.wasm").read_bytes(),
+                                 b"arbitrary runtime asset")
+                self.assertFalse((destination / ".DS_Store").exists())
+                self.assertFalse((destination / "__pycache__").exists())
+                self.assertTrue(workspace_search.destination_matches(
+                    destination, settings=DEFAULTS))
+
     def test_python_bytecode_caches_do_not_reinstall_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

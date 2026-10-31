@@ -11,6 +11,7 @@ import sys
 import tarfile
 from pathlib import Path
 from workspace_search import default_extensions_dir, source_files
+from extension_assets import include_runtime_relative
 from wrapper_dependencies import wrapper_files
 
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
@@ -19,7 +20,7 @@ SHARED_PROFILE_SOURCE = Path('scripts/browser_pr.py')
 SHARED_PROFILE_MARKER = 'SHARED_BROWSER_PROFILE = 2'
 FORMATS = {
     "scripts": {".py", ".json"},
-    "extension": {".js", ".json", ".svg", ".md", ".html"},
+    "extension": None,  # Archive the complete extension subtree; filter with the shared predicate.
     "assets/workbench": {".js", ".css"},
     "assets/codex": {".js", ".css"},
     "assets/imgs": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico"},
@@ -41,8 +42,10 @@ def extract_sources(archive, destination):
             relative = Path(member.name)
             if relative.is_absolute() or ".." in relative.parts or not member.isfile():
                 continue
-            if not any(relative.is_relative_to(folder) and relative.suffix.lower() in suffixes
-                       for folder, suffixes in FORMATS.items()):
+            if not any(relative.is_relative_to(folder) and (
+                    include_runtime_relative(relative.relative_to(folder))
+                    if folder == "extension" else relative.suffix.lower() in suffixes)
+                    for folder, suffixes in FORMATS.items()):
                 continue
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +106,21 @@ def installer_imports(candidate):
     return result.returncode == 0
 
 
+def release_retains_extension_html(candidate):
+    """Recognize both legacy HTML allowlists and the new complete asset inventory."""
+    shared = (candidate / "scripts/extension_assets.py").is_file()
+    for name, marker in (("update.py", "include_runtime_relative"),
+                         ("workspace_search.py", "runtime_files")):
+        script = candidate / "scripts" / name
+        if not script.is_file():
+            return False
+        source = script.read_text()
+        if '".html"' not in source and not (
+                shared and "from extension_assets import" in source and marker in source):
+            return False
+    return True
+
+
 def prepare_update(cache, extensions_dir=None, *, force=False):
     repository = cache / "upstream.git"
     if not repository.exists():
@@ -124,11 +142,8 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     # from update archives and bundled repair sources. Do not replace a working
     # bootstrap with one that will remove the asset on its next repair.
     if (candidate / "extension/codex/draft_handoff.js").is_file():
-        packaging = (candidate / "scripts" / name for name in
-                     ("update.py", "workspace_search.py"))
         if (not (candidate / "extension/ui/draft_confirmation.html").is_file()
-                or any(not source.is_file() or '".html"' not in source.read_text()
-                       for source in packaging)):
+                or not release_retains_extension_html(candidate)):
             print('Published release omits PR HTML from automatic repair; keeping the installed sources.', flush=True)
             return None
     # A locally installed PR preview can be ahead of published main. Retain
