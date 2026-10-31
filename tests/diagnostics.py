@@ -41,10 +41,12 @@ class DiagnosticsTests(unittest.TestCase):
             }), patch.object(diagnostics.Path, "cwd", return_value=nested):
                 self.assertTrue(diagnostics.log_event(
                     "commit_title", "generation_completed", title="🖌️ Finish title",
-                    prompt="PRIVATE PROMPT", diff="PRIVATE DIFF", description="PRIVATE BODY"))
+                    prompt="PRIVATE PROMPT", diff="PRIVATE DIFF", description="PRIVATE BODY",
+                    commit_sha="a" * 40))
             event = json.loads(logfile.read_text())
             self.assertEqual(event["repository"], "flawless-GPT")
             self.assertEqual(event["job_id"], "7Aq9rE3Dp6P")
+            self.assertEqual(event["commit_sha"], "a" * 40)
             self.assertNotIn(str(root), logfile.read_text())
             self.assertNotIn("PRIVATE", logfile.read_text())
 
@@ -58,10 +60,11 @@ class DiagnosticsTests(unittest.TestCase):
             }), patch.object(diagnostics.Path, "cwd", return_value=root):
                 self.assertTrue(diagnostics.log_event(
                     "commit_title", "request_failed", repository="../private",
-                    job_id="../../other-job"))
+                    job_id="../../other-job", commit_sha="not-a-real-git-hash"))
             event = json.loads(logfile.read_text())
             self.assertNotIn("repository", event)
             self.assertNotIn("job_id", event)
+            self.assertNotIn("commit_sha", event)
 
     def test_rotates_and_bounds_log_size(self):
         with tempfile.TemporaryDirectory() as temp:
