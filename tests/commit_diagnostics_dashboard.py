@@ -1,6 +1,9 @@
 """Regression tests for the local settings commit diagnostics dashboard."""
 import json
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -132,6 +135,35 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             self.assertEqual(result["jobs"], [])
             self.assertEqual(result["events"], [])
             self.assertIsNone(result["summary"]["averageGenerationMs"])
+
+    def test_relative_time_formatter_behaves_and_embedded_script_parses(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node is not installed")
+        with tempfile.TemporaryDirectory() as temp:
+            script = Path(temp) / "diagnostics.js"
+            script.write_text(dashboard.DIAGNOSTICS_SCRIPT, encoding="utf-8")
+            syntax = subprocess.run([node, "--check", str(script)],
+                                    capture_output=True, text=True)
+            self.assertEqual(syntax.returncode, 0, syntax.stderr)
+
+        match = re.search(r"  function relativeTime\\(.*?^  \\}", dashboard.DIAGNOSTICS_SCRIPT,
+                          flags=re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(match)
+        check = """
+const assert = require('node:assert/strict');
+const relativeFormatter = new Intl.RelativeTimeFormat('en', {numeric: 'auto'});
+""" + match.group(0) + """
+const now = Date.parse('2026-10-31T12:00:00Z');
+const iso = offset => new Date(now + offset).toISOString();
+assert.equal(relativeTime(iso(-120000), now), '2 minutes ago');
+assert.equal(relativeTime(iso(3600000), now), 'in 1 hour');
+assert.equal(relativeTime(iso(-86400000), now), 'yesterday');
+assert.equal(relativeTime(iso(-10000), now), 'now');
+assert.equal(relativeTime('not-a-date', now), 'not-a-date');
+"""
+        result = subprocess.run([node, "-e", check], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_settings_tab_and_installer_include_diagnostics(self):
         page = configurator.render_form(
