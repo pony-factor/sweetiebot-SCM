@@ -12,12 +12,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
+import re
 
 MAX_LOG_BYTES = 1024 * 1024
 BACKUP_COUNT = 3
 FIELDS = frozenset({
     "model", "attempt", "attempts", "reason", "outcome", "error_type",
     "http_status", "duration_ms", "rule", "title", "explanation",
+    "repository", "job_id",
 })
 
 
@@ -28,6 +30,26 @@ def log_path() -> Path:
     )).expanduser()
 
 
+def _repository_name() -> str | None:
+    """Record only the name of the nearest Git checkout, never its full path."""
+    try:
+        current = Path.cwd()
+        for directory in (current, *current.parents):
+            marker = directory / ".git"
+            if marker.is_file() or marker.is_dir():
+                return directory.name[:100]
+    except OSError:
+        pass
+    return None
+
+
+def _job_id(value: object) -> str | None:
+    """Reject paths, control characters and arbitrary environment contents."""
+    if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{8,64}", value):
+        return value
+    return None
+
+
 def log_event(component: str, event: str, **details: object) -> bool:
     """Append an operational event; logging failures must not affect commits."""
     record = {
@@ -35,9 +57,24 @@ def log_event(component: str, event: str, **details: object) -> bool:
         "component": component,
         "event": event,
     }
+    repository = _repository_name()
+    job_id = _job_id(os.environ.get("SWEETIEBOT_BACKGROUND_JOB"))
+    if repository:
+        record["repository"] = repository
+    if job_id:
+        record["job_id"] = job_id
     for key, value in details.items():
-        if key in FIELDS and value is not None and isinstance(value, (str, int, bool)):
-            record[key] = value[:240 if key in {'title', 'explanation'} else 120] if isinstance(value, str) else value
+        if key not in FIELDS or value is None or not isinstance(value, (str, int, bool)):
+            continue
+        if key == "job_id":
+            value = _job_id(value)
+            if value is None:
+                continue
+        elif key == "repository":
+            if not isinstance(value, str) or not value or Path(value).name != value or "\\" in value:
+                continue
+            value = value[:100]
+        record[key] = value[:240 if key in {'title', 'explanation'} else 120] if isinstance(value, str) else value
 
     handler = None
     try:
