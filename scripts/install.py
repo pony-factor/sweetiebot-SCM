@@ -247,7 +247,7 @@ def graph_open_commit_action_edits(js):
     actions_pattern = re.compile(
         rf"(?P<template>{ident})\.actionBar\.context=(?P<item>{ident})[,;]"
         rf"(?P=template)\.actionBar\.setActions\("
-        rf"(?P<actions>{ident}\({ident},[\\"']inline[\\"']\)\.primary)\)"
+        rf"(?P<actions>{ident}\({ident},(?P<quote>[\x22\x27])inline(?P=quote)\)\.primary)\)"
     )
     hover_pattern = re.compile(
         rf"(?P<service>this\.{ident})\.setupDelayedHover\("
