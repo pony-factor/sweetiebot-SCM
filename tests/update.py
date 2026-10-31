@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import update
+import wrapper_dependencies
 
 
 def archive(entries):
@@ -49,6 +50,52 @@ class UpdateTests(unittest.TestCase):
             with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]), \
                     patch.object(update, 'installer_imports', return_value=False):
                 self.assertIsNone(update.prepare_update(root, force=True))
+
+    def test_updater_preserves_arbitrary_extension_runtime_formats(self):
+        entries = {
+            "extension/merge/future/view.wasm": "runtime data",
+            "extension/merge/header.css": "layout",
+            "extension/other/config.extensionless": "custom data",
+            "extension/.DS_Store": "junk",
+            "extension/__pycache__/module.pyc": "junk",
+            "extension/.vscode/settings.json": "local config",
+            "extension/.env.local": "secret",
+            "extension/merge/unfinished.js.swp": "swap",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            update.extract_sources(archive(entries), root)
+            allowed = {Path(path) for path in entries if path in (
+                "extension/merge/future/view.wasm",
+                "extension/merge/header.css",
+                "extension/other/config.extensionless",
+            )}
+            actual = {path.relative_to(root) for path in root.rglob("*") if path.is_file()}
+            self.assertEqual(actual, allowed)
+            installed = update.source_files(root)
+            for relative in allowed:
+                self.assertEqual((root / relative).read_text(), entries[str(relative)])
+                self.assertEqual(
+                    installed[Path("codex-customizations") / relative], root / relative,
+                )
+
+    def test_update_html_guard_recognizes_legacy_and_shared_runtime_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory)
+            scripts = candidate / "scripts"
+            scripts.mkdir()
+            installer = scripts / "update.py"
+            workspace = scripts / "workspace_search.py"
+            installer.write_text('FORMATS = {"extension": {".js", ".html"}}')
+            workspace.write_text('FORMATS = {"extension": {".js", ".html"}}')
+            self.assertTrue(update.release_retains_extension_html(candidate))
+            installer.write_text("from extension_assets import include_runtime_relative")
+            workspace.write_text("from extension_assets import runtime_files")
+            self.assertFalse(update.release_retains_extension_html(candidate))
+            (scripts / "extension_assets.py").write_text("# inventory")
+            self.assertTrue(update.release_retains_extension_html(candidate))
+            workspace.write_text("# missing runtime inventory")
+            self.assertFalse(update.release_retains_extension_html(candidate))
 
     def test_nested_images_survive_all_distribution_paths(self):
         import build_installer_app
@@ -201,6 +248,13 @@ class UpdateTests(unittest.TestCase):
                 'extension/commits/post_commit_spellcheck_notice.js': 'current notice handler',
                 'extension/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
+            # Model a complete published runtime, not only the historically
+            # hard-coded three modules. The updater checks every local import.
+            script_dir = Path(update.__file__).resolve().parent
+            payload.update({f"scripts/{name}": source.read_text()
+                            for name, source in wrapper_dependencies.runtime_sources(script_dir).items()})
+            payload["extension/commits/pony_git_publish.js"] = (
+                script_dir.parent / "extension/commits/pony_git_publish.js").read_text()
             destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'
             installed = destination / 'codex-customizations'
             wrapper = root / 'bin/scm-toolkit-git'
@@ -228,6 +282,11 @@ class UpdateTests(unittest.TestCase):
             self.assertIsNotNone(prepare())
             async_helper.write_text(payload['scripts/sweetiebot_async_commit.py'])
             async_helper.chmod(0o755)
+            self.assertIsNotNone(prepare())
+            for target, source in wrapper_dependencies.wrapper_files(cache / 'candidate/scripts', wrapper).items():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+                target.chmod(0o755)
             self.assertIsNone(prepare())
             legacy = root / '.local/bin/git-auto-title'
             legacy.parent.mkdir(parents=True)

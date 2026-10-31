@@ -16,6 +16,17 @@ Double-click `scripts/install.command` to build/open a locally signed **Sweetieb
 
 ## Updates
 
+The Git wrapper, detached background-commit runtime, and automatic updater
+share an inventory of local Python imports and transitive settings dependencies.
+Installation validates the full import set before replacing managed files and
+repairs missing files on the next run. The legacy `git-auto-title` path remains
+a compatibility symlink.
+
+If Git reports missing wrapper modules, run `python3 scripts/install.py` from
+an up-to-date checkout. Index-only `git reset HEAD -- <paths>` works without
+optional commit-recovery imports, while ref-changing operations still fail
+closed if the required safety dependencies cannot load.
+
 **Initialization → Automatically update and restore app customizations** (extension setting `scmToolkit.automaticAppRepair=true` by default) can restore compatible patches after app/extension updates. Some workbench components replace live; others require a reload. An unsupported anchor must be skipped, not patched by guessing.
 
 Inspect **Output → Sweetie Bot app repair** when UI customizations disappear. Use `python3 scripts/install.py --check` to validate compatibility and app permissions before reinstalling. VS Code may report an installation-integrity warning because its application files changed.

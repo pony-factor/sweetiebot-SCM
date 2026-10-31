@@ -9,7 +9,10 @@ import os
 import re
 import shutil
 import tempfile
+import subprocess
+import sys
 import workspace_search
+import wrapper_dependencies
 import codex_colors
 import codex_label
 import codex_composer
@@ -66,48 +69,27 @@ def legacy_ai_wrapper_path():
 
 def sync_ai_wrapper(remove=False, check=False, destination=None):
     primary = Path(destination) if destination is not None else ai_wrapper_path()
-    primary_files = [
-        (HERE / "ai_commit.py", primary),
-        (HERE / "coreml_backend.py", primary.with_name("coreml_backend.py")),
-        (HERE / "sweetiebot_async_commit.py", primary.with_name("sweetiebot_async_commit.py")),
-        (HERE / "background_commit.py", primary.with_name("background_commit.py")),
-        (HERE.parent / "extension/commits/pony_git_publish.js", primary.with_name("pony_git_publish.js")),
-        (HERE / "merged_branch.py", primary.with_name("merged_branch.py")),
-        (HERE / "cloud_repo_sync.py", primary.with_name("cloud_repo_sync.py")),
-        (HERE / "sweetiebot_diagnostics.py", primary.with_name("sweetiebot_diagnostics.py")),
-        (
-            HERE / "post_commit_spellcheck.py",
-            primary.with_name(primary.name + "-spellcheck.py"),
-        ),
-    ]
+    # Validate the entire source import closure before any managed files change.
+    if not remove:
+        wrapper_dependencies.validate_imports(HERE)
+    primary_files = wrapper_dependencies.wrapper_files(HERE, primary)
 
-    # The normal installer passes destination=ai_wrapper_path(). Treat that
-    # exact call as the canonical install path too, so legacy wrappers cannot
-    # escape refresh merely because the destination was supplied explicitly.
     manage_legacy = destination is None or primary == ai_wrapper_path()
     legacy = legacy_ai_wrapper_path()
     legacy_links = []
-    if (
-        manage_legacy
-        and legacy != primary
-        and (legacy.exists() or legacy.is_symlink())
-    ):
+    if manage_legacy and legacy != primary and (legacy.exists() or legacy.is_symlink()):
         legacy_links = [
             (legacy, primary),
-            (
-                legacy.with_name(legacy.name + "-spellcheck.py"),
-                primary.with_name(primary.name + "-spellcheck.py"),
-            ),
+            (legacy.with_name(legacy.name + "-spellcheck.py"),
+             primary.with_name(primary.name + "-spellcheck.py")),
         ]
 
-    # The canonical wrapper remains a managed regular file. Existing legacy
-    # names are allowed to be symlinks because they are migrated below.
-    for _, target in primary_files:
+    for target in primary_files:
         if not remove and target.is_symlink():
             raise RuntimeError(f"Refusing to overwrite symlinked AI wrapper: {target}")
 
     changed = False
-    for source, target in primary_files:
+    for target, source in primary_files.items():
         if remove:
             exists = target.exists() or target.is_symlink()
             changed |= exists
@@ -131,7 +113,6 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
             if exists and not check:
                 legacy_target.unlink()
             continue
-
         points_to_canonical = (
             legacy_target.is_symlink()
             and legacy_target.resolve(strict=False)
@@ -144,7 +125,43 @@ def sync_ai_wrapper(remove=False, check=False, destination=None):
             legacy_target.parent.mkdir(parents=True, exist_ok=True)
             legacy_target.symlink_to(canonical_target)
 
+    if not remove and not check:
+        wrapper_dependencies.validate_imports(primary.parent)
     return changed
+
+
+def resume_stalled_background_jobs():
+    """Restore a detached runtime left stale by earlier installations."""
+    import background_commit
+
+    home = background_commit.jobs_home()
+    if not home.is_dir():
+        return False
+    pending = False
+    for file in home.glob("*/job.json"):
+        if file.is_symlink() or file.parent.is_symlink():
+            continue
+        try:
+            job = background_commit.read_journal(file)
+        except (OSError, ValueError, TypeError):
+            continue
+        if (isinstance(job, dict) and isinstance(job.get("gitdir"), str)
+                and isinstance(job.get("root"), str)
+                and job.get("phase") not in ("done", "cancelled")):
+            pending = True
+            break
+    if not pending:
+        return False
+
+    # The already-installed LaunchAgent runs this detached copy, not the
+    # freshly installed wrapper. Refresh it before resuming old journals.
+    script = background_commit.runtime()
+    wrapper_dependencies.validate_imports(script.parent)
+    subprocess.Popen([sys.executable, str(script), "--resume"],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+    return True
+
 
 def ai_model_picker_path():
     configured = os.environ.get(
@@ -1856,6 +1873,8 @@ def main():
             sync_live_components(workbench_paths[0].parent, remove=args.uninstall)
             sync_ai_wrapper(remove=args.uninstall, destination=wrapper_path)
             workspace_search.sync_extension(remove=args.uninstall, settings=settings)
+            if not args.uninstall and resume_stalled_background_jobs():
+                print("Refreshed and resumed unfinished Sweetiebot background commits.")
         if not args.codex_only and not args.repair:
             sync_model_picker(
                 enabled=settings["aiModelPicker"],

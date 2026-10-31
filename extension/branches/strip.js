@@ -2,6 +2,8 @@
 
 const { execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 const { promisify } = require('node:util');
 
 const runFile = promisify(execFile);
@@ -134,10 +136,27 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
     remoteStatus: localOnly ? 'loading' : remoteAvailable ? 'available' : 'unavailable' };
 }
 
-async function checkoutBranchStrip(repository, { branch, remote = 'origin' } = {}) {
+async function checkoutBranchStrip(repository, { branch, remote = 'origin', onOccupiedWorktree } = {}) {
   if (!branch || typeof branch !== 'string') throw new Error('Choose a branch.');
   const root = repository.rootUri.fsPath;
   await git(root, ['check-ref-format', '--branch', branch]);
+  // Final safety gate: even when the higher-level router cannot run, never
+  // attempt a plain checkout of a branch held by another Git worktree.
+  const listing = await git(root, ['worktree', 'list', '--porcelain', '-z']);
+  const occupied = listing.split('\0\0').find(block =>
+    block.split('\0').includes('branch refs/heads/' + branch));
+  if (occupied) {
+    const registered = occupied.split('\0').find(line => line.startsWith('worktree '));
+    if (!registered) throw new Error(`Cannot identify the worktree holding "${branch}".`);
+    const destination = registered.slice('worktree '.length);
+    const [owner, current] = await Promise.all([
+      fs.realpath(destination).catch(() => path.resolve(destination)), fs.realpath(root)
+    ]);
+    if (owner !== current) {
+      if (typeof onOccupiedWorktree === 'function' && await onOccupiedWorktree(destination)) return branch;
+      throw new Error(`Branch "${branch}" is already checked out in worktree "${destination}". Open that worktree or recover its stale Git registration; checkout was not attempted.`);
+    }
+  }
   const local = await git(root, ['show-ref', '--verify', '--hash',
     `refs/heads/${branch}`]).catch(() => '');
   if (local) {
