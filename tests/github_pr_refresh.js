@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { installPullRequestRefresh, pullRequestFromTreeNode } = require('../extension/github/pr_refresh');
+const { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder } = require('../extension/github/pr_refresh');
 
 async function main() {
   const originalSetInterval = global.setInterval;
@@ -193,6 +193,113 @@ async function main() {
       assert.equal((await rowOwner.getTreeItem(clicked)).description, 'by @pony');
     }
     assert.equal(dispatched.length, 5);
+
+    // A folder action must discover nested PR rows, deduplicate them, and
+    // attempt each merge only after the preceding merge has completed.
+    const folder = { id: 'open-pr-folder' };
+    const nestedFolder = { id: 'nested-pr-folder' };
+    const firstPr = { url, number: 12, pullRequestModel: { title: 'First PR title' } };
+    const secondPr = { url: 'https://github.com/owner/repo/pull/13', number: 13, label: 'Second PR title' };
+    const thirdPr = { url: 'https://github.com/owner/repo/pull/14', number: 14 };
+    const folderSubscriptions = [], folderCommands = new Map();
+    const folderCalls = [], folderResolvers = [], folderProgress = [], folderWarnings = [], folderErrors = [];
+    const folderConfirmations = [], confirmationResolvers = [];
+    const folderOwner = {
+      _register: item => folderSubscriptions.push(item),
+      async getChildren(node) {
+        if (node === folder) return [firstPr, nestedFolder, thirdPr];
+        if (node === nestedFolder) return [secondPr, firstPr];
+        return [];
+      },
+      async getTreeItem(node) {
+        return { contextValue: node === folder ? 'pullrequest-folder' : 'pullrequest',
+          label: node === thirdPr ? 'Third PR title' : undefined };
+      },
+      refresh() {}
+    };
+    const folderVscode = {
+      ...rowVscode,
+      window: {
+        ...rowVscode.window,
+        withProgress: (options, task) => {
+          folderProgress.push(options);
+          return task({ report: update => folderProgress.push(update) });
+        },
+        showWarningMessage(message, options, action) {
+          if (options?.modal) {
+            folderConfirmations.push({ message, options, action });
+            return new Promise(resolve => confirmationResolvers.push(resolve));
+          }
+          folderWarnings.push(message);
+        },
+        showErrorMessage: message => folderErrors.push(message),
+        showInformationMessage: () => {}
+      },
+      commands: {
+        registerCommand(id, fn) {
+          folderCommands.set(id, fn);
+          return { dispose() { folderCommands.delete(id); } };
+        },
+        executeCommand(id, arg, options) {
+          if (id === 'sweetiebot.squashMergePullRequest') {
+            assert.deepEqual(options, { progressManaged: true });
+            folderCalls.push(arg);
+            return new Promise((resolve, reject) => folderResolvers.push({ resolve, reject }));
+          }
+          if (id === 'pr.refreshList') return Promise.resolve();
+          throw new Error('Unexpected folder command: ' + id);
+        }
+      }
+    };
+    installPullRequestRefresh(folderVscode, {
+      visible: false, onDidChangeVisibility: () => ({ dispose() {} })
+    }, folderOwner);
+    const folderMerge = folderCommands.get('sweetiebot.squashMergeTreePullRequest');
+    assert.deepEqual((await pullRequestsInFolder(folderOwner, folder)).map(pr => pr.url),
+      [url, secondPr.url, thirdPr.url]);
+    const mergingFolder = folderMerge(folder);
+    await new Promise(setImmediate);
+    assert.equal(folderProgress.length, 0, 'No merge progress before confirmation');
+    assert.deepEqual(folderCalls, [], 'No PR is merged before confirmation');
+    assert.equal(folderConfirmations.length, 1);
+    assert.equal(folderConfirmations[0].message, 'Squash merge 3 pull requests?');
+    assert.equal(folderConfirmations[0].action, 'Merge 3 PRs');
+    assert.equal(folderConfirmations[0].options.modal, true);
+    assert.deepEqual(folderConfirmations[0].options.detail.split('\n'), [
+      '#12 — First PR title', '#13 — Second PR title', '#14 — Third PR title'
+    ]);
+    await folderMerge(folder);
+    assert.equal(folderConfirmations.length, 1, 'Repeated clicks cannot open a second confirmation');
+    confirmationResolvers.shift()('Merge 3 PRs');
+    await new Promise(setImmediate);
+    assert.equal(folderProgress[0].title, 'Squash merge folder pull requests');
+    assert.deepEqual(folderCalls, [url]);
+    folderResolvers[0].resolve({ state: 'merged' });
+    await new Promise(setImmediate);
+    assert.deepEqual(folderCalls, [url, secondPr.url]);
+    folderResolvers[1].reject(new Error('Merge checks failed'));
+    await new Promise(setImmediate);
+    assert.deepEqual(folderCalls, [url, secondPr.url, thirdPr.url],
+      'An individual failure cannot prevent attempting the next PR');
+    folderResolvers[2].resolve({ state: 'pending' });
+    assert.deepEqual(await mergingFolder,
+      { state: 'completed', total: 3, merged: 1, queued: 0, pending: 1, cancelled: 0, failed: 1 });
+    assert.match(folderWarnings[0], /1 merged, 0 queued, 1 pending, 0 cancelled, 1 failed/);
+    assert.match(folderErrors[0], /PR #13: Merge checks failed/);
+    assert.deepEqual(folderProgress.filter(item => item.message).map(item => item.message),
+      ['PR 1/3: #12', 'PR 2/3: #13', 'PR 3/3: #14']);
+    const cancellingFolder = folderMerge(folder);
+    await new Promise(setImmediate);
+    assert.equal(folderConfirmations.length, 2);
+    confirmationResolvers.shift()(undefined);
+    assert.deepEqual(await cancellingFolder, { state: 'cancelled', total: 3 });
+    assert.deepEqual(folderCalls, [url, secondPr.url, thirdPr.url],
+      'Dismissal must not invoke the merge command');
+    assert.equal(folderProgress.filter(item => item.title).length, 1,
+      'Cancellation must not show merge progress');
+    assert.deepEqual(await folderMerge({ id: 'empty' }), { state: 'failed', total: 0 });
+    assert.match(folderErrors.at(-1), /No pull requests were found/);
+    for (const subscription of folderSubscriptions) subscription.dispose();
     for (const subscription of rowSubscriptions) subscription.dispose();
     const manifest = require('../extension/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
