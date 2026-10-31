@@ -242,7 +242,8 @@ const run = promisify(execFile);
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
-    assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
+    assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'),
+      'Expected explicit Codex attribution in merged commit: ' + JSON.stringify(message));
     assert(message.includes('\n\n__________\n\n'));
     assert(!message.includes('Co-authored-by: Codex (Web) <'), 'Do not invent Web attribution');
     assert(!message.includes('Co-authored-by: John Wooten'));
