@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 from toolkit_settings import load_settings, VSCODE_SETTINGS
+from extension_assets import runtime_files
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent / "extension"
@@ -133,11 +134,7 @@ def transform_view_manifest(source, settings):
 def source_files(root: Path | None = None) -> dict[Path, Path]:
     here = root / "scripts" if root is not None else HERE
     source_root = root / "extension" if root is not None else SOURCE
-    files = {
-        path.relative_to(source_root): path
-        for path in source_root.rglob("*")
-        if path.is_file()
-    }
+    files = runtime_files(source_root, allow_missing=root is not None)
     image_root = here.parent / "assets/imgs"
     for icon_name, asset_path in IMAGE_SOURCES.items():
         files[Path("media") / icon_name] = image_root / asset_path
@@ -168,10 +165,13 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("branch_name_packs.json")] = here / "branch_name_packs.json"
     files[Path("local_setup.py")] = here / "local_setup.py"
     # Preserve the installer's relative asset layout for update-time repair.
-    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"}), ("extension", {".js", ".json", ".svg", ".md", ".html", ".css"})):
+    for directory, suffixes in (("scripts", {".py", ".json"}), ("assets/codex", {".js", ".css"}), ("assets/imgs", {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico", ".md"}), ("assets/browser", {".js"}), ("assets/github", {".js"}), ("assets/workbench", {".js", ".css"})):
         for source in (here.parent / directory).rglob("*"):
             if source.is_file() and source.suffix.lower() in suffixes:
                 files[Path("codex-customizations") / source.relative_to(here.parent)] = source
+    # Retain every extension runtime file for future repairs, not only known suffixes.
+    for relative, source in runtime_files(here.parent / "extension", allow_missing=root is not None).items():
+        files[Path("codex-customizations/extension") / relative] = source
     return dict(sorted(files.items()))
 
 
@@ -277,7 +277,9 @@ def sync_extension(
     temp = root / f".{destination.name}.tmp"
     if temp.exists():
         shutil.rmtree(temp)
-    shutil.copytree(SOURCE, temp)
+    # Build from the exact managed inventory. Copying the entire source tree
+    # would reintroduce ignored editor caches and temporary files.
+    temp.mkdir()
     for relative, source in source_files().items():
         if relative.parent != Path("."):
             (temp / relative.parent).mkdir(parents=True, exist_ok=True)
