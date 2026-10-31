@@ -392,5 +392,41 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   checks.check_suites = [{ id: 10, status: 'completed', conclusion: 'failure' },
     { id: 11, status: 'completed', conclusion: 'success' }];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'passed', 'An old suite failure does not override a successful job rerun');
+  {
+    // Concurrent check requests avoid three serial GitHub round trips per poll.
+    const checkEndpointsStarted = [];
+    let releaseCheckEndpoints;
+    const blockedChecks = new Promise(resolve => { releaseCheckEndpoints = resolve; });
+    const concurrentChecksRead = readMergeChecks(async endpoint => {
+      checkEndpointsStarted.push(endpoint);
+      await blockedChecks;
+      if (endpoint.includes('/check-runs?')) return { check_runs: [{ name: 'test', status: 'completed', conclusion: 'success' }] };
+      return endpoint.includes('/check-suites?') ? { check_suites: [] } : { statuses: [] };
+    }, 'owner/repo', a);
+    await Promise.resolve();
+    assert.equal(checkEndpointsStarted.length, 3, 'All check endpoints start before any one finishes');
+    releaseCheckEndpoints();
+    assert.equal((await concurrentChecksRead).state, 'passed');
+
+    // Fast early checks, then conservative polling without relaxing the gate.
+    let checkClock = 0;
+    const pollDelays = [], progressSamples = [];
+    const checkedResult = await waitForMergeChecks(async endpoint => {
+      if (endpoint.includes('/check-runs?')) return { check_runs: [{
+        name: 'test', status: checkClock < 45000 ? 'in_progress' : 'completed',
+        conclusion: checkClock < 45000 ? null : 'success'
+      }] };
+      return endpoint.includes('/check-suites?') ? { check_suites: [] } : { statuses: [] };
+    }, 'owner/repo', a, {
+      timeoutMs: 60000, now: () => checkClock,
+      sleep: async ms => { pollDelays.push(ms); checkClock += ms; },
+      onPoll: poll => progressSamples.push(poll)
+    });
+    assert.equal(checkedResult.state, 'passed');
+    assert.deepEqual(pollDelays, [5000, 5000, 5000, 5000, 5000, 5000, 15000],
+      'Poll rapidly at first, then use the existing 15-second interval');
+    assert.equal(progressSamples[0].nextPollAt, 5000, 'Progress time matches the next poll');
+    assert.equal(progressSamples.at(-1).nextPollAt, 0, 'Completed checks have no scheduled retry');
+  }
   console.log('Sequential merge continuation, intent ledger, current-base resolution, replay and integrated-head check gates passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
