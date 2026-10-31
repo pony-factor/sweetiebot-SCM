@@ -7,6 +7,7 @@ const path = require('node:path');
 const { SearchIndex } = require('./search/index');
 const { WorkspaceSearchViewProvider } = require('./search/view');
 const { registerBranchCommands } = require('./branches/actions');
+const { registerGraphStartupRefresh } = require('./branches/graph_refresh');
 const { registerCodexCommitCommand } = require('./commits/codex_commit');
 const { registerCommitShortcut } = require('./commits/shortcut');
 const { registerBackgroundCommit } = require('./commits/background_commit');
@@ -428,6 +429,13 @@ async function activate(context) {
   await registerManagedWindowActivity(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
+  // Prime Git's repository state before opening the Source Control graph.
+  // A late discovery receives the same refresh through Git's repository event.
+  try {
+    await registerGraphStartupRefresh(vscode, context);
+  } catch (error) {
+    console.warn('Sweetiebot Git graph initialization:', error.message);
+  }
   // Hidden panel tabs can still be restored as the active container.
   // Select the user's SCM container explicitly once the workbench has started.
   if (vscode.workspace.getConfiguration('scmToolkit').get('openPanelOnStartup', true)) {
