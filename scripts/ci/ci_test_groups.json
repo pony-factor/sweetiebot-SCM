@@ -71,6 +71,7 @@
         "cloud_repo_sync.py",
         "default_branch.js",
         "default_branch_recovery.js",
+        "graph_refresh.js",
         "delete_empty_branch.js",
         "local_pull_request_branch.js",
         "main_sync.js",
@@ -88,6 +89,7 @@
       "syntax": [
         "extension/merge/sync_review.js",
         "extension/branches/window.js",
+        "extension/branches/graph_refresh.js",
         "extension/branches/auto_publish.js"
       ]
     },
@@ -303,6 +305,7 @@
         "settings_browser.js",
         "graph_commit_action.py",
         "graph_commit_actions.js",
+        "git_graph_relative_dates.js",
         "spellcheck_popup.js",
         "spellcheck_popup_viewport.js",
         "terminal_actions.js",
@@ -317,7 +320,8 @@
         "scripts/model_picker.py",
         "scripts/window_title_configurator.py",
         "assets/workbench/live_runtime.js",
-        "assets/workbench/graph_commit_actions.js"
+        "assets/workbench/graph_commit_actions.js",
+        "extension/ui/git_graph_relative_dates.js"
       ]
     },
     "efs-search": {

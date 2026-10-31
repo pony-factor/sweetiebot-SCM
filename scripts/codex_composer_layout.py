@@ -3,8 +3,8 @@ import html
 import json
 
 IDS = ("input", "attachments", "access", "location", "clipboard", "send")
-LABELS = ("Message input", "Attachments / usage", "Access permissions",
-          "Computer / location", "Clipboard Send / Queue", "Send / Stop (wing)")
+LABELS = ("Message input", "Attachments", "Access permissions",
+          "Computer / location / usage", "Clipboard Send / Queue", "Send / Stop (wing)")
 DEFAULT_LAYOUT = {"visible": list(IDS), "hidden": []}
 DEFAULT_LAYOUT_JSON = json.dumps(DEFAULT_LAYOUT, separators=(",", ":"))
 

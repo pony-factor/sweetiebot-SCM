@@ -267,7 +267,7 @@ def run():
         assert circle_bounds['x'] < access_bounds['x']
         assert circle_bounds['x'] >= outer['x']
         assert circle_bounds['y'] > outer['y'] + outer['height'] / 2
-        # Replace the attachment glyph while keeping its native click target.
+        # Keep the original attachment glyph and click target separate from usage.
         surface.evaluate('''el => {
             const add = document.createElement('button');
             add.id = 'add-files'; add.setAttribute('aria-label', 'Add files and more');
@@ -276,16 +276,23 @@ def run():
             add.onclick = () => { window.attachmentClicks++; };
             el.append(add);
         }''')
-        page.wait_for_function('document.querySelector("#add-files scm-toolkit-usage-pie")')
         attachments = page.get_by_role('button', name='Add files and more', exact=True)
-        assert not attachments.locator('svg').is_visible()
+        assert attachments.locator('svg').is_visible(), 'Attachment icon must remain visible'
+        assert attachments.locator('scm-toolkit-usage-pie').count() == 0, 'Usage never replaces attachments'
+        assert meter.locator('[data-scm-toolkit-rate-limit-label]').inner_text() == 'Rate limited'
+        assert not meter.locator('scm-toolkit-usage-pie').is_visible(), 'Depleted usage is text-only'
+        page.wait_for_function('document.getElementById("meter-control").getAttribute("aria-label") === "Rate limited"')
         attachments.click()
         assert page.evaluate('attachmentClicks') == 1
         meter.evaluate('(el) => el.setAttribute("weekly-percent", "35")')
         bar = page.get_by_role('progressbar', name='Weekly Codex usage remaining')
         assert bar.get_attribute('aria-valuenow') == '35'
         meter.evaluate('(el) => el.setAttribute("percent", "80")')
-        assert attachments.locator('scm-toolkit-usage-pie').get_attribute('percent') == '80'
+        assert meter.locator('scm-toolkit-usage-pie').is_visible(), 'Usage indicator returns after replenishment'
+        assert meter.locator('scm-toolkit-usage-pie').get_attribute('percent') == '80'
+        assert not meter.locator('[data-scm-toolkit-rate-limit-label]').is_visible()
+        assert attachments.locator('svg').is_visible(), 'Attachments stay intact as usage changes'
+        assert attachments.locator('scm-toolkit-usage-pie').count() == 0
         assert bar.get_attribute('aria-valuenow') == '35', 'Weekly progress is independent of five-hour allowance'
         meter.evaluate('(el) => el.setAttribute("weekly-percent", "unavailable")')
         assert not bar.is_visible(), 'Unknown weekly usage must never appear full'

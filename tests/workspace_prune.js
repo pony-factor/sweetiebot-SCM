@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
-const { pruneManagedWorkspaces } = require('../extension/branches/workspace_prune');
+const { execFileSync } = require('node:child_process');
+const { pruneManagedWorkspaces, releaseClosedWorktree } = require('../extension/branches/workspace_prune');
+const { run: runClosedWorker } = require('../extension/branches/closed_worktree');
 
 const BASE = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';
 const GROUP = path.join(BASE, 'pony-ABC123');
@@ -326,5 +328,92 @@ function fixture({
     await fs.rm(temp, { recursive: true, force: true });
   }
 
-  console.log('Guarded merged-workspace cleanup checks passed.');
+
+  // Window shutdown detaches clean managed checkouts without deleting an
+  // unmerged branch, its unpublished commits, or the original repository.
+  const closedBase = await fs.realpath(await fs.mkdtemp(
+    path.join(os.tmpdir(), 'sweetiebot-closed-worktree-')));
+  const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+  try {
+    const source = path.join(closedBase, 'source');
+    const managed = path.join(closedBase, 'Workspaces');
+    const group = path.join(managed, 'repo', 'topic-blue');
+    const checkout = path.join(group, 'repo');
+    await fs.mkdir(source, { recursive: true });
+    await fs.mkdir(group, { recursive: true });
+    git('init', '-b', 'main', source);
+    git('-C', source, 'config', 'user.name', 'Test');
+    git('-C', source, 'config', 'user.email', 'test@example.invalid');
+    await fs.writeFile(path.join(source, 'tracked.txt'), 'unchanged\n');
+    git('-C', source, 'add', 'tracked.txt');
+    git('-C', source, 'commit', '-m', 'Fixture');
+    git('-C', source, 'worktree', 'add', '-b', 'topic', checkout);
+    await fs.writeFile(path.join(checkout, 'tracked.txt'), 'published later\n');
+    git('-C', checkout, 'add', 'tracked.txt');
+    git('-C', checkout, 'commit', '-m', 'Preserve local topic commit');
+    const topicHead = git('-C', checkout, 'rev-parse', 'HEAD');
+    assert.notEqual(topicHead, git('-C', source, 'rev-parse', 'HEAD'));
+    await fs.writeFile(path.join(group, '.sweetiebot-workspace.json'),
+      JSON.stringify({ version: 1, kind: 'topic-worktree', repositories: ['repo'] }));
+    const stamp = path.join(group, '.sweetiebot-activated');
+    await fs.writeFile(stamp, 'Activated\n');
+    const old = new Date(Date.now() - 5 * 60 * 1000);
+    await fs.utimes(stamp, old, old);
+    const options = { baseDirectory: managed };
+
+    // Dirty files, recent activity, active sessions, and saved workspace
+    // references must all prevent automatic checkout removal.
+    await fs.writeFile(path.join(checkout, 'not-committed.txt'), 'unsaved\n');
+    assert.equal(await releaseClosedWorktree(group, options), false);
+    await fs.rm(path.join(checkout, 'not-committed.txt'));
+
+    // Ignored files and shared Git stashes also make a seemingly clean
+    // checkout ineligible for automatic removal.
+    await fs.writeFile(path.join(source, '.git', 'info', 'exclude'), 'ignored.tmp\n');
+    await fs.writeFile(path.join(checkout, 'ignored.tmp'), 'keep ignored\n');
+    assert.equal(git('-C', checkout, 'status', '--porcelain'), '',
+      'A normal Git status hides ignored files');
+    assert.equal(await releaseClosedWorktree(group, options), false,
+      'Ignored files must not disappear during worktree cleanup');
+    await fs.rm(path.join(checkout, 'ignored.tmp'));
+    await fs.writeFile(path.join(checkout, 'tracked.txt'), 'stash this change\n');
+    git('-C', checkout, 'stash', 'push', '-m', 'Preserve test stash');
+    assert(git('-C', source, 'stash', 'list').includes('Preserve test stash'));
+    assert.equal(await releaseClosedWorktree(group, options), false,
+      'An existing shared stash protects an otherwise clean checkout');
+    git('-C', checkout, 'stash', 'drop');
+
+    await fs.utimes(stamp, new Date(), new Date());
+    assert.equal(await releaseClosedWorktree(group, options), false);
+    await fs.utimes(stamp, old, old);
+    const session = path.join(group, '.sweetiebot-session-' + process.pid + '-test.json');
+    await fs.writeFile(session, JSON.stringify({ pid: process.pid }));
+    assert.equal(await releaseClosedWorktree(group, options), false);
+    await fs.rm(session);
+    const saved = path.join(managed, 'repo', 'main-teal');
+    await fs.mkdir(saved);
+    await fs.writeFile(path.join(saved, '.sweetiebot-workspace.json'),
+      JSON.stringify({ version: 1, kind: 'shared-main', repositories: [] }));
+    await fs.writeFile(path.join(saved, 'main-teal.code-workspace'),
+      JSON.stringify({ folders: [{ path: checkout }] }));
+    assert.equal(await releaseClosedWorktree(group, options), false);
+    await fs.rm(saved, { recursive: true });
+
+    assert.equal(await releaseClosedWorktree(group, options), true);
+    assert.equal(git('-C', source, 'rev-parse', 'refs/heads/topic'), topicHead,
+      'An unpublished local branch commit survives worktree detachment');
+    assert(!git('-C', source, 'worktree', 'list', '--porcelain').includes(checkout));
+    assert.equal((await fs.stat(source)).isDirectory(), true);
+    assert.equal(await fs.stat(group).then(() => true, () => false), false);
+    const visited = [];
+    await runClosedWorker([group, group], {
+      async wait(ms) { assert.equal(ms, 120000); },
+      async release(folder) { visited.push(folder); }
+    });
+    assert.deepEqual(visited, [group], 'Close-worker deduplicates groups and delays removal');
+  } finally {
+    await fs.rm(closedBase, { recursive: true, force: true });
+  }
+
+  console.log('Guarded merged-workspace and closed-worktree cleanup checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

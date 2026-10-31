@@ -7,6 +7,7 @@ const path = require('node:path');
 const { SearchIndex } = require('./search/index');
 const { WorkspaceSearchViewProvider } = require('./search/view');
 const { registerBranchCommands } = require('./branches/actions');
+const { registerGraphStartupRefresh } = require('./branches/graph_refresh');
 const { registerCodexCommitCommand } = require('./commits/codex_commit');
 const { registerCommitShortcut } = require('./commits/shortcut');
 const { registerBackgroundCommit } = require('./commits/background_commit');
@@ -40,6 +41,7 @@ const { registerPostCommitSpellcheckNotice } = require('./commits/post_commit_sp
 const { registerFilenameSpellcheck } = require('./commits/filename_spellcheck');
 const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python_runtime');
 const { registerLegacyCommandAliases } = require('./ui/command_aliases');
+const { registerGitGraphRelativeDates } = require('./ui/git_graph_relative_dates');
 const { kefaniaClosePosition } = require('./codex/kefania_close_position');
 const { invalidateUserExtensionCache } = require('./ui/extension_cache');
 
@@ -143,6 +145,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       autoCommitWithCodex: scm.get('autoCommitWithCodex', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
+      gitGraphRelativeDates: scm.get('gitGraphRelativeDates', false),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
       codexKeepAwake: scm.get('codexKeepAwake', true),
       codexHidePermissionsIcon: scm.get('codexHidePermissionsIcon', false),
@@ -399,6 +402,7 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  registerGitGraphRelativeDates(vscode, context);
   void require('./branches/commit_drafts').registerCommitDrafts(vscode, context)
     .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
   registerCodexWorkspaceHandoff(vscode, context);
@@ -428,6 +432,13 @@ async function activate(context) {
   await registerManagedWindowActivity(vscode, context);
   await registerPushRecovery(vscode, context);
   registerCodexRefresh(vscode, context, stopSettingsServer);
+  // Prime Git's repository state before opening the Source Control graph.
+  // A late discovery receives the same refresh through Git's repository event.
+  try {
+    await registerGraphStartupRefresh(vscode, context);
+  } catch (error) {
+    console.warn('Sweetiebot Git graph initialization:', error.message);
+  }
   // Hidden panel tabs can still be restored as the active container.
   // Select the user's SCM container explicitly once the workbench has started.
   if (vscode.workspace.getConfiguration('scmToolkit').get('openPanelOnStartup', true)) {

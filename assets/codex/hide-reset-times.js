@@ -11,6 +11,10 @@ function scmToolkitCompactHiddenLimitBanner(banner) {
 // Suppress Codex usage-reset timing without concealing usage allowances.
 function scmToolkitStripUsageResetTime(value) {
     const text = String(value == null ? '' : value);
+    // A native timed limit notice is redundant when reset times are hidden.
+    // Compact its complete wording before the date/time scrub can leave a
+    // partial clock value (e.g. "Nov 4, 2026, 3:03 AM").
+    if (/^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|after|until)\s+[^<>]+\.?$/i.test(text.replace(/\s+/g, ' ').trim())) return 'Rate limited';
     const duration = /\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?:\s+\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s))*/.source;
     const clock = /\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?|\d{1,2}\s*(?:AM|PM)/.source;
     const date = /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?|\d{4}-\d{2}-\d{2}|today|tomorrow|tonight/.source;

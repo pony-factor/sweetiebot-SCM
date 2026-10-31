@@ -91,6 +91,17 @@ function scmToolkitIsUntimedRateLimitWarning(value) {
     return /^you[’']ve hit your usage limit\.\s*upgrade your plan or add credits to continue,\s*or\s*try again later\.?$/i.test(text);
 }
 
+// When Hide Codex reset times is enabled, compact the same native
+// usage-limit message even when Codex supplies a concrete retry deadline.
+// Keep this independent of the always-on, untimed warning normalization.
+function scmToolkitIsHiddenTimedRateLimitWarning(value) {
+    if (globalThis.scmToolkitHideRateLimitTimes !== true) return false;
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    return /^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again (?:at|on|in|after|until)\s+[^<>]+\.?$/i.test(text)
+        // A previously scrubbed multi-node date can leave the clock suffix.
+        || /^you[’']ve hit your usage limit\.\s*(?:(?:upgrade your plan(?: or add credits)?|add credits) to continue,\s*or\s*)?try again later,\s*\d{1,2}:\d{2}\s*(?:AM|PM)\.?$/i.test(text);
+}
+
 // Queued prompts live beside the composer, outside the transcript. Their
 // accessible preview labels contain user text and are never status evidence.
 const scmToolkitQueuedPromptSelector = '[aria-label^="Preview queued message"], [data-testid="queued-message"], [data-testid="queued-message-list"]';
@@ -101,14 +112,16 @@ function scmToolkitIsQueuedPrompt(node) {
 }
 
 function scmToolkitCompactUntimedRateLimitNode(node) {
-    if (scmToolkitIsQueuedPrompt(node) || !scmToolkitIsUntimedRateLimitWarning(node?.textContent)) return false;
-    // Never rewrite user input, dialogs, clickable upgrade cards, or any
-    // notice with a meaningful reset time. The exact message match also
-    // prevents changing timed/otherwise informative rate-limit notices.
+    if (scmToolkitIsQueuedPrompt(node) || !(scmToolkitIsUntimedRateLimitWarning(node?.textContent)
+        || scmToolkitIsHiddenTimedRateLimitWarning(node?.textContent))) return false;
+    // Never rewrite user input, dialogs, clickable upgrade cards, or
+    // other informative notices. A timed native warning is eligible only
+    // with the separate Hide Codex reset times preference enabled.
     if (node.closest?.('[data-message-author-role="user"], [data-conversation-role="user"], [contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], [data-scm-toolkit-reset-action]')) return false;
     if (node.querySelector?.('a, button, input, textarea, select, [role="button"]')) return false;
     for (const descendant of node.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || []) {
-        if (scmToolkitIsUntimedRateLimitWarning(descendant.textContent)) return false;
+        if (scmToolkitIsUntimedRateLimitWarning(descendant.textContent)
+            || scmToolkitIsHiddenTimedRateLimitWarning(descendant.textContent)) return false;
     }
     // Update only text nodes, preserving status icons and surrounding markup.
     const textNodes = [];
