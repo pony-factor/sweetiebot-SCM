@@ -303,6 +303,7 @@
         "notification_timeout.js",
         "reload_notification_icon.js",
         "settings_browser.js",
+        "git_graph_relative_dates.js",
         "spellcheck_popup.js",
         "spellcheck_popup_viewport.js",
         "terminal_actions.js",
@@ -316,7 +317,8 @@
         "scripts/message_bar_configurator.py",
         "scripts/model_picker.py",
         "scripts/window_title_configurator.py",
-        "assets/workbench/live_runtime.js"
+        "assets/workbench/live_runtime.js",
+        "extension/ui/git_graph_relative_dates.js"
       ]
     },
     "efs-search": {

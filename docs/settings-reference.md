@@ -20,6 +20,7 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | `scmToolkit.durableBackgroundCommits` | `false` | Temporary title, ordered finalization, guarded push |
 | `scm-toolkit.placeholder-prefix` | `hoof_` | Custom prefix for temporary background commit titles; configure in the Source control settings panel. |
 | `scmToolkit.cloudRepositorySync` | `false` | 15-minute clean-main sync |
+| `scmToolkit.gitGraphRelativeDates` | `false` | Enforce `git-graph.date.format = Relative` for the separate Git Graph extension; disabling stops enforcement without reverting the format |
 | `scmToolkit.automaticBranchCleanup` | `true` | Eligible merged branch cleanup |
 | `scmToolkit.automaticWorkspaceCleanup` | `true` | Guarded managed workspace/worktree pruning |
 | `scmToolkit.autoPublishNewBranches` | `false` | Publish newly selected branches |

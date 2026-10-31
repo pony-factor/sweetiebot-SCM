@@ -95,6 +95,21 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             configurator.parse_submission(values)
 
+    def test_git_graph_relative_dates_setting_round_trips(self):
+        values = form_values()
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["gitGraphRelativeDates"])
+        self.assertNotIn("gitGraphRelativeDates", values)
+        values["gitGraphRelativeDates"] = ["true"]
+        parsed = configurator.parse_submission(values)
+        self.assertTrue(parsed["gitGraphRelativeDates"])
+        payload = configurator.extension_settings_payload(parsed)
+        self.assertTrue(payload["vscodeSettings"]["gitGraphRelativeDates"])
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="gitGraphRelativeDates"', page)
+        self.assertIn("Enforce relative dates in Git Graph", page)
+        values.pop("gitGraphRelativeDates")
+        self.assertFalse(configurator.parse_submission(values)["gitGraphRelativeDates"])
+
     def test_retired_provisional_setting_is_not_available_or_resubmitted(self):
         self.assertNotIn("aiCommitAsync", toolkit_settings.DEFAULT_SETTINGS)
         self.assertNotIn("aiCommitAsync", toolkit_settings.SETTING_KEYS)
