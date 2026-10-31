@@ -1,6 +1,9 @@
 """Regression tests for the local settings commit diagnostics dashboard."""
 import json
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -30,6 +33,7 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                 "id": "abcdef123456", "root": "/private/example-repo",
                 "branch": "refs/heads/feature/report", "gitdir": str(gitdir),
                 "phase": "generating", "message": "SECRET GENERATED TITLE",
+                "sha": "a" * 40,
                 "context": "SECRET CHAT", "diff": "SECRET DIFF",
             }
             (active / "job.json").write_text(json.dumps(current))
@@ -47,6 +51,8 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
                  "outcome": "retry", "prompt": "SECRET PROMPT"},
                 {"timestamp": "2026-10-22T01:01:00+00:00", "component": "commit_title",
                  "event": "generation_completed", "duration_ms": 1200,
+                 "repository": "example-repo", "job_id": "abcdef123456",
+                 "commit_sha": "b" * 40,
                  "outcome": "success", "title": "🖌️ Show final titles",
                  "rule": "priority",
                  "explanation": "This wording reflects the added title history.",
@@ -64,6 +70,12 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             self.assertEqual(len(result["jobs"]), 1)
             self.assertEqual(result["jobs"][0]["repository"], "example-repo")
             self.assertEqual(result["jobs"][0]["branch"], "feature/report")
+            self.assertEqual(result["jobs"][0]["id"], "abcdef123456")
+            self.assertEqual(result["jobs"][0]["commit"], "a" * 40)
+            correlated = next(e for e in result["events"] if e.get("job_id"))
+            self.assertEqual(correlated["job_id"], "abcdef123456")
+            self.assertEqual(correlated["repository"], "example-repo")
+            self.assertEqual(correlated["commit_sha"], "b" * 40)
             self.assertEqual(result["summary"]["pending"], 1)
             self.assertEqual(result["summary"]["generating"], 1)
             self.assertEqual(result["summary"]["blocked"], 0)
@@ -126,6 +138,35 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
             self.assertEqual(result["events"], [])
             self.assertIsNone(result["summary"]["averageGenerationMs"])
 
+    def test_relative_time_formatter_behaves_and_embedded_script_parses(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node is not installed")
+        with tempfile.TemporaryDirectory() as temp:
+            script = Path(temp) / "diagnostics.js"
+            script.write_text(dashboard.DIAGNOSTICS_SCRIPT, encoding="utf-8")
+            syntax = subprocess.run([node, "--check", str(script)],
+                                    capture_output=True, text=True)
+            self.assertEqual(syntax.returncode, 0, syntax.stderr)
+
+        match = re.search(r"  function relativeTime\(.*?^  \}", dashboard.DIAGNOSTICS_SCRIPT,
+                          flags=re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(match)
+        check = """
+const assert = require('node:assert/strict');
+const relativeFormatter = new Intl.RelativeTimeFormat('en', {numeric: 'auto'});
+""" + match.group(0) + """
+const now = Date.parse('2026-10-31T12:00:00Z');
+const iso = offset => new Date(now + offset).toISOString();
+assert.equal(relativeTime(iso(-120000), now), '2 minutes ago');
+assert.equal(relativeTime(iso(3600000), now), 'in 1 hour');
+assert.equal(relativeTime(iso(-86400000), now), 'yesterday');
+assert.equal(relativeTime(iso(-10000), now), 'now');
+assert.equal(relativeTime('not-a-date', now), 'not-a-date');
+"""
+        result = subprocess.run([node, "-e", check], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_settings_tab_and_installer_include_diagnostics(self):
         page = configurator.render_form(
             toolkit_settings.DEFAULT_SETTINGS, [], "Ollama offline", "token", "Save"
@@ -139,6 +180,14 @@ class DiagnosticsSnapshotTests(unittest.TestCase):
         self.assertIn("Why this title?", page)
         self.assertIn("AI explanation:", page)
         self.assertIn("diagnostics-auto-refresh", page)
+        self.assertIn("diagnostics-relative-times", page)
+        self.assertIn("<th>Job ID</th>", page)
+        self.assertIn("cell(row, job.id)", page)
+        self.assertIn("cell(row, event.job_id || '—')", page)
+        self.assertIn("event.commit_sha ? event.commit_sha.slice(0, 8)", page)
+        self.assertIn("relativeFormatter.format(", page)
+        self.assertIn("time.title = valid ? date.toLocaleString()", page)
+        self.assertIn("relativeTimes.addEventListener('change', renderEventRows)", page)
         self.assertIn("diagnostics-export", page)
         self.assertIn(Path("commit_diagnostics_dashboard.py"), workspace_search.source_files())
 

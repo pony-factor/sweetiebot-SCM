@@ -27,6 +27,45 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertNotIn("PRIVATE", location.read_text(encoding="utf-8"))
             self.assertEqual(stat.S_IMODE(location.stat().st_mode), 0o600)
 
+    def test_correlates_events_to_checkout_and_durable_job_without_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            checkout = root / "flawless-GPT"
+            nested = checkout / "src" / "core"
+            nested.mkdir(parents=True)
+            (checkout / ".git").write_text("gitdir: /private/worktree/metadata\\n")
+            logfile = root / "events.log"
+            with patch.dict(os.environ, {
+                "SWEETIEBOT_LOG_FILE": str(logfile),
+                "SWEETIEBOT_BACKGROUND_JOB": "7Aq9rE3Dp6P",
+            }), patch.object(diagnostics.Path, "cwd", return_value=nested):
+                self.assertTrue(diagnostics.log_event(
+                    "commit_title", "generation_completed", title="🖌️ Finish title",
+                    prompt="PRIVATE PROMPT", diff="PRIVATE DIFF", description="PRIVATE BODY",
+                    commit_sha="a" * 40))
+            event = json.loads(logfile.read_text())
+            self.assertEqual(event["repository"], "flawless-GPT")
+            self.assertEqual(event["job_id"], "7Aq9rE3Dp6P")
+            self.assertEqual(event["commit_sha"], "a" * 40)
+            self.assertNotIn(str(root), logfile.read_text())
+            self.assertNotIn("PRIVATE", logfile.read_text())
+
+    def test_invalid_job_ids_and_non_repositories_are_not_logged(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            logfile = root / "events.log"
+            with patch.dict(os.environ, {
+                "SWEETIEBOT_LOG_FILE": str(logfile),
+                "SWEETIEBOT_BACKGROUND_JOB": "../../private/job.json",
+            }), patch.object(diagnostics.Path, "cwd", return_value=root):
+                self.assertTrue(diagnostics.log_event(
+                    "commit_title", "request_failed", repository="../private",
+                    job_id="../../other-job", commit_sha="not-a-real-git-hash"))
+            event = json.loads(logfile.read_text())
+            self.assertNotIn("repository", event)
+            self.assertNotIn("job_id", event)
+            self.assertNotIn("commit_sha", event)
+
     def test_rotates_and_bounds_log_size(self):
         with tempfile.TemporaryDirectory() as temp:
             location = Path(temp) / "sweetiebot.log"
