@@ -64,6 +64,45 @@ function pullRequestFromTreeNode(node) {
   return { url: undefined, number: numberHint };
 }
 
+// Folder rows in GitHub's PR tree share the same merge context as PR rows.
+// Snapshot the descendants in displayed order before merging; never treat a
+// category/folder as a pull request or substitute the currently selected row.
+async function pullRequestsInFolder(owner, folder) {
+  if (!folder || typeof owner.getChildren !== 'function') return [];
+  const seenNodes = new Set();
+  const seenUrls = new Set();
+  const requests = [];
+  const visit = async node => {
+    if (!node || seenNodes.has(node)) return;
+    seenNodes.add(node);
+    let model = pullRequestFromTreeNode(node);
+    if (!model.url && typeof owner.getTreeItem === 'function') {
+      try {
+        const rendered = pullRequestFromTreeNode(await owner.getTreeItem(node));
+        if (rendered.url && (model.number == null || model.number === rendered.number)) model = rendered;
+      } catch {
+        // A non-PR folder may not provide a rendered item.
+      }
+    }
+    if (model.url) {
+      if (!seenUrls.has(model.url)) {
+        seenUrls.add(model.url);
+        requests.push({ node, url: model.url, number: model.number });
+      }
+      return;
+    }
+    const children = await owner.getChildren(node);
+    if (Array.isArray(children)) {
+      for (const child of children) await visit(child);
+    }
+  };
+  const children = await owner.getChildren(folder);
+  if (Array.isArray(children)) {
+    for (const child of children) await visit(child);
+  }
+  return requests;
+}
+
 function installPullRequestRefresh(vscode, view, owner) {
   // Sweetiebot owns the public merge commands and their legacy aliases.
   // Only resolve nodes here, in the extension that owns the GitHub PR tree.
@@ -180,9 +219,54 @@ function installPullRequestRefresh(vscode, view, owner) {
       mergingUrls.delete(model.url);
     }
   };
+  // The GitHub PR view also displays the inline action on folder/category
+  // rows. Run its PR children one at a time through the same guarded action,
+  // preserving each PR's own eligibility checks, attribution, and base.
+  const mergingFolders = new Set();
+  const mergeFolder = async (folder, progress) => {
+    let requests;
+    try {
+      requests = await pullRequestsInFolder(owner, folder);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Unable to read pull requests in this folder: ${error.message}`);
+      return { state: 'failed', total: 0 };
+    }
+    if (!requests.length) {
+      vscode.window.showErrorMessage('No pull requests were found in the selected folder.');
+      return { state: 'failed', total: 0 };
+    }
+    const counts = { merged: 0, queued: 0, pending: 0, cancelled: 0, failed: 0 };
+    for (const [index, request] of requests.entries()) {
+      progress?.report?.({ message: `PR ${index + 1}/${requests.length}: #${request.number}` });
+      try {
+        const result = await mergeTreeRow(request.node);
+        const state = result?.state;
+        if (Object.hasOwn(counts, state)) counts[state]++;
+        else counts.failed++;
+      } catch (error) {
+        counts.failed++;
+        vscode.window.showErrorMessage(`Unable to merge PR #${request.number}: ${error.message}`);
+      }
+    }
+    const summary = `Folder merge: ${counts.merged} merged, ${counts.queued} queued, ${counts.pending} pending, ${counts.cancelled} cancelled, ${counts.failed} failed (${requests.length} PRs attempted).`;
+    if (counts.failed || counts.cancelled) vscode.window.showWarningMessage(summary);
+    else vscode.window.showInformationMessage(summary);
+    return { state: 'completed', total: requests.length, ...counts };
+  };
   owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', node => {
     const clicked = pullRequestFromTreeNode(node);
     if (clicked.url && mergingUrls.has(clicked.url)) return;
+    // Folders have no PR URL, but can contain several PR nodes. Do not route a
+    // numbered yet-unresolved PR into the folder workflow.
+    if (node && !clicked.url && clicked.number == null && typeof owner.getChildren === 'function') {
+      if (mergingFolders.has(node)) return;
+      mergingFolders.add(node);
+      return vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Squash merge folder pull requests',
+        cancellable: false
+      }, progress => mergeFolder(node, progress).finally(() => mergingFolders.delete(node)));
+    }
     // Show feedback synchronously, even when the extension needs to hydrate a
     // stale row before it can safely identify the requested pull request.
     return vscode.window.withProgress({
@@ -269,4 +353,4 @@ function installPullRequestRefresh(vscode, view, owner) {
   return view;
 }
 
-module.exports = { installPullRequestRefresh, pullRequestFromTreeNode };
+module.exports = { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder };
