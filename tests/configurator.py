@@ -534,6 +534,7 @@ class SubmissionTests(unittest.TestCase):
         # Extension-native and repository-scoped settings do not belong
         # to the global Git-backed configurator's managed controls.
         self.assertEqual(properties - exposed, {
+            "scmToolkit.caseOnlyRenameDetection",
             "scmToolkit.postCommitSpellcheck",
             "scmToolkit.startCompactPRSession",
             "scmToolkit.promptForIndependentWorkspaceTrust",
