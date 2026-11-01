@@ -221,6 +221,7 @@ Prefer the live settings page for the current option names and defaults rather t
 | --- | --- |
 | Customizations disappeared after an update | **Output → Sweetie Bot app repair**; app version, supported patch anchors, permissions; `python3 scripts/install.py --check` |
 | Commit title/model failure | Ollama running locally, selected model installed, available memory; `~/Library/Logs/Sweetiebot/sweetiebot.log` |
+| Git command fails with `No module named 'toolkit_settings'` (sometimes through `git-auto-title`) | Update the source checkout and rerun `bash scripts/install.command`. The installer restores the wrapper's sibling Python dependencies and migrates the legacy `git-auto-title` executable to the canonical wrapper. Avoid bypassing the wrapper for commits, pushes, or branch changes while background jobs may be unfinished. |
 | Pending background commit or push | Read the queued job's status; avoid amending, resetting, or forcing a push while title finalization is pending |
 | New PR button cannot publish | Published branch and unchanged head SHA, local Kefania service, GitHub App/CLI access, active PR workspace |
 | Merge action is unavailable | Live head/base, merge conflicts, status checks, rulesets, attribution requirements, and stacked dependencies |

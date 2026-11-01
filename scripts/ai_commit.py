@@ -2349,6 +2349,16 @@ def main() -> None:
         if not any(option in {"--hard", "--soft", "--merge", "--keep"}
                    for option in reset_options):
             os.execv(REAL_GIT, [REAL_GIT, *argv])
+    if subcommand == "checkout" and "--" in argv[index + 1:]:
+        # Explicit pathspec checkout restores files without changing a ref.
+        # Keep it available when a partially installed wrapper is missing
+        # toolkit_settings or another commit-recovery dependency. Branch and
+        # detached-HEAD checkouts must still pass through the recovery barrier.
+        args = argv[index + 1:]
+        separator = args.index("--")
+        if args[separator + 1:] and all(
+                option in {"-q", "--quiet"} for option in args[:separator]):
+            os.execv(REAL_GIT, [REAL_GIT, *argv])
     if BOOTSTRAP_IMPORT_ERRORS and subcommand in {
             "commit", "push", "pull", "merge", "rebase", "reset",
             "switch", "checkout", "cherry-pick"

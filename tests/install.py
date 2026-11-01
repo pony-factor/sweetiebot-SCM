@@ -1113,6 +1113,61 @@ class AiWrapperTests(unittest.TestCase):
                 self.assertIn("installation is incomplete", blocked.stderr)
                 self.assertNotIn("Traceback", blocked.stderr)
 
+    def test_missing_toolkit_settings_allows_file_checkout_but_blocks_branch_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "bin" / "scm-toolkit-git"
+            install.sync_ai_wrapper(destination=destination)
+            legacy = destination.with_name("git-auto-title")
+            legacy.symlink_to(destination)
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            real_git = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
+
+            def git(*args):
+                return subprocess.run([real_git, *args], cwd=repo, check=True,
+                                      text=True, capture_output=True)
+
+            git("init", "-q")
+            git("config", "user.name", "Sweetiebot Test")
+            git("config", "user.email", "test@example.invalid")
+            file = repo / "file.txt"
+            file.write_text("original", encoding="utf-8")
+            git("add", "file.txt")
+            git("commit", "-qm", "Initial commit")
+            original_head = git("rev-parse", "HEAD").stdout.strip()
+            destination.with_name("toolkit_settings.py").unlink()
+            env = {**os.environ, "PYTHONPATH": "", "SCM_TOOLKIT_REAL_GIT": real_git}
+
+            # Both the canonical executable and the old VS Code git.path alias
+            # must delegate file-only restoration to Git without importing the
+            # missing settings module or losing the current commit.
+            for wrapper in (destination, legacy):
+                file.write_text("modified", encoding="utf-8")
+                restored = subprocess.run(
+                    [sys.executable, str(wrapper), "checkout", "-q", "--", "file.txt"],
+                    cwd=repo, env=env, text=True, capture_output=True,
+                )
+                self.assertEqual(restored.returncode, 0, restored.stderr)
+                self.assertEqual(file.read_text(encoding="utf-8"), "original")
+                self.assertEqual(git("rev-parse", "HEAD").stdout.strip(), original_head)
+
+            blocked = subprocess.run(
+                [sys.executable, str(legacy), "checkout", "-b", "should-not-exist"],
+                cwd=repo, env=env, text=True, capture_output=True,
+            )
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("installation is incomplete", blocked.stderr)
+            self.assertIn("toolkit_settings", blocked.stderr)
+            self.assertNotIn("Traceback", blocked.stderr)
+            self.assertFalse(git("branch", "--list", "should-not-exist").stdout.strip())
+            self.assertEqual(git("rev-parse", "HEAD").stdout.strip(), original_head)
+
+            # The installer already repairs the missing sibling dependency.
+            self.assertTrue(install.sync_ai_wrapper(check=True, destination=destination))
+            install.sync_ai_wrapper(destination=destination)
+            self.assertTrue(destination.with_name("toolkit_settings.py").is_file())
+            self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
+
     def test_canonical_installer_call_migrates_existing_legacy_wrapper(self):
         with tempfile.TemporaryDirectory() as tmp:
             primary = Path(tmp) / "bin" / "scm-toolkit-git"
