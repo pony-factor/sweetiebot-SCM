@@ -788,3 +788,59 @@ test('Accept queues reviewed corrections behind pending titles and survives a ti
   assert.equal(calls[0].options.description,'Keep my description');
   assert.equal(calls[0].options.skipSpellcheck,true);
 });
+
+test('Accept tolerates nonconflicting consecutive commits to the same file', async () => {
+  const secondHead = 'b'.repeat(40);
+  const originalTree = 'c'.repeat(40);
+  const updatedTree = 'd'.repeat(40);
+  const shiftedPatch = patch.replace('@@ -1,3 +1,3 @@', '@@ -7,3 +7,3 @@')
+    .replace(' unchanged context', ' new context after intervening commit');
+  for (const scenario of [
+    {name: 'same reviewed patch', updatedPatch: patch, shouldAccept: true},
+    {name: 'shifted lines and context', updatedPatch: shiftedPatch, shouldAccept: true},
+    {name: 'changed correction', updatedPatch: shiftedPatch.replace('+This is the', '+This is a'), shouldAccept: false},
+    {name: 'new unstaged correction', updatedPatch: shiftedPatch.replace(' after context', '+New edit'), shouldAccept: false},
+    {name: 'diverged history', updatedPatch: shiftedPatch, diverged: true, shouldAccept: false},
+    {name: 'branch switched', updatedPatch: shiftedPatch, branchChanged: true, shouldAccept: false},
+    {name: 'worktree changed without commit', updatedPatch: shiftedPatch, noCommit: true, shouldAccept: false},
+    {name: 'title-only replacement with new unstaged edits', updatedPatch: shiftedPatch, sameTree: true, shouldAccept: false}
+  ]) {
+    const f = fixture();
+    let advanced = false;
+    const readGit = async (_root, args) => {
+      if (args[0] === 'symbolic-ref') return advanced && scenario.branchChanged
+        ? 'refs/heads/other' : 'refs/heads/topic';
+      if (args[0] === 'rev-parse') {
+        if (args[1] === 'HEAD') return advanced && !scenario.noCommit ? secondHead : head;
+        if (args[1] === 'HEAD^{tree}') return advanced && !scenario.sameTree ? updatedTree : originalTree;
+        return originalTree;
+      }
+      if (args[0] === 'merge-base') {
+        assert.deepEqual(args, ['merge-base', '--is-ancestor', head, secondHead]);
+        if (scenario.diverged) throw new Error('Not an ancestor');
+        return '';
+      }
+      return f.git(_root, args);
+    };
+    const readDiff = async (_root, args) => args.includes('--cached')
+      ? '' : advanced ? scenario.updatedPatch : patch;
+    await showNotice({}, f.repo, {head, tree: originalTree, root: '/repo', paths: ['notes/report.md']},
+      readDiff, readGit);
+    const preview = takeSpellcheckPopup();
+    advanced = true;
+    const mutations = [];
+    const vscode = {Uri: {file: fsPath => ({fsPath})}, workspace: {textDocuments: []}};
+    const finish = () => finishSpellcheckPreview(vscode, preview.sessionId, 'accept', '',
+      async (_root, args) => { mutations.push(args[1]); }, async () => {},
+      async () => ({title: '🐞 Fix spelling in reviewed prose', description: ''}));
+    try {
+      if (scenario.shouldAccept) {
+        assert.deepEqual(await finish(), {action: 'accept'}, scenario.name);
+        assert.deepEqual(mutations, ['add', 'commit'], scenario.name);
+      } else {
+        await assert.rejects(finish(), /changed|Reopen the spelling preview/, scenario.name);
+        assert.equal(mutations.length, 0, scenario.name);
+      }
+    } finally { closeSpellcheckPopup(preview.sessionId); }
+  }
+});
