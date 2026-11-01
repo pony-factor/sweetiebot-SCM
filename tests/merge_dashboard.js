@@ -1145,6 +1145,33 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   const emphasisNodes = walk(emphasisRoot);
   assert(emphasisNodes.some(n => n.tag === 'strong' && n.children.some(c => c.tag === 'em')));
   assert(emphasisNodes.some(n => n.tag === 'em' && n.children.some(c => c.tag === 'strong')));
+  // Kefania and Lindsey share this renderer: emphasis inside link labels
+  // must not leak Markdown markers or introduce nested clickable links.
+  const formattedLinkRoot = document.createElement('div');
+  const paperTitle = 'Does Confidential Proxy Voting Matter?';
+  const paperUrl = 'https://www.nber.org/papers/w9126';
+  renderMergeMarkdown(formattedLinkRoot, [
+    '- **Confidential proxy voting:** Roberta Romano’s [*' + paperTitle +
+      '* (NBER Working Paper No. 9126, September 2002)](' + paperUrl + ').',
+    '- [**Bold** and ' + tick + 'code' + tick +
+      ' and *italic https://tracker.invalid/path*](https://example.org/source)'
+  ].join('\n'));
+  const formattedNodes = walk(formattedLinkRoot);
+  const formattedAnchors = formattedNodes.filter(n => n.tag === 'a');
+  const paperLink = formattedAnchors.find(n => n.href === paperUrl);
+  assert(paperLink, 'The linked paper remains clickable');
+  assert.equal(paperLink.textContent,
+    paperTitle + ' (NBER Working Paper No. 9126, September 2002)',
+    'Markdown emphasis delimiters must not display in linked titles');
+  assert(paperLink.children.some(n => n.tag === 'em' && n.textContent === paperTitle),
+    'The paper title inside the hyperlink is italicized');
+  const formattedLabel = formattedAnchors.find(n => n.href === 'https://example.org/source');
+  assert(formattedLabel.children.some(n => n.tag === 'strong' && n.textContent === 'Bold'));
+  assert(formattedLabel.children.some(n => n.tag === 'code' && n.textContent === 'code'));
+  assert(formattedLabel.children.some(n => n.tag === 'em' &&
+    n.textContent === 'italic https://tracker.invalid/path'));
+  assert.equal(formattedAnchors.length, 2,
+    'Raw URLs inside linked emphasis never create nested or tracking links');
   const previewLinkRoot = document.createElement('div');
   renderMergeMarkdown(previewLinkRoot, '[Gallery] (https://derpicdn.net/some.png)',
     { mapLink: () => 'https://derpibooru.org/images/42' });
