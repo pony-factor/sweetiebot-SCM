@@ -27,7 +27,7 @@ const DEFAULT_MCP_SERVER = 'codex-drafter';
 const DEFAULT_MCP_TOOL = 'github_create_pull_request';
 const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
 const CONVERSATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CODEX_SHARED_LINKS_KEY = 'sweetiebot.codexSharedConversationUrls';
+const CODEX_SHARED_LINKS_KEY = 'scmToolkit.codexSharedConversationUrls';
 const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item (starting with `- `). Keep each reference as a complete raw HTTPS URL, embedded in the sentence explaining its relationship to the change. Do not turn URLs into Markdown links, label them only by number, put them in normal paragraphs, or leave them as standalone URL-only bullets. When a bullet ends immediately after a GitHub URL, omit any punctuation that would follow the URL, including after a Markdown link wrapping that URL. Keep normal punctuation in other prose. This bullet placement takes precedence over conflicting placement guidance in the canonical rules; continue verifying and citing sources as required.';
 
 async function readLudicrousMode(run = promisify(execFile)) {
@@ -574,7 +574,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     // Sharing publishes a public snapshot of the active Codex conversation.
     // Never invoke native Share or reuse cached public links without opt-in.
-    const autoShareCodexChat = vscode.workspace.getConfiguration('scmToolkit')
+    const autoShareCodexChat = vscode.workspace.getConfiguration('sweetiebot')
       .get('kefaniaAutoShareCodexChat', false) === true;
     if (autoShareCodexChat) source = sourceWithSharedConversationUrl(context, source);
     // Capture a fresh native Share snapshot in the originating window before
@@ -693,13 +693,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     localHandoff.register(draftId, { pony, profile: cachedProfile,
       ludicrousMode,
       appearance: async () => {
-        if (!vscode.workspace.getConfiguration('scmToolkit').get('kefaniaUseThemeColors', true)) return null;
+        if (!vscode.workspace.getConfiguration('sweetiebot').get('kefaniaUseThemeColors', true)) return null;
         try { return await vscode.commands.executeCommand('sweetiebot.kefaniaThemeColors'); }
         catch { return null; }
       },
-      closeAfterMerge: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseAfterMerge', false),
-      showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
-      kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
+      closeAfterMerge: () => vscode.workspace.getConfiguration('sweetiebot').get('kefaniaCloseAfterMerge', false),
+      showKefaniaCloseButton: () => vscode.workspace.getConfiguration('sweetiebot').get('kefaniaShowCloseButton', true),
+      kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('sweetiebot')),
       decorateDraft: draft => ({ ...draft, body: appendSourceDetails(draft.body, source) }),
       onMerge: async result => {
         const session = await require('./session').githubSession(vscode);
@@ -723,7 +723,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
       await closeConfirmation();
-    }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {
+    }, autoPublish: vscode.workspace.getConfiguration('sweetiebot').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();

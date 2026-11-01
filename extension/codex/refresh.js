@@ -25,7 +25,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   const loadedRevision = runtimeRevision(vscode, context);
   // A shared stop flag also covers windows using another settings profile.
   const paused = path.join(os.homedir(), '.config', 'sweetiebot', 'pause-app-repair');
-  const enabled = () => !fs.existsSync(paused) && vscode.workspace.getConfiguration('scmToolkit').get('automaticAppRepair', true);
+  const enabled = () => !fs.existsSync(paused) && vscode.workspace.getConfiguration('sweetiebot').get('automaticAppRepair', true);
   const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
 
   const reportReloadBlock = reason => {
@@ -175,9 +175,9 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
       }
     }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('scmToolkit.automaticAppRepair') ||
-          event.affectsConfiguration('scmToolkit.sourceControlLabel') ||
-          event.affectsConfiguration('scmToolkit.messageBarLayout')) schedule(QUIET_PERIOD_MS);
+      if (event.affectsConfiguration('sweetiebot.automaticAppRepair') ||
+          event.affectsConfiguration('sweetiebot.sourceControlLabel') ||
+          event.affectsConfiguration('sweetiebot.messageBarLayout')) schedule(QUIET_PERIOD_MS);
     }), {
       dispose() {
         disposed = true;

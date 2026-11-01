@@ -129,7 +129,7 @@ test('case-only rename opt-out removes SCM entries, suppresses staging, and resc
       Uri:{file:fsPath=>({scheme:'file', fsPath})},
       workspace:{
         getConfiguration(section, resource) {
-          assert.equal(section,'scmToolkit');
+          assert.equal(section,'sweetiebot');
           assert.equal(resource,repoUri);
           return {get(key, defaultValue) {
             assert.equal(key,'caseOnlyRenameDetection');
@@ -167,14 +167,14 @@ test('case-only rename opt-out removes SCM entries, suppresses staging, and resc
         [[root,'src/Readme.md','src/README.md']]);
       enabled=false;
       assert.equal(caseRenameDetectionEnabled(vscode,repoUri),false);
-      settingChanges({affectsConfiguration:key=>key==='scmToolkit.caseOnlyRenameDetection'});
+      settingChanges({affectsConfiguration:key=>key==='sweetiebot.caseOnlyRenameDetection'});
       await tick();
       assert.equal(providers[0].disposed,true);
       await stageRename(root,'src/Readme.md','src/README.md');
       assert.equal(prompts,0,'opted-out repositories never offer a stage action');
       assert.equal(git(root,'diff','--cached','--name-only').trim(),'');
       enabled=true;
-      settingChanges({affectsConfiguration:key=>key==='scmToolkit.caseOnlyRenameDetection'});
+      settingChanges({affectsConfiguration:key=>key==='sweetiebot.caseOnlyRenameDetection'});
       await tick();
       assert.equal(providers.length,2);
       assert.equal(providers[1].caseRenameGroup.resourceStates.length,1);

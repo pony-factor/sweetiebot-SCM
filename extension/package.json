@@ -49,7 +49,7 @@
     "onCommand:sweetiebot.deleteEmptyBranch",
     "onCommand:sweetiebot.autoPullClean",
     "onCommand:sweetiebot.syncBranch",
-    "onView:scmToolkit.workspaceSearch",
+    "onView:sweetiebot.workspaceSearch",
     "onCommand:sweetiebot.openSettings",
     "onStartupFinished",
     "onCommand:sweetiebot.workspaceSearch.clearIndex",
@@ -89,7 +89,7 @@
     "views": {
       "scm": [
         {
-          "id": "scmToolkit.workspaceSearch",
+          "id": "sweetiebot.workspaceSearch",
           "name": "Workspace Search",
           "type": "webview",
           "visibility": "visible",
@@ -213,7 +213,7 @@
       "view/title": [
         {
           "command": "sweetiebot.workspaceSearch.clearIndex",
-          "when": "view == scmToolkit.workspaceSearch",
+          "when": "view == sweetiebot.workspaceSearch",
           "group": "navigation@1"
         },
         {
@@ -230,7 +230,7 @@
       "view/item/context": [
         {
           "command": "sweetiebot.squashMergeTreePullRequest",
-          "when": "view == pr:github && viewItem =~ /pullrequest/ && viewItem !~ /sweetiebotMergeBusy/ && config.scmToolkit.pullRequestQuickMerge && !isWeb",
+          "when": "view == pr:github && viewItem =~ /pullrequest/ && viewItem !~ /sweetiebotMergeBusy/ && config.sweetiebot.pullRequestQuickMerge && !isWeb",
           "group": "inline@2"
         }
       ],
@@ -286,76 +286,76 @@
     "configuration": {
       "title": "Sweetiebot SCM",
       "properties": {
-        "scmToolkit.caseOnlyRenameDetection": {
+        "sweetiebot.caseOnlyRenameDetection": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
           "description": "Recognize filename capitalization-only renames and show them in a separate Source Control group. Turn off globally, for a workspace, or in a repository's .vscode/settings.json. Disabling removes that group's entries without modifying files or Git's index."
         },
-        "scmToolkit.postCommitSpellcheck": {
+        "sweetiebot.postCommitSpellcheck": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
           "description": "Allow post-commit Markdown Spellcheck Changes when global Spellcheck is on. Set false in the repository's .vscode/settings.json to opt out only there without disabling spellcheck elsewhere."
         },
-        "scmToolkit.automaticBranchCleanup": {
+        "sweetiebot.automaticBranchCleanup": {
           "type": "boolean",
           "default": true,
           "description": "Automatically remove eligible merged local branches on startup and every ten minutes."
         },
-        "scmToolkit.gitGraphRelativeDates": {
+        "sweetiebot.gitGraphRelativeDates": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Keep the Git Graph extension (mhutchie.git-graph) date column in Relative format, including after changes to its date format. Disabling enforcement does not reset an existing Git Graph preference."
         },
-        "scmToolkit.cloudRepositorySync": {
+        "sweetiebot.cloudRepositorySync": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Sync existing local main checkouts every 15 minutes when upstream main has commits in the past seven days, even after VS Code closes. Skips local changes and divergence."
         },
-        "scmToolkit.autoCommitWithCodex": {
+        "sweetiebot.autoCommitWithCodex": {
           "type": "boolean",
           "default": false,
           "scope": "window",
           "description": "Opt in to automatically committing saved Git changes every 30 seconds with Codex as co-author. Stages modified, deleted and untracked files, creates local commits only, and never pushes automatically. Skips conflicts, empty changes and active commit drafts."
         },
-        "scmToolkit.durableBackgroundCommits": {
+        "sweetiebot.durableBackgroundCommits": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background, with restart recovery. Off uses the earlier direct commit workflow."
         },
-        "scmToolkit.automaticWorkspaceCleanup": {
+        "sweetiebot.automaticWorkspaceCleanup": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Clean inactive, Sweetiebot-managed saved workspace metadata and safe Git worktrees after verifying no live windows, pending edits, or unpublished commits. Topic worktrees require verified merged PRs; legacy independent clones retain strict merge-proof safeguards."
         },
-        "scmToolkit.workspaceSearch.autoReindex": {
+        "sweetiebot.workspaceSearch.autoReindex": {
           "type": "boolean",
           "default": true,
           "description": "Automatically refresh the workspace search index every two minutes."
         },
-        "scmToolkit.autoPublishNewBranches": {
+        "sweetiebot.autoPublishNewBranches": {
           "type": "boolean",
           "default": false,
           "description": "Automatically publish newly selected local branches to the configured Git remote."
         },
-        "scmToolkit.startCompactPRSession": {
+        "sweetiebot.startCompactPRSession": {
           "type": "boolean",
           "default": false,
           "scope": "window",
           "description": "Open a dedicated pull-request session window in the compact 600px square layout."
         },
-        "scmToolkit.squashOmitBulletsForEmojiTitles": {
+        "sweetiebot.squashOmitBulletsForEmojiTitles": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Remove bullet hyphens from PR squash summaries only when every included commit subject starts with an emoji. Mixed summaries keep bullets."
         },
-        "scmToolkit.squashTrailerSeparatorStyle": {
+        "sweetiebot.squashTrailerSeparatorStyle": {
           "type": "string",
           "enum": [
             "underscores",
@@ -366,31 +366,31 @@
           "scope": "application",
           "description": "Divider between squash summaries and co-author trailers: ten underscores, nine hyphens, or none."
         },
-        "scmToolkit.filterSyncCommitSummaries": {
+        "sweetiebot.filterSyncCommitSummaries": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Exclude routine Sync brach/branch to main commits from pull-request squash summaries while preserving contributor credits."
         },
-        "scmToolkit.mergePostStatusUpdates": {
+        "sweetiebot.mergePostStatusUpdates": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Allow concise GitHub PR status comments after verified conflict resolution or repairs. Applies to upcoming Lindsey tasks and handoffs, independently of post-merge AI summaries."
         },
-        "scmToolkit.mergePostSummaries": {
+        "sweetiebot.mergePostSummaries": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Post an AI summary to each selected PR after its merge is independently verified. Local explanations are always shown."
         },
-        "scmToolkit.mergeShowPrCommits": {
+        "sweetiebot.mergeShowPrCommits": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Show PR commit-history graphs in Lindsey's bulk-merge dashboard. The hamburger toggle in each PR header updates this application-wide preference for all PRs and open dashboards. Disable to give the diff the full width."
         },
-        "scmToolkit.mergeSidebarWidthPercent": {
+        "sweetiebot.mergeSidebarWidthPercent": {
           "type": "integer",
           "minimum": 15,
           "maximum": 75,
@@ -398,7 +398,7 @@
           "scope": "application",
           "description": "Starting width of Lindsey's PR list as a percentage of the dashboard."
         },
-        "scmToolkit.mergeTimelineHeightPercent": {
+        "sweetiebot.mergeTimelineHeightPercent": {
           "type": "integer",
           "minimum": 15,
           "maximum": 80,
@@ -406,7 +406,7 @@
           "scope": "application",
           "description": "Starting height of Lindsey's activity timeline as a percentage of the left pane."
         },
-        "scmToolkit.mergeTimelineTimestampMode": {
+        "sweetiebot.mergeTimelineTimestampMode": {
           "type": "string",
           "enum": [
             "hidden",
@@ -422,74 +422,74 @@
           "scope": "application",
           "description": "Timestamp display in the Lindsey bulk-merge activity timeline. Can also be changed from the dashboard."
         },
-        "scmToolkit.compactWindowButton": {
+        "sweetiebot.compactWindowButton": {
           "type": "boolean",
           "default": true,
           "description": "Show the compact-window sizing button in the title bar."
         },
-        "scmToolkit.newWorkspaceWindowButton": {
+        "sweetiebot.newWorkspaceWindowButton": {
           "type": "boolean",
           "default": true,
           "description": "Show a title-bar button that opens an independent local Git checkout on main in a new window."
         },
-        "scmToolkit.windowHeading": {
+        "sweetiebot.windowHeading": {
           "type": "string",
           "default": "",
           "description": "Custom visible title-bar heading using VS Code title variables. Blank follows window.title. Example: ${rootName} (${activeRepositoryBranchName})."
         },
-        "scmToolkit.windowName": {
+        "sweetiebot.windowName": {
           "type": "string",
           "default": "",
           "description": "Custom window name shown by macOS and window switchers using VS Code title variables. Blank follows window.title independently of the heading."
         },
-        "scmToolkit.windowShowModifiedStatus": {
+        "sweetiebot.windowShowModifiedStatus": {
           "type": "boolean",
           "default": true,
           "description": "Show Modified and other active editor states in the heading and window name."
         },
-        "scmToolkit.windowShowPushingStatus": {
+        "sweetiebot.windowShowPushingStatus": {
           "type": "boolean",
           "default": true,
           "description": "Show Pushing while a background push is pending. Hiding it does not stop the push."
         },
-        "scmToolkit.promptForIndependentWorkspaceTrust": {
+        "sweetiebot.promptForIndependentWorkspaceTrust": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Offer VS Code's native trust dialog for the Sweetiebot Workspaces parent folder. Approval covers all existing and future clones. Use Configure Independent Workspace Trust to reopen it."
         },
-        "scmToolkit.codexKeepAwake": {
+        "sweetiebot.codexKeepAwake": {
           "type": "boolean",
           "default": true,
           "scope": "window",
           "description": "Keep macOS and its display awake and postpone the automatic screensaver while Codex is working. Releases protection when all tasks finish."
         },
-        "scmToolkit.workspaceSearch.embeddingModel": {
+        "sweetiebot.workspaceSearch.embeddingModel": {
           "type": "string",
           "default": "qwen3-embedding:0.6b",
           "description": "Ollama embedding model used to index and search workspace content."
         },
-        "scmToolkit.workspaceSearch.askOllama": {
+        "sweetiebot.workspaceSearch.askOllama": {
           "type": "boolean",
           "default": false,
           "description": "Show the Ask Ollama action. Requires an explicit chat model."
         },
-        "scmToolkit.workspaceSearch.chatModel": {
+        "sweetiebot.workspaceSearch.chatModel": {
           "type": "string",
           "default": "",
           "description": "Ollama chat model used by Ask Ollama. Required when Ask Ollama is enabled."
         },
-        "scmToolkit.workspaceSearch.placeholder": {
+        "sweetiebot.workspaceSearch.placeholder": {
           "type": "string",
           "default": "Search your workspace…",
           "description": "Hint shown in the empty EFS search box; set to SATS or any custom text. Leave blank to restore the original hint."
         },
-        "scmToolkit.workspaceSearch.ollamaUrl": {
+        "sweetiebot.workspaceSearch.ollamaUrl": {
           "type": "string",
           "default": "http://127.0.0.1:11434",
           "description": "Loopback Ollama server URL. Only localhost and loopback addresses are accepted."
         },
-        "scmToolkit.workspaceSearch.mode": {
+        "sweetiebot.workspaceSearch.mode": {
           "type": "string",
           "enum": [
             "hybrid",
@@ -499,153 +499,153 @@
           "default": "hybrid",
           "description": "Default ranking mode. Hybrid combines semantic and exact term matching."
         },
-        "scmToolkit.workspaceSearch.resultLimit": {
+        "sweetiebot.workspaceSearch.resultLimit": {
           "type": "integer",
           "minimum": 1,
           "maximum": 100,
           "default": 100,
           "description": "Maximum number of result passages shown."
         },
-        "scmToolkit.workspaceSearch.maxFiles": {
+        "sweetiebot.workspaceSearch.maxFiles": {
           "type": "integer",
           "minimum": 1,
           "maximum": 50000,
           "default": 5000,
           "description": "Maximum number of workspace files considered for indexing."
         },
-        "scmToolkit.workspaceSearch.maxFileSizeMB": {
+        "sweetiebot.workspaceSearch.maxFileSizeMB": {
           "type": "number",
           "minimum": 0.1,
           "maximum": 100,
           "default": 10,
           "description": "Maximum file size indexed directly. External document extractors may still impose their own limits."
         },
-        "scmToolkit.workspaceSearch.exclude": {
+        "sweetiebot.workspaceSearch.exclude": {
           "type": "string",
           "default": "**/{.git,node_modules,dist,build,out,target,.venv,venv,__pycache__,coverage}/**",
           "description": "Glob excluded from workspace indexing."
         },
-        "scmToolkit.openPanelOnStartup": {
+        "sweetiebot.openPanelOnStartup": {
           "type": "boolean",
           "default": true,
           "scope": "window",
           "description": "Open Sweetie Bot / Source Control when each VS Code window starts, then return keyboard focus to the editor."
         },
-        "scmToolkit.pullRequestAutoRefresh": {
+        "sweetiebot.pullRequestAutoRefresh": {
           "type": "boolean",
           "default": true,
           "description": "Automatically refresh visible and focused GitHub PR lists at the configured interval (120 seconds by default), pausing on rate limits."
         },
-        "scmToolkit.prWarningHighlights": {
+        "sweetiebot.prWarningHighlights": {
           "type": "boolean",
           "default": false,
           "description": "Opt in to highlighting the PR icon when eligibility verification fails. Off keeps its normal muted gray appearance; PR safeguards and tooltip details remain available."
         },
-        "scmToolkit.pullRequestQuickMerge": {
+        "sweetiebot.pullRequestQuickMerge": {
           "type": "boolean",
           "default": true,
           "description": "Show an inline button to squash-merge a GitHub pull request into its base branch, confirming non-main targets."
         },
-        "scmToolkit.chatgptProjectUrl": {
+        "sweetiebot.chatgptProjectUrl": {
           "type": "string",
           "default": "",
           "scope": "resource",
           "description": "Optional shared ChatGPT Project for PR drafting, pony-profile research, batch squash-merges, and interactive ChatGPT reviews unless overridden by chatgptReviewProjectUrl. Automatic commit titles and post-commit spellcheck remain on local Ollama."
         },
-        "scmToolkit.chatgptReviewProjectUrl": {
+        "sweetiebot.chatgptReviewProjectUrl": {
           "type": "string",
           "default": "",
           "scope": "resource",
           "description": "Optional dedicated ChatGPT Project for native Spellcheck Only and manually requested ChatGPT commit titles. Leave blank to inherit chatgptProjectUrl (or regular chats when both are blank). Must be an HTTPS https://chatgpt.com/g/g-p-.../project URL. Never redirects failed Project access to ordinary chat."
         },
-        "scmToolkit.automaticAppRepair": {
+        "sweetiebot.automaticAppRepair": {
           "type": "boolean",
           "default": true,
           "scope": "machine",
           "description": "Automatically install Sweetie Bot updates from main, restore customizations, and reload stale windows after updates settle. Background windows reload when focused."
         },
-        "scmToolkit.messageBarLayout": {
+        "sweetiebot.messageBarLayout": {
           "type": "string",
           "default": "",
           "scope": "application",
           "description": "Message bar layout saved by Sweetiebot setup. Changes apply through automatic app repair and reload."
         },
-        "scmToolkit.messagePlaceholder": {
+        "sweetiebot.messagePlaceholder": {
           "type": "string",
           "default": "Message",
           "description": "Text shown in the Source Control commit-message box. Leave blank to use VS Code's default."
         },
-        "scmToolkit.sourceControlLabel": {
+        "sweetiebot.sourceControlLabel": {
           "type": "string",
           "default": "Sweetiebot",
           "scope": "application",
           "description": "Source Control panel and Activity Bar label. Save in Sweetiebot settings to apply through automatic app repair and reload."
         },
-        "scmToolkit.commitButtonLabel": {
+        "sweetiebot.commitButtonLabel": {
           "type": "string",
           "default": "Send",
           "description": "Text shown on the primary Source Control commit action."
         },
-        "scmToolkit.commitAndSendButtonLabel": {
+        "sweetiebot.commitAndSendButtonLabel": {
           "type": "string",
           "default": "Send",
           "description": "Text shown on the primary commit action when git.postCommitCommand is push."
         },
-        "scmToolkit.hideIncomingSyncCount": {
+        "sweetiebot.hideIncomingSyncCount": {
           "type": "boolean",
           "default": false,
           "description": "Hide the incoming commit count in Sync. When both counts and arrows are hidden, join custom direction labels with &."
         },
-        "scmToolkit.hideOutgoingSyncCount": {
+        "sweetiebot.hideOutgoingSyncCount": {
           "type": "boolean",
           "default": true,
           "description": "Hide the outgoing commit count in Sync. When both counts and arrows are hidden, join custom direction labels with &."
         },
-        "scmToolkit.hideIncomingSyncArrow": {
+        "sweetiebot.hideIncomingSyncArrow": {
           "type": "boolean",
           "default": false,
           "description": "Hide the incoming (down) arrow in the Source Control Sync button without hiding its count or changing Git operations."
         },
-        "scmToolkit.hideOutgoingSyncArrow": {
+        "sweetiebot.hideOutgoingSyncArrow": {
           "type": "boolean",
           "default": false,
           "description": "Hide the outgoing (up) arrow in the Source Control Sync button without hiding its count or changing Git operations."
         },
-        "scmToolkit.incomingSyncLabel": {
+        "sweetiebot.incomingSyncLabel": {
           "type": "string",
           "default": "",
           "description": "Optional custom label beside the incoming (down-arrow) Sync Changes count. Blank keeps the native display."
         },
-        "scmToolkit.outgoingSyncLabel": {
+        "sweetiebot.outgoingSyncLabel": {
           "type": "string",
           "default": "",
           "description": "Optional custom label beside the outgoing (up-arrow) Sync Changes count. Blank keeps the native display."
         },
-        "scmToolkit.kefaniaAutoShareCodexChat": {
+        "sweetiebot.kefaniaAutoShareCodexChat": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Opt in to publishing a public ChatGPT snapshot of the active Codex chat whenever Kefania starts a pull request. The snapshot can expose your prompts and AI replies to anyone with the link, and Kefania adds the link to public PR Source details. Sweetiebot cannot unpublish or revoke it; treat sharing as permanent. Even with sharing off, Kefania may still send captured chat text to the drafting AI."
         },
-        "scmToolkit.kefaniaUseThemeColors": {
+        "sweetiebot.kefaniaUseThemeColors": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Use the active VS Code theme colors for Kefania pages and controls."
         },
-        "scmToolkit.kefaniaCloseAfterMerge": {
+        "sweetiebot.kefaniaCloseAfterMerge": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Close the Kefania confirmation window after GitHub confirms a successful squash and merge."
         },
-        "scmToolkit.kefaniaShowCloseButton": {
+        "sweetiebot.kefaniaShowCloseButton": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Show the X to close a published Kefania confirmation window."
         },
-        "scmToolkit.kefaniaCloseButtonPosition": {
+        "sweetiebot.kefaniaCloseButtonPosition": {
           "type": "string",
           "enum": [
             "left",
@@ -661,25 +661,25 @@
           "scope": "application",
           "description": "Position the Kefania confirmation X. Middle places it inside the pony column."
         },
-        "scmToolkit.autoPublishPullRequests": {
+        "sweetiebot.autoPublishPullRequests": {
           "type": "boolean",
           "default": true,
           "description": "Automatically publish completed Kefania PR drafts without text confirmation. Pony research finishes independently."
         },
-        "scmToolkit.pullRequestRefreshIntervalSeconds": {
+        "sweetiebot.pullRequestRefreshIntervalSeconds": {
           "type": "number",
           "default": 120,
           "minimum": 30,
           "maximum": 3600,
           "description": "Seconds between automatic PR list refreshes (30–3600). Manual refresh is unaffected."
         },
-        "scmToolkit.mergeAutoRefresh": {
+        "sweetiebot.mergeAutoRefresh": {
           "type": "boolean",
           "default": true,
           "scope": "application",
           "description": "Refresh GitHub status only while the merge dashboard is visible and its window is focused. Local merge work continues in the background."
         },
-        "scmToolkit.mergeRefreshIntervalSeconds": {
+        "sweetiebot.mergeRefreshIntervalSeconds": {
           "type": "integer",
           "default": 120,
           "scope": "application",
@@ -687,7 +687,7 @@
           "minimum": 30,
           "maximum": 3600
         },
-        "scmToolkit.githubRateLimitCooldownSeconds": {
+        "sweetiebot.githubRateLimitCooldownSeconds": {
           "type": "integer",
           "default": 900,
           "scope": "application",
@@ -695,18 +695,18 @@
           "minimum": 60,
           "maximum": 3600
         },
-        "scmToolkit.codexHidePermissionsIcon": {
+        "sweetiebot.codexHidePermissionsIcon": {
           "type": "boolean",
           "default": false,
           "description": "Hide the Codex permissions icon; use Change permissions in Magic Settings instead."
         },
-        "scmToolkit.mergeAutoFixCi": {
+        "sweetiebot.mergeAutoFixCi": {
           "type": "boolean",
           "default": false,
           "scope": "application",
           "description": "Opt in to opening a separate repair task once per failed PR head after Lindsey's built-in CI retry is exhausted. Never bypasses checks, approvals or merge policies."
         },
-        "scmToolkit.mergeAutoFixCiMethod": {
+        "sweetiebot.mergeAutoFixCiMethod": {
           "type": "string",
           "enum": [
             "web",

@@ -95,7 +95,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   let autoCompact = true;
   let changed;
   const sessionConfiguration = {
-    getValue(key) { return key === 'scmToolkit.startCompactPRSession' ? autoCompact : true; },
+    getValue(key) { return key === 'sweetiebot.startCompactPRSession' ? autoCompact : true; },
     onDidChangeConfiguration(callback) { changed = callback; return { dispose() {} }; },
   };
   ctx.scmToolkitMountCompactWindow(session, sessionNative, null, sessionConfiguration);
@@ -112,9 +112,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(sessionCalls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
   assert.equal(session.action().attrs['aria-pressed'], 'false');
   autoCompact = false;
-  changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
+  changed({ affectsConfiguration: key => key === 'sweetiebot.startCompactPRSession' });
   autoCompact = true;
-  changed({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
+  changed({ affectsConfiguration: key => key === 'sweetiebot.startCompactPRSession' });
   await flush();
   assert.equal(sessionCalls.length, 2, 'Setting changes never reapply automatic compaction');
 
@@ -243,13 +243,13 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   let lateEnabled = false;
   let lateChanged;
   const lateConfiguration = {
-    getValue(key) { return key === 'scmToolkit.startCompactPRSession' ? lateEnabled : true; },
+    getValue(key) { return key === 'sweetiebot.startCompactPRSession' ? lateEnabled : true; },
     onDidChangeConfiguration(callback) { lateChanged = callback; return { dispose() {} }; },
   };
   ctx.scmToolkitMountCompactWindow(late, sessionNative, null, lateConfiguration);
   assert.equal(sessionCalls.length, 2, 'No resize before the session setting arrives');
   lateEnabled = true;
-  lateChanged({ affectsConfiguration: key => key === 'scmToolkit.startCompactPRSession' });
+  lateChanged({ affectsConfiguration: key => key === 'sweetiebot.startCompactPRSession' });
   await flush();
   assert.equal(sessionCalls.length, 3, 'Late session setting applies compact layout once');
   assert.equal(sessionCalls.at(-1).bounds.width, 640);
@@ -309,7 +309,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const visibility = { compactWindowButton: true, newWorkspaceWindowButton: true };
   let visibilityChanged;
   const configuration = {
-    getValue: key => visibility[key.replace('scmToolkit.', '')],
+    getValue: key => visibility[key.replace('sweetiebot.', '')],
     onDidChangeConfiguration(callback) { visibilityChanged = callback; return { dispose() {} }; }
   };
   ctx.scmToolkitMountCompactWindow(workspace, native, { executeCommand(id) {

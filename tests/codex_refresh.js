@@ -89,12 +89,12 @@ sandbox.module.exports.registerCodexRefresh(vscode, context, () => {
   return new Promise(resolve => { releaseServer = resolve; });
 });
 timers.clear();
-configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.messagePlaceholder'; } });
+configurationChanged({ affectsConfiguration(key) { return key === 'sweetiebot.messagePlaceholder'; } });
 assert.equal(timers.size, 0, 'unrelated live settings do not request app repair');
-configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.sourceControlLabel'; } });
+configurationChanged({ affectsConfiguration(key) { return key === 'sweetiebot.sourceControlLabel'; } });
 assert.equal(timers.size, 1, 'saving the Source Control label requests app repair without restarting first');
 timers.clear();
-configurationChanged({ affectsConfiguration(key) { return key === 'scmToolkit.messageBarLayout'; } });
+configurationChanged({ affectsConfiguration(key) { return key === 'sweetiebot.messageBarLayout'; } });
 assert.equal(timers.size, 1, 'saving message bar order requests app repair without restarting first');
 tick();
 assert.equal(launches, 1, 'startup repairs the selected Codex installation');

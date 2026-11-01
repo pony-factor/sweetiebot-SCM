@@ -228,13 +228,15 @@ class CorrectionTests(unittest.TestCase):
 class RepositoryOptOutTests(unittest.TestCase):
     def test_jsonc_override_and_unset_keep_other_repositories_enabled(self):
         cases = [
+            ('{"sweetiebot.postCommitSpellcheck": false}', True),
             ('{"scmToolkit.postCommitSpellcheck": false}', True),
-            ('{// comment\n"scmToolkit.postCommitSpellcheck": false, /* end */\n}', True),
-            ('{"scmToolkit.postCommitSpellcheck": false, // comment\n}', True),
-            ('{"url": "https://example.com/a,b", "scmToolkit.postCommitSpellcheck": true}', False),
-            ('{"scmToolkit.postCommitSpellcheck": "false"}', False),
-            ('{"note": "scmToolkit.postCommitSpellcheck: false"}', False),
-            ('{"scmToolkit.postCommitSpellcheck": false', False),
+            ('{"scmToolkit.postCommitSpellcheck": false, "sweetiebot.postCommitSpellcheck": true}', False),
+            ('{// comment\n"sweetiebot.postCommitSpellcheck": false, /* end */\n}', True),
+            ('{"sweetiebot.postCommitSpellcheck": false, // comment\n}', True),
+            ('{"url": "https://example.com/a,b", "sweetiebot.postCommitSpellcheck": true}', False),
+            ('{"sweetiebot.postCommitSpellcheck": "false"}', False),
+            ('{"note": "sweetiebot.postCommitSpellcheck: false"}', False),
+            ('{"sweetiebot.postCommitSpellcheck": false', False),
             ('{}', False),
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -248,7 +250,7 @@ class RepositoryOptOutTests(unittest.TestCase):
                     with self.subTest(content=content):
                         config.write_text(content, encoding="utf-8")
                         self.assertIs(worker.repository_spellcheck_disabled([]), expected)
-                config.write_text('{"scmToolkit.postCommitSpellcheck": false}')
+                config.write_text('{"sweetiebot.postCommitSpellcheck": false}')
                 with patch.object(worker, "git_run", return_value=subprocess.CompletedProcess([], 1, stdout=b"")):
                     self.assertFalse(worker.repository_spellcheck_disabled([]))
 
@@ -256,7 +258,7 @@ class RepositoryOptOutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".vscode").mkdir()
-            (root / ".vscode" / "settings.json").write_text('{"scmToolkit.postCommitSpellcheck": false}')
+            (root / ".vscode" / "settings.json").write_text('{"sweetiebot.postCommitSpellcheck": false}')
             git_root = subprocess.CompletedProcess([], 0, stdout=str(root).encode())
             job = {"global_args": [], "paths": ["note.md"], "head": "expected"}
             with patch.object(worker, "git_run", return_value=git_root), patch.object(

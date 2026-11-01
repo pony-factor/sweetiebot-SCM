@@ -325,7 +325,7 @@ async function run() {
   const vscode = {
     ThemeIcon: class { constructor(id) { this.id = id; } },
     workspace: { getConfiguration(section) {
-      assert.equal(section, 'scmToolkit');
+      assert.equal(section, 'sweetiebot');
       return { get(key, fallback) {
         assert(['chatgptProjectUrl', 'filterSyncCommitSummaries', 'squashOmitBulletsForEmojiTitles', 'mergePostSummaries', 'mergePostStatusUpdates'].includes(key),
           'Unexpected SCM configuration key: ' + key);

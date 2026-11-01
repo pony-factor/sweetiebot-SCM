@@ -27,7 +27,7 @@ an up-to-date checkout. Index-only `git reset HEAD -- <paths>` works without
 optional commit-recovery imports, while ref-changing operations still fail
 closed if the required safety dependencies cannot load.
 
-**Initialization → Automatically update and restore app customizations** (extension setting `scmToolkit.automaticAppRepair=true` by default) can restore compatible patches after app/extension updates. Some workbench components replace live; others require a reload. An unsupported anchor must be skipped, not patched by guessing.
+**Initialization → Automatically update and restore app customizations** (extension setting `sweetiebot.automaticAppRepair=true` by default) can restore compatible patches after app/extension updates. Some workbench components replace live; others require a reload. An unsupported anchor must be skipped, not patched by guessing.
 
 Inspect **Output → Sweetie Bot app repair** when UI customizations disappear. Use `python3 scripts/install.py --check` to validate compatibility and app permissions before reinstalling. VS Code may report an installation-integrity warning because its application files changed.
 

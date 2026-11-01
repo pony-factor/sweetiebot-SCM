@@ -19,7 +19,7 @@ async function run() {
       }
     },
     workspace:{getConfiguration:section=>({get:key=>{
-      if(section==='scmToolkit'&&key==='durableBackgroundCommits')return true;
+      if(section==='sweetiebot'&&key==='durableBackgroundCommits')return true;
       if(section==='git'&&key==='postCommitCommand')return 'none';
       return undefined;
     }})}

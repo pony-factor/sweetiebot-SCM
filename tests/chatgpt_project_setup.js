@@ -15,7 +15,7 @@ async function run() {
     Uri: { parse: value => ({ url: value }) },
     workspace: {
       getConfiguration(section) {
-        assert.equal(section, 'scmToolkit');
+        assert.equal(section, 'sweetiebot');
         return {
           get(key) { assert.equal(key, 'chatgptProjectUrl'); return configured; },
           async update(key, value, target) {

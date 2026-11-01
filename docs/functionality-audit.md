@@ -26,7 +26,7 @@
 1. The former docs directory held only two uppercase-named guides. Both were preserved under lowercase names; a new documentation index and topic guides cover the other major feature families.
 2. README references now target lowercase paths. Guides cross-link to source and tests.
 3. Separate **30-second auto Codex commits** (off), **durable background commits** (off), **15-minute background clean-main sync** (off), and **automatic PR publication of completed drafts** (manifest default on). They do different things.
-4. Repository `scmToolkit.postCommitSpellcheck=true` is a **repository-level allowance**, not global activation of the post-commit Markdown feature.
+4. Repository `sweetiebot.postCommitSpellcheck=true` is a **repository-level allowance**, not global activation of the post-commit Markdown feature.
 5. PR draft, publication, bulk request, merge verification, user identity, and bot identity are separate states and trust boundaries.
 6. The previous GitHub App guide incorrectly implied `scripts/bulk-merge.js` was in this repo. Sweetiebot uses `extension/lindsey_bulk_merge.js` to find that script **in an external Lindsey checkout**.
 7. Documented that compatibility guards may skip unsupported VS Code/Codex patches and that a visual success notification is not proof of a Git/PR write.

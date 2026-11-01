@@ -326,7 +326,7 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
       configurationChanged = fn;
       return { dispose() { configurationDisposed = true; } };
     }, getConfiguration(section) {
-      assert.equal(section, 'scmToolkit');
+      assert.equal(section, 'sweetiebot');
       return configuration;
     } },
     ViewColumn: { Two: 2 },
@@ -581,10 +581,10 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   assert(panel.webview.html.includes("byId('details').querySelector('.commit-tree-toggle')?.focus()"),
     'Keyboard focus returns to the toggle after the PR details re-render');
   layoutConfig.mergeShowPrCommits = false;
-  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
+  configurationChanged({ affectsConfiguration: key => key === 'sweetiebot.mergeShowPrCommits' });
   assert.equal(events.at(-1).showPrCommits, false, 'Setting hides commit history in an open dashboard');
   layoutConfig.mergeShowPrCommits = true;
-  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeShowPrCommits' });
+  configurationChanged({ affectsConfiguration: key => key === 'sweetiebot.mergeShowPrCommits' });
   assert.equal(events.at(-1).showPrCommits, true, 'Setting restores commit history without reopening');
   await messageHandler({ type: 'show-pr-commits', enabled: false });
   assert.equal(layoutConfig.mergeShowPrCommits, false, 'Hamburger choice is saved to global configuration');
@@ -598,7 +598,7 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 37, timeline: 34 });
   layoutConfig.mergeSidebarWidthPercent = 50;
   layoutConfig.mergeTimelineHeightPercent = 55;
-  configurationChanged({ affectsConfiguration: key => key === 'scmToolkit.mergeSidebarWidthPercent' });
+  configurationChanged({ affectsConfiguration: key => key === 'sweetiebot.mergeSidebarWidthPercent' });
   assert.deepEqual(events.at(-1).layoutPreferences, { sidebar: 50, timeline: 55 }, 'Settings update open dashboards immediately');
   layoutConfig.mergeSidebarWidthPercent = 99;
   configurationChanged({ affectsConfiguration: () => true });

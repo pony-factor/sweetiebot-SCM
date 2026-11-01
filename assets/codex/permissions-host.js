@@ -6,7 +6,7 @@ function scmToolkitRegisterCodexPermissions(provider, vscode) {
     const originalHandle = provider.handleMessage;
     const update = webview => webview.postMessage({
         type: 'sweetiebot-permissions-visibility',
-        hidden: vscode.workspace?.getConfiguration('scmToolkit')?.get('codexHidePermissionsIcon', false) === true
+        hidden: vscode.workspace?.getConfiguration('sweetiebot')?.get('codexHidePermissionsIcon', false) === true
     });
     provider.initializeWebview = function(webview, role, onDispose, ...args) {
         views.add(webview);
@@ -26,7 +26,7 @@ function scmToolkitRegisterCodexPermissions(provider, vscode) {
         return originalHandle.call(this, webview, message);
     };
     const changed = vscode.workspace?.onDidChangeConfiguration?.(event => {
-        if (event.affectsConfiguration('scmToolkit.codexHidePermissionsIcon')) {
+        if (event.affectsConfiguration('sweetiebot.codexHidePermissionsIcon')) {
             for (const view of views) void update(view);
         }
     });

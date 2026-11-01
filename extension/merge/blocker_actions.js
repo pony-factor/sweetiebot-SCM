@@ -173,7 +173,7 @@ async function openCodexBranch(vscode, context, root, repository, pr, prompt, {
 async function launchBlockerAction(vscode, context, rootUri, repository, pr, option, engine) {
   if (!rootUri?.fsPath) throw Error('The selected repository workspace is unavailable.');
   const prompt = blockerPrompt(repository, pr, option, engine, {
-    postStatusUpdates: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true
+    postStatusUpdates: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true
   });
   if (engine === 'codex') return openCodexBranch(vscode, context, rootUri.fsPath, repository, pr, prompt);
   if (!['web', 'kefania'].includes(engine)) throw Error('Unknown implementation destination.');

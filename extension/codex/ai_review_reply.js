@@ -118,7 +118,7 @@ function parseAssessment(value) {
 }
 
 async function assessWithOllama(vscode, job, patch) {
-  const config = vscode.workspace.getConfiguration('scmToolkit.workspaceSearch');
+  const config = vscode.workspace.getConfiguration('sweetiebot.workspaceSearch');
   const raw = config.get('ollamaUrl', 'http://127.0.0.1:11434');
   const endpoint = new URL(raw);
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname) ||
@@ -246,7 +246,7 @@ function registerAiReviewReply(vscode, context) {
       const root = repository.rootUri.fsPath;
       const branch = await git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD');
       if (!branch) throw new Error('Check out a named feature branch before selecting a review.');
-      const remote = vscode.workspace.getConfiguration('scmToolkit', repository.rootUri).get('remote', 'origin');
+      const remote = vscode.workspace.getConfiguration('sweetiebot', repository.rootUri).get('remote', 'origin');
       const repo = parseRemote(await git(root, 'remote', 'get-url', remote));
       if (!repo) throw new Error('The selected remote must be a GitHub repository.');
       const existing = pending.find(item => item.root === root && item.branch === branch);

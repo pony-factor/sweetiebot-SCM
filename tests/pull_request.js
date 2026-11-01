@@ -317,7 +317,7 @@ async function run() {
   const informationMessages = [];
   const vscode = {
     workspace: { getConfiguration(section) {
-      assert.equal(section, 'scmToolkit');
+      assert.equal(section, 'sweetiebot');
       return { get(key, fallback) { if (key === 'kefaniaCloseAfterMerge' || key === 'kefaniaUseThemeColors' || key === 'kefaniaShowCloseButton' || key === 'kefaniaCloseButtonLeft' || key === 'kefaniaCloseButtonPosition') return fallback; if (key === 'autoPublishPullRequests') return true; if (key === 'kefaniaAutoShareCodexChat') return autoShareCodexChat; assert.equal(key, 'chatgptProjectUrl'); return configuredProject || fallback; } };
     } },
     Uri: {

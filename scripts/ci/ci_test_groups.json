@@ -351,24 +351,26 @@
       "tests": [
         "ci_browser_routing.py",
         "configurator.py",
-        "test_spellchecker_settings_label.py",
         "diagnostics.py",
         "extension_cache.js",
         "github_apps.py",
         "install.py",
         "local_setup.py",
+        "packaged_runtime.py",
         "python_runtime.js",
         "reload_guard.js",
         "repair.py",
         "runtime_revision.js",
-        "update.py",
-        "packaged_runtime.py"
+        "settings_namespace_migration.js",
+        "test_spellchecker_settings_label.py",
+        "update.py"
       ],
       "syntax": [
         "extension/extension.js",
+        "extension/ui/settings_migration.js",
         "scripts/configurator.py",
-        "scripts/github_apps.py",
         "scripts/github_apps_ui.py",
+        "scripts/github_apps.py",
         "scripts/install.py"
       ]
     },

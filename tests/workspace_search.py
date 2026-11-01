@@ -54,14 +54,14 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
 
     def test_ludicrous_mode_is_only_in_magic_wand_settings(self):
         properties = workspace_search.render_package(DEFAULTS)["contributes"]["configuration"]["properties"]
-        self.assertNotIn("scmToolkit.ludicrousMode", properties)
+        self.assertNotIn("sweetiebot.ludicrousMode", properties)
         self.assertNotIn("ludicrousMode", toolkit_settings.VSCODE_SETTINGS["vscodeSettings"])
 
     def test_pony_information_has_no_sidebar_view(self):
         for activity_bar in (False, True):
             package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchActivityBar=activity_bar))
             views = [view for group in package["contributes"]["views"].values() for view in group]
-            self.assertNotIn("scmToolkit.ponyInfo", [view["id"] for view in views])
+            self.assertNotIn("sweetiebot.ponyInfo", [view["id"] for view in views])
 
     def test_saved_feature_preferences_reach_installed_defaults(self):
         settings = dict(DEFAULTS, autoPublishNewBranches=True, automaticBranchCleanup=False,
@@ -69,17 +69,17 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                         workspaceSearchResultLimit="35", workspaceSearchMaxFileSizeMB="2.5",
                         workspaceSearchPlaceholder="SATS")
         properties = workspace_search.render_package(settings)["contributes"]["configuration"]["properties"]
-        self.assertTrue(properties["scmToolkit.autoPublishNewBranches"]["default"])
-        self.assertFalse(properties["scmToolkit.automaticBranchCleanup"]["default"])
-        self.assertFalse(properties["scmToolkit.workspaceSearch.autoReindex"]["default"])
-        self.assertEqual(properties["scmToolkit.workspaceSearch.mode"]["default"], "exact")
-        self.assertEqual(properties["scmToolkit.workspaceSearch.placeholder"]["default"], "SATS")
-        self.assertEqual(properties["scmToolkit.workspaceSearch.resultLimit"]["default"], 35)
-        self.assertEqual(properties["scmToolkit.workspaceSearch.maxFileSizeMB"]["default"], 2.5)
+        self.assertTrue(properties["sweetiebot.autoPublishNewBranches"]["default"])
+        self.assertFalse(properties["sweetiebot.automaticBranchCleanup"]["default"])
+        self.assertFalse(properties["sweetiebot.workspaceSearch.autoReindex"]["default"])
+        self.assertEqual(properties["sweetiebot.workspaceSearch.mode"]["default"], "exact")
+        self.assertEqual(properties["sweetiebot.workspaceSearch.placeholder"]["default"], "SATS")
+        self.assertEqual(properties["sweetiebot.workspaceSearch.resultLimit"]["default"], 35)
+        self.assertEqual(properties["sweetiebot.workspaceSearch.maxFileSizeMB"]["default"], 2.5)
 
     def test_embedding_selection_reaches_installed_manifest(self):
         package = workspace_search.render_package(dict(DEFAULTS, workspaceSearchEmbeddingModel="custom:embed"))
-        self.assertEqual(package["contributes"]["configuration"]["properties"]["scmToolkit.workspaceSearch.embeddingModel"]["default"], "custom:embed")
+        self.assertEqual(package["contributes"]["configuration"]["properties"]["sweetiebot.workspaceSearch.embeddingModel"]["default"], "custom:embed")
 
     def test_extension_registers_settings_launcher(self):
         package = json.loads((workspace_search.SOURCE / "package.json").read_text())
@@ -116,15 +116,15 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
 
         self.assertIn("onStartupFinished", package["activationEvents"])
         self.assertNotIn(
-            "onCommand:scmToolkit.workspaceSearch.reindex",
+            "onCommand:sweetiebot.workspaceSearch.reindex",
             package["activationEvents"],
         )
-        self.assertNotIn("scmToolkit.workspaceSearch.reindex", command_ids)
+        self.assertNotIn("sweetiebot.workspaceSearch.reindex", command_ids)
         self.assertIn("const INDEX_SYNC_INTERVAL_MS = 2 * 60 * 1000;", extension)
         self.assertIn("void index.load().then(() => index.refresh())", extension)
         self.assertNotIn("index.refresh({ force: true })", extension)
         self.assertNotIn(
-            "registerCommand('scmToolkit.workspaceSearch.reindex'",
+            "registerCommand('sweetiebot.workspaceSearch.reindex'",
             extension,
         )
         view = (workspace_search.SOURCE / "search" / "view.js").read_text()
@@ -146,8 +146,8 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         properties = package["contributes"]["configuration"]["properties"]
         self.assertEqual(DEFAULTS["workspaceSearchPlaceholder"], "Search your workspace…")
         self.assertFalse(DEFAULTS["workspaceSearchAskOllama"])
-        self.assertFalse(properties["scmToolkit.workspaceSearch.askOllama"]["default"])
-        self.assertEqual(properties["scmToolkit.workspaceSearch.chatModel"]["default"], "")
+        self.assertFalse(properties["sweetiebot.workspaceSearch.askOllama"]["default"])
+        self.assertEqual(properties["sweetiebot.workspaceSearch.chatModel"]["default"], "")
 
     def test_ask_ollama_manifest_requires_opt_in_model(self):
         settings = dict(
@@ -158,8 +158,8 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         package = workspace_search.render_package(settings)
         properties = package["contributes"]["configuration"]["properties"]
 
-        self.assertTrue(properties["scmToolkit.workspaceSearch.askOllama"]["default"])
-        self.assertEqual(properties["scmToolkit.workspaceSearch.chatModel"]["default"], "qwen3:8b")
+        self.assertTrue(properties["sweetiebot.workspaceSearch.askOllama"]["default"])
+        self.assertEqual(properties["sweetiebot.workspaceSearch.chatModel"]["default"], "qwen3:8b")
         view = (workspace_search.SOURCE / "search" / "view.js").read_text()
         self.assertIn("if (this.getSettings().askOllama) await this.askOllama()", view)
         self.assertIn("const askButton = askEnabled", view)

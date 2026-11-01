@@ -26,7 +26,7 @@ function fixture({ enabled = true, seen = false, selection = false } = {}) {
   const vscode = {
     workspace: {
       getConfiguration(section) {
-        assert.equal(section, 'scmToolkit');
+        assert.equal(section, 'sweetiebot');
         return { get(key, fallback) {
           assert.equal(key, 'promptForIndependentWorkspaceTrust');
           return enabled === undefined ? fallback : enabled;

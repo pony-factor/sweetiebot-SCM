@@ -47,7 +47,7 @@ async function main() {
       query: JSON.stringify({ prIdentifier: 'git@github.com:owner/repo.git:12' }) }),
     { url, number: 12 });
     await mergeSelected({ url, number: 12 });
-    assert(!commands.has('scmToolkit.squashMergeSelectedPullRequest'));
+    assert(!commands.has('sweetiebot.squashMergeSelectedPullRequest'));
     assert(!commands.has('sweetiebot.squashMergeSelectedPullRequest'));
     await mergeSelected({ pullRequestModel: { html_url: url, number: 12 } });
     await mergeSelected({ url, number: 12 });

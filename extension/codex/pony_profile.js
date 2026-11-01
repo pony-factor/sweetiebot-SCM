@@ -2,8 +2,8 @@
 
 const crypto = require('node:crypto');
 
-const VIEW_ID = 'scmToolkit.ponyInfo';
-const CONTEXT_KEY = 'scmToolkit.hasPonyProfile';
+const VIEW_ID = 'sweetiebot.ponyInfo';
+const CONTEXT_KEY = 'sweetiebot.hasPonyProfile';
 const STATE_KEY = 'scmToolkit.ponyProfile';
 
 function displayName(slug) {
