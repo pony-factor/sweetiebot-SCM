@@ -365,7 +365,7 @@ async function run() {
     }
   };
   const context = { subscriptions: [], globalState: {
-    get: (key, fallback) => key === 'sweetiebot.useRegularChatForWebActions' ? true : (sharedState.get(key) ?? fallback),
+    get: (key, fallback) => key === 'scmToolkit.useRegularChatForWebActions' ? true : (sharedState.get(key) ?? fallback),
     update: async (key, value) => { sharedState.set(key, value); },
   } };
   registerPullRequestCommand(vscode, context, {

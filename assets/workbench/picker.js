@@ -139,11 +139,11 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     const observedRoots = globalThis.__scmToolkitSyncLabelRoots ??= new WeakMap();
 
     const configuredName = (key, fallback) => {
-        const value = configuration.getValue(`scmToolkit.${key}`);
+        const value = configuration.getValue(`sweetiebot.${key}`);
         return String(typeof value === 'string' && value.trim() ? value : (fallback ?? '')).trim();
     };
     const configuredFlag = (key, fallback) => {
-        const path = `scmToolkit.${key}`;
+        const path = `sweetiebot.${key}`;
         const inspected = configuration.inspect?.(path);
         // Preserve the existing Git-backed preference until it is explicitly
         // mirrored into VS Code by the settings page.
@@ -222,8 +222,8 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
             up: configuredName('outgoingSyncLabel', settings.outgoingSyncLabel),
         };
         const hiddenArrows = {
-            down: configuration.getValue('scmToolkit.hideIncomingSyncArrow') === true,
-            up: configuration.getValue('scmToolkit.hideOutgoingSyncArrow') === true,
+            down: configuration.getValue('sweetiebot.hideIncomingSyncArrow') === true,
+            up: configuration.getValue('sweetiebot.hideOutgoingSyncArrow') === true,
         };
         const hiddenCounts = {
             down: configuredFlag('hideIncomingSyncCount', settings.hideIncomingSyncCount),
@@ -283,12 +283,12 @@ function scmToolkitCustomizeSyncLabels(widget, configuration, settings) {
     // attachment instead of permanently skipping customization at construction.
     observer.observe(doc.documentElement, { subtree: true, childList: true });
     const disposable = configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.incomingSyncLabel')
-            || event.affectsConfiguration('scmToolkit.outgoingSyncLabel')
-            || event.affectsConfiguration('scmToolkit.hideIncomingSyncArrow')
-            || event.affectsConfiguration('scmToolkit.hideOutgoingSyncArrow')
-            || event.affectsConfiguration('scmToolkit.hideIncomingSyncCount')
-            || event.affectsConfiguration('scmToolkit.hideOutgoingSyncCount')
+        if (event.affectsConfiguration('sweetiebot.incomingSyncLabel')
+            || event.affectsConfiguration('sweetiebot.outgoingSyncLabel')
+            || event.affectsConfiguration('sweetiebot.hideIncomingSyncArrow')
+            || event.affectsConfiguration('sweetiebot.hideOutgoingSyncArrow')
+            || event.affectsConfiguration('sweetiebot.hideIncomingSyncCount')
+            || event.affectsConfiguration('sweetiebot.hideOutgoingSyncCount')
             || event.affectsConfiguration('git.postCommitCommand')) update();
     });
     widget.disposables.add({
@@ -314,7 +314,7 @@ function scmToolkitCustomizeCommitButtonLabel(
     if (!Observer) return;
 
     const configuredLabel = (key, fallback) => {
-        const configured = configuration.getValue(`scmToolkit.${key}`);
+        const configured = configuration.getValue(`sweetiebot.${key}`);
         const value = typeof configured === 'string' ? configured.trim() : '';
         return value || fallback;
     };
@@ -379,8 +379,8 @@ function scmToolkitCustomizeCommitButtonLabel(
     const configurationDisposable = configuration.onDidChangeConfiguration(event => {
         if (
             event.affectsConfiguration('git.postCommitCommand')
-            || event.affectsConfiguration('scmToolkit.commitButtonLabel')
-            || event.affectsConfiguration('scmToolkit.commitAndSendButtonLabel')
+            || event.affectsConfiguration('sweetiebot.commitButtonLabel')
+            || event.affectsConfiguration('sweetiebot.commitAndSendButtonLabel')
         ) {
             update();
         }
@@ -403,7 +403,7 @@ function scmToolkitCustomizeMessagePlaceholder(
     let activeOverride;
 
     const configuredPlaceholder = () => {
-        const configured = configuration.getValue('scmToolkit.messagePlaceholder');
+        const configured = configuration.getValue('sweetiebot.messagePlaceholder');
         return typeof configured === 'string'
             ? configured
             : String(fallbackPlaceholder ?? '');
@@ -448,7 +448,7 @@ function scmToolkitCustomizeMessagePlaceholder(
         input.placeholder = value;
     }));
     widget.repositoryDisposables.add(configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.messagePlaceholder')) update();
+        if (event.affectsConfiguration('sweetiebot.messagePlaceholder')) update();
     }));
 }
 
@@ -764,7 +764,7 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 && !String(message ?? '').trim()
                 && !options?.amend;
             let progress;
-            const asynchronous = configuration.getValue('scmToolkit.durableBackgroundCommits') === true
+            const asynchronous = configuration.getValue('sweetiebot.durableBackgroundCommits') === true
                 && !options?.amend && !options?.empty
                 && (String(message ?? '').trim() || settings.aiCommit === true);
             const showProgress = () => {
@@ -1505,7 +1505,7 @@ function scmToolkitWatchDraftSpellcheck(
 // Prefer explicit VS Code scope overrides; otherwise use the Git-backed preference.
 // Keep preflight and eligibility messages working even when warning colors are off.
 function scmToolkitHighlightPrWarnings(configuration, settings) {
-    const key = 'scmToolkit.prWarningHighlights';
+    const key = 'sweetiebot.prWarningHighlights';
     const inspected = configuration.inspect?.(key);
     const configured = inspected
         ? inspected.workspaceFolderValue ?? inspected.workspaceValue ?? inspected.userValue
@@ -1869,7 +1869,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
 
     const refreshAutoCommit = () => {
-        const enabled = configuration.getValue('scmToolkit.autoCommitWithCodex') === true;
+        const enabled = configuration.getValue('sweetiebot.autoCommitWithCodex') === true;
         autoCommitButton.classList.toggle('scm-toolkit-auto-commit-active', enabled);
         autoCommitButton.setAttribute('aria-pressed', String(enabled));
         const description = enabled
@@ -1885,9 +1885,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         if (updatingAutoCommit) return;
         updatingAutoCommit = true;
         refreshAutoCommit();
-        const enabled = configuration.getValue('scmToolkit.autoCommitWithCodex') === true;
+        const enabled = configuration.getValue('sweetiebot.autoCommitWithCodex') === true;
         try {
-            await configuration.updateValue('scmToolkit.autoCommitWithCodex', !enabled);
+            await configuration.updateValue('sweetiebot.autoCommitWithCodex', !enabled);
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1898,11 +1898,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     autoCommitButton.addEventListener('click', toggleAutoCommit);
     widget.disposables.add(configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.autoCommitWithCodex')) refreshAutoCommit();
+        if (event.affectsConfiguration('sweetiebot.autoCommitWithCodex')) refreshAutoCommit();
     }));
 
     const refreshAutoPublish = () => {
-        const enabled = configuration.getValue('scmToolkit.autoPublishNewBranches') === true;
+        const enabled = configuration.getValue('sweetiebot.autoPublishNewBranches') === true;
         autoPublishButton.classList.toggle('scm-toolkit-auto-publish-active', enabled);
         autoPublishButton.setAttribute('aria-pressed', String(enabled));
         autoPublishButton.disabled =
@@ -1920,9 +1920,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         updatingAutoPublish = true;
         refreshAutoPublish();
-        const enabled = configuration.getValue('scmToolkit.autoPublishNewBranches') === true;
+        const enabled = configuration.getValue('sweetiebot.autoPublishNewBranches') === true;
         try {
-            await configuration.updateValue('scmToolkit.autoPublishNewBranches', !enabled);
+            await configuration.updateValue('sweetiebot.autoPublishNewBranches', !enabled);
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1933,7 +1933,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const maybePublishBranch = async branch => {
         if (
-            configuration.getValue('scmToolkit.autoPublishNewBranches') !== true
+            configuration.getValue('sweetiebot.autoPublishNewBranches') !== true
             || !currentRepositoryUri
             || !currentDefaultBranch
             || !branch
@@ -1963,7 +1963,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     autoPublishButton.addEventListener('click', toggleAutoPublish);
     widget.disposables.add(configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.autoPublishNewBranches')) {
+        if (event.affectsConfiguration('sweetiebot.autoPublishNewBranches')) {
             refreshAutoPublish();
         }
     }));
@@ -2096,7 +2096,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
 
     widget.disposables.add(configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.prWarningHighlights')) refreshPullRequest();
+        if (event.affectsConfiguration('sweetiebot.prWarningHighlights')) refreshPullRequest();
     }));
 
     const createPullRequest = async event => {
@@ -3040,9 +3040,9 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         }, 250);
     };
     const refreshVisibility = () => {
-        const compact = configuration?.getValue('scmToolkit.compactWindowButton')
+        const compact = configuration?.getValue('sweetiebot.compactWindowButton')
             ?? settings.compactWindowButton ?? true;
-        const newWindow = configuration?.getValue('scmToolkit.newWorkspaceWindowButton')
+        const newWindow = configuration?.getValue('sweetiebot.newWorkspaceWindowButton')
             ?? settings.newWorkspaceWindowButton ?? true;
         const compactItem = doc.getElementById(actionId);
         const newItem = doc.getElementById(newActionId);
@@ -3114,7 +3114,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     };
     const startCompactIfRequested = action => {
         if (state.autoCompactStarted ||
-            configuration?.getValue('scmToolkit.startCompactPRSession') !== true) return;
+            configuration?.getValue('sweetiebot.startCompactPRSession') !== true) return;
         state.autoCompactStarted = true;
         // Share the button's native square resize and restore behavior.
         void toggle(action);
@@ -3206,9 +3206,9 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     const observer = new win.MutationObserver(mount);
     observer.observe(doc.body, { childList: true, subtree: true });
     const visibilityListener = configuration?.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.compactWindowButton')
-            || event.affectsConfiguration('scmToolkit.newWorkspaceWindowButton')) refreshVisibility();
-        if (event.affectsConfiguration('scmToolkit.startCompactPRSession')) {
+        if (event.affectsConfiguration('sweetiebot.compactWindowButton')
+            || event.affectsConfiguration('sweetiebot.newWorkspaceWindowButton')) refreshVisibility();
+        if (event.affectsConfiguration('sweetiebot.startCompactPRSession')) {
             const action = doc.getElementById(actionId)?.querySelector('a');
             if (action) startCompactIfRequested(action);
         }

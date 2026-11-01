@@ -7,7 +7,7 @@ function scmToolkitRegisterCodexKeepAwake(connection, vscode, defaultEnabled) {
     let renewal;
     let disposed = false;
     const enabled = () => {
-        const setting = vscode.workspace.getConfiguration('scmToolkit').inspect('codexKeepAwake');
+        const setting = vscode.workspace.getConfiguration('sweetiebot').inspect('codexKeepAwake');
         return setting?.workspaceFolderValue ?? setting?.workspaceValue ?? setting?.globalValue ?? defaultEnabled;
     };
     const stop = () => {
@@ -63,7 +63,7 @@ function scmToolkitRegisterCodexKeepAwake(connection, vscode, defaultEnabled) {
     });
     const provider = connection.registerProvider('scm-toolkit-keep-awake', { onFatalError: reset });
     const configuration = vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.codexKeepAwake')) refresh();
+        if (event.affectsConfiguration('sweetiebot.codexKeepAwake')) refresh();
     });
     return { dispose() {
         disposed = true;

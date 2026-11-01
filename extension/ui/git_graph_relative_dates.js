@@ -1,6 +1,6 @@
 'use strict';
 
-const OPT_IN_KEY = 'scmToolkit.gitGraphRelativeDates';
+const OPT_IN_KEY = 'sweetiebot.gitGraphRelativeDates';
 const GRAPH_DATE_KEY = 'git-graph.date.format';
 
 // Git Graph owns its date rendering. Enforce its supported setting without
@@ -11,7 +11,7 @@ function registerGitGraphRelativeDates(vscode, context) {
   let running = false;
 
   async function enforce() {
-    if (!vscode.workspace.getConfiguration('scmToolkit').get('gitGraphRelativeDates', false)) return;
+    if (!vscode.workspace.getConfiguration('sweetiebot').get('gitGraphRelativeDates', false)) return;
     const graph = vscode.workspace.getConfiguration('git-graph');
     if (graph.get('date.format') === 'Relative') return;
 
