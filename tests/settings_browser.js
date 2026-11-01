@@ -19,18 +19,18 @@ async function run() {
           if (root === 'update' && key === 'mode') return 'start';
           if (root === 'extensions' && key === 'autoUpdate') return extensionAutoUpdate;
           if (root === 'extensions' && key === 'autoCheckUpdates') return false;
-          if (root === 'scmToolkit' && key === 'openPanelOnStartup') return false;
-          if (root === 'scmToolkit' && key === 'autoPublishNewBranches') return true;
-          if (root === 'scmToolkit' && key === 'automaticWorkspaceCleanup') return true;
-          if (root === 'scmToolkit' && key === 'messagePlaceholder') return 'Commit here';
-          if (root === 'scmToolkit' && key === 'mergeShowPrCommits') return false;
-          if (root === 'scmToolkit' && key === 'commitButtonLabel') return 'Commit';
-          if (root === 'scmToolkit' && key === 'commitAndSendButtonLabel') return 'Commit + Push';
-          if (root === 'scmToolkit' && key === 'hideIncomingSyncArrow') return true;
-          if (root === 'scmToolkit' && key === 'hideOutgoingSyncArrow') return false;
-          if (root === 'scmToolkit' && key === 'incomingSyncLabel') return 'From origin';
-          if (root === 'scmToolkit' && key === 'outgoingSyncLabel') return 'To origin';
-          if (root === 'scmToolkit.workspaceSearch' && key === 'resultLimit') return 35;
+          if (root === 'sweetiebot' && key === 'openPanelOnStartup') return false;
+          if (root === 'sweetiebot' && key === 'autoPublishNewBranches') return true;
+          if (root === 'sweetiebot' && key === 'automaticWorkspaceCleanup') return true;
+          if (root === 'sweetiebot' && key === 'messagePlaceholder') return 'Commit here';
+          if (root === 'sweetiebot' && key === 'mergeShowPrCommits') return false;
+          if (root === 'sweetiebot' && key === 'commitButtonLabel') return 'Commit';
+          if (root === 'sweetiebot' && key === 'commitAndSendButtonLabel') return 'Commit + Push';
+          if (root === 'sweetiebot' && key === 'hideIncomingSyncArrow') return true;
+          if (root === 'sweetiebot' && key === 'hideOutgoingSyncArrow') return false;
+          if (root === 'sweetiebot' && key === 'incomingSyncLabel') return 'From origin';
+          if (root === 'sweetiebot' && key === 'outgoingSyncLabel') return 'To origin';
+          if (root === 'sweetiebot.workspaceSearch' && key === 'resultLimit') return 35;
           return fallback;
         },
         async update(key, value, target) { updates.push({root, key, value, target}); }
@@ -166,18 +166,18 @@ async function run() {
   await tick();
   assert.deepEqual(updates, [
     ...Object.entries(saved).map(([key, value]) => ({
-      root: 'scmToolkit.workspaceSearch', key, value, target: 1
+      root: 'sweetiebot.workspaceSearch', key, value, target: 1
     })),
-    {root: 'scmToolkit', key: 'openPanelOnStartup', value: true, target: 1},
-    {root: 'scmToolkit', key: 'autoPublishNewBranches', value: true, target: 1},
-    {root: 'scmToolkit', key: 'automaticWorkspaceCleanup', value: false, target: 1},
-    {root: 'scmToolkit', key: 'messagePlaceholder', value: 'Type a commit message', target: 1},
-    {root: 'scmToolkit', key: 'commitButtonLabel', value: 'Save', target: 1},
-    {root: 'scmToolkit', key: 'commitAndSendButtonLabel', value: 'Save + Push', target: 1},
-    {root: 'scmToolkit', key: 'hideIncomingSyncArrow', value: false, target: 1},
-    {root: 'scmToolkit', key: 'hideOutgoingSyncArrow', value: true, target: 1},
-    {root: 'scmToolkit', key: 'incomingSyncLabel', value: 'Pulled', target: 1},
-    {root: 'scmToolkit', key: 'outgoingSyncLabel', value: 'Pushed', target: 1},
+    {root: 'sweetiebot', key: 'openPanelOnStartup', value: true, target: 1},
+    {root: 'sweetiebot', key: 'autoPublishNewBranches', value: true, target: 1},
+    {root: 'sweetiebot', key: 'automaticWorkspaceCleanup', value: false, target: 1},
+    {root: 'sweetiebot', key: 'messagePlaceholder', value: 'Type a commit message', target: 1},
+    {root: 'sweetiebot', key: 'commitButtonLabel', value: 'Save', target: 1},
+    {root: 'sweetiebot', key: 'commitAndSendButtonLabel', value: 'Save + Push', target: 1},
+    {root: 'sweetiebot', key: 'hideIncomingSyncArrow', value: false, target: 1},
+    {root: 'sweetiebot', key: 'hideOutgoingSyncArrow', value: true, target: 1},
+    {root: 'sweetiebot', key: 'incomingSyncLabel', value: 'Pulled', target: 1},
+    {root: 'sweetiebot', key: 'outgoingSyncLabel', value: 'Pushed', target: 1},
     {root: 'update', key: 'mode', value: 'manual', target: 1},
     {root: 'extensions', key: 'autoCheckUpdates', value: true, target: 1},
     {root: 'extensions', key: 'autoUpdate', value: 'on', target: 1},

@@ -13,7 +13,7 @@ async function registerAutoPublish(vscode, context) {
     const check = async () => {
       if (disposed || closed || busy) return;
       const root = repository.rootUri;
-      const config = vscode.workspace.getConfiguration('scmToolkit', root);
+      const config = vscode.workspace.getConfiguration('sweetiebot', root);
       if (!config.get('autoPublishNewBranches', false)) return;
       const branch = repository.state.HEAD?.name;
       const remote = await require('../commits/codex_commit').readCommitGitSetting(root.fsPath, 'scm-toolkit.remote', 'origin');
@@ -57,7 +57,7 @@ async function registerAutoPublish(vscode, context) {
   } }, api.onDidOpenRepository(attach), api.onDidCloseRepository(repository => {
     watchers.get(repository)?.dispose(); watchers.delete(repository);
   }), vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('scmToolkit.autoPublishNewBranches')) {
+    if (event.affectsConfiguration('sweetiebot.autoPublishNewBranches')) {
       for (const repository of api.repositories) {
         watchers.get(repository)?.dispose(); watchers.delete(repository); attach(repository);
       }

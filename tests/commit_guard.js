@@ -199,7 +199,7 @@ async function run(allowed, failCommit = false) {
         requests.push(request);
         return { queued: true };
       } },
-      configuration: { getValue(key) { return key === 'scmToolkit.durableBackgroundCommits' ? true : 'push'; } },
+      configuration: { getValue(key) { return key === 'sweetiebot.durableBackgroundCommits' ? true : 'push'; } },
       notifications: { notify() { return { close() {} }; } }
     });
     vm.runInContext(snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications, { aiCommit: true });', context);
@@ -246,7 +246,7 @@ async function run(allowed, failCommit = false) {
         throw new Error('Unexpected command: ' + id);
       } },
       configuration: { getValue(key) {
-        return key === 'scmToolkit.durableBackgroundCommits' ? true : 'none';
+        return key === 'sweetiebot.durableBackgroundCommits' ? true : 'none';
       } },
       notifications: { notify() { return { close() {} }; } }
     });

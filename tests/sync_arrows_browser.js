@@ -40,7 +40,7 @@ const css = fs.readFileSync(path.join(__dirname, '../assets/workbench/picker.css
     async function set(name, value) {
       await page.evaluate(([name, value]) => {
         values[name] = value;
-        changed({ affectsConfiguration: key => key === `scmToolkit.${name}` });
+        changed({ affectsConfiguration: key => key === `sweetiebot.${name}` });
       }, [name, value]);
     }
     async function displays(direction) {

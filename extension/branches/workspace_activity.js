@@ -166,7 +166,7 @@ async function registerManagedWindowActivity(vscode, context, {
       io.rm(entry.session, { force: true }).catch(() => {})
     ));
     sessions.clear();
-    if (vscode.workspace.getConfiguration?.('scmToolkit')?.get('automaticWorkspaceCleanup', true) !== false)
+    if (vscode.workspace.getConfiguration?.('sweetiebot')?.get('automaticWorkspaceCleanup', true) !== false)
       scheduleCleanup(closingGroups);
   };
   stopCurrent = stop;

@@ -284,7 +284,7 @@ function registerBackgroundCommit(vscode, context) {
           normalizedTree, validatedSnapshot: limits.validatedSnapshot,
           ...(options.paths ? {paths: options.paths} : {}), description: options.description ?? '',
           skipSpellcheck: options.skipSpellcheck === true,
-          remote: vscode.workspace.getConfiguration('scmToolkit', root).get('remote', 'origin')
+          remote: vscode.workspace.getConfiguration('sweetiebot', root).get('remote', 'origin')
         });
         if (result.queued === false) {
           // The worker declined after a validated preflight. The direct Git

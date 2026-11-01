@@ -23,7 +23,7 @@ async function scanAutoCodexCommits(vscode, busy = new Set(), reported = new Map
   await Promise.all(repositories.map(async repository => {
     const root = repository.rootUri;
     if (root?.scheme !== 'file' || !root.fsPath) return;
-    const setting = vscode.workspace.getConfiguration('scmToolkit', root);
+    const setting = vscode.workspace.getConfiguration('sweetiebot', root);
     if (setting.get('autoCommitWithCodex', false) !== true) {
       reported.delete(root.fsPath);
       return;

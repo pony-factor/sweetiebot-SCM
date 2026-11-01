@@ -218,23 +218,23 @@ getWindowTitle(){let z=this.configurationService.getValue("window.title");typeof
             assert.equal(title.getWindowTitle(), 'file.md — Code');
             assert.equal(title.getFullWindowTitle(), 'file.md — Code');
             assert.equal(title.isCustomTitleFormat(), false);
-            values['scmToolkit.windowHeading']='${rootName} (${activeRepositoryBranchName})';
-            title.onConfigurationChanged({affectsConfiguration:key=>key==='scmToolkit.windowHeading'});
+            values['sweetiebot.windowHeading']='${rootName} (${activeRepositoryBranchName})';
+            title.onConfigurationChanged({affectsConfiguration:key=>key==='sweetiebot.windowHeading'});
             title.doUpdateTitle();
             assert.equal(changes,2,'heading changes refresh the UI even when the native window name stays the same');
             assert.equal(scheduled,1);
             assert.equal(title.getWindowTitle(),'repository (branch)');
             assert.equal(title.getFullWindowTitle(),'file.md — Code');
             assert.equal(title.isCustomTitleFormat(),true);
-            values['scmToolkit.windowName']='${rootName} — ${focusedView}';
-            title.onConfigurationChanged({affectsConfiguration:key=>key==='scmToolkit.windowName'});
+            values['sweetiebot.windowName']='${rootName} — ${focusedView}';
+            title.onConfigurationChanged({affectsConfiguration:key=>key==='sweetiebot.windowName'});
             assert.equal(title.titleIncludesFocusedView,true);
             assert.equal(title.getFullWindowTitle(),'repository — Explorer');
             pending=true;
             assert.equal(title.getWindowTitle(),'repository (branch) — Pushing');
             assert.equal(title.getFullWindowTitle(),'repository — Explorer — Pushing');
             pending=false;
-            values['scmToolkit.windowHeading']='';values['scmToolkit.windowName']='';
+            values['sweetiebot.windowHeading']='';values['sweetiebot.windowName']='';
             assert.equal(title.getWindowTitle(),'file.md — Code');
             assert.equal(title.getFullWindowTitle(),'file.md — Code');
         '''], check=True, capture_output=True, text=True)
@@ -474,7 +474,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             "scmToolkitHighlightPrWarnings(configuration, settings) && pullRequestEligibility?.reason === 'unavailable'",
             js,
         )
-        self.assertIn("event.affectsConfiguration('scmToolkit.prWarningHighlights')", js)
+        self.assertIn("event.affectsConfiguration('sweetiebot.prWarningHighlights')", js)
         self.assertIn("color: var(--vscode-descriptionForeground);", css)
         self.assertIn(".scm-toolkit-pr-needs-attention", css)
 
@@ -498,16 +498,16 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertIn("scmToolkitCustomizeCommitButtonLabel", js)
         self.assertIn("scmToolkitCustomizeMessagePlaceholder", js)
         self.assertIn("settings.commitAndSendButtonLabel", js)
-        self.assertIn("configuration.getValue('scmToolkit.messagePlaceholder')", js)
+        self.assertIn("configuration.getValue('sweetiebot.messagePlaceholder')", js)
         self.assertIn("configuredLabel('commitButtonLabel'", js)
         self.assertIn("configuredLabel(", js)
         self.assertIn("'commitAndSendButtonLabel'", js)
-        self.assertIn("event.affectsConfiguration('scmToolkit.messagePlaceholder')", js)
-        self.assertIn("event.affectsConfiguration('scmToolkit.commitButtonLabel')", js)
+        self.assertIn("event.affectsConfiguration('sweetiebot.messagePlaceholder')", js)
+        self.assertIn("event.affectsConfiguration('sweetiebot.commitButtonLabel')", js)
         self.assertIn("configuration.getValue('git.postCommitCommand') === 'push'", js)
         self.assertIn("'.button-container > .monaco-button:first-child'", js)
         self.assertIn("'sweetiebot.publishBranch'", js)
-        self.assertIn("scmToolkit.autoPublishNewBranches", js)
+        self.assertIn("sweetiebot.autoPublishNewBranches", js)
         self.assertIn('[id="workbench.view.scm"] .monaco-progress-container', css)
         self.assertIn(".pane:has(.scm-view) > .monaco-progress-container", css)
         self.assertEqual(js.count("className = 'scm-toolkit-tooltip'"), 6)

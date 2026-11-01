@@ -69,17 +69,17 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
       : `${displayName(options.branch)} PR [${path.basename(root.fsPath)}]`);
     const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
     const workspace = path.join(directory, filename + '.code-workspace');
-    const config = vscode.workspace.getConfiguration('scmToolkit');
+    const config = vscode.workspace.getConfiguration('sweetiebot');
     await fs.writeFile(workspace, JSON.stringify({
       folders: [{ path: root.fsPath }],
       settings: {
-        'scmToolkit.openPanelOnStartup': false,
-        'scmToolkit.automaticBranchCleanup': false,
+        'sweetiebot.openPanelOnStartup': false,
+        'sweetiebot.automaticBranchCleanup': false,
         // Both PR drafts and Lindsey merge dashboards open compact; expanding remains manual.
-        'scmToolkit.startCompactPRSession': true,
+        'sweetiebot.startCompactPRSession': true,
         'workbench.browser.dataStorage': 'workspace',
-        'scmToolkit.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
-        'scmToolkit.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
+        'sweetiebot.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
+        'sweetiebot.autoPublishPullRequests': config.get('autoPublishPullRequests', true),
         'window.title': options.windowTitle || title,
       },
     }), { mode: 0o600 });
@@ -253,7 +253,7 @@ async function resumePRSession(vscode, context) {
         const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
           event => { report(event); controller?.recordLocalProgress?.(event); });
         const summaryErrors = await publishOptionalMergeSummaries({
-          enabled: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
+          enabled: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostSummaries', false) === true,
           selection: snapshot, input: result, result: executed, token: auth.accessToken
         });
         return { ...executed, summaryErrors };
@@ -270,7 +270,7 @@ async function resumePRSession(vscode, context) {
           },
           destination: url.origin + url.pathname,
           makePrompt: () => initialPrompt + '\n\n' + require('../merge/review_policy').statusUpdateInstructions(
-            vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true),
+            vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true),
           execute: runLocal,
           onResult: async result => {
             const controller = await resumeMergeDashboard(vscode, directory, context);
@@ -288,10 +288,10 @@ async function resumePRSession(vscode, context) {
       let awakeState;
       const updateAwake = () => {
         if (awakeState) keepAwake.update(awakeState, selection,
-          vscode.workspace.getConfiguration('scmToolkit').get('codexKeepAwake', true));
+          vscode.workspace.getConfiguration('sweetiebot').get('codexKeepAwake', true));
       };
       context.subscriptions?.push(keepAwake, vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('scmToolkit.codexKeepAwake')) updateAwake();
+        if (event.affectsConfiguration('sweetiebot.codexKeepAwake')) updateAwake();
       }));
       const startBatch = progress => require('../merge/parallel_merge_batch').createParallelMergeBatch(selection, {
         onProgress: update => progress?.report(update),
@@ -302,8 +302,8 @@ async function resumePRSession(vscode, context) {
         destination: url.origin + url.pathname,
         makePrompt: snapshot => require('./pull_request_batch').batchMergePrompt({
           repositoryUrl: 'https://github.com/' + snapshot.repository,
-          postStatusUpdates: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
-          postMergeSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
+          postStatusUpdates: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
+          postMergeSummaries: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostSummaries', false) === true,
           pullRequests: snapshot.pullRequests, localHandoff: true,
           filterSyncCommitSummaries: !initialPrompt.includes('SYNC COMMIT FILTER DISABLED'),
           omitBulletsForEmojiTitles: initialPrompt.includes('EMOJI-ONLY SUBJECT LINES ENABLED')

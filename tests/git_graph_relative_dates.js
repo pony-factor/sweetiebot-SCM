@@ -17,7 +17,7 @@ async function test() {
     ConfigurationTarget: targets,
     workspace: {
       getConfiguration(root) {
-        if (root === 'scmToolkit') {
+        if (root === 'sweetiebot') {
           return { get(key) {
             assert.equal(key, 'gitGraphRelativeDates');
             return settings.enabled;
@@ -52,7 +52,7 @@ async function test() {
   assert.equal(updates.length, 0, 'Opt-out must not touch Git Graph settings');
 
   settings.enabled = true;
-  changed('scmToolkit.gitGraphRelativeDates');
+  changed('sweetiebot.gitGraphRelativeDates');
   await tick();
   assert.deepEqual(updates, [{ value: 'Relative', target: targets.Global }]);
   assert.equal(settings.global, 'Relative');
@@ -70,7 +70,7 @@ async function test() {
   assert.equal(updates.at(-1).target, targets.Workspace);
 
   settings.enabled = false;
-  changed('scmToolkit.gitGraphRelativeDates');
+  changed('sweetiebot.gitGraphRelativeDates');
   settings.workspace = 'Date Only';
   changed('git-graph.date.format');
   await tick();
@@ -78,7 +78,7 @@ async function test() {
 
   for (const disposable of context.subscriptions) disposable.dispose();
   settings.enabled = true;
-  changed('scmToolkit.gitGraphRelativeDates');
+  changed('sweetiebot.gitGraphRelativeDates');
   await tick();
   assert.equal(settings.workspace, 'Date Only', 'Disposal prevents later writes');
   console.log('Git Graph relative-date preference and enforcement checks passed.');

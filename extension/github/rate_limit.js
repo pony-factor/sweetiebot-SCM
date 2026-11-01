@@ -39,13 +39,13 @@ const cooldowns = new WeakMap();
 async function promptRateLimit(vscode, error, { retry, context, retryPriority = 0, schedule = setTimeout } = {}) {
   if (!error?.rateLimited) return false;
   if (!error.configured && error.retryAt <= Date.now() + 61000) {
-    const seconds = Number(vscode.workspace?.getConfiguration?.('scmToolkit')?.get('githubRateLimitCooldownSeconds', 900));
+    const seconds = Number(vscode.workspace?.getConfiguration?.('sweetiebot')?.get('githubRateLimitCooldownSeconds', 900));
     error.retryAt = Math.max(error.retryAt, Date.now() + Math.max(60, Math.min(3600, seconds || 900)) * 1000);
     error.message = 'GitHub API rate limit reached. Requests are paused until ' + new Date(error.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) + '.';
   }
   const prior = cooldowns.get(vscode.window);
   if (prior?.retryAt > error.retryAt) error.retryAt = prior.retryAt;
-  error.message = rateLimitMessage(error.retryAt, vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden'));
+  error.message = rateLimitMessage(error.retryAt, vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergeTimelineTimestampMode', 'hidden'));
   error.configured = true;
   cooldowns.set(vscode.window, error);
   const pending = notices.get(vscode.window);

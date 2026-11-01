@@ -63,8 +63,8 @@ async function main() {
     if (githubFirst) { github(); sweetiebot(); }
     else { sweetiebot(); github(); }
     await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', clicked);
-    await vscode.commands.executeCommand('scmToolkit.squashMergeSelectedPullRequest');
-    await vscode.commands.executeCommand('scmToolkit.squashMergePullRequest', { url });
+    await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest');
+    await vscode.commands.executeCommand('sweetiebot.squashMergePullRequest', { url });
     assert.deepEqual(merged, [url, url, url]);
     // The inline button resolves in the tree's owner, then hands off only a
     // URL. Model objects/functions must not cross the extension boundary.

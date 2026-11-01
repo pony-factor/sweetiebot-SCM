@@ -42,12 +42,13 @@ const { registerFilenameSpellcheck } = require('./commits/filename_spellcheck');
 const { registerCaseOnlyRenames } = require('./commits/case_only_renames');
 const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python_runtime');
 const { registerLegacyCommandAliases } = require('./ui/command_aliases');
+const { migrateLegacySettings } = require('./ui/settings_migration');
 const { registerGitGraphRelativeDates } = require('./ui/git_graph_relative_dates');
 const { kefaniaClosePosition } = require('./codex/kefania_close_position');
 const { invalidateUserExtensionCache } = require('./ui/extension_cache');
 
-const VIEW_ID = 'scmToolkit.workspaceSearch';
-const CONFIG_ROOT = 'scmToolkit.workspaceSearch';
+const VIEW_ID = 'sweetiebot.workspaceSearch';
+const CONFIG_ROOT = 'sweetiebot.workspaceSearch';
 const SETTINGS_BROWSER_COMMAND = 'workbench.action.browser.open';
 const SETTINGS_SESSION_URL_KEY = 'scmToolkit.settingsSessionUrl';
 const SETTINGS_PAGE_OPENED_KEY = 'scmToolkit.settingsPageOpened';
@@ -98,7 +99,7 @@ function syncWindowSettingsToConfigurator() {
   if (!configuratorURL) return;
   const url = new URL(configuratorURL);
   url.pathname = '/sync-window-settings';
-  const configuration = vscode.workspace.getConfiguration('scmToolkit');
+  const configuration = vscode.workspace.getConfiguration('sweetiebot');
   const body = new URLSearchParams({
     windowHeading: configuration.get('windowHeading', ''),
     windowName: configuration.get('windowName', ''),
@@ -122,8 +123,8 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
 
   const script = vscode.Uri.joinPath(context.extensionUri, 'configurator.py').fsPath;
   const python = resolvePythonExecutable();
-  const openPanelOnStartup = vscode.workspace.getConfiguration('scmToolkit').get('openPanelOnStartup', true);
-  const scm = vscode.workspace.getConfiguration('scmToolkit');
+  const openPanelOnStartup = vscode.workspace.getConfiguration('sweetiebot').get('openPanelOnStartup', true);
+  const scm = vscode.workspace.getConfiguration('sweetiebot');
   const currentSettings = {
     workspaceSearch: settings(),
     vscodeSettings: {
@@ -234,7 +235,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
           ));
         }
         if (message.vscodeSettings) {
-          const cfg = vscode.workspace.getConfiguration('scmToolkit');
+          const cfg = vscode.workspace.getConfiguration('sweetiebot');
           settingUpdates.push(...Object.entries(message.vscodeSettings).map(([key, value]) =>
             cfg.update(key, value, vscode.ConfigurationTarget.Global)
           ));
@@ -395,6 +396,7 @@ function settings() {
 }
 
 async function activate(context) {
+  await migrateLegacySettings(vscode);
   // Choose native persistent workspace browser storage before opening ChatGPT
   // tabs; never overwrite explicit user settings or erase existing drafts.
   try {
@@ -444,7 +446,7 @@ async function activate(context) {
   }
   // Hidden panel tabs can still be restored as the active container.
   // Select the user's SCM container explicitly once the workbench has started.
-  if (vscode.workspace.getConfiguration('scmToolkit').get('openPanelOnStartup', true)) {
+  if (vscode.workspace.getConfiguration('sweetiebot').get('openPanelOnStartup', true)) {
     await vscode.commands.executeCommand('workbench.view.scm');
     await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
   }
@@ -478,10 +480,10 @@ async function activate(context) {
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider, { webviewOptions: { retainContextWhenHidden: true } })
   );
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('scmToolkit.windowHeading') ||
-        event.affectsConfiguration('scmToolkit.windowName') ||
-        event.affectsConfiguration('scmToolkit.windowShowModifiedStatus') ||
-        event.affectsConfiguration('scmToolkit.windowShowPushingStatus')) {
+    if (event.affectsConfiguration('sweetiebot.windowHeading') ||
+        event.affectsConfiguration('sweetiebot.windowName') ||
+        event.affectsConfiguration('sweetiebot.windowShowModifiedStatus') ||
+        event.affectsConfiguration('sweetiebot.windowShowPushingStatus')) {
       syncWindowSettingsToConfigurator();
     }
     if (event.affectsConfiguration(`${CONFIG_ROOT}.placeholder`)) {

@@ -574,7 +574,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     }
     // Sharing publishes a public snapshot of the active Codex conversation.
     // Never invoke native Share or reuse cached public links without opt-in.
-    const autoShareCodexChat = vscode.workspace.getConfiguration('scmToolkit')
+    const autoShareCodexChat = vscode.workspace.getConfiguration('sweetiebot')
       .get('kefaniaAutoShareCodexChat', false) === true;
     if (autoShareCodexChat) source = sourceWithSharedConversationUrl(context, source);
     // Capture a fresh native Share snapshot in the originating window before
@@ -693,13 +693,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     localHandoff.register(draftId, { pony, profile: cachedProfile,
       ludicrousMode,
       appearance: async () => {
-        if (!vscode.workspace.getConfiguration('scmToolkit').get('kefaniaUseThemeColors', true)) return null;
+        if (!vscode.workspace.getConfiguration('sweetiebot').get('kefaniaUseThemeColors', true)) return null;
         try { return await vscode.commands.executeCommand('sweetiebot.kefaniaThemeColors'); }
         catch { return null; }
       },
-      closeAfterMerge: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaCloseAfterMerge', false),
-      showKefaniaCloseButton: () => vscode.workspace.getConfiguration('scmToolkit').get('kefaniaShowCloseButton', true),
-      kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('scmToolkit')),
+      closeAfterMerge: () => vscode.workspace.getConfiguration('sweetiebot').get('kefaniaCloseAfterMerge', false),
+      showKefaniaCloseButton: () => vscode.workspace.getConfiguration('sweetiebot').get('kefaniaShowCloseButton', true),
+      kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('sweetiebot')),
       decorateDraft: draft => ({ ...draft, body: appendSourceDetails(draft.body, source) }),
       onMerge: async result => {
         const session = await require('./session').githubSession(vscode);
@@ -723,7 +723,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       if (await closePRSession(vscode, context)) return;
       if (!closeConfirmation) throw new Error('The Kefania confirmation window is not available.');
       await closeConfirmation();
-    }, autoPublish: vscode.workspace.getConfiguration('scmToolkit').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {
+    }, autoPublish: vscode.workspace.getConfiguration('sweetiebot').get('autoPublishPullRequests', true), onResult: async (kind, profile) => {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();

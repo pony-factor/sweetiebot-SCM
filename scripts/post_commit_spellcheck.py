@@ -97,7 +97,9 @@ def repository_spellcheck_disabled(global_args: list[str]) -> bool:
             lambda match: match.group() if match.group().startswith('"') else '', without_comments
         )
         settings = json.loads(normalized)
-        return isinstance(settings, dict) and settings.get("scmToolkit.postCommitSpellcheck") is False
+        return isinstance(settings, dict) and settings.get(
+            "sweetiebot.postCommitSpellcheck", settings.get("scmToolkit.postCommitSpellcheck")
+        ) is False
     except (OSError, UnicodeError, ValueError, TypeError):
         return False
 

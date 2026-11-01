@@ -1048,7 +1048,7 @@ def render_form(
                 + '<div class="setting"><span><strong>Opt out in one repository</strong>'
                   '<small>Keep the global Spellcheck toggle on, but stop automatic post-commit '
                   'Markdown corrections in a particular repository. In that repository, add '
-                  '<code>&quot;scmToolkit.postCommitSpellcheck&quot;: false</code> to '
+                  '<code>&quot;sweetiebot.postCommitSpellcheck&quot;: false</code> to '
                   '<code>.vscode/settings.json</code>. Other repositories still spellcheck. '
                   'Remove the entry or set it to <code>true</code> to restore spellcheck there. '
                   'Draft commit checks and manual Spellcheck Only remain available.</small>'

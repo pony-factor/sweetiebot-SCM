@@ -78,9 +78,9 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert.equal(path.basename(workspaceUri.fsPath), 'Draft PR [repository].code-workspace');
     assert.equal(saved.settings['window.title'], 'Draft PR [repository]');
     assert.deepEqual(saved.folders, [{ path: root.fsPath }]);
-    assert.equal(saved.settings['scmToolkit.autoPublishPullRequests'], false);
-    assert.equal(saved.settings['scmToolkit.automaticBranchCleanup'], false);
-    assert.equal(saved.settings['scmToolkit.startCompactPRSession'], true, 'Only the PR workspace opts into compact startup');
+    assert.equal(saved.settings['sweetiebot.autoPublishPullRequests'], false);
+    assert.equal(saved.settings['sweetiebot.automaticBranchCleanup'], false);
+    assert.equal(saved.settings['sweetiebot.startCompactPRSession'], true, 'Only the PR workspace opts into compact startup');
     assert.equal(saved.settings['workbench.browser.dataStorage'], 'workspace');
     const browserStorage = path.join(storage, 'Library/Application Support/Sweetiebot/browserStorage');
     assert.equal((await fs.stat(browserStorage)).mode & 0o777, 0o700);
@@ -160,7 +160,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert.deepEqual(JSON.parse(await fs.readFile(
       path.join(dashboardDirectory, 'merge-selection.json'), 'utf8')), selection);
     const mergeSettings = JSON.parse(await fs.readFile(dashboardWorkspace.fsPath, 'utf8'));
-    assert.equal(mergeSettings.settings['scmToolkit.startCompactPRSession'], true,
+    assert.equal(mergeSettings.settings['sweetiebot.startCompactPRSession'], true,
       'Lindsey merge sessions also start in the 640px compact window');
     let launches = 0;
     const dashboardModulePath = require.resolve('../extension/merge/dashboard');

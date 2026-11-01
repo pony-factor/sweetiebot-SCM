@@ -58,12 +58,12 @@ function ponyCatalog() {
 }
 
 function configuredTimelineMode(vscode) {
-  const value = vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeTimelineTimestampMode', 'hidden');
+  const value = vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeTimelineTimestampMode', 'hidden');
   return TIMELINE_MODES.includes(value) ? value : 'hidden';
 }
 
 function configuredLayout(vscode) {
-  const config = vscode.workspace?.getConfiguration('scmToolkit');
+  const config = vscode.workspace?.getConfiguration('sweetiebot');
   const percent = (key, fallback, max) => {
     const value = config?.get(key, fallback);
     return Number.isInteger(value) && value >= 15 && value <= max ? value : fallback;
@@ -388,13 +388,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })),
       events: events.filter(event => !routineTimelineEvent(event)), error,
-      postStatusUpdates: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
-      postSummaries: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergePostSummaries', false) === true,
-      autoFixCi: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) === true,
-      autoFixCiMethod: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web',
+      postStatusUpdates: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
+      postSummaries: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostSummaries', false) === true,
+      autoFixCi: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) === true,
+      autoFixCiMethod: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web',
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
-      showPrCommits: vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeShowPrCommits', true) !== false,
+      showPrCommits: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeShowPrCommits', true) !== false,
       layoutPreferences: configuredLayout(vscode)
     });
   }
@@ -641,7 +641,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   // separate runner. A task never grants permission to merge or waive checks.
   function queueAutomaticCiRepair(state) {
     if (disposed || !state || state.repository !== selection.repository || state.rateLimit ||
-        vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) !== true) return;
+        vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) !== true) return;
     for (const pr of prs) {
       const candidate = deferredCiRepairCandidate(state, pr);
       if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
@@ -679,11 +679,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           addEvent(pr, 'blocked', 'Automatic CI repair skipped · a human implementation choice is pending');
           return;
         }
-        if (disposed || vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCi', false) !== true) {
+        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) !== true) {
           addEvent(pr, 'updated', 'Automatic CI repair canceled · preference disabled');
           return;
         }
-        const method = vscode.workspace?.getConfiguration('scmToolkit')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web';
+        const method = vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web';
         const option = manualBlockerActions(snapshot).find(action => action.id === 'fix-checks');
         if (!option) return;
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, method);
@@ -717,7 +717,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (enabled ? typeof message.enabled !== 'boolean'
         : !['web', 'codex'].includes(message.method)) return;
       try {
-        await vscode.workspace.getConfiguration('scmToolkit').update(
+        await vscode.workspace.getConfiguration('sweetiebot').update(
           enabled ? 'mergeAutoFixCi' : 'mergeAutoFixCiMethod',
           enabled ? message.enabled : message.method, vscode.ConfigurationTarget.Global);
       } catch (failure) {
@@ -730,7 +730,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (['post-summaries', 'post-status-updates'].includes(message?.type)) {
       if (typeof message.enabled !== 'boolean') return;
       try {
-        await vscode.workspace.getConfiguration('scmToolkit').update(
+        await vscode.workspace.getConfiguration('sweetiebot').update(
           message.type === 'post-status-updates' ? 'mergePostStatusUpdates' : 'mergePostSummaries', message.enabled, vscode.ConfigurationTarget.Global);
       } catch (failure) { error = 'Could not save the GitHub posting preference: ' + failure.message; }
       publish();
@@ -739,7 +739,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (message?.type === 'show-pr-commits') {
       if (typeof message.enabled !== 'boolean') return;
       try {
-        await vscode.workspace.getConfiguration('scmToolkit').update(
+        await vscode.workspace.getConfiguration('sweetiebot').update(
           'mergeShowPrCommits', message.enabled, vscode.ConfigurationTarget.Global);
       } catch (failure) {
         error = 'Could not save PR commit graph preference: ' + failure.message;
@@ -750,7 +750,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (message?.type === 'timestamp-mode') {
       if (!TIMELINE_MODES.includes(message.mode)) return;
       try {
-        await vscode.workspace.getConfiguration('scmToolkit').update(
+        await vscode.workspace.getConfiguration('sweetiebot').update(
           'mergeTimelineTimestampMode', message.mode, vscode.ConfigurationTarget.Global);
       } catch (failure) {
         error = 'Could not save activity timeline time preference: ' + failure.message;
@@ -825,7 +825,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       await require('../github/pr_workflows').openWorkflow(vscode, target, { openToSide: true });
     }
   });
-  const config = () => vscode.workspace?.getConfiguration('scmToolkit');
+  const config = () => vscode.workspace?.getConfiguration('sweetiebot');
   const isActive = () => panel.visible !== false && vscode.window.state?.focused !== false && config()?.get('mergeAutoRefresh', true) !== false;
   const refreshInterval = () => intervalMs || Math.max(30000, Math.min(3600000, Number(config()?.get('mergeRefreshIntervalSeconds', 120)) * 1000 || 120000));
   let actualInterval = refreshInterval();
@@ -833,12 +833,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const visibilityListener = panel.onDidChangeViewState?.(() => { if (isActive()) void refresh(); });
   const focusListener = vscode.window.onDidChangeWindowState?.(() => { if (isActive()) void refresh(); });
   const configurationListener = vscode.workspace?.onDidChangeConfiguration?.(event => {
-    if (event.affectsConfiguration('scmToolkit.mergeRefreshIntervalSeconds')) {
+    if (event.affectsConfiguration('sweetiebot.mergeRefreshIntervalSeconds')) {
       clearTimer(timer); actualInterval = refreshInterval();
       timer = setTimer(() => { void refresh(); }, actualInterval);
     }
     if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod', 'mergeTimelineTimestampMode', 'mergeShowPrCommits', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
-      .some(key => event.affectsConfiguration('scmToolkit.' + key))) publish();
+      .some(key => event.affectsConfiguration('sweetiebot.' + key))) publish();
   });
   panel.onDidDispose(() => {
     disposed = true;

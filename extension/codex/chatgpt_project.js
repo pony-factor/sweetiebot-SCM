@@ -54,7 +54,7 @@ const REGULAR_CHAT_CHOICE_KEY = 'scmToolkit.useRegularChatForWebActions';
 // The user creates or chooses an unshared project in ChatGPT and copies its URL.
 // Never silently launch an action into a general chat when setup is cancelled.
 async function resolveChatgptActionProject(vscode, context) {
-  const configuration = vscode.workspace.getConfiguration('scmToolkit');
+  const configuration = vscode.workspace.getConfiguration('sweetiebot');
   const configured = configuration.get('chatgptProjectUrl', '');
   if (configured) return normalizeChatgptProjectUrl(configured);
   // Keep legacy callers and isolated command tests usable without state.

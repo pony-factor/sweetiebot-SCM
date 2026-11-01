@@ -51,7 +51,7 @@ function registerChatgptCommitTitle(vscode, context, dependencies = {}) {
       throw new Error('This VS Code build does not have the native Integrated Browser.');
     }
     const projectUrl = resolveChatgptReviewProjectUrl(
-      vscode.workspace.getConfiguration('scmToolkit', repository.rootUri));
+      vscode.workspace.getConfiguration('sweetiebot', repository.rootUri));
     const session = await start({title: originalTitle.slice(0, 512), body: data},
       {projectUrl, mode: 'commit-title'});
     try {

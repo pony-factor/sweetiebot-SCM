@@ -20,7 +20,7 @@ IMAGE_SOURCES = {
     "merge-prs-light.svg": Path("kefania/merge-prs-light.svg"),
     "merge-prs-dark.svg": Path("kefania/merge-prs-dark.svg"),
 }
-STANDALONE_CONTAINER_ID = "scmToolkit-workspaceSearchContainer"
+STANDALONE_CONTAINER_ID = "sweetiebot-workspaceSearchContainer"
 LEGACY_EXTENSION_PATTERNS = ("jfwooten4.scm-toolkit-workspace-search-*",)
 
 
@@ -53,18 +53,18 @@ def render_package(settings: dict[str, object] | None = None) -> dict[str, objec
     workspace_view["icon"] = "media/efs.svg"
     workspace_view["contextualTitle"] = str(settings["workspaceSearchLabel"])
     properties = contributes["configuration"]["properties"]
-    properties["scmToolkit.workspaceSearch.askOllama"]["default"] = bool(
+    properties["sweetiebot.workspaceSearch.askOllama"]["default"] = bool(
         settings["workspaceSearchAskOllama"]
     )
-    properties["scmToolkit.workspaceSearch.chatModel"]["default"] = str(
+    properties["sweetiebot.workspaceSearch.chatModel"]["default"] = str(
         settings["workspaceSearchChatModel"]
     )
 
-    properties["scmToolkit.workspaceSearch.embeddingModel"]["default"] = str(
+    properties["sweetiebot.workspaceSearch.embeddingModel"]["default"] = str(
         settings["workspaceSearchEmbeddingModel"]
     )
 
-    for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit")):
+    for group, root in (("workspaceSearch", "sweetiebot.workspaceSearch"), ("vscodeSettings", "sweetiebot")):
         for key, name in VSCODE_SETTINGS[group].items():
             if name not in settings:
                 continue
@@ -105,11 +105,11 @@ def transform_view_manifest(source, settings):
     current = None
     for location, entries in list(views.items()):
         for entry in entries:
-            if entry.get('id') == 'scmToolkit.workspaceSearch':
+            if entry.get('id') == 'sweetiebot.workspaceSearch':
                 if current is not None:
                     raise ValueError('EFS view could not be identified uniquely.')
                 current = dict(entry)
-        views[location] = [entry for entry in entries if entry.get('id') != 'scmToolkit.workspaceSearch']
+        views[location] = [entry for entry in entries if entry.get('id') != 'sweetiebot.workspaceSearch']
     if current is None:
         raise ValueError('Installed EFS view was not found.')
     current.update(name=str(settings['workspaceSearchLabel']), contextualTitle=str(settings['workspaceSearchLabel']), icon='media/efs.svg')

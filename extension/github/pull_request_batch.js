@@ -290,12 +290,12 @@ function registerPullRequestBatchCommand(vscode, context, fetchImpl = globalThis
       }
       const prompt = batchMergePrompt({
         localHandoff: true,
-        postStatusUpdates: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostStatusUpdates', false) === true,
-        postMergeSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('mergePostSummaries', false) === true,
+        postStatusUpdates: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
+        postMergeSummaries: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostSummaries', false) === true,
         repositoryUrl: selectedRepository.repositoryUrl,
         pullRequests: selected,
-        filterSyncCommitSummaries: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('filterSyncCommitSummaries', true) !== false,
-        omitBulletsForEmojiTitles: vscode.workspace?.getConfiguration?.('scmToolkit')?.get('squashOmitBulletsForEmojiTitles', false) === true
+        filterSyncCommitSummaries: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('filterSyncCommitSummaries', true) !== false,
+        omitBulletsForEmojiTitles: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('squashOmitBulletsForEmojiTitles', false) === true
       });
       const projectUrl = await resolveChatgptActionProject(vscode, context);
       if (projectUrl === undefined) return;

@@ -308,7 +308,7 @@ function installPullRequestRefresh(vscode, view, owner) {
   let lastAttemptAt = -Infinity;
   let blockedUntil = 0;
   let consecutiveLimits = 0;
-  const config = () => vscode.workspace.getConfiguration('scmToolkit');
+  const config = () => vscode.workspace.getConfiguration('sweetiebot');
   const interval = () => {
     const seconds = Number(config().get('pullRequestRefreshIntervalSeconds', 120));
     return Number.isFinite(seconds) ? Math.max(30, Math.min(3600, seconds)) * 1000 : 120000;
@@ -365,8 +365,8 @@ function installPullRequestRefresh(vscode, view, owner) {
   }));
   owner._register(vscode.window.onDidChangeWindowState(update));
   owner._register(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('scmToolkit.pullRequestAutoRefresh') ||
-        event.affectsConfiguration('scmToolkit.pullRequestRefreshIntervalSeconds')) update();
+    if (event.affectsConfiguration('sweetiebot.pullRequestAutoRefresh') ||
+        event.affectsConfiguration('sweetiebot.pullRequestRefreshIntervalSeconds')) update();
   }));
   owner._register({ dispose() {
     disposed = true;

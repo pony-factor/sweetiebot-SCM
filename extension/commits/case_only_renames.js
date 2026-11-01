@@ -15,7 +15,7 @@ async function runGit(root, args) {
 }
 
 function caseRenameDetectionEnabled(vscode, rootUri) {
-  return vscode.workspace.getConfiguration('scmToolkit', rootUri)
+  return vscode.workspace.getConfiguration('sweetiebot', rootUri)
     .get('caseOnlyRenameDetection', true) !== false;
 }
 
@@ -212,7 +212,7 @@ async function registerCaseOnlyRenames(vscode, context, {git = runGit, setTimer 
   }
   if (vscode.workspace.onDidChangeConfiguration) {
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('scmToolkit.caseOnlyRenameDetection')) schedule();
+      if (event.affectsConfiguration('sweetiebot.caseOnlyRenameDetection')) schedule();
     }));
   }
   if (api.onDidOpenRepository) context.subscriptions.push(api.onDidOpenRepository(schedule));

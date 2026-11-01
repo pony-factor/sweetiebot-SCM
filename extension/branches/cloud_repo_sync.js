@@ -9,7 +9,7 @@ function registerCloudRepoSync(vscode, context) {
   context.subscriptions.push(output);
   let previous;
   const configure = (force = false) => {
-    const enabled = vscode.workspace.getConfiguration('scmToolkit').get('cloudRepositorySync', false) === true;
+    const enabled = vscode.workspace.getConfiguration('sweetiebot').get('cloudRepositorySync', false) === true;
     if (!force && enabled === previous) return;
     previous = enabled;
     const wrapper = process.env.SCM_TOOLKIT_AI_WRAPPER_PATH
@@ -28,7 +28,7 @@ function registerCloudRepoSync(vscode, context) {
       : 'Local repository sync ' + (enabled ? 'enabled (every 15 minutes; active in the past week)' : 'disabled')));
   };
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('scmToolkit.cloudRepositorySync')) configure();
+    if (event.affectsConfiguration('sweetiebot.cloudRepositorySync')) configure();
   }));
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => configure(true)));
   configure();

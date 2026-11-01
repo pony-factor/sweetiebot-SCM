@@ -266,7 +266,7 @@ class SubmissionTests(unittest.TestCase):
         )
         self.assertIn("Opt out in one repository", page)
         self.assertIn("<code>.vscode/settings.json</code>", page)
-        self.assertIn("&quot;scmToolkit.postCommitSpellcheck&quot;: false", page)
+        self.assertIn("&quot;sweetiebot.postCommitSpellcheck&quot;: false", page)
         self.assertIn("Other repositories still spellcheck", page)
 
     def test_spellcheck_line_break_preference_can_be_toggled(self):
@@ -528,19 +528,19 @@ class SubmissionTests(unittest.TestCase):
         properties = set(package["contributes"]["configuration"]["properties"])
         exposed = {
             f"{root}.{key}"
-            for group, root in (("workspaceSearch", "scmToolkit.workspaceSearch"), ("vscodeSettings", "scmToolkit"))
+            for group, root in (("workspaceSearch", "sweetiebot.workspaceSearch"), ("vscodeSettings", "sweetiebot"))
             for key in toolkit_settings.VSCODE_SETTINGS[group]
         }
         # Extension-native and repository-scoped settings do not belong
         # to the global Git-backed configurator's managed controls.
         self.assertEqual(properties - exposed, {
-            "scmToolkit.caseOnlyRenameDetection",
-            "scmToolkit.postCommitSpellcheck",
-            "scmToolkit.startCompactPRSession",
-            "scmToolkit.promptForIndependentWorkspaceTrust",
-            "scmToolkit.mergePostStatusUpdates",
-            "scmToolkit.mergeAutoFixCi",
-            "scmToolkit.mergeAutoFixCiMethod",
+            "sweetiebot.caseOnlyRenameDetection",
+            "sweetiebot.postCommitSpellcheck",
+            "sweetiebot.startCompactPRSession",
+            "sweetiebot.promptForIndependentWorkspaceTrust",
+            "sweetiebot.mergePostStatusUpdates",
+            "sweetiebot.mergeAutoFixCi",
+            "sweetiebot.mergeAutoFixCiMethod",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")

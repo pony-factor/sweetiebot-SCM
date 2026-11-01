@@ -30,7 +30,7 @@ async function run() {
     workspace: {
       getConfiguration(section) {
         return { get(name, fallback) {
-          if (section === 'scmToolkit' && name === 'autoCommitWithCodex') return enabled;
+          if (section === 'sweetiebot' && name === 'autoCommitWithCodex') return enabled;
           return fallback;
         } };
       }
@@ -124,9 +124,9 @@ async function run() {
   const controlContext = vm.createContext({
     autoCommitButton: button,
     configuration: {
-      getValue(name) { assert.equal(name, 'scmToolkit.autoCommitWithCodex'); return currentEnabled; },
+      getValue(name) { assert.equal(name, 'sweetiebot.autoCommitWithCodex'); return currentEnabled; },
       async updateValue(name, value) {
-        assert.equal(name, 'scmToolkit.autoCommitWithCodex');
+        assert.equal(name, 'sweetiebot.autoCommitWithCodex');
         if (failUpdate) throw Error('Write failed');
         currentEnabled = value;
         changed({ affectsConfiguration: key => key === name });
@@ -146,7 +146,7 @@ async function run() {
   assert.equal(button.attrs['aria-pressed'], 'true');
   assert(button.active.has('scm-toolkit-auto-commit-active'));
   currentEnabled = false;
-  changed({ affectsConfiguration: key => key === 'scmToolkit.autoCommitWithCodex' });
+  changed({ affectsConfiguration: key => key === 'sweetiebot.autoCommitWithCodex' });
   assert.equal(button.attrs['aria-pressed'], 'false');
   failUpdate = true;
   await click({ stopPropagation() {} });
@@ -158,7 +158,7 @@ async function run() {
   assert.equal(currentEnabled, true);
 
   const manifest = require('../extension/package.json');
-  const option = manifest.contributes.configuration.properties['scmToolkit.autoCommitWithCodex'];
+  const option = manifest.contributes.configuration.properties['sweetiebot.autoCommitWithCodex'];
   assert.equal(option.default, false);
   assert.equal(option.scope, 'window');
   console.log('Automatic Codex co-author commit tests passed');

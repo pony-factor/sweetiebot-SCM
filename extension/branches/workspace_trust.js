@@ -19,7 +19,7 @@ async function showIndependentWorkspaceTrustSetup(vscode, context, {
   manual = false, baseDirectory = independentWorkspaceParent(), io = fs
 } = {}) {
   if (!manual) {
-    const enabled = vscode.workspace.getConfiguration('scmToolkit')
+    const enabled = vscode.workspace.getConfiguration('sweetiebot')
       .get('promptForIndependentWorkspaceTrust', true);
     const untrustedClone = vscode.workspace.isTrusted === false &&
       (vscode.workspace.workspaceFolders || []).some(({ uri }) => {

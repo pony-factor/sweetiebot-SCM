@@ -30,7 +30,7 @@ async function run() {
     settings: { codexCoauthor: true },
     scmToolkitWithCodexCoauthor: (message, settings) => message + '\n\nCo-authored-by: Codex <noreply@openai.com>',
     scmToolkitCoauthorTrailer: () => 'Co-authored-by: Codex <noreply@openai.com>',
-    configuration: { getValue: name => name === 'scmToolkit.durableBackgroundCommits' ? context.durable : 'push' },
+    configuration: { getValue: name => name === 'sweetiebot.durableBackgroundCommits' ? context.durable : 'push' },
     durable: true,
     notifications: { error: error => errors.push(error) },
     commands: { async executeCommand(id, ...args) { calls.push({ id, args, message: input.value }); } }

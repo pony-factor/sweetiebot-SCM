@@ -188,7 +188,7 @@ function registerNativeSpellcheckBridge(vscode, context, start = startNativeSpel
     if (!registered.includes('workbench.action.browser.open')) {
       throw new Error('This VS Code build does not have the native Integrated Browser.');
     }
-    const projectUrl = resolveChatgptReviewProjectUrl(vscode.workspace.getConfiguration?.('scmToolkit'));
+    const projectUrl = resolveChatgptReviewProjectUrl(vscode.workspace.getConfiguration?.('sweetiebot'));
     const session = await start({title: '', body}, {projectUrl});
     active.add(session);
     try {

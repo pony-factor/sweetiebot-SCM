@@ -467,7 +467,7 @@ function registerWorkspaceCleanup(vscode, context) {
   let running = false;
   let disposed = false;
   const scan = async () => {
-    if (disposed || running || !vscode.workspace.getConfiguration('scmToolkit')
+    if (disposed || running || !vscode.workspace.getConfiguration('sweetiebot')
       .get('automaticWorkspaceCleanup', true)) return;
     running = true;
     try { await pruneManagedWorkspaces({ log: message => output.appendLine(message) }); }

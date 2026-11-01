@@ -2,7 +2,9 @@
 
 Sweetiebot extends **Visual Studio Code on macOS** with Source Control controls, managed Git worktrees, local Ollama features, semantic workspace search, and GitHub pull-request workflows. It builds around the installed VS Code Git extension rather than replacing Git.
 
-**Start with the Sweetiebot Settings gear beside the Source Control message field.** Settings are organized by feature and save automatically. The old list of dozens of `git config --global` commands is no longer the recommended configuration path.
+**Start with the Sweetiebot Settings gear beside the Source Control message field.**
+
+VS Code settings now use the `sweetiebot.*` prefix instead of `scmToolkit.*`. At extension startup, explicitly saved legacy user, workspace, and resource-scoped preferences are copied only where the corresponding new setting is not already configured. Original values are retained for older installations. Legacy `scmToolkit.*` command aliases remain available for existing keybindings. Settings are organized by feature and save automatically. The old list of dozens of `git config --global` commands is no longer the recommended configuration path.
 
 > [!IMPORTANT]
 > Sweetiebot patches installed VS Code workbench files and certain supported extensions. VS Code updates may replace patches, unsupported versions may be refused, and VS Code can show an installation-integrity warning. Review changes before installing, and only trust repositories and workspace roots you control.
@@ -119,17 +121,17 @@ Spellcheck features have independent controls:
 
 - **Draft commit-title correction** can suggest conservative spelling/grammar changes after an idle delay, with a preview or automatic handling.
 - **Sweetiebot: Spellcheck Filenames** previews name corrections from the Command Palette or a file context menu; it does not stage or commit a rename automatically.
-- **Case-only filename renames** appear in a separate Source Control group even when Git ignores capitalization changes. Select the entry and confirm **Stage rename** to record the exact new spelling in Git; scanning never changes the index, and ambiguous names are skipped. The `scmToolkit.caseOnlyRenameDetection` setting defaults to `true`; turn it off in VS Code Settings globally or set `"scmToolkit.caseOnlyRenameDetection": false` in a repository's `.vscode/settings.json` to opt out there. The group disappears when disabled and returns when enabled.
+- **Case-only filename renames** appear in a separate Source Control group even when Git ignores capitalization changes. Select the entry and confirm **Stage rename** to record the exact new spelling in Git; scanning never changes the index, and ambiguous names are skipped. The `sweetiebot.caseOnlyRenameDetection` setting defaults to `true`; turn it off in VS Code Settings globally or set `"sweetiebot.caseOnlyRenameDetection": false` in a repository's `.vscode/settings.json` to opt out there. The group disappears when disabled and returns when enabled.
 - **Post-commit Markdown spellcheck** is **off by default**. When enabled, it proposes changed Markdown prose as unstaged edits for review in **Spellchecks Performed**. Keep or discard reviewed changes before a follow-up commit.
-- **Spellcheck Only** is a separate manual action. The native ChatGPT browser session follows `scmToolkit.chatgptReviewProjectUrl` if configured, otherwise it inherits `scmToolkit.chatgptProjectUrl` (or uses regular chats when neither is set). An inaccessible Project fails rather than silently submitting outside it.
+- **Spellcheck Only** is a separate manual action. The native ChatGPT browser session follows `sweetiebot.chatgptReviewProjectUrl` if configured, otherwise it inherits `sweetiebot.chatgptProjectUrl` (or uses regular chats when neither is set). An inaccessible Project fails rather than silently submitting outside it.
 
-**Sweetiebot: Suggest Commit Title with ChatGPT Project** is an optional, explicitly initiated command. After your confirmation, it sends a bounded staged diff to the signed-in ChatGPT browser and previews a suggested title. It only fills the Source Control message box after your approval, without committing. It uses the dedicated optional `scmToolkit.chatgptReviewProjectUrl` if present, or the shared `scmToolkit.chatgptProjectUrl` otherwise. **Automatic** commit-title generation and the post-commit Markdown spellchecker continue using local Ollama, including unattended jobs; configuring a ChatGPT Project does not change their model provider.
+**Sweetiebot: Suggest Commit Title with ChatGPT Project** is an optional, explicitly initiated command. After your confirmation, it sends a bounded staged diff to the signed-in ChatGPT browser and previews a suggested title. It only fills the Source Control message box after your approval, without committing. It uses the dedicated optional `sweetiebot.chatgptReviewProjectUrl` if present, or the shared `sweetiebot.chatgptProjectUrl` otherwise. **Automatic** commit-title generation and the post-commit Markdown spellchecker continue using local Ollama, including unattended jobs; configuring a ChatGPT Project does not change their model provider.
 
 To keep post-commit Markdown spellcheck enabled globally while disabling it in one repository, add to that repository's `.vscode/settings.json`:
 
 ```json
 {
-  "scmToolkit.postCommitSpellcheck": false
+  "sweetiebot.postCommitSpellcheck": false
 }
 ```
 
@@ -151,7 +153,7 @@ The title-bar **new workspace window** control opens another saved window for th
 
 ### Workspace Trust
 
-VS Code can initially open managed workspaces in **Restricted Mode**. Sweetiebot offers a native prompt to trust a parent directory; this would also trust repositories subsequently placed below that parent. Approve it only when all children are trusted. Sweetiebot does not override VS Code Workspace Trust. **Configure Independent Workspace Trust** can reopen the guide; `scmToolkit.promptForIndependentWorkspaceTrust` controls the first-run prompt.
+VS Code can initially open managed workspaces in **Restricted Mode**. Sweetiebot offers a native prompt to trust a parent directory; this would also trust repositories subsequently placed below that parent. Approve it only when all children are trusted. Sweetiebot does not override VS Code Workspace Trust. **Configure Independent Workspace Trust** can reopen the guide; `sweetiebot.promptForIndependentWorkspaceTrust` controls the first-run prompt.
 
 ### Sync and cleanup
 
