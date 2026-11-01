@@ -265,6 +265,17 @@ jobs:
       - name: Resolve every installed relative JavaScript dependency
         run: python -m unittest tests.packaged_runtime -v
 
+  case-only-rename-macos:
+    name: Case-only filename changes (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Detect and stage filename capitalization renames on macOS
+        run: node --test tests/case_only_renames.js
+
   native-prompt-transport:
     name: Sandboxed browser prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
     needs: inventory
