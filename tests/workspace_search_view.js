@@ -222,11 +222,11 @@ async function run() {
   assert.match(customHtml, /aria-label="Search your workspace"/);
   assert.match(html, /class="search-input".*id="clear-query".*class="search-button"/);
   // The search field has its own row; short toolbar controls share the next row.
-  assert.match(html, /form\\{display:flex;flex-wrap:wrap;align-items:center;gap:6px\\}/);
-  assert.match(html, /\\.search-input\\{[^}]*flex:1 1 100%\\}/);
-  assert.match(html, /\\.score-toggle\\{[^}]*flex:0 0 30px;[^}]*width:30px/);
-  assert.match(html, /\\.history-toggle\\{[^}]*flex:0 0 30px;width:30px/);
-  assert.doesNotMatch(html, /form\\{flex-direction:column\\}/);
+  assert.match(html, /form\{display:flex;flex-wrap:wrap;align-items:center;gap:6px\}/);
+  assert.match(html, /\.search-input\{[^}]*flex:1 1 100%\}/);
+  assert.match(html, /\.score-toggle\{[^}]*flex:0 0 30px;[^}]*width:30px/);
+  assert.match(html, /\.history-toggle\{[^}]*flex:0 0 30px;width:30px/);
+  assert.doesNotMatch(html, /form\{flex-direction:column\}/);
   assert.match(html, /copy-status\.copied/);
   assert.match(html, /contrastCheckColor/);
   assert.match(html, /message\.type==='copied'/);
