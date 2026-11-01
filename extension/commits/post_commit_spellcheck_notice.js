@@ -240,14 +240,32 @@ async function normalizeReviewedWhitespace(root, paths) {
   });
 }
 
+// Compare reviewed edits, not diff hunk positions. A later commit can shift
+// line numbers or context without changing any of the proposed corrections.
+function reviewedPatchChanges(patch) {
+  return JSON.stringify(spellcheckDiffFiles(patch).map(file => ({
+    name: file.name,
+    changes: file.rows.filter(row => row.kind === 'remove' || row.kind === 'add')
+      .map(row => [row.kind, row.text])
+  })));
+}
+
 async function verifyPreviewHead(session) {
   if (!session.head) return;
   const current = await session.readGit(session.root, ['rev-parse', 'HEAD']);
   if (current === session.head) return;
-  if (!session.headTree || !session.branch
-      || await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch
+  const error = () => new Error('The repository changed commits. Reopen the spelling preview.');
+  if (!session.branch
+      || await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
+    throw error();
+  }
+  if (!session.headTree
       || await session.readGit(session.root, ['rev-parse', 'HEAD^{tree}']) !== session.headTree) {
-    throw new Error('The repository changed commits. Reopen the spelling preview.');
+    // Accept a fast-forward only. The reviewed patch check below prevents
+    // accepting unreviewed worktree changes after the branch advances.
+    try {
+      await session.readGit(session.root, ['merge-base', '--is-ancestor', session.head, current]);
+    } catch { throw error(); }
   }
   session.head = current;
 }
@@ -277,8 +295,21 @@ async function finishSpellcheckPreview(vscode, sessionId, action, message, runAc
     const current = await session.readDiff(session.root, [
       'diff', '--no-ext-diff', '--no-color', '--unified=3', '--', ...session.paths
     ]);
-    if (current !== session.patch) throw new Error('The files changed outside this preview. Reopen the diff before accepting or reverting.');
-    await verifyPreviewHead(session);
+    if (current !== session.patch) {
+      // A fast-forward may move hunk headers and context. The actual before/
+      // after corrections must still match, with no new unstaged edits.
+      const latestHead = session.head
+        ? await session.readGit(session.root, ['rev-parse', 'HEAD']) : '';
+      const latestTree = session.headTree && latestHead !== session.head
+        ? await session.readGit(session.root, ['rev-parse', 'HEAD^{tree}']) : '';
+      if (action !== 'accept' || !session.headTree || latestTree === session.headTree
+          || latestHead === session.head || !current.trim()
+          || reviewedPatchChanges(current) !== reviewedPatchChanges(session.patch)) {
+        throw new Error('The files changed outside this preview. Reopen the diff before accepting or reverting.');
+      }
+      await verifyPreviewHead(session);
+      session.patch = current;
+    } else await verifyPreviewHead(session);
     if (session.branch && await session.readGit(session.root, ['symbolic-ref', '--quiet', 'HEAD']) !== session.branch) {
       throw new Error('The repository changed branches. Reopen the spelling preview.');
     }
