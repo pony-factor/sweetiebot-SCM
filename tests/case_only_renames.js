@@ -113,7 +113,7 @@ test('case-only rename opt-out removes SCM entries, suppresses staging, and resc
         activate:async()=>({getAPI:()=>({repositories:[repo]})})
       } : undefined},
       scm:{createSourceControl(id, name, uri) {
-        assert.match(id, /^sweetiebot\\.caseRenames\\./);
+        assert.match(id, /^sweetiebot\.caseRenames\./);
         assert.equal(name, 'Case-only renames');
         assert.equal(uri, repoUri);
         const provider = {disposed:false, count:0,
