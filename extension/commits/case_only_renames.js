@@ -14,6 +14,11 @@ async function runGit(root, args) {
   return result.stdout;
 }
 
+function caseRenameDetectionEnabled(vscode, rootUri) {
+  return vscode.workspace.getConfiguration('scmToolkit', rootUri)
+    .get('caseOnlyRenameDetection', true) !== false;
+}
+
 function isInside(root, location) {
   const relative = path.relative(root, location);
   return !relative || (relative !== '..' && !relative.startsWith('..' + path.sep)
@@ -109,7 +114,7 @@ async function stageCaseOnlyRename(root, from, to, {git = runGit} = {}) {
   }
 }
 
-async function registerCaseOnlyRenames(vscode, context, {git = runGit} = {}) {
+async function registerCaseOnlyRenames(vscode, context, {git = runGit, setTimer = setTimeout, clearTimer = clearTimeout} = {}) {
   const gitExtension = vscode.extensions.getExtension('vscode.git');
   if (!gitExtension || !vscode.scm?.createSourceControl) return;
   const api = (await gitExtension.activate()).getAPI(1);
@@ -133,6 +138,10 @@ async function registerCaseOnlyRenames(vscode, context, {git = runGit} = {}) {
       for (const repo of repos) {
         if (disposed) break;
         const root = path.resolve(repo.rootUri.fsPath);
+        if (!caseRenameDetectionEnabled(vscode, repo.rootUri)) {
+          if (providers.has(root)) { providers.get(root).dispose(); providers.delete(root); }
+          continue;
+        }
         let changes;
         try { changes = await findCaseOnlyRenames(root, {git}); }
         catch (error) {
@@ -170,8 +179,8 @@ async function registerCaseOnlyRenames(vscode, context, {git = runGit} = {}) {
 
   function schedule() {
     if (disposed) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => void refresh().catch(error =>
+    clearTimer(timer);
+    timer = setTimer(() => refresh().catch(error =>
       console.warn('Sweetiebot case-only rename refresh:', error.message)), 500);
     timer.unref?.();
   }
@@ -180,11 +189,11 @@ async function registerCaseOnlyRenames(vscode, context, {git = runGit} = {}) {
     'sweetiebot.stageCaseOnlyRename', async (root, from, to) => {
       const repo = (api.repositories || []).find(item =>
         item.rootUri?.fsPath && path.resolve(item.rootUri.fsPath) === root);
-      if (!repo) return;
+      if (!repo || !caseRenameDetectionEnabled(vscode, repo.rootUri)) return;
       const choice = await vscode.window.showWarningMessage(
         'Stage filename capitalization change: ' + from + ' → ' + to + '?',
         {modal:true}, 'Stage rename');
-      if (choice !== 'Stage rename') return;
+      if (choice !== 'Stage rename' || !caseRenameDetectionEnabled(vscode, repo.rootUri)) return;
       try {
         await stageCaseOnlyRename(root, from, to, {git});
         await repo.status();
@@ -201,13 +210,18 @@ async function registerCaseOnlyRenames(vscode, context, {git = runGit} = {}) {
           isInside(path.resolve(repo.rootUri.fsPath), path.resolve(uri.fsPath)))) schedule();
     }));
   }
+  if (vscode.workspace.onDidChangeConfiguration) {
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('scmToolkit.caseOnlyRenameDetection')) schedule();
+    }));
+  }
   if (api.onDidOpenRepository) context.subscriptions.push(api.onDidOpenRepository(schedule));
   if (api.onDidCloseRepository) context.subscriptions.push(api.onDidCloseRepository(schedule));
   const interval = setInterval(schedule, 60000);
   interval.unref?.();
   context.subscriptions.push({dispose() {
     disposed = true;
-    clearTimeout(timer);
+    clearTimer(timer);
     clearInterval(interval);
     for (const provider of providers.values()) provider.dispose();
     providers.clear();
@@ -215,4 +229,5 @@ async function registerCaseOnlyRenames(vscode, context, {git = runGit} = {}) {
   await refresh();
 }
 
-module.exports = {runGit, isInside, findCaseOnlyRenames, stageCaseOnlyRename, registerCaseOnlyRenames};
+module.exports = {runGit, isInside, caseRenameDetectionEnabled, findCaseOnlyRenames,
+  stageCaseOnlyRename, registerCaseOnlyRenames};

@@ -286,6 +286,12 @@
     "configuration": {
       "title": "Sweetiebot SCM",
       "properties": {
+        "scmToolkit.caseOnlyRenameDetection": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Recognize filename capitalization-only renames and show them in a separate Source Control group. Turn off globally, for a workspace, or in a repository's .vscode/settings.json. Disabling removes that group's entries without modifying files or Git's index."
+        },
         "scmToolkit.postCommitSpellcheck": {
           "type": "boolean",
           "default": true,
