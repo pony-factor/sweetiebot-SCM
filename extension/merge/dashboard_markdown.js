@@ -117,7 +117,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
     if (!image.href || !addLink(container, image.alt, image.href,
       anchor => addImage(anchor, image.alt, image.src))) addImage(container, image.alt, image.src);
   }
-  function inline(parent, text, level = 0) {
+  function inline(parent, text, level = 0, allowLinks = true) {
     if (level > 10) { node(parent, 'span', text); return; }
     let pending = '', i = 0;
     const flush = () => { if (pending) node(parent, 'span', pending); pending = ''; };
@@ -126,12 +126,14 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
       if (ch === '\\' && i + 1 < text.length) { pending += text[i + 1]; i += 2; continue; }
       const isImage = ch === '!' && text[i + 1] === '[';
       const linkStart = isImage ? i + 1 : i;
-      if (text[linkStart] === '[') {
+      if (allowLinks && text[linkStart] === '[') {
         const match = markdownLink(text, linkStart);
         if (match && safeUrl(match.url)) {
           flush();
           if (isImage && safeImageUrl(match.url)) addImage(parent, match.label, match.url);
-          else addLink(parent, (isImage ? 'Image: ' : '') + match.label, match.url);
+          else if (isImage) addLink(parent, 'Image: ' + match.label, match.url);
+          else addLink(parent, match.label, match.url,
+            anchor => inline(anchor, match.label, level + 1, false));
           i = match.end;
           continue;
         }
@@ -142,7 +144,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
         const end = text.indexOf(TICK.repeat(len), i + len);
         if (end >= 0) { flush(); node(parent, 'code', text.slice(i + len, end).replace(/\n/g, ' ')); i = end + len; continue; }
       }
-      if (ch === '<') {
+      if (allowLinks && ch === '<') {
         const image = htmlImage(text.slice(i));
         if (image) {
           flush();
@@ -154,7 +156,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
         const value = end < 0 ? '' : text.slice(i + 1, end);
         if (/^https?:\/\//i.test(value.trim()) && safeUrl(value)) { flush(); addLink(parent, value, value); i = end + 1; continue; }
       }
-      const bare = /^https?:\/\/[^\s<>"']+/i.exec(text.slice(i));
+      const bare = allowLinks ? /^https?:\/\/[^\s<>"']+/i.exec(text.slice(i)) : null;
       if (bare && (i === 0 || !/[\w/@]/.test(text[i - 1]))) {
         let value = bare[0].replace(/[.,;:!?]+$/, '');
         while (value.endsWith(')') && (value.match(/\)/g) || []).length > (value.match(/\(/g) || []).length) value = value.slice(0, -1);
@@ -188,7 +190,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
         flush();
         const outer = node(parent, tag);
         const inner = innerTag ? node(outer, innerTag) : outer;
-        inline(inner, text.slice(i + marker.length, end), level + 1);
+        inline(inner, text.slice(i + marker.length, end), level + 1, allowLinks);
         i = end + marker.length;
         matched = true;
         break;
