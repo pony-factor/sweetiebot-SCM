@@ -119,6 +119,7 @@ Spellcheck features have independent controls:
 
 - **Draft commit-title correction** can suggest conservative spelling/grammar changes after an idle delay, with a preview or automatic handling.
 - **Sweetiebot: Spellcheck Filenames** previews name corrections from the Command Palette or a file context menu; it does not stage or commit a rename automatically.
+- **Case-only filename renames** appear in a separate Source Control group even when Git ignores capitalization changes. Select the entry and confirm **Stage rename** to record the exact new spelling in Git; scanning never changes the index, and ambiguous names are skipped.
 - **Post-commit Markdown spellcheck** is **off by default**. When enabled, it proposes changed Markdown prose as unstaged edits for review in **Spellchecks Performed**. Keep or discard reviewed changes before a follow-up commit.
 - **Spellcheck Only** is a separate manual action. The native ChatGPT browser session follows `scmToolkit.chatgptReviewProjectUrl` if configured, otherwise it inherits `scmToolkit.chatgptProjectUrl` (or uses regular chats when neither is set). An inaccessible Project fails rather than silently submitting outside it.
 

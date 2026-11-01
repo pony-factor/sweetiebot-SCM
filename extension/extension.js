@@ -39,6 +39,7 @@ const { registerNativeSpellcheckBridge } = require('./commits/native_spellcheck_
 const { registerChatgptCommitTitle } = require('./commits/chatgpt_commit_title');
 const { registerPostCommitSpellcheckNotice } = require('./commits/post_commit_spellcheck_notice');
 const { registerFilenameSpellcheck } = require('./commits/filename_spellcheck');
+const { registerCaseOnlyRenames } = require('./commits/case_only_renames');
 const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python_runtime');
 const { registerLegacyCommandAliases } = require('./ui/command_aliases');
 const { registerGitGraphRelativeDates } = require('./ui/git_graph_relative_dates');
@@ -409,6 +410,8 @@ async function activate(context) {
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
   registerFilenameSpellcheck(vscode, context);
+  void registerCaseOnlyRenames(vscode, context).catch(error =>
+    console.warn('Sweetiebot case-only rename initialization:', error.message));
   registerNativeSpellcheckBridge(vscode, context);
   registerChatgptCommitTitle(vscode, context);
   void registerPostCommitSpellcheckNotice(vscode, context).catch(error => {

@@ -328,6 +328,7 @@
       "label": "EFS and workspace search",
       "tests": [
         "filename_spellcheck.js",
+        "case_only_renames.js",
         "workspace_activity.js",
         "workspace_prune.js",
         "workspace_search.py",
