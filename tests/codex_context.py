@@ -22,12 +22,11 @@ class CodexContextTests(unittest.TestCase):
     def test_reset_continuation_is_a_settings_toggle_not_a_composer_button(self):
         source = 'function init(){api=acquireVsCodeApi()}'
         disabled = codex_context.transform(source, 'webview')
-        enabled = codex_context.transform(source, 'webview', continue_at_reset=True)
-        self.assertIn('const scmToolkitContinueAtResetEnabled = false;', disabled)
-        self.assertIn('const scmToolkitContinueAtResetEnabled = true;', enabled)
+        enabled = codex_context.transform(source, 'webview')
+        self.assertIn('scm-toolkit-read-resume-setting', disabled)
         self.assertNotIn('Continue unanswered work at reset', enabled)
         self.assertNotIn('scmToolkitContinueAtReset =', enabled)
-        self.assertEqual(codex_context.transform(enabled, 'webview', continue_at_reset=True), enabled)
+        self.assertEqual(codex_context.transform(enabled, 'webview'), enabled)
         self.assertEqual(codex_context.transform(enabled, 'webview', False), source)
 
     def test_discovers_renamed_webview_bootstrap_and_rejects_ambiguity(self):
