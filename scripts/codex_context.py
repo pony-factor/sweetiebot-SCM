@@ -15,7 +15,7 @@ HOST_ANCHOR = re.compile(
 WEBVIEW_ANCHOR = re.compile(r'(?<![\w$])(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
 
 
-def transform(source, kind, enabled=True):
+def transform(source, kind, enabled=True, continue_at_reset=False):
     import codex_drafts
     had_drafts = kind == 'host' and codex_drafts.HOST_START in source
     if had_drafts:
@@ -51,7 +51,11 @@ def transform(source, kind, enabled=True):
     source = source.replace(original, replacement, 1)
     helper = (ASSETS / f'context-{kind}.js').read_text()
     if kind == 'webview':
-        helper = (ASSETS / 'rate-limit-continuation.js').read_text() + '\n' + helper
+        continuation = (ASSETS / 'rate-limit-continuation.js').read_text()
+        marker = '__SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__'
+        if continuation.count(marker) != 1:
+            raise ValueError('Codex continuation setting placeholder is missing or ambiguous.')
+        helper = continuation.replace(marker, 'true' if continue_at_reset else 'false') + '\n' + helper
     if kind == 'host':
         helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
     helper += '\n' + (ASSETS / f'permissions-{kind}.js').read_text()
@@ -60,7 +64,7 @@ def transform(source, kind, enabled=True):
     return codex_drafts.transform_host(result) if had_drafts else result
 
 
-def patch_files(extension_path=None, enabled=True):
+def patch_files(extension_path=None, enabled=True, continue_at_reset=False):
     candidates = ([Path(extension_path)] if extension_path is not None else
                   sorted((Path.home() / '.vscode/extensions').glob('openai.chatgpt-*'), reverse=True))
     if not candidates:
@@ -85,5 +89,5 @@ def patch_files(extension_path=None, enabled=True):
     results = []
     for path, kind in [(host, 'host'), (webviews[0], 'webview')]:
         old = path.read_text()
-        results.append((path, old, transform(old, kind, enabled)))
+        results.append((path, old, transform(old, kind, enabled, continue_at_reset)))
     return results

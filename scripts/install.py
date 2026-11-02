@@ -1584,7 +1584,8 @@ def plan_codex_patches(args, settings):
         raise ValueError("The installed Codex composer stylesheet could not be identified.")
 
     for path, context_old, context_new in codex_context.patch_files(
-        args.codex_extension, enabled=not args.uninstall
+        args.codex_extension, enabled=not args.uninstall,
+        continue_at_reset=settings['codexContinueAtReset']
     ):
         paths.append(path)
         old.append(context_old)

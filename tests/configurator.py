@@ -498,6 +498,18 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("live relative countdowns", page)
         self.assertIn('name="codexResetTimePieIndicator"', page)
 
+    def test_rate_limit_continuation_checkbox(self):
+        key = 'codexContinueAtReset'
+        self.assertFalse(toolkit_settings.DEFAULT_SETTINGS[key])
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], 'scm-toolkit.codex-continue-at-reset')
+        values = form_values()
+        self.assertTrue(configurator.parse_submission(values)[key])
+        values.pop(key)
+        self.assertFalse(configurator.parse_submission(values)[key])
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], 'Ready', 'token', 'Save')
+        self.assertIn('name="codexContinueAtReset"', page)
+        self.assertIn('Resume work after Codex rate limits reset', page)
+
     def test_rate_limit_sticker_toggle_and_local_picker(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
         values = form_values()

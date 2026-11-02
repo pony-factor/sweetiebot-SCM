@@ -1,4 +1,5 @@
-// Window-local, opt-in continuation. Never retry before a known reset time.
+// Window-local, settings-controlled continuation. Never retry before a known reset time.
+const scmToolkitContinueAtResetEnabled = __SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__;
 function scmToolkitRateLimitResetAt(text, now = Date.now()) {
     const relative = String(text).match(/(?:try again|resets?)\s+in\s+(\d+)\s*(seconds?|minutes?|hours?|s|m|h)\b/i);
     if (relative) return now + Number(relative[1]) * (/^h/i.test(relative[2]) ? 3600000 : /^m/i.test(relative[2]) ? 60000 : 1000);
@@ -13,7 +14,8 @@ function scmToolkitRateLimitResetAt(text, now = Date.now()) {
 function scmToolkitInstallRateLimitContinuation(api, identity) {
     if (globalThis.scmToolkitRateLimitContinuationInstalled) return;
     globalThis.scmToolkitRateLimitContinuationInstalled = true;
-    let armed, timer, button, knownReset, knownThread, queued = false;
+    if (!scmToolkitContinueAtResetEnabled) return;
+    let timer, knownReset, knownThread, queued = false;
     let lookups = 0, lastLookup = -Infinity, lookupRequest, quotaAvailable = false;
     const continued = new Set();
     const transcript = '[role="log"], [data-testid="message-list"], [data-testid*="transcript"], [data-testid^="conversation-turn-"], [data-message-author-role], [data-conversation-role], [data-message-id], [data-turn-id]';
@@ -24,33 +26,23 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         queued = false;
         const threadId = identity();
         const limited = notices();
-        if (threadId !== knownThread) { armed = undefined; knownReset = undefined; knownThread = threadId; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; }
+        if (threadId !== knownThread) { knownReset = undefined; knownThread = threadId; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; }
         const activeFooter = limited.some(node => !node.closest(transcript))
             || [...document.querySelectorAll('[data-scm-toolkit-rate-limit-pony="true"]:not([data-scm-toolkit-rate-limit-pony-companion]), [data-scm-toolkit-rate-limit-pony-mounted="true"]')]
                 .some(node => !node.closest(transcript) && (node.querySelector('img') || /rate(?:d)? limited/i.test(node.textContent)));
         if (!activeFooter || !threadId) {
-            clearTimeout(timer); button?.remove(); button = undefined; armed = undefined; knownReset = undefined; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; return;
+            clearTimeout(timer); knownReset = undefined; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; return;
         }
-        if (quotaAvailable) { clearTimeout(timer); button?.remove(); button = undefined; armed = undefined; return; }
+        if (quotaAvailable) { clearTimeout(timer); return; }
         for (const notice of limited) {
             // Preserve the first absolute deadline: a relative label must not
             // extend the reset on each DOM refresh.
             knownReset ??= scmToolkitRateLimitResetAt(notice.dataset.scmToolkitRateLimitOriginal || notice.textContent);
         }
-        if (knownReset && continued.has(threadId + ':' + knownReset)) { button?.remove(); button = undefined; return; }
+        if (knownReset && continued.has(threadId + ':' + knownReset)) { clearTimeout(timer); return; }
         const composer = document.querySelector('[data-composer-markdown][contenteditable="true"], [contenteditable="true"][role="textbox"], textarea');
-        if (!composer?.parentElement) return;
-        if (!button?.isConnected) {
-            button = document.createElement('button'); button.type = 'button';
-            button.dataset.scmToolkitContinueAtReset = 'true';
-            button.addEventListener('click', () => { if (!armed) { lookups = 0; lastLookup = -Infinity; } armed = armed ? undefined : threadId; update(); });
-            composer.parentElement.append(button);
-        }
-        const label = armed ? (knownReset ? 'Cancel continuation at reset' : 'Cancel · waiting for reset time') : 'Continue unanswered work at reset';
-        if (button.textContent !== label) button.textContent = label;
-        button.setAttribute('aria-pressed', String(Boolean(armed)));
+        if (!composer) { clearTimeout(timer); return; }
         clearTimeout(timer);
-        if (!armed) return;
         if (!knownReset && lookups < 3 && Date.now() - lastLookup >= 30000) {
             lookups++; lastLookup = Date.now();
             lookupRequest = globalThis.crypto?.randomUUID?.() || String(Date.now()) + '-' + Math.random();
@@ -59,7 +51,7 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         if (knownReset && Date.now() >= knownReset + 1000) {
             // Native queued prompts take precedence over an automatic Continue.
             if (document.querySelector('[data-testid="queued-message"], [aria-label^="Preview queued message"]') || composer.textContent?.trim() || composer.value?.trim()) return;
-            const resetAt = knownReset; continued.add(threadId + ':' + resetAt); armed = undefined; button.remove(); button = undefined;
+            const resetAt = knownReset; continued.add(threadId + ':' + resetAt);
             api.postMessage({ type: 'scm-toolkit-continue-at-reset', threadId, resetAt });
             return;
         }
@@ -69,7 +61,7 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
     new MutationObserver(schedule).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
     window.addEventListener('message', event => {
         const result = event.data;
-        if (result?.type !== 'scm-toolkit-limit-reset-result' || !armed || result.threadId !== identity()
+        if (result?.type !== 'scm-toolkit-limit-reset-result' || result.threadId !== identity()
             || result.requestId !== lookupRequest) return;
         lookupRequest = undefined;
         if (result.known && result.limited === false) quotaAvailable = true;
