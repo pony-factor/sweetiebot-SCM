@@ -589,7 +589,7 @@ console.log('Codex reset shortcut, persistent compact rate-limit text, and compo
 
 // Regression: the native green card remains visible, with centered art but
 // without its duplicate short caption or an inert empty pill above it.
-assert.match(rateLimitSource, /data-scm-toolkit-sticker-redundant="true"\]\{display:none!important/);
+assert.match(rateLimitSource, /data-scm-toolkit-sticker-redundant="true"\],\[data-scm-toolkit-hidden-blank-rail="true"\]\{display:none!important/);
 assert.match(rateLimitSource, /data-scm-toolkit-hidden-blank-rail="true"\]\{display:none!important/);
 const nativeComposer = makeNode('', rect(0, 0, 320, 800), appRoot);
 nativeComposer.matches = selector => selector.includes('[data-codex-composer-root]');
