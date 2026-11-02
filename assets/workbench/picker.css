@@ -86,7 +86,8 @@
     outline: none;
 }
 
-.scm-view .scm-editor > .scm-toolkit-push {
+.scm-view .scm-editor > .scm-toolkit-push,
+.scm-view .scm-editor > .scm-toolkit-codex-resume {
     position: relative;
     display: flex;
     align-items: center;
@@ -102,7 +103,8 @@
     cursor: pointer;
 }
 
-.scm-view .scm-editor > .scm-toolkit-push[hidden] {
+.scm-view .scm-editor > .scm-toolkit-push[hidden],
+.scm-view .scm-editor > .scm-toolkit-codex-resume[hidden] {
     display: none;
 }
 

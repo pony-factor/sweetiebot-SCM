@@ -734,7 +734,7 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":
         disabled = "" if current is True else " disabled"
         return f'<input type="hidden" name="{html.escape(setting.name, quote=True)}" value="true"{disabled}>'
-    if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "commitButtonLabel", "commitAndSendButtonLabel", "windowHeading"}:
+    if setting.name in {"messagePlaceholder", "postCommitAction", "postCommitSpellcheck", "codexContinueAtReset", "commitButtonLabel", "commitAndSendButtonLabel", "windowHeading"}:
         return ""
     if setting.kind == "codex_layout":
         return ""
@@ -983,6 +983,7 @@ def render_form(
                 current.get("postCommitAction", "none"),
                 current.get("commitButtonLabel", "Commit"), current.get("commitAndSendButtonLabel", "Commit and push"),
                 post_spellcheck=current.get("postCommitSpellcheck", False),
+                codex_continue=current.get("codexContinueAtReset", False),
             )
             controls += "".join(
                 _setting_control(setting, current.get(setting.name, ""))

@@ -7,6 +7,21 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const crypto = require('crypto');
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const extensionId = 'jfwooten4.scm-toolkit-workspace-search';
+    const resumeEnabled = () => vscode.workspace?.getConfiguration('sweetiebot')
+        ?.get('codexContinueAtReset', false) === true;
+    const sendResumeSetting = webview => webview?.postMessage?.({
+        type: 'scm-toolkit-resume-setting', enabled: resumeEnabled()
+    });
+    const resumeSubscription = vscode.workspace?.onDidChangeConfiguration?.(event => {
+        if (!event.affectsConfiguration('sweetiebot.codexContinueAtReset')) return;
+        const views = new Set([...provider.sidebarViews].map(view => view.webview));
+        if (provider.sidebarView?.webview) views.add(provider.sidebarView.webview);
+        for (const panel of provider.editorPanels.keys()) {
+            const view = provider.getWebviewForPanel(panel);
+            if (view) views.add(view);
+        }
+        for (const view of views) void sendResumeSetting(view);
+    });
 
     const sourceFor = conversationId => {
         const value = String(conversationId ?? '').trim();
@@ -20,6 +35,10 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     provider.handleMessage = function(webview, message) {
+        if (message?.type === 'scm-toolkit-read-resume-setting') {
+            void sendResumeSetting(webview);
+            return;
+        }
         if (message?.type === 'scm-toolkit-read-limit-reset') {
             void vscode.commands.executeCommand('sweetiebot.codex.readRateLimitReset', message)
                 .then(result => webview.postMessage({ type: 'scm-toolkit-limit-reset-result',
@@ -29,6 +48,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             return;
         }
         if (message?.type === 'scm-toolkit-continue-at-reset') {
+            if (!resumeEnabled()) return;
             void vscode.commands.executeCommand('sweetiebot.codex.continueAfterRateLimit', message)
                 .catch(error => vscode.window.showWarningMessage('Automatic continuation paused: ' + error.message));
             return;
@@ -206,6 +226,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         modelCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
+        resumeSubscription?.dispose();
         provider.initializeWebview = originalInitialize;
         provider.handleMessage = originalHandleMessage;
         for (const listener of listeners) listener.dispose();

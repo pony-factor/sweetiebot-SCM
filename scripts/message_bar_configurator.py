@@ -13,7 +13,8 @@ from message_bar import (
 )
 
 
-def _item_html(item_id: str, label: str, post_commit: object = "none", post_spellcheck: object = False) -> str:
+def _item_html(item_id: str, label: str, post_commit: object = "none", post_spellcheck: object = False,
+               codex_continue: object = False) -> str:
     classes = "message-bar-item"
     if item_id.startswith("separator-"):
         classes += " message-bar-separator"
@@ -37,6 +38,16 @@ def _item_html(item_id: str, label: str, post_commit: object = "none", post_spel
             f'<input type="checkbox" name="postCommitSpellcheck" value="true"{" checked" if post_spellcheck is True else ""}>'
             'Spellcheck after committing</label></div>'
         )
+    if item_id == "codex-resume":
+        return (
+            '<div class="message-bar-item message-bar-push" draggable="true" tabindex="0" '
+            'data-message-bar-id="codex-resume" role="group" aria-label="Drag resume Codex at reset" '
+            'title="Drag into a row to show, or into Available buttons to hide">'
+            '<span class="message-bar-grip" aria-hidden="true">⋮⋮</span>'
+            '<label title="Resume unfinished Codex work after its usage limit resets, when safe.">'
+            f'<input type="checkbox" name="codexContinueAtReset" value="true"{" checked" if codex_continue is True else ""}>'
+            'Resume at reset</label></div>'
+        )
     escaped_id = html.escape(item_id, quote=True)
     escaped_label = html.escape(label)
     remove = (
@@ -55,7 +66,7 @@ def _item_html(item_id: str, label: str, post_commit: object = "none", post_spel
 
 def render_message_bar_control(current: object, placeholder: object = "Message", post_commit: object = "none",
                                commit_label: object = "Commit", push_label: object = "Commit and push",
-                               post_spellcheck: object = False) -> str:
+                               post_spellcheck: object = False, codex_continue: object = False) -> str:
     try:
         layout = parse_message_bar_layout(current)
     except ValueError:
@@ -66,7 +77,7 @@ def render_message_bar_control(current: object, placeholder: object = "Message",
     hidden = [item_id for item_id, _label in MESSAGE_BAR_ITEMS if item_id not in active]
 
     def render(items: list[str]) -> str:
-        return "".join(_item_html(item_id, labels.get(item_id, "Separator"), post_commit, post_spellcheck) for item_id in items)
+        return "".join(_item_html(item_id, labels.get(item_id, "Separator"), post_commit, post_spellcheck, codex_continue) for item_id in items)
 
     serialized = html.escape(json.dumps(layout, separators=(",", ":")), quote=True)
     default_serialized = html.escape(DEFAULT_MESSAGE_BAR_LAYOUT_JSON, quote=True)

@@ -515,6 +515,7 @@ VSCODE_SETTINGS = {
         "chatgptProjectUrl": "chatgptProjectUrl",
         "chatgptReviewProjectUrl": "chatgptReviewProjectUrl",
         "codexKeepAwake": "codexKeepAwake",
+        "codexContinueAtReset": "codexContinueAtReset",
         "codexHidePermissionsIcon": "codexHidePermissionsIcon",
         "durableBackgroundCommits": "durableBackgroundCommits",
         "autoCommitWithCodex": "autoCommitWithCodex",
