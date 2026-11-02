@@ -587,14 +587,13 @@ assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).rich, true);
 
 console.log('Codex reset shortcut, persistent compact rate-limit text, and composer sticker checks passed.');
 
-// Regression fixture: real Oct 29 Codex DOM had an outer green <aside>
-// containing a hidden native "You're out of Codex messages" card plus
-// <span data-scm-toolkit-rate-limited="true" role="status">Rate limited</span>.
-// That banner must be replaced as a whole, not decorated with a second card.
+// Regression: the native green card remains visible, with centered art but
+// without its duplicate short caption or an inert empty pill above it.
+assert.match(rateLimitSource, /data-scm-toolkit-sticker-redundant="true"\]\{display:none!important/);
+assert.match(rateLimitSource, /data-scm-toolkit-hidden-blank-rail="true"\]\{display:none!important/);
 const nativeComposer = makeNode('', rect(0, 0, 320, 800), appRoot);
 nativeComposer.matches = selector => selector.includes('[data-codex-composer-root]');
-nativeComposer.querySelector = selector =>
-    selector.includes('textarea,') ? editor : null;
+nativeComposer.querySelector = selector => selector.includes('textarea,') ? editor : null;
 const nativeBanner = makeNode(
     "You're out of Codex messages. Your rate limit resets in 1h 24m. Upgrade Add Credits Rate limited",
     rect(0, 0, 280, 54), nativeComposer
@@ -607,19 +606,30 @@ nativeBanner.style = {
 };
 const originalNativeCopy = nativeBanner.textContent;
 const nativeMarker = makeNode('Rate limited', rect(10, 0, 90, 20), nativeBanner);
+nativeMarker.querySelector = () => null;
+nativeMarker.removeAttribute = name => { delete nativeMarker.attrs[name]; };
+const nativeRail = makeNode('', rect(0, 0, 280, 16), nativeComposer);
+nativeRail.matches = selector => selector === 'div, section';
+nativeRail.removeAttribute = name => { delete nativeRail.attrs[name]; };
+let railHasControl = false;
+nativeRail.querySelector = () => railHasControl ? {type: 'button'} : null;
+nativeBanner.previousElementSibling = nativeRail;
 let nativeSticker = null;
 let showNativeMarker = true;
 const nativeEvents = {};
 let nativeImages = 0;
-nativeComposer.insertBefore = (sticker, reference) => {
-    assert.equal(reference, nativeBanner);
+nativeBanner.querySelector = selector =>
+    selector === '[data-scm-toolkit-native-rate-limit-pony]' ? nativeSticker : null;
+nativeBanner.querySelectorAll = selector =>
+    selector === 'span, p, [role="status"]' ? (showNativeMarker ? [nativeMarker] : []) :
+    selector === '[data-scm-toolkit-sticker-redundant="true"]' && nativeMarker.attrs['data-scm-toolkit-sticker-redundant'] === 'true'
+        ? [nativeMarker] : [];
+nativeBanner.append = sticker => {
     nativeSticker = sticker;
-    sticker.nextElementSibling = nativeBanner;
-    nativeBanner.previousElementSibling = sticker;
-    sticker.remove = () => {
-        nativeSticker = null;
-        nativeBanner.previousElementSibling = null;
-    };
+    sticker.parentElement = nativeBanner;
+    sticker.closest = selector => selector === 'aside' ? nativeBanner : null;
+    sticker.querySelector = selector => selector === 'img' ? sticker.children[0] : null;
+    sticker.remove = () => { nativeSticker = null; };
 };
 const nativeRoot = {
     querySelectorAll(selector) {
@@ -627,9 +637,12 @@ const nativeRoot = {
             return showNativeMarker ? [nativeMarker] : [];
         if (selector === '[data-scm-toolkit-native-rate-limit-pony]')
             return nativeSticker ? [nativeSticker] : [];
-        if (selector === '[data-scm-toolkit-rate-limit-native-hidden="true"]')
-            return nativeBanner.attrs['data-scm-toolkit-rate-limit-native-hidden'] === 'true'
+        if (selector.startsWith('[data-scm-toolkit-native-rate-limit-banner="true"]'))
+            return nativeBanner.attrs['data-scm-toolkit-native-rate-limit-banner'] === 'true'
                 ? [nativeBanner] : [];
+        if (selector === '[data-scm-toolkit-hidden-blank-rail="true"]')
+            return nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'] === 'true'
+                ? [nativeRail] : [];
         if (selector.startsWith('textarea,')) return [editor];
         return [];
     },
@@ -654,47 +667,60 @@ assert.equal(context.scmToolkitCollapsedNativeRateLimitBanner(nativeRoot), nativ
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, 1, 'one image request while loading');
-assert.equal(nativeSticker, null, 'do not hide the fallback before the image loads');
+assert.equal(nativeSticker, null, 'keep native card and caption until the image loads');
 assert.equal(nativeBanner.style.display, undefined);
+assert.equal(nativeMarker.attrs['data-scm-toolkit-sticker-redundant'], undefined);
 nativeEvents.load();
 assert.equal(nativeSticker.attrs['data-scm-toolkit-native-rate-limit-pony'], 'true');
 assert.equal(nativeSticker.attrs.role, 'status');
 assert.match(nativeSticker.attrs['aria-label'], /Twilight Sparkle/);
 assert.equal(nativeSticker.children[0].src, '__SCM_TOOLKIT_TWILIGHT_STOP_IMAGE__');
-assert.equal(nativeSticker.style.border, '1px solid var(--vscode-focusBorder, currentColor)',
-    'use a small image-hugging border instead of the wide native green banner');
-assert.equal(nativeSticker.style.background, 'transparent');
-assert.equal(nativeSticker.style.padding, '0');
-assert.equal(nativeSticker.style.overflow, 'hidden');
-assert.equal(nativeSticker.style.alignSelf, 'center');
-assert.equal(nativeSticker.style.marginInline, 'auto');
-assert.equal(nativeSticker.style.display, 'flex');
-assert.equal(nativeBanner.style.display, 'none');
-assert.equal(nativeBanner.style.priority, 'important');
-assert.equal(nativeBanner.textContent, originalNativeCopy, 'leave provider reset details untouched');
+assert.equal(nativeSticker.children[0].width, 96);
+assert.equal(nativeSticker.style.width, '100%', 'fill the status card to center artwork');
+assert.equal(nativeSticker.style.justifyContent, 'center');
+assert.equal(nativeSticker.style.alignItems, 'center');
+assert.equal(nativeSticker.style.alignSelf, 'stretch');
+assert.equal(nativeSticker.style.border, '0', 'preserve original green card border');
+assert.equal(nativeSticker.children[0].style.border, '1px solid var(--vscode-focusBorder, currentColor)');
+assert.equal(nativeBanner.style.display, undefined, 'the original card remains visible');
+assert.equal(nativeBanner.attrs['data-scm-toolkit-native-rate-limit-banner'], 'true');
+assert.equal(nativeMarker.attrs['data-scm-toolkit-sticker-redundant'], 'true', 'remove caption visually only');
+assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], 'true', 'hide the empty pill');
+assert.equal(nativeBanner.textContent, originalNativeCopy, 'preserve provider text and controls');
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, 1, 'idempotent on DOM resync');
 
-// Ending the rate limit removes the image and restores the exact native banner.
+// A meaningful control appearing in the top rail must immediately restore it.
+railHasControl = true;
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], undefined);
+railHasControl = false;
+context.scmToolkitSyncRateLimitPony(nativeRoot);
+assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], 'true');
+
+// Ending the rate limit removes the image and restores caption and empty rail.
 showNativeMarker = false;
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeSticker, null);
 assert.equal(nativeBanner.style.display, undefined);
-assert.equal(nativeBanner.attrs['data-scm-toolkit-rate-limit-native-hidden'], undefined);
+assert.equal(nativeBanner.attrs['data-scm-toolkit-native-rate-limit-banner'], undefined);
+assert.equal(nativeMarker.attrs['data-scm-toolkit-sticker-redundant'], undefined);
+assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], undefined);
 
-// A failed local image keeps the original warning visible and prevents retries.
+// Image failure keeps the original warning visible, without any suppression.
 showNativeMarker = true;
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, 2);
 nativeEvents.error();
 assert.equal(nativeBanner.style.display, undefined);
+assert.equal(nativeMarker.attrs['data-scm-toolkit-sticker-redundant'], undefined);
+assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], undefined);
 assert.equal(nativeSticker, null);
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, 2);
 
-// The optional sticker setting must disable this path as well.
+// The optional sticker setting must also preserve the untouched native card.
 const disabledNativeImages = nativeImages;
 disabledContext.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, disabledNativeImages);
 assert.equal(nativeBanner.style.display, undefined);
-
