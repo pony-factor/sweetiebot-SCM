@@ -106,6 +106,48 @@ class BackgroundCommitTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unexpected pony profile path'):
             worker.enqueue_pony({**request, 'path': '../unsafe.json'}, start=False)
 
+    def test_pony_enqueue_starts_own_worker_without_waiting_for_title_drain(self):
+        profile = self.repo / 'ponies' / 'g4-mares' / 'stardom.json'
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({
+            'packId': 'g4-mares', 'slug': 'stardom', 'profile': 'Research'
+        }))
+        durable_script = self.root / 'durable-background-commit.py'
+        with patch.object(worker.shutil, 'which', return_value='/usr/bin/node'), \
+                patch.object(worker, 'runtime', return_value=durable_script), \
+                patch.object(worker, 'install_agent') as agent, \
+                patch.object(worker, 'launch_job') as launch:
+            accepted = worker.enqueue_pony({
+                'pony': {'packId': 'g4-mares', 'slug': 'stardom'},
+                'path': 'g4-mares/stardom.json'}, start=True)
+        directory = self.root / 'jobs' / accepted['id']
+        agent.assert_called_once_with(durable_script)
+        launch.assert_called_once_with(directory, script=durable_script)
+        self.assertEqual(self.job(directory)['phase'], 'queued')
+
+    def test_pony_resume_launches_before_unfinished_commit_drain(self):
+        profile = self.repo / 'ponies' / 'g4-mares' / 'stardom.json'
+        profile.parent.mkdir(parents=True)
+        profile.write_text(json.dumps({
+            'packId': 'g4-mares', 'slug': 'stardom', 'profile': 'Research'
+        }))
+        with patch.object(worker.shutil, 'which', return_value='/usr/bin/node'):
+            accepted = worker.enqueue_pony({
+                'pony': {'packId': 'g4-mares', 'slug': 'stardom'},
+                'path': 'g4-mares/stardom.json'}, start=False)
+        self.queue(push=True)
+        launches = []
+        with patch.object(worker, 'launch_job', side_effect=lambda directory:
+                          launches.append(('pony', directory))), \
+                patch.object(worker, 'drain_parallel', side_effect=lambda meta:
+                             launches.append(('commit', meta))), \
+                patch.object(worker, 'prune_completed_jobs'):
+            worker.resume()
+        self.assertEqual(launches, [
+            ('pony', self.root / 'jobs' / accepted['id']),
+            ('commit', str(self.repo / '.git')),
+        ], 'Independent pony work must start before lengthy title generation')
+
     def test_pony_worker_waits_behind_background_commits(self):
         profile = self.repo / 'ponies' / 'g4-mares' / 'stardom.json'
         profile.parent.mkdir(parents=True)

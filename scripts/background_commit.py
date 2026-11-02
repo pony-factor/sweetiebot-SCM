@@ -381,10 +381,9 @@ def enqueue_pony(request, start=True):
     if start:
         script = runtime()
         install_agent(script)
-        # The shared scheduler resumes earlier title/push jobs before pony jobs.
-        subprocess.Popen([sys.executable, str(script), '--resume'], stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True, close_fds=True)
+        # Publish this profile without waiting for unrelated commit-title jobs.
+        # The worker still checks its own repository's pending commit queue.
+        launch_job(directory, script=script)
     return {'queued': True, 'id': job_id}
 
 
@@ -1393,8 +1392,8 @@ def control(action):
             write_journal(directory / 'job.json', job)
 
 
-def launch_job(directory):
-    return subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--work', str(directory)],
+def launch_job(directory, script=None):
+    return subprocess.Popen([sys.executable, str(script or Path(__file__).resolve()), '--work', str(directory)],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
 
@@ -1449,7 +1448,8 @@ def drain_parallel(meta):
 
 
 def resume(parallel=True):
-    repositories = set()
+    repositories = []
+    seen_repositories = set()
     pony_jobs = []
     for file in jobs_home().glob('*/job.json'):
         job = read_journal(file)
@@ -1465,9 +1465,16 @@ def resume(parallel=True):
         # Never let that stale location prevent other repositories resuming.
         if not Path(meta).is_dir():
             continue
-        if meta in repositories:
+        if meta in seen_repositories:
             continue
-        repositories.add(meta)
+        seen_repositories.add(meta)
+        repositories.append(meta)
+    # Commit-title generation can run for a long time. Start independent pony
+    # jobs first; work_pony still blocks writes behind jobs in its own repo.
+    if parallel:
+        for directory in pony_jobs:
+            launch_job(directory)
+    for meta in repositories:
         if parallel:
             if queue_entries(Path(meta) / MARKER):
                 drain_parallel(meta)
@@ -1480,10 +1487,8 @@ def resume(parallel=True):
                 break
             visited.add(entry['id'])
             work(Path(entry['directory']))
-    for directory in pony_jobs:
-        if parallel:
-            launch_job(directory)
-        else:
+    if not parallel:
+        for directory in pony_jobs:
             work_pony(directory)
     prune_completed_jobs()
 
