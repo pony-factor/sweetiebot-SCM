@@ -511,8 +511,10 @@ class SubmissionTests(unittest.TestCase):
         values.pop(key)
         self.assertFalse(configurator.parse_submission(values)[key])
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], 'Ready', 'token', 'Save')
+        self.assertIn('data-message-bar-id="codex-resume"', page)
         self.assertIn('name="codexContinueAtReset"', page)
-        self.assertIn('Resume work after Codex rate limits reset', page)
+        self.assertIn('Resume at reset', page)
+        self.assertNotIn('<strong>Resume work after Codex rate limits reset</strong>', page)
 
     def test_rate_limit_sticker_toggle_and_local_picker(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])

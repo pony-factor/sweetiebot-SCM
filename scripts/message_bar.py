@@ -15,6 +15,7 @@ MESSAGE_BAR_ITEMS = (
     ("autocomplete", "Inline code completion"),
     ("spellcheck", "Spellcheck preview"),
     ("post-spellcheck", "Spellcheck after committing"),
+    ("codex-resume", "Resume Codex at reset"),
     ("codex", "Codex co-author"),
     ("auto-commit", "Auto-commit every 30 seconds"),
     ("auto-publish", "Auto-publish"),

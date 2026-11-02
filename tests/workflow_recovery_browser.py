@@ -2,9 +2,14 @@
 from pathlib import Path
 import base64
 import os
+import json
+import sys
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
+
 PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII='
 
 
@@ -156,7 +161,7 @@ def main():
         page.add_script_tag(content=message_bar)
         page.evaluate('''() => {
             const bar=document.getElementById('bar');
-            const classes={push:'push',branch:'branch',sync:'sync-branch',delete:'delete-branch',autocomplete:'autocomplete',spellcheck:'spellcheck','post-spellcheck':'post-spellcheck',codex:'codex-coauthor','auto-commit':'auto-commit','auto-publish':'auto-publish',home:'home','pull-request':'pull-request','pony-branch':'pony-branch'};
+            const classes={push:'push',branch:'branch',sync:'sync-branch',delete:'delete-branch',autocomplete:'autocomplete',spellcheck:'spellcheck','post-spellcheck':'post-spellcheck','codex-resume':'codex-resume',codex:'codex-coauthor','auto-commit':'auto-commit','auto-publish':'auto-publish',home:'home','pull-request':'pull-request','pony-branch':'pony-branch'};
             for(const id of SCM_TOOLKIT_MESSAGE_BAR_IDS){
                 const node=document.createElement(id.startsWith('separator')?'span':'button');
                 node.className='scm-toolkit-'+(classes[id]||'divider');
@@ -185,6 +190,27 @@ def main():
             assert geometry['overflow'] <= 2, (width, geometry)
             assert geometry['barHeight'] < 160, (width, geometry)
             assert geometry['contentHeight'] >= geometry['barHeight'] - 2, (width, geometry)
+        # Validate the shipped settings HTML, CSS and drag handlers in Chromium.
+        page.goto('about:blank')
+        page.set_viewport_size({'width': 1050, 'height': 720})
+        page.set_content('<style>:root{--line:#777;--bg:#fff;--panel:#eee;--muted:#444;--accent:#0969da}</style>'
+            + '<style>' + MESSAGE_BAR_STYLE + '</style>' + render_message_bar_control(None))
+        page.add_script_tag(content=MESSAGE_BAR_SCRIPT)
+        resume_item = page.locator('[data-message-bar-id="codex-resume"]')
+        resume_checkbox = resume_item.locator('input[name="codexContinueAtReset"]')
+        assert resume_item.count() == 1, 'Resume is a single draggable checkbox item'
+        assert resume_item.evaluate('item => item.parentElement.dataset.messageBarZone') == 'hidden'
+        assert resume_checkbox.is_disabled(), 'Available options must not toggle preferences'
+        resume_item.locator('.message-bar-grip').drag_to(page.locator('[data-message-bar-zone="after"]'))
+        assert resume_item.evaluate('item => item.parentElement.dataset.messageBarZone') == 'after'
+        assert resume_checkbox.is_enabled(), 'Dragging into the SCM bar enables the checkbox'
+        resume_checkbox.check()
+        assert resume_checkbox.is_checked()
+        assert 'codex-resume' in json.loads(page.locator('#message-bar-layout').input_value())['after']
+        resume_item.locator('.message-bar-grip').drag_to(page.locator('[data-message-bar-zone="hidden"]'))
+        assert resume_checkbox.is_disabled() and not resume_checkbox.is_checked()
+        assert 'codex-resume' not in json.loads(page.locator('#message-bar-layout').input_value())['after']
+
         page.goto('about:blank')
         page.set_content('''<button id="mode" aria-label="Switch mode, current mode: Work" aria-expanded="false">Work</button>
             <div id="mode-menu" role="menu" hidden><button role="menuitem" id="chat">ChatGPT</button></div>
@@ -316,53 +342,83 @@ def main():
         page.eval_on_selector('#footer', "el=>{el.textContent='Rated limited';el.style.width='100%';el.style.height='200px'}")
         page.wait_for_selector('#footer img')
         assert page.eval_on_selector('#footer', 'el=>el.getBoundingClientRect().height<150 && el.getBoundingClientRect().width<200'), 'React cannot restore the oversized empty footer'
-        # The persisted preference (opted in) arms continuation immediately;
-        # it no longer creates a button inside the composer.
+        # The new webview initially requests the live opt-in state; the
+        # read request is harmless and does not mean work was submitted.
         page.evaluate('window.messages=[]')
-        page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text()
-            .replace('__SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__', 'true'))
+        page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
         page.evaluate("scmToolkitInstallRateLimitContinuation({postMessage:m=>messages.push(m)},()=> 'test-thread')")
         assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0
         assert page.get_by_role('button', name='Cancel continuation at reset').count() == 0
-        assert page.evaluate('messages.length') == 0, 'Never send while still limited before reset'
+        assert page.evaluate('messages.map(m=>m.type)') == ['scm-toolkit-read-resume-setting']
+        page.evaluate("""window.dispatchEvent(new MessageEvent('message',
+            {data:{type:'scm-toolkit-resume-setting',enabled:true}}))""")
+        page.wait_for_timeout(50)
+        assert not page.evaluate("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')"), (
+            'Never continue before the reset')
         page.evaluate('''() => {
             const deadline=scmToolkitRateLimitResetAt("Try again at 10:26 PM.");
             Date.now=()=>deadline+2000;
             document.body.append(document.createElement('hr'));
         }''')
-        page.wait_for_function('messages.length===1')
-        assert page.evaluate('messages[0].threadId') == 'test-thread'
+        page.wait_for_function("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')")
+        assert page.evaluate("messages.filter(m=>m.type==='scm-toolkit-continue-at-reset').length") == 1
+        assert page.evaluate("messages.find(m=>m.type==='scm-toolkit-continue-at-reset').threadId") == 'test-thread'
         page.wait_for_timeout(100)
-        assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0, 'A completed reset cannot arm a duplicate continuation'
+        assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0
         page.eval_on_selector('#footer', 'el=>el.remove()')
         page.wait_for_timeout(100)
-        assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0, 'Old transcript warnings are not an active limit'
         page.evaluate("document.body.append(document.createElement('hr'))")
-        assert page.evaluate('messages.length') == 1
-        # Unknown reset times use a bounded read-only native lookup when enabled.
+        assert page.evaluate("messages.filter(m=>m.type==='scm-toolkit-continue-at-reset').length") == 1, (
+            'One continuation per thread/reset')
+
+        # Unknown reset times rely on the bounded native lookup.
         for still_limited in [True, False]:
             page.goto('about:blank')
             page.set_content('<div role="status">Rate limited</div><form><textarea></textarea></form>')
             page.evaluate('window.messages=[];window.testNow=Date.now();Date.now=()=>testNow')
-            page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text()
-            .replace('__SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__', 'true'))
+            page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
             page.evaluate("scmToolkitInstallRateLimitContinuation({postMessage:m=>messages.push(m)},()=> 'lookup-thread')")
-            page.wait_for_function("messages.length===1 && messages[0].type==='scm-toolkit-read-limit-reset'")
+            assert page.evaluate('messages.map(m=>m.type)') == ['scm-toolkit-read-resume-setting']
+            page.evaluate("""window.dispatchEvent(new MessageEvent('message',
+                {data:{type:'scm-toolkit-resume-setting',enabled:true}}))""")
+            page.wait_for_function("messages.some(m=>m.type==='scm-toolkit-read-limit-reset')")
             assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0
             page.evaluate("""limited => window.postMessage({type:'scm-toolkit-limit-reset-result',
-                threadId:'lookup-thread',requestId:messages[0].requestId,known:true,limited,resetAt:testNow+60000},'*')""", still_limited)
+                threadId:'lookup-thread',
+                requestId:messages.find(m=>m.type==='scm-toolkit-read-limit-reset').requestId,
+                known:true,limited,resetAt:testNow+60000},'*')""", still_limited)
             if still_limited:
                 page.evaluate("testNow+=62000;document.body.append(document.createElement('hr'))")
                 page.wait_for_function("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')")
                 assert page.evaluate("messages.filter(m=>m.type==='scm-toolkit-continue-at-reset').length") == 1
             else:
-                page.wait_for_function("!document.querySelector('[data-scm-toolkit-continue-at-reset]')")
                 page.evaluate("testNow+=120000;document.body.append(document.createElement('hr'))")
                 page.wait_for_timeout(100)
-                assert page.evaluate('messages.length') == 1, 'An account that is no longer limited cannot auto-continue'
+                assert not page.evaluate("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')"), (
+                    'An account no longer limited cannot auto-continue')
+
+        # Live opt-out cancels a previously armed continuation.
+        page.goto('about:blank')
+        page.set_content('<div role="status">Rate limited · resets in 1 second</div><form><textarea></textarea></form>')
+        page.evaluate('window.messages=[]')
+        page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
+        page.evaluate("scmToolkitInstallRateLimitContinuation({postMessage:m=>messages.push(m)},()=> 'toggle-thread')")
+        page.evaluate("""window.dispatchEvent(new MessageEvent('message',
+            {data:{type:'scm-toolkit-resume-setting',enabled:true}}))""")
+        page.wait_for_timeout(50)
+        page.evaluate("""window.dispatchEvent(new MessageEvent('message',
+            {data:{type:'scm-toolkit-resume-setting',enabled:false}}))""")
+        page.evaluate('''() => {
+            const deadline=scmToolkitRateLimitResetAt('Rate limited · resets in 1 second');
+            Date.now=()=>deadline+2000;
+            document.body.append(document.createElement('hr'));
+        }''')
+        page.wait_for_timeout(100)
+        assert not page.evaluate("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')"), (
+            'Disabling must cancel any pending continuation')
         assert not errors, errors
         browser.close()
-        print('Rendered wand visibility, recycled toolbar, active cannon, limit rewrites, Twilight image and settings-controlled continuation passed.')
+        print('Rendered wand visibility, drag-and-drop resume checkbox, live opt-in and opt-out, rate-limit safety and workflow recovery passed.')
 
 
 if __name__ == '__main__':

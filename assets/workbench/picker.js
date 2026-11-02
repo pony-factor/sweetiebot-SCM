@@ -1563,6 +1563,20 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     pushControl.append(pushCheckbox, pushMark);
 
+    // A compact checkbox, shown only if placed in the draggable SCM layout.
+    const codexResumeControl = doc.createElement('label');
+    codexResumeControl.className = 'scm-toolkit-codex-resume';
+    codexResumeControl.hidden = true;
+    codexResumeControl.title = 'Resume unfinished Codex work after a confirmed rate-limit reset';
+    const codexResumeCheckbox = doc.createElement('input');
+    codexResumeCheckbox.type = 'checkbox';
+    codexResumeCheckbox.className = 'scm-toolkit-push-checkbox';
+    codexResumeCheckbox.setAttribute('aria-label', codexResumeControl.title);
+    const codexResumeMark = doc.createElement('span');
+    codexResumeMark.className = 'scm-toolkit-push-mark';
+    codexResumeMark.setAttribute('aria-hidden', 'true');
+    codexResumeControl.append(codexResumeCheckbox, codexResumeMark);
+
     const syncButton = doc.createElement('button');
     syncButton.type = 'button';
     syncButton.className = 'scm-toolkit-sync-branch codicon codicon-sync';
@@ -1676,6 +1690,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     widget.element.prepend(branchButton);
     widget.element.append(
         pushControl,
+        codexResumeControl,
         syncButton,
         deleteButton,
         firstDivider,
@@ -1758,6 +1773,30 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     widget.disposables.add(configuration.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('git.postCommitCommand')) refreshPush();
     }));
+
+    const refreshCodexResume = () => {
+        codexResumeCheckbox.checked = configuration.getValue('sweetiebot.codexContinueAtReset') === true;
+    };
+    let updatingCodexResume = false;
+    codexResumeCheckbox.addEventListener('change', async event => {
+        event.stopPropagation();
+        if (updatingCodexResume) return;
+        updatingCodexResume = true;
+        codexResumeCheckbox.disabled = true;
+        try {
+            await configuration.updateValue('sweetiebot.codexContinueAtReset', codexResumeCheckbox.checked);
+        } catch (error) {
+            notifications.error(error);
+        } finally {
+            updatingCodexResume = false;
+            codexResumeCheckbox.disabled = false;
+            refreshCodexResume();
+        }
+    });
+    widget.disposables.add(configuration.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('sweetiebot.codexContinueAtReset')) refreshCodexResume();
+    }));
+    refreshCodexResume();
 
     const refreshAutocomplete = () => {
         const enabled = configuration.getValue('editor.inlineSuggest.enabled') !== false;
@@ -2701,6 +2740,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 pushControl.hidden = false;
                 refreshPush();
             }
+            codexResumeControl.hidden = false;
+            refreshCodexResume();
 
             if (settings.autocompleteToggle) {
                 autocompleteButton.hidden = false;

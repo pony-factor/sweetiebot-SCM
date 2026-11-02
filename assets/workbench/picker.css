@@ -106,6 +106,26 @@
     display: none;
 }
 
+
+.scm-view .scm-editor > .scm-toolkit-codex-resume {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 22px;
+    margin: 2px 2px 2px 0;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+    background: transparent;
+    cursor: pointer;
+}
+.scm-view .scm-editor > .scm-toolkit-codex-resume[hidden] {
+    display: none;
+}
+
 .scm-toolkit-push-checkbox {
     position: absolute;
     width: 1px;

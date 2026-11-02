@@ -458,6 +458,12 @@
           "scope": "application",
           "description": "Offer VS Code's native trust dialog for the Sweetiebot Workspaces parent folder. Approval covers all existing and future clones. Use Configure Independent Workspace Trust to reopen it."
         },
+        "sweetiebot.codexContinueAtReset": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Resume unfinished Codex work after a confirmed usage-limit reset without interrupting drafts or queued messages. Controlled by the draggable SCM checkbox."
+        },
         "sweetiebot.codexKeepAwake": {
           "type": "boolean",
           "default": true,

@@ -38,7 +38,7 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | `sweetiebot.pullRequestQuickMerge` | `true` | Show guarded squash action |
 | `sweetiebot.automaticAppRepair` | `true` | Restore compatible patches |
 | `sweetiebot.codexKeepAwake` | `true` | Hold macOS awake while Codex works |
-| `scm-toolkit.codex-continue-at-reset` | `false` | Opt in to automatically resume an unfinished Codex chat once a verified usage-limit reset occurs; no standalone composer button |
+| `scm-toolkit.codex-continue-at-reset` | `false` | Drag **Resume at reset** from SCM Settings → Message bar → Available buttons into either message-bar row. The live checkbox is compact, with its explanatory wording in a tooltip |
 
 **Kefania chat privacy:** In Magic Settings → Kefania, **Publicly share Codex chat when launching Kefania** is off by default. When enabled, clicking Kefania uses native Share on whichever Codex conversation is active, publicly exposing a snapshot of prompts and AI replies to anyone with the link; the link is also included in the PR's final expandable Source details block. Sweetiebot cannot unpublish or revoke a shared chat, so treat the action as permanent. This preference governs public links, not the separate transmission of captured conversation text to the AI preparing the PR draft.
 

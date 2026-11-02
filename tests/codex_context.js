@@ -225,7 +225,12 @@ async function run() {
   };
   const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
   load('context-host.js', host);
+  let liveResume = false, configListener;
   const hostVscode = {
+    workspace: {
+      getConfiguration: () => ({get(key, fallback) { return key === 'codexContinueAtReset' ? liveResume : fallback; }}),
+      onDidChangeConfiguration(callback) { configListener = callback; return {dispose() {}}; }
+    },
     env: { clipboard: { readText: async () => clipboard, writeText: async value => { clipboard = value; } } },
     commands: {
       registerCommand(id, callback) {
@@ -240,6 +245,15 @@ async function run() {
   assert(registered.has('sweetiebot.readCodexConversation'));
 
   provider.initializeWebview(webview, 'sidebar', () => {});
+  provider.handleMessage(webview, {type:'scm-toolkit-read-resume-setting'});
+  assert.equal(messages.at(-1).type, 'scm-toolkit-resume-setting');
+  assert.equal(messages.at(-1).enabled, false);
+  liveResume = true;
+  configListener({affectsConfiguration: key => key === 'sweetiebot.codexContinueAtReset'});
+  assert.equal(messages.at(-1).enabled, true);
+  provider.handleMessage(webview, {type:'scm-toolkit-read-resume-setting'});
+  assert.equal(messages.at(-1).enabled, true);
+  messages.length = 0;
   const closedPanel = { get active() { throw new Error('Webview is disposed'); } };
   provider.editorPanels.set(closedPanel, {});
   provider.getWebviewForPanel = () => undefined;

@@ -1,5 +1,4 @@
 // Window-local, settings-controlled continuation. Never retry before a known reset time.
-const scmToolkitContinueAtResetEnabled = __SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__;
 function scmToolkitRateLimitResetAt(text, now = Date.now()) {
     const relative = String(text).match(/(?:try again|resets?)\s+in\s+(\d+)\s*(seconds?|minutes?|hours?|s|m|h)\b/i);
     if (relative) return now + Number(relative[1]) * (/^h/i.test(relative[2]) ? 3600000 : /^m/i.test(relative[2]) ? 60000 : 1000);
@@ -14,7 +13,7 @@ function scmToolkitRateLimitResetAt(text, now = Date.now()) {
 function scmToolkitInstallRateLimitContinuation(api, identity) {
     if (globalThis.scmToolkitRateLimitContinuationInstalled) return;
     globalThis.scmToolkitRateLimitContinuationInstalled = true;
-    if (!scmToolkitContinueAtResetEnabled) return;
+    let resumeEnabled = false;
     let timer, knownReset, knownThread, queued = false;
     let lookups = 0, lastLookup = -Infinity, lookupRequest, quotaAvailable = false;
     const continued = new Set();
@@ -24,6 +23,7 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         .filter(node => !node.closest(excluded) && /^(?:you[’']ve hit your usage limit|rate(?:d)? limited)\b/i.test(node.dataset.scmToolkitRateLimitOriginal || node.textContent.trim()));
     const update = () => {
         queued = false;
+        if (!resumeEnabled) { clearTimeout(timer); return; }
         const threadId = identity();
         const limited = notices();
         if (threadId !== knownThread) { knownReset = undefined; knownThread = threadId; lookups = 0; lastLookup = -Infinity; lookupRequest = undefined; quotaAvailable = false; }
@@ -61,7 +61,14 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
     new MutationObserver(schedule).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
     window.addEventListener('message', event => {
         const result = event.data;
-        if (result?.type !== 'scm-toolkit-limit-reset-result' || result.threadId !== identity()
+        if (result?.type === 'scm-toolkit-resume-setting') {
+            resumeEnabled = result.enabled === true;
+            knownReset = undefined; lookups = 0; lastLookup = -Infinity;
+            lookupRequest = undefined; quotaAvailable = false;
+            schedule();
+            return;
+        }
+        if (!resumeEnabled || result?.type !== 'scm-toolkit-limit-reset-result' || result.threadId !== identity()
             || result.requestId !== lookupRequest) return;
         lookupRequest = undefined;
         if (result.known && result.limited === false) quotaAvailable = true;
@@ -70,5 +77,6 @@ function scmToolkitInstallRateLimitContinuation(api, identity) {
         schedule();
     });
     window.addEventListener('hashchange', schedule);
+    api.postMessage({ type: 'scm-toolkit-read-resume-setting' });
     schedule();
 }

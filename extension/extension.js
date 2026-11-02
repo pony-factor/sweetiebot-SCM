@@ -150,6 +150,7 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       gitGraphRelativeDates: scm.get('gitGraphRelativeDates', false),
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
       codexKeepAwake: scm.get('codexKeepAwake', true),
+      codexContinueAtReset: scm.get('codexContinueAtReset', false),
       codexHidePermissionsIcon: scm.get('codexHidePermissionsIcon', false),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
