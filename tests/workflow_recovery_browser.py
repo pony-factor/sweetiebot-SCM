@@ -316,12 +316,14 @@ def main():
         page.eval_on_selector('#footer', "el=>{el.textContent='Rated limited';el.style.width='100%';el.style.height='200px'}")
         page.wait_for_selector('#footer img')
         assert page.eval_on_selector('#footer', 'el=>el.getBoundingClientRect().height<150 && el.getBoundingClientRect().width<200'), 'React cannot restore the oversized empty footer'
-        # Mount the opt-in control after an already-compacted notice.
+        # The persisted preference (opted in) arms continuation immediately;
+        # it no longer creates a button inside the composer.
         page.evaluate('window.messages=[]')
-        page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
+        page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text()
+            .replace('__SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__', 'true'))
         page.evaluate("scmToolkitInstallRateLimitContinuation({postMessage:m=>messages.push(m)},()=> 'test-thread')")
-        page.get_by_role('button', name='Continue unanswered work at reset').click()
-        assert page.get_by_role('button', name='Cancel continuation at reset').is_visible()
+        assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0
+        assert page.get_by_role('button', name='Cancel continuation at reset').count() == 0
         assert page.evaluate('messages.length') == 0, 'Never send while still limited before reset'
         page.evaluate('''() => {
             const deadline=scmToolkitRateLimitResetAt("Try again at 10:26 PM.");
@@ -337,21 +339,19 @@ def main():
         assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0, 'Old transcript warnings are not an active limit'
         page.evaluate("document.body.append(document.createElement('hr'))")
         assert page.evaluate('messages.length') == 1
-        # Unknown reset times use a bounded read-only native lookup only after opt-in.
+        # Unknown reset times use a bounded read-only native lookup when enabled.
         for still_limited in [True, False]:
             page.goto('about:blank')
             page.set_content('<div role="status">Rate limited</div><form><textarea></textarea></form>')
             page.evaluate('window.messages=[];window.testNow=Date.now();Date.now=()=>testNow')
-            page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text())
+            page.add_script_tag(content=(ROOT / 'assets/codex/rate-limit-continuation.js').read_text()
+            .replace('__SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__', 'true'))
             page.evaluate("scmToolkitInstallRateLimitContinuation({postMessage:m=>messages.push(m)},()=> 'lookup-thread')")
-            page.get_by_role('button', name='Continue unanswered work at reset').wait_for()
-            assert page.evaluate('messages.length') == 0, 'Never poll quotas before opt-in'
-            page.get_by_role('button', name='Continue unanswered work at reset').click()
             page.wait_for_function("messages.length===1 && messages[0].type==='scm-toolkit-read-limit-reset'")
+            assert page.get_by_role('button', name='Continue unanswered work at reset').count() == 0
             page.evaluate("""limited => window.postMessage({type:'scm-toolkit-limit-reset-result',
                 threadId:'lookup-thread',requestId:messages[0].requestId,known:true,limited,resetAt:testNow+60000},'*')""", still_limited)
             if still_limited:
-                page.get_by_role('button', name='Cancel continuation at reset').wait_for()
                 page.evaluate("testNow+=62000;document.body.append(document.createElement('hr'))")
                 page.wait_for_function("messages.some(m=>m.type==='scm-toolkit-continue-at-reset')")
                 assert page.evaluate("messages.filter(m=>m.type==='scm-toolkit-continue-at-reset').length") == 1
@@ -362,7 +362,7 @@ def main():
                 assert page.evaluate('messages.length') == 1, 'An account that is no longer limited cannot auto-continue'
         assert not errors, errors
         browser.close()
-        print('Rendered wand visibility, recycled toolbar, active cannon, limit rewrites, Twilight image and opt-in continuation passed.')
+        print('Rendered wand visibility, recycled toolbar, active cannon, limit rewrites, Twilight image and settings-controlled continuation passed.')
 
 
 if __name__ == '__main__':

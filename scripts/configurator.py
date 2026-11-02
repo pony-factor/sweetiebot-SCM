@@ -379,6 +379,7 @@ SETTINGS = (
     Setting("mcpPrServer", "scm-toolkit.mcp-pr-server", "Pull-request MCP server", "VS Code MCP server checked before New PR opens. Connect the same server separately in ChatGPT; local servers can use Secure MCP Tunnel.", "Pull requests", "text"),
     Setting("mcpPrTool", "scm-toolkit.mcp-pr-tool", "Pull-request MCP tool", "Configured MCP tool name for pull-request integrations.", "Pull requests", "text"),
     Setting("codexUsageResetCountdown", "scm-toolkit.codex-usage-reset-countdown", "Relative Codex reset times", "Convert Codex's absolute reset dates and times into live relative countdowns in usage-limit banners (for example, 'resets October 24 at 3 PM' becomes 'resets in 1d 4h').", "Codex"),
+    Setting("codexContinueAtReset", "scm-toolkit.codex-continue-at-reset", "Resume work after Codex rate limits reset", "Automatically continue an unfinished Codex conversation after a confirmed usage-limit reset. Only acts in the original chat when no draft or queued message is present. Off by default; apply app repair and reload after changing.", "Codex"),
     Setting("codexRateLimitSticker", "scm-toolkit.codex-rate-limit-sticker", "Rate-limit sticker", "Show a compact rate-limit image card; customize the image below or keep the bundled Twilight artwork. Independent of the countdown and reset-time settings.", "Codex"),
     Setting("codexHideUsageResetTimes", "scm-toolkit.codex-hide-usage-reset-times", "Hide Codex reset times", "Hide reset dates and times in Codex usage menus, dialogs, limit banners, transcript messages, and tooltips, even when the countdown is disabled.", "Codex"),
     Setting("codexUsagePieIndicator", "scm-toolkit.codex-usage-pie-indicator", "Five-hour pie and weekly usage bar", "Replace the composer’s + icon with the five-hour remaining-usage pie while retaining the attachment menu. Show the weekly remaining allowance as a thin bar along the bottom of the input.", "Codex"),
@@ -944,7 +945,7 @@ def render_form(
             controls = APP_PANEL
         if section == "Codex":
             time_settings = {
-                "codexKeepAwake", "codexUsageResetCountdown", "codexHideUsageResetTimes",
+                "codexKeepAwake", "codexUsageResetCountdown", "codexContinueAtReset", "codexHideUsageResetTimes",
                 "codexUsagePieIndicator", "codexResetTimePieIndicator", "codexHideChatTimestamps", "codexShowCannon",
             }
             controls = "".join(

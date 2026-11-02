@@ -6,7 +6,9 @@ const path = require('node:path');
 const { createMergeHandoff } = require('../extension/merge/handoff');
 const root = path.join(__dirname, '..');
 const helpers = vm.createContext({ Date });
-vm.runInContext(fs.readFileSync(path.join(root, 'assets/codex/rate-limit-continuation.js'), 'utf8'), helpers);
+// The standalone helpers are tested without enabling automatic continuation.
+vm.runInContext(fs.readFileSync(path.join(root, 'assets/codex/rate-limit-continuation.js'), 'utf8')
+  .replace('__SCM_TOOLKIT_CONTINUE_AT_RESET_ENABLED__', 'false'), helpers);
 vm.runInContext(fs.readFileSync(path.join(root, 'assets/codex/activity-cannon.js'), 'utf8'), helpers);
 const now = new Date(2026, 9, 28, 20, 0).getTime();
 assert.equal(helpers.scmToolkitRateLimitResetAt('Try again at 10:26 PM.', now), new Date(2026,9,28,22,26).getTime());
