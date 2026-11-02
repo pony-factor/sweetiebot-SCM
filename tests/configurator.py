@@ -503,6 +503,10 @@ class SubmissionTests(unittest.TestCase):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS[key])
         self.assertEqual(toolkit_settings.SETTING_KEYS[key], 'scm-toolkit.codex-continue-at-reset')
         values = form_values()
+        # This preference is off by default; the browser submits the key only
+        # after the user explicitly checks its box.
+        self.assertFalse(configurator.parse_submission(values)[key])
+        values[key] = ['on']
         self.assertTrue(configurator.parse_submission(values)[key])
         values.pop(key)
         self.assertFalse(configurator.parse_submission(values)[key])
