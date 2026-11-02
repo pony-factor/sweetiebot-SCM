@@ -173,6 +173,17 @@ function messageBarZone(name) {
   return messageBarZones.find(zone => zone.dataset.messageBarZone === name);
 }
 
+function refreshMessageBarToggleInputs() {
+  const hidden = messageBarZone('hidden');
+  for (const id of ['push', 'codex-resume']) {
+    const item = messageBarItems.find(candidate => candidate.dataset.messageBarId === id);
+    const checkbox = item?.querySelector('input');
+    if (!checkbox) continue;
+    checkbox.disabled = item.parentElement === hidden;
+    if (checkbox.disabled) checkbox.checked = false;
+  }
+}
+
 function syncMessageBarLayout() {
   if (!messageBarLayoutInput) return;
   const readZone = name => [...messageBarZone(name).querySelectorAll(':scope > [data-message-bar-id]')]
@@ -181,12 +192,7 @@ function syncMessageBarLayout() {
     before: readZone('before'),
     after: readZone('after')
   });
-  const push = messageBarItems.find(item => item.dataset.messageBarId === 'push');
-  const checkbox = push?.querySelector('input');
-  if (checkbox) {
-    checkbox.disabled = push.parentElement === messageBarZone('hidden');
-    if (checkbox.disabled) checkbox.checked = false;
-  }
+  refreshMessageBarToggleInputs();
   messageBarLayoutInput.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
@@ -297,5 +303,6 @@ if (messageBarLayoutInput) {
     }
     syncMessageBarLayout();
   });
+  refreshMessageBarToggleInputs();
 }
 """
