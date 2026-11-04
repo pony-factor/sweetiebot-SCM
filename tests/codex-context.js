@@ -103,7 +103,7 @@ async function run() {
   assert.equal(reloadState.sweetiebotReloadConversation, undefined);
   assert.equal(reloadState.existingCodexState, 'preserved');
 
-  let mounted, changed;
+  let mounted, changed, uiMessage;
   const frames = [], clicks = [];
   const anchor = {
     parentElement: {}, getAttribute: () => 'Chat actions',
@@ -112,7 +112,9 @@ async function run() {
   };
   const location = { hash: `#/local/${conversationId}` };
   const ui = vm.createContext({
-    window: { location, addEventListener() {} },
+    window: { location, addEventListener(type, listener) {
+      if (type === 'message') uiMessage = listener;
+    } },
     MutationObserver: class { constructor(callback) { changed = callback; } observe() {} },
     requestAnimationFrame: callback => frames.push(callback),
     document: {
@@ -127,15 +129,47 @@ async function run() {
   });
   load('context-webview.js', ui);
   ui.scmToolkitRegisterCodexSnapshot({ postMessage: message => clicks.push(message) });
-  frames.shift()();
+  const flush = () => { while (frames.length) frames.shift()(); };
+  flush();
+  assert.equal(mounted, undefined, 'Do not show the shortcut until the host verifies the checkout');
+  assert.equal(clicks[0].type, 'scm-toolkit-checkout-visibility-request');
+  uiMessage({ data: { type: 'scm-toolkit-checkout-visibility-result',
+    threadId: conversationId, requestId: clicks[0].requestId, show: true } });
+  flush();
   assert.equal(mounted.title, 'Open chat checkout in a new window');
   const nextChat = '019c56c3-06fc-7db3-a928-9c3607e17130';
   location.hash = `#/local/${nextChat}`;
+  changed(); flush();
+  assert.equal(mounted, undefined, 'A chat change hides the previous checkout shortcut immediately');
+  const nextRequest = clicks.at(-1);
+  assert.equal(nextRequest.threadId, nextChat);
+  uiMessage({ data: { type: 'scm-toolkit-checkout-visibility-result',
+    threadId: conversationId, requestId: clicks[0].requestId, show: true } });
+  flush();
+  assert.equal(mounted, undefined, 'Ignore stale answers from a previously visible chat');
+  uiMessage({ data: { type: 'scm-toolkit-checkout-visibility-result',
+    threadId: nextChat, requestId: nextRequest.requestId, show: false } });
+  flush();
+  assert.equal(mounted, undefined, 'Hide the shortcut when already in the chat checkout');
+  changed(); flush();
+  assert.equal(clicks.length, 2, 'Do not re-query the host on every DOM mutation');
+  uiMessage({ data: { type: 'scm-toolkit-checkout-visibility-refresh' } });
+  flush();
+  const refreshed = clicks.at(-1);
+  assert.notEqual(refreshed.requestId, nextRequest.requestId);
+  uiMessage({ data: { type: 'scm-toolkit-checkout-visibility-result',
+    threadId: nextChat, requestId: nextRequest.requestId, show: false } });
+  flush();
+  assert.equal(mounted, undefined, 'Ignore answers that predate a workspace refresh');
+  uiMessage({ data: { type: 'scm-toolkit-checkout-visibility-result',
+    threadId: nextChat, requestId: refreshed.requestId, show: true } });
+  flush();
+  assert(mounted, 'Show the shortcut when the chat checkout differs from the current window');
   mounted.click();
-  assert.equal(clicks[0].threadId, nextChat, 'Resolve the current chat when clicked, not when mounted');
-  assert.equal(clicks[0].type, 'scm-toolkit-open-chat-checkout');
+  assert.equal(clicks.at(-1).threadId, nextChat, 'Resolve the current chat when clicked');
+  assert.equal(clicks.at(-1).type, 'scm-toolkit-open-chat-checkout');
   location.hash = '/';
-  changed(); frames.shift()();
+  changed(); flush();
   assert.equal(mounted, undefined, 'Hide the button when there is no identifiable chat');
 
   let shareRequest, stage = 0;
@@ -225,17 +259,22 @@ async function run() {
   };
   const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
   load('context-host.js', host);
-  let liveResume = false, configListener;
+  let liveResume = false, configListener, checkoutFoldersChanged, checkoutNeedsNewWindow = false;
   const hostVscode = {
     workspace: {
       getConfiguration: () => ({get(key, fallback) { return key === 'codexContinueAtReset' ? liveResume : fallback; }}),
-      onDidChangeConfiguration(callback) { configListener = callback; return {dispose() {}}; }
+      onDidChangeConfiguration(callback) { configListener = callback; return {dispose() {}}; },
+      onDidChangeWorkspaceFolders(callback) { checkoutFoldersChanged = callback; return {dispose() {}}; }
     },
     env: { clipboard: { readText: async () => clipboard, writeText: async value => { clipboard = value; } } },
     commands: {
       registerCommand(id, callback) {
         registered.set(id, callback);
         return { dispose() {} };
+      },
+      async executeCommand(id, threadId) {
+        assert.equal(id, 'sweetiebot.codex.chatCheckoutVisibility');
+        return { threadId, needsNewWindow: checkoutNeedsNewWindow };
       }
     }
   };
@@ -245,6 +284,19 @@ async function run() {
   assert(registered.has('sweetiebot.readCodexConversation'));
 
   provider.initializeWebview(webview, 'sidebar', () => {});
+  provider.handleMessage(webview, {type: 'scm-toolkit-checkout-visibility-request',
+    threadId: conversationId, requestId: 3});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(messages.at(-1).type, 'scm-toolkit-checkout-visibility-result');
+  assert.equal(messages.at(-1).show, false);
+  checkoutNeedsNewWindow = true;
+  provider.handleMessage(webview, {type: 'scm-toolkit-checkout-visibility-request',
+    threadId: conversationId, requestId: 4});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(messages.at(-1).show, true);
+  checkoutFoldersChanged();
+  assert.equal(messages.at(-1).type, 'scm-toolkit-checkout-visibility-refresh');
+  messages.length = 0;
   provider.handleMessage(webview, {type:'scm-toolkit-read-resume-setting'});
   assert.equal(messages.at(-1).type, 'scm-toolkit-resume-setting');
   assert.equal(messages.at(-1).enabled, false);

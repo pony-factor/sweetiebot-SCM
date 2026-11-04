@@ -23,6 +23,17 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         for (const view of views) void sendResumeSetting(view);
     });
 
+    // Workspace roots can change without navigating the Codex chat.
+    const checkoutSubscription = vscode.workspace?.onDidChangeWorkspaceFolders?.(() => {
+        const views = new Set([...provider.sidebarViews].map(view => view.webview));
+        if (provider.sidebarView?.webview) views.add(provider.sidebarView.webview);
+        for (const panel of provider.editorPanels.keys()) {
+            const view = provider.getWebviewForPanel(panel);
+            if (view) views.add(view);
+        }
+        for (const view of views) void view?.postMessage?.({ type: 'scm-toolkit-checkout-visibility-refresh' });
+    });
+
     const sourceFor = conversationId => {
         const value = String(conversationId ?? '').trim();
         if (!uuid.test(value)) return undefined;
@@ -51,6 +62,15 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             if (!resumeEnabled()) return;
             void vscode.commands.executeCommand('sweetiebot.codex.continueAfterRateLimit', message)
                 .catch(error => vscode.window.showWarningMessage('Automatic continuation paused: ' + error.message));
+            return;
+        }
+        if (message?.type === 'scm-toolkit-checkout-visibility-request') {
+            if (!uuid.test(message.threadId ?? '') || !Number.isSafeInteger(message.requestId)) return;
+            const reply = show => webview.postMessage({ type: 'scm-toolkit-checkout-visibility-result',
+                threadId: message.threadId, requestId: message.requestId, show });
+            void vscode.commands.executeCommand('sweetiebot.codex.chatCheckoutVisibility', message.threadId)
+                .then(result => reply(result?.threadId === message.threadId && result?.needsNewWindow === true))
+                .catch(() => reply(false));
             return;
         }
         if (message?.type === 'scm-toolkit-open-chat-checkout') {
@@ -227,6 +247,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
         resumeSubscription?.dispose();
+        checkoutSubscription?.dispose();
         provider.initializeWebview = originalInitialize;
         provider.handleMessage = originalHandleMessage;
         for (const listener of listeners) listener.dispose();
