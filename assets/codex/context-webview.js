@@ -3,6 +3,9 @@ function scmToolkitRegisterCodexSnapshot(api) {
     const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
     const reloadKey = 'sweetiebotReloadConversation';
     let restored = false;
+    let checkoutVisibility = null;
+    let pendingCheckout = null;
+    let checkoutRequestId = 0;
 
     const conversationId = (allowHidden = false) => {
         const locations = [
@@ -53,6 +56,22 @@ function scmToolkitRegisterCodexSnapshot(api) {
 
     window.addEventListener('message', async event => {
         const request = event.data;
+        if (request?.type === 'scm-toolkit-checkout-visibility-result') {
+            if (pendingCheckout?.threadId === request.threadId
+                && pendingCheckout.requestId === request.requestId
+                && conversationId() === request.threadId) {
+                checkoutVisibility = { threadId: request.threadId, show: request.show === true };
+                pendingCheckout = null;
+                if (typeof MutationObserver !== 'undefined') scheduleCheckoutButton();
+            }
+            return;
+        }
+        if (request?.type === 'scm-toolkit-checkout-visibility-refresh') {
+            checkoutVisibility = null;
+            pendingCheckout = null;
+            if (typeof MutationObserver !== 'undefined') scheduleCheckoutButton();
+            return;
+        }
         // Restore only after Codex announces its persisted state is ready.
         if (request?.type === 'persisted-atom-sync' && !restored) {
             restored = true;
@@ -187,7 +206,23 @@ function scmToolkitRegisterCodexSnapshot(api) {
             && button.getClientRects().length
             && !button.closest('[data-thread-user-message-navigation-content]'));
         let button = document.getElementById(buttonId);
-        if (!threadId || !anchor) { button?.remove(); return; }
+        if (!threadId) {
+            checkoutVisibility = null;
+            pendingCheckout = null;
+            button?.remove();
+            return;
+        }
+        if (checkoutVisibility?.threadId !== threadId && pendingCheckout?.threadId !== threadId) {
+            checkoutVisibility = null;
+            pendingCheckout = { threadId, requestId: ++checkoutRequestId };
+            // Ask the native host; the DOM must never guess the chat's working directory.
+            api.postMessage({ type: 'scm-toolkit-checkout-visibility-request',
+                threadId, requestId: pendingCheckout.requestId });
+        }
+        if (!anchor || checkoutVisibility?.threadId !== threadId || !checkoutVisibility.show) {
+            button?.remove();
+            return;
+        }
         if (!button) {
             button = document.createElement('button');
             button.id = buttonId;
@@ -198,7 +233,8 @@ function scmToolkitRegisterCodexSnapshot(api) {
             button.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h7l2 2h9v11H3zM14 3h7v7M21 3l-8 8"/></svg>';
             button.addEventListener('click', () => {
                 const current = conversationId();
-                if (current) api.postMessage({ type: 'scm-toolkit-open-chat-checkout', threadId: current });
+                if (current && checkoutVisibility?.threadId === current && checkoutVisibility.show)
+                    api.postMessage({ type: 'scm-toolkit-open-chat-checkout', threadId: current });
             });
         }
         if (button.parentElement !== anchor.parentElement || button.nextElementSibling !== anchor) anchor.before(button);

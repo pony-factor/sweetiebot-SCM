@@ -47,6 +47,22 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         if (result?.thread?.id !== threadId) throw new Error('Codex returned a different chat during checkout handoff.');
         return result.thread;
     };
+    const chatCheckoutPath = async threadId => {
+        const thread = await read(threadId);
+        // An explicit branch handoff may have rebound the chat before Codex's
+        // stored thread metadata reflects its new checkout.
+        return canonical(bindings.get(threadId) ?? thread.cwd);
+    };
+    const checkoutAlreadyOpen = async cwd => {
+        const roots = (vscode.workspace.workspaceFolders || [])
+            .filter(folder => folder.uri.scheme === 'file');
+        const paths = await Promise.all(roots.map(folder => canonical(folder.uri.fsPath).catch(() => null)));
+        return paths.includes(cwd);
+    };
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.chatCheckoutVisibility', async threadId => {
+        const cwd = await chatCheckoutPath(threadId);
+        return { threadId, needsNewWindow: !(await checkoutAlreadyOpen(cwd)) };
+    }));
     // A frontend cache must not override the verified destination on its next
     // resume or user turn. Only this explicitly handed-off thread is affected.
     const guardedSend = typeof originalSend === 'function' ? function (name, id, method, params, ...rest) {
@@ -61,9 +77,9 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         if (!identity?.threadId || identity.threadId !== expectedThreadId) {
             throw new Error('The visible chat changed. Try the button again.');
         }
-        const thread = await read(identity.threadId);
-        const cwd = await canonical(thread.cwd);
+        const cwd = await chatCheckoutPath(identity.threadId);
         if (!(await fs.stat(cwd)).isDirectory()) throw new Error('The recorded checkout is not a folder.');
+        if (await checkoutAlreadyOpen(cwd)) return { threadId: identity.threadId, cwd, alreadyOpen: true };
         // Opening the existing folder does not checkout a branch, interrupt a turn,
         // or rebind the worker. Keep this window and its drafts intact.
         await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(cwd), { forceNewWindow: true });
