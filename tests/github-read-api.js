@@ -48,6 +48,20 @@ const env = { SWEETIEBOT_BOT_IDENTITY_MODE: 'separate-apps' };
     return true;
   });
   assert.equal(called.length, 4, 'App failure never silently borrows the user quota');
+  const permissionMessage = 'GitHub App lindsey installation is missing repository permissions: ' +
+    'Checks: Read, Commit statuses: Read. Update the App permissions in GitHub, ' +
+    'approve the updated organization installation, then retry Check connection.';
+  const missingPermissions = createLindseyReadFetch(repo, {
+    env, fetchImpl, getToken: async () => {
+      throw Object.assign(Error(permissionMessage), { code: 'SWEETIEBOT_APP_PERMISSIONS' });
+    }
+  });
+  await assert.rejects(githubGet(missingPermissions, 'user-token', repo, '/pulls'), error => {
+    assert.equal(error.code, 'SWEETIEBOT_LINDSEY_READ_AUTH');
+    assert(error.message.includes(permissionMessage), 'New PR must name missing App permissions');
+    return true;
+  });
+  assert.equal(called.length, 4, 'Missing permissions must not fall back to user credentials');
   let attempts = 0;
   const recoverable = createLindseyReadFetch(repo, { env, fetchImpl, now: () => now,
     getToken: async (...args) => {

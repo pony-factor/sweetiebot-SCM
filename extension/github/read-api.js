@@ -32,8 +32,13 @@ function createLindseyReadFetch(repository, {
     }).catch(cause => {
       // Authentication runs before the repository request. Do not let callers
       // misreport it as a failed GET or expose arbitrary credential-provider text.
+      // Permission failures are generated locally by app-identity, without
+      // provider response text, and name the grants needed to unblock retries.
+      const detail = cause?.code === 'SWEETIEBOT_APP_PERMISSIONS'
+        ? cause.message
+        : 'Check the Lindsey GitHub App configuration, repository installation and permissions in Magic Settings.';
       throw Object.assign(new Error('Could not authenticate Lindsey for GitHub repository reads. ' +
-        'Check the Lindsey GitHub App configuration, repository installation and permissions in Magic Settings.',
+        detail,
       { cause }), { code: 'SWEETIEBOT_LINDSEY_READ_AUTH' });
     }).finally(() => { pending = undefined; });
     return pending;
