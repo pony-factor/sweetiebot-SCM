@@ -1,15 +1,17 @@
 name: Checks
 
 on:
-  # Run once for each push, not again when the same commit is in a pull request.
-  # PRs opened from this repository use the checks on their head commit.
+  # Every push to main runs the full check suite independently.
   push:
+    branches: [main]
+  # PR updates run the same suite but can supersede older checks for that PR.
+  pull_request:
 
-# PRs are checked by head-branch pushes. New pushes supersede older runs
-# of this workflow on the same ref, without cancelling other branches.
+# Only PR runs can cancel one another. Use unique groups for main pushes
+# and rerun attempts to avoid replacing even queued main runs.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('main-{0}-{1}', github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
