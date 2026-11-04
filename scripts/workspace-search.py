@@ -158,6 +158,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("github-apps.py")] = here / "github-apps.py"
     files[Path("github-apps-ui.py")] = here / "github-apps-ui.py"
     files[Path("codex-sticker.py")] = here / "codex-sticker.py"
+    files[Path("codex-button-icon.py")] = here / "codex-button-icon.py"
     files[Path("commit-diagnostics-dashboard.py")] = here / "commit-diagnostics-dashboard.py"
     files[Path("commit-hotkey.py")] = here / "commit-hotkey.py"
     files[Path("toolkit-settings.py")] = here / "toolkit-settings.py"

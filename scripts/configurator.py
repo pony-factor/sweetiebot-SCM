@@ -39,6 +39,7 @@ from commit_diagnostics_dashboard import (
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
 import codex_sticker
+import codex_button_icon
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from local_setup import (
     configure_signing_key,
@@ -59,6 +60,7 @@ from github_apps import app_status, save_app, save_mode, check_connection
 OLLAMA_URL = "http://127.0.0.1:11434"
 MAX_FORM_BYTES = 512 * 1024
 STICKER_UPLOAD_LIMIT = codex_sticker.MAX_STICKER_BYTES
+COAUTHOR_ICON_UPLOAD_LIMIT = codex_button_icon.MAX_ICON_BYTES
 
 STICKER_SCRIPT = r"""
 const stickerPicker = document.getElementById('sticker-upload');
@@ -99,6 +101,49 @@ stickerReset?.addEventListener('click', async () => {
   } finally {
     stickerPicker.disabled = false;
     stickerReset.disabled = false;
+  }
+});
+"""
+
+COAUTHOR_ICON_SCRIPT = r"""
+const coauthorIconPicker = document.getElementById('coauthor-icon-upload');
+const coauthorIconReset = document.getElementById('coauthor-icon-reset');
+const coauthorIconStatus = document.getElementById('coauthor-icon-status');
+coauthorIconPicker?.addEventListener('change', async () => {
+  const file = coauthorIconPicker.files?.[0];
+  if (!file) return;
+  coauthorIconPicker.disabled = true;
+  coauthorIconReset.disabled = true;
+  coauthorIconStatus.textContent = 'Saving icon locally…';
+  try {
+    if (file.size > 2 * 1024 * 1024) throw new Error('Choose an image under 2 MB.');
+    const response = await fetch('/coauthor-icon-upload' + location.search, {
+      method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save the icon.');
+    coauthorIconStatus.textContent = 'Custom icon saved locally. Rebuild the app to apply it.';
+  } catch (error) {
+    coauthorIconStatus.textContent = 'Icon not saved: ' + error.message;
+  } finally {
+    coauthorIconPicker.value = '';
+    coauthorIconPicker.disabled = false;
+    coauthorIconReset.disabled = false;
+  }
+});
+coauthorIconReset?.addEventListener('click', async () => {
+  coauthorIconPicker.disabled = true;
+  coauthorIconReset.disabled = true;
+  try {
+    const response = await fetch('/coauthor-icon-reset' + location.search, {method: 'POST'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to reset the icon.');
+    coauthorIconStatus.textContent = 'Bundled Sweetiebot icon selected. Rebuild the app to apply it.';
+  } catch (error) {
+    coauthorIconStatus.textContent = 'Reset failed: ' + error.message;
+  } finally {
+    coauthorIconPicker.disabled = false;
+    coauthorIconReset.disabled = false;
   }
 });
 """
@@ -1038,6 +1083,21 @@ def render_form(
                              "including its configured trailer and commit flow. "
                              "Independently configurable and unbound by default."),
             )
+        if section == "Message bar":
+            icon_status = ("Custom icon stored on this computer" if codex_button_icon.icon_path().is_file()
+                           else "Bundled Sweetiebot icon")
+            controls += (
+                '<div class="setting sticker-setting"><span><strong>Codex co-author button icon</strong>'
+                '<small>Uses sweetiebot.png by default. Upload PNG, JPEG, GIF or WebP up to 2 MB. '
+                'Stored privately on this computer, not in Git or settings sync. '
+                'Rebuild and reload the app after changing.</small></span>'
+                '<div class="sticker-actions"><input type="file" id="coauthor-icon-upload" '
+                'accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" '
+                'aria-label="Choose Codex co-author button artwork">'
+                '<button type="button" id="coauthor-icon-reset">Use Sweetiebot icon</button>'
+                f'<output id="coauthor-icon-status" role="status" aria-live="polite">{html.escape(icon_status)}</output>'
+                '</div></div>'
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
@@ -1156,6 +1216,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 {CODEX_LAYOUT_SCRIPT}
 {APP_SCRIPT}
 {STICKER_SCRIPT}
+{COAUTHOR_ICON_SCRIPT}
 {PERMISSIONS_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
@@ -1837,7 +1898,8 @@ def run_configurator(
                 self._send("<h1>Invalid request</h1>", 400)
                 return
             path = urllib.parse.urlsplit(self.path).path
-            max_length = STICKER_UPLOAD_LIMIT if path == "/sticker-upload" else MAX_FORM_BYTES
+            max_length = (COAUTHOR_ICON_UPLOAD_LIMIT if path == "/coauthor-icon-upload"
+                          else STICKER_UPLOAD_LIMIT if path == "/sticker-upload" else MAX_FORM_BYTES)
             if length < 0 or length > max_length:
                 self._send_json({"error": "Request too large."}, 413)
                 return
@@ -1864,6 +1926,20 @@ def run_configurator(
             if path == "/sticker-reset":
                 try:
                     codex_sticker.clear_sticker()
+                    self._send_json({"saved": True})
+                except (OSError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path in ("/coauthor-icon-upload", "/coauthor-icon-reset"):
+                origin = self.headers.get("Origin")
+                if origin and origin != f"http://127.0.0.1:{self.server.server_port}":
+                    self._send_json({"error": "Invalid origin."}, 403)
+                    return
+                try:
+                    if path == "/coauthor-icon-upload":
+                        codex_button_icon.save_icon(data)
+                    else:
+                        codex_button_icon.clear_icon()
                     self._send_json({"saved": True})
                 except (OSError, ValueError) as error:
                     self._send_json({"error": str(error)}, 400)

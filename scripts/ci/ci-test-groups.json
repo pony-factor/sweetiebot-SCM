@@ -353,6 +353,7 @@
       "tests": [
         "ci-browser-routing.py",
         "ci-workflow-concurrency.js",
+        "codex-button-icon.py",
         "configurator.py",
         "diagnostics.py",
         "extension-cache.js",
@@ -372,6 +373,7 @@
         "extension/extension.js",
         "extension/ui/settings-migration.js",
         "scripts/configurator.py",
+        "scripts/codex-button-icon.py",
         "scripts/github-apps-ui.py",
         "scripts/github-apps.py",
         "scripts/install.py"

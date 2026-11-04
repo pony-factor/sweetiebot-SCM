@@ -564,6 +564,14 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('Resume at reset', page)
         self.assertNotIn('<strong>Resume work after Codex rate limits reset</strong>', page)
 
+    def test_coauthor_button_custom_icon_controls(self):
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('id="coauthor-icon-upload"', page)
+        self.assertIn('id="coauthor-icon-reset"', page)
+        self.assertIn("Bundled Sweetiebot icon", page)
+        self.assertIn("/coauthor-icon-upload", configurator.COAUTHOR_ICON_SCRIPT)
+        self.assertIn("/coauthor-icon-reset", configurator.COAUTHOR_ICON_SCRIPT)
+
     def test_rate_limit_sticker_toggle_and_local_picker(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
         values = form_values()

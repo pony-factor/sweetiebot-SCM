@@ -1643,10 +1643,21 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const codexButton = doc.createElement('button');
     codexButton.type = 'button';
-    codexButton.className = 'scm-toolkit-codex-coauthor codicon codicon-account';
+    codexButton.className = 'scm-toolkit-codex-coauthor';
     codexButton.hidden = true;
     codexButton.title = `Commit with ${settings.codexCoauthorName || 'Codex'} co-author`;
     codexButton.setAttribute('aria-label', codexButton.title);
+    if (typeof settings.codexCoauthorIconDataUrl === 'string'
+        && /^data:image\/(?:png|jpeg|gif|webp);base64,/.test(settings.codexCoauthorIconDataUrl)) {
+        const icon = doc.createElement('img');
+        icon.className = 'scm-toolkit-codex-coauthor-icon';
+        icon.alt = '';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.src = settings.codexCoauthorIconDataUrl;
+        codexButton.append(icon);
+    } else {
+        codexButton.classList.add('codicon', 'codicon-account');
+    }
 
     const autoCommitButton = doc.createElement('button');
     autoCommitButton.type = 'button';

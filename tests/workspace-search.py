@@ -293,6 +293,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             )
             self.assertTrue((destination / "configurator.py").is_file())
             self.assertTrue((destination / "codex-sticker.py").is_file())
+            self.assertTrue((destination / "codex-button-icon.py").is_file())
             self.assertTrue((destination / "commit-hotkey.py").is_file())
             self.assertTrue((destination / "toolkit-settings.py").is_file())
             # Run outside the source tree so missing packaged imports cannot
@@ -302,6 +303,16 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 cwd=tmp, capture_output=True, text=True, timeout=10,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            icon = subprocess.run(
+                [sys.executable, "-E", "-s", "-B", "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); "
+                 "import importaliases; importaliases.install(); "
+                 "import codex_button_icon; "
+                 "assert codex_button_icon.icon_data_url().startswith('data:image/png;base64,')",
+                 str(destination)],
+                cwd=tmp, capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(icon.returncode, 0, icon.stderr)
             self.assertTrue((destination / "branch-names.py").is_file())
             self.assertTrue((destination / "branch-name-packs.json").is_file())
             self.assertTrue((destination / "local-setup.py").is_file())

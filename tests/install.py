@@ -522,6 +522,9 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         js, css = install.transform(workbench_fixture(), "base-css", settings=SETTINGS)
 
         self.assertIn("const scmToolkitSettings = ", js)
+        self.assertIn('"codexCoauthorIconDataUrl":"data:image/png;base64,', js)
+        self.assertIn('scm-toolkit-codex-coauthor-icon', js)
+        self.assertIn('object-fit: contain;', css)
         self.assertIn("editor.inlineSuggest.enabled", js)
         self.assertIn("commands.executeCommand('sweetiebot.refreshRepository', repositoryArgument)", js)
         self.assertNotIn("scm-toolkit-refreshing", js)
