@@ -577,6 +577,56 @@ def window_title_push_edits(js):
     ]
 
 
+def window_title_repository_edits(js):
+    edits = []
+    # A single-root window has a useful name before its workspace label loads.
+    root = re.search(r'rootName:([\w$]+),rootPath:[\w$]+,rootNameShort:[\w$]+', js)
+    workspace = re.search(r'getWindowTitle\(\)\{let [\w$]+=this.editorService.activeEditor,([\w$]+)=this.contextService.getWorkspace\(\)', js)
+    if root and workspace:
+        token = workspace.group(1)
+        edits.append((root.group(), root.group().replace('rootName:' + root.group(1),
+            f'rootName:({root.group(1)}||({token}.folders.length===1?{token}.folders[0].name:""))', 1)))
+    # Native SCM normally chooses an active repository from the active editor.
+    # With no editor, use the sole visible repository for title context only.
+    history = re.search(r'this\._activeRepositoryHistoryItemRefName=[\w$]+\(([\w$]+)=>this\.scmViewService\.activeRepository\.read\(\1\)\?\.repository', js)
+    context = re.search(r'let ([\w$]+)=this\.scmViewService\.activeRepository\.read\(([\w$]+)\),([\w$]+)=this\._activeRepositoryHistoryItemRefName\.read\(\2\)', js)
+    for match, reader in [(history, history.group(1) if history else None),
+                          (context, context.group(2) if context else None)]:
+        if match:
+            active = f'this.scmViewService.activeRepository.read({reader})'
+            fallback = f'(this._visibleRepositories.read({reader}).length===1?{{repository:this._visibleRepositories.read({reader})[0]}}:undefined)'
+            edits.append((match.group(), match.group().replace(active, f'({active}??{fallback})', 1)))
+    return edits
+
+
+def window_title_refresh_edits(js):
+    # Resolve the title service's own window, including secondary windows.
+    window = re.search(r'doUpdateTitle\(\)\{[^}]*?let [\w$]+=([\w$]+\(this\.windowId,!0\)\.window);', js)
+    if not window:
+        return []  # Synthetic fixtures without a native window.
+    listener = 'registerListeners(){this._register(this.configurationService.onDidChangeConfiguration('
+    start = js.rfind(listener, 0, window.start())
+    if start < 0:
+        raise ValueError('Unsupported VS Code build: window title refresh listener does not match.')
+    refresh = (
+        'const sweetiebotTitleWindow=' + window.group(1) + ';'
+        'const sweetiebotRefreshTitle=()=>this.titleUpdater.schedule();'
+        'sweetiebotTitleWindow.addEventListener("focus",sweetiebotRefreshTitle);'
+        # Workspace labels and SCM context can arrive after the first render.
+        # Retry briefly at startup without keeping an ongoing polling timer.
+        'const sweetiebotTitleTimers=[0,250,1000,3000].map(delay=>'
+        'sweetiebotTitleWindow.setTimeout(sweetiebotRefreshTitle,delay));'
+        'this._register({dispose:()=>{'
+        'sweetiebotTitleWindow.removeEventListener("focus",sweetiebotRefreshTitle);'
+        'sweetiebotTitleTimers.forEach(timer=>sweetiebotTitleWindow.clearTimeout(timer));}});'
+    )
+    boundary = re.search(r'}\s*onConfigurationChanged\(', js[start:window.start()])
+    if not boundary:
+        raise ValueError('Unsupported VS Code build: window title refresh listener boundary does not match.')
+    original = js[start:start + boundary.start() + 1]
+    return [(original, original.replace('registerListeners(){', 'registerListeners(){' + refresh, 1))]
+
+
 def window_title_naming_edits(js):
     if 'getWindowTitle(){' not in js:
         return []
@@ -795,6 +845,8 @@ def edits(js=None, settings=None):
         changes.extend(window_title_status_edits(js))
         changes.extend(window_title_push_edits(js))
         changes.extend(window_title_naming_edits(js))
+        changes.extend(window_title_repository_edits(js))
+        changes.extend(window_title_refresh_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))

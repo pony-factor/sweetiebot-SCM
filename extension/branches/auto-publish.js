@@ -15,9 +15,14 @@ async function registerAutoPublish(vscode, context) {
       const root = repository.rootUri;
       const config = vscode.workspace.getConfiguration('sweetiebot', root);
       if (!config.get('autoPublishNewBranches', false)) return;
-      const branch = repository.state.HEAD?.name;
+      const head = repository.state.HEAD;
+      const branch = head?.name;
+      // An unborn branch has nothing to publish. Local-only repositories also
+      // have no default remote branch to resolve; wait for Git state to change.
+      if (!branch || !head.commit) return;
       const remote = await require('../commits/codex-commit').readCommitGitSetting(root.fsPath, 'scm-toolkit.remote', 'origin');
-      if (!branch || (repository.state.HEAD.upstream?.remote === remote
+      if (!repository.state.remotes?.some(item => item.name === remote)) return;
+      if ((repository.state.HEAD.upstream?.remote === remote
           && repository.state.HEAD.upstream.name === branch)) return;
       if (lastBranch === branch && Date.now() - lastAttempt < 15000) return;
       lastBranch = branch; lastAttempt = Date.now();
