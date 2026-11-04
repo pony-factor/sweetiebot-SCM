@@ -96,10 +96,6 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));
     assert(!requests.some(request => request.method === 'turn/start'), 'Do not continue in the old host');
-    await resume({ ...plan, destination });
-    assert.deepEqual(routes, ['/local/' + threadId]);
-    assert.equal(requests.filter(request => request.method === 'turn/start').length, 1);
-
     const sandbox = path.join(temporary, 'experiment');
     await fs.mkdir(sandbox);
     const notifyExperiment = commands.get('sweetiebot.codex.sendExperimentDirection');
@@ -116,6 +112,11 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     await assert.rejects(notifyExperiment({ source: destination, destination: sandbox, branch: 'topic' }), /another checkout/);
     assert.equal(await notifyExperiment({ source: from, destination: from, branch: 'topic' }).then(() => false, () => true), true,
       'Never treat the original checkout as a disposable experiment');
+
+    const beforeResumption = requests.filter(request => request.method === 'turn/start').length;
+    await resume({ ...plan, destination });
+    assert.deepEqual(routes, ['/local/' + threadId]);
+    assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
 
     connection.sendProviderRequest('frontend', 'frontend-request', 'thread/resume', { threadId, cwd: from });
     assert.equal(requests.at(-1).params.cwd, destination, 'A stale frontend resume cannot reattach the worker to main');
