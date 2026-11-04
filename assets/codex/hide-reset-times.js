@@ -52,6 +52,7 @@ function scmToolkitIsStandaloneTime(value) {
                 for (const child of card.childNodes) {
                     if (child.nodeType === 3 && child.textContent.trim()) child.textContent = '';
                     else if (child.nodeType === 1 && !child.hasAttribute(marker)
+                        && !child.hasAttribute('data-scm-toolkit-rate-limit-pony')
                         && !child.hasAttribute('data-scm-toolkit-reset-action')) {
                         child.setAttribute('aria-hidden', 'true');
                         child.style.setProperty('display', 'none', 'important');
