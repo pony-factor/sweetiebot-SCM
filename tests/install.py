@@ -875,6 +875,19 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         )
         self.assertEqual(restored, (original_js, "base-css"))
 
+    def test_browser_home_preserves_sanitized_view_state(self):
+        original = (workbench_fixture() + browser_resolver_fixture()).replace(
+            '...options?.viewState}', '...sanitize(options?.viewState)}')
+        settings = dict(SETTINGS, browserChatgptHome=True)
+        patched = install.transform(original, 'base-css', settings=settings)
+        self.assertIn(
+            '...sanitize(options?.viewState),'
+            'url:sanitize(options?.viewState)?.url||"https://chatgpt.com/"}',
+            patched[0])
+        self.assertEqual(
+            install.transform(*patched, remove=True, settings=settings),
+            (original, 'base-css'))
+
     def test_blank_browser_custom_url_round_trip_and_reconfiguration(self):
         original = workbench_fixture() + browser_resolver_fixture()
         enabled = dict(SETTINGS, browserChatgptHome=True, browserHomeUrl="https://example.com/?q=hello")

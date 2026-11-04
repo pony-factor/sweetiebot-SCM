@@ -21,6 +21,7 @@ const { registerLocalPullRequestCommand } = require('./github/local_pull_request
 const { registerPullRequestBatchCommand } = require('./github/pull_request_batch');
 const { registerEditorActions } = require('./ui/editor_actions');
 const { registerNewWorkspaceCommand } = require('./branches/new_workspace');
+const { registerExperimentWorkspaceCommand } = require('./branches/experiment_workspace');
 const { registerSharedMain } = require('./branches/shared_main');
 const { registerCodexWorkspaceHandoff } = require('./codex/workspace_handoff');
 const { registerTerminalActions } = require('./ui/terminal_actions');
@@ -432,6 +433,7 @@ async function activate(context) {
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
   registerNewWorkspaceCommand(vscode, context);
+  registerExperimentWorkspaceCommand(vscode, context);
   registerSharedMain(vscode, context);
   // Register an active-window marker before any independent clone is eligible
   // for background pruning. Restricted Mode cannot create the marker.
