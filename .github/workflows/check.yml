@@ -187,7 +187,8 @@ jobs:
   codex-webview-browser:
     name: Chromium CSS and DOM regression
     needs: inventory
-    runs-on: ubuntu-latest
+    # Playwright 1.57.0 cannot install Chromium on ubuntu-26.04 runners.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
