@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = _sb_parent / 'scripts'
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
+
 import io
 import json
 import os
@@ -15,8 +27,8 @@ from extension_assets import include_runtime_relative
 from wrapper_dependencies import wrapper_files
 
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
-THINKING_ASSET = Path('assets/browser/maximize_thinking.js')
-SHARED_PROFILE_SOURCE = Path('scripts/browser_pr.py')
+THINKING_ASSET = Path('assets/browser/maximize-thinking.js')
+SHARED_PROFILE_SOURCE = Path('scripts/browser-pr.py')
 SHARED_PROFILE_MARKER = 'SHARED_BROWSER_PROFILE = 3'
 FORMATS = {
     "scripts": {".py", ".json"},
@@ -85,12 +97,12 @@ def installed_sources_match(candidate, extensions_dir):
                 not os.access(target, os.X_OK) or target.read_bytes() != source.read_bytes()):
             return False
     legacy = Path.home() / ".local/bin/git-auto-title"
-    pony_source = candidate / "extension/commits/pony_git_publish.js"
-    pony_target = wrapper.with_name("pony_git_publish.js")
+    pony_source = candidate / "extension/commits/pony-git-publish.js"
+    pony_target = wrapper.with_name("pony-git-publish.js")
     if pony_source.is_file() and (pony_target.is_symlink() or not pony_target.is_file()
             or pony_target.read_bytes() != pony_source.read_bytes()):
         return False
-    if (candidate / "scripts/ai_commit.py").is_file() and legacy != wrapper and (legacy.exists() or legacy.is_symlink()):
+    if (candidate / "scripts/ai-commit.py").is_file() and legacy != wrapper and (legacy.exists() or legacy.is_symlink()):
         for alias, target in ((legacy, wrapper), (legacy.with_name(legacy.name + "-spellcheck.py"), wrapper.with_name(wrapper.name + "-spellcheck.py"))):
             if not alias.is_symlink() or alias.resolve() != target.resolve():
                 return False
@@ -108,9 +120,9 @@ def installer_imports(candidate):
 
 def release_retains_extension_html(candidate):
     """Recognize both legacy HTML allowlists and the new complete asset inventory."""
-    shared = (candidate / "scripts/extension_assets.py").is_file()
+    shared = (candidate / "scripts/extension-assets.py").is_file()
     for name, marker in (("update.py", "include_runtime_relative"),
-                         ("workspace_search.py", "runtime_files")):
+                         ("workspace-search.py", "runtime_files")):
         script = candidate / "scripts" / name
         if not script.is_file():
             return False
@@ -141,8 +153,8 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     # Older releases load this HTML during extension activation but omit it
     # from update archives and bundled repair sources. Do not replace a working
     # bootstrap with one that will remove the asset on its next repair.
-    if (candidate / "extension/codex/draft_handoff.js").is_file():
-        if (not (candidate / "extension/ui/draft_confirmation.html").is_file()
+    if (candidate / "extension/codex/draft-handoff.js").is_file():
+        if (not (candidate / "extension/ui/draft-confirmation.html").is_file()
                 or not release_retains_extension_html(candidate)):
             print('Published release omits PR HTML from automatic repair; keeping the installed sources.', flush=True)
             return None

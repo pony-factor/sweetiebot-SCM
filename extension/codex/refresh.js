@@ -4,9 +4,9 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { runtimeRevision } = require('../ui/runtime_revision');
-const { invalidateUserExtensionCache } = require('../ui/extension_cache');
-const { reloadBlockReason, rememberAutomaticReload } = require('../ui/reload_guard');
+const { runtimeRevision } = require('../ui/runtime-revision');
+const { invalidateUserExtensionCache } = require('../ui/extension-cache');
+const { reloadBlockReason, rememberAutomaticReload } = require('../ui/reload-guard');
 
 const QUIET_PERIOD_MS = 8000;
 const RETRY_DELAYS_MS = [15000, 60000, 300000];

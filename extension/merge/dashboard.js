@@ -3,11 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
-const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./blocker_actions');
-const { createReactionChoices } = require('./reaction_choices');
-const { createMergeDashboardPersistence } = require('./dashboard_persistence');
-const { deferredCiRepairCandidate } = require('./auto_ci_repair');
-const { createLindseyReadFetch } = require('../github/read_api');
+const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./blocker-actions');
+const { createReactionChoices } = require('./reaction-choices');
+const { createMergeDashboardPersistence } = require('./dashboard-persistence');
+const { deferredCiRepairCandidate } = require('./auto-ci-repair');
+const { createLindseyReadFetch } = require('../github/read-api');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -45,13 +45,13 @@ function routineTimelineEvent(event) {
 
 function branchDisplayLabel(branch, catalog) {
   if (branch === 'main') return '🏠';
-  const pony = require('../github/pull_request').matchSweetiebotPonyCatalog(branch, catalog);
-  return pony ? '✨ ' + (pony.name || require('../codex/pony_profile').displayName(pony.canonicalSlug)) : branch;
+  const pony = require('../github/pull-request').matchSweetiebotPonyCatalog(branch, catalog);
+  return pony ? '✨ ' + (pony.name || require('../codex/pony-profile').displayName(pony.canonicalSlug)) : branch;
 }
 
 function ponyCatalog() {
-  for (const file of [path.join(__dirname, '../branch_name_packs.json'),
-    path.join(__dirname, '../../', 'scripts', 'branch_name_packs.json')]) {
+  for (const file of [path.join(__dirname, '../branch-name-packs.json'),
+    path.join(__dirname, '../../', 'scripts', 'branch-name-packs.json')]) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* Optional display enrichment. */ }
   }
   return undefined;
@@ -231,7 +231,7 @@ async function githubGet(fetchImpl, token, repository, endpoint) {
       404: 'The repository or PR was not found, or your account cannot access it.',
       502: 'GitHub is temporarily unavailable. Retry the refresh.',
       503: 'GitHub is temporarily unavailable. Retry the refresh.' };
-    throw await require('../github/rate_limit').githubResponseError(response,
+    throw await require('../github/rate-limit').githubResponseError(response,
       request + ' (HTTP ' + response.status + '). ' + (hints[response.status] || 'Retry the refresh; check GitHub status if this continues.'));
   }
   try { return await response.json(); }
@@ -310,12 +310,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     .replace('__CELEBRATION_PONY__', celebrationArt)
     .replace('__MERGE_CELEBRATION_PREDICATE__', require('./celebration').allPullRequestsMerged.toString())
     .replace('__MERGE_HEADER_CSS__', fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8'))
-    .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_markdown.js'), 'utf8'))
-    .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'commit_tree.js'), 'utf8'))
-    .replace('__ACTIVITY_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_activity.js'), 'utf8'))
-    .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard_diff.js'), 'utf8'))
-    .replace('__RATE_LIMIT_FORMATTER__', require('../github/rate_limit').rateLimitMessage.toString())
-    .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'dashboard_timestamps.js'), 'utf8'));
+    .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard-markdown.js'), 'utf8'))
+    .replace('__COMMIT_TREE__', fs.readFileSync(path.join(__dirname, 'commit-tree.js'), 'utf8'))
+    .replace('__ACTIVITY_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard-activity.js'), 'utf8'))
+    .replace('__DIFF_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard-diff.js'), 'utf8'))
+    .replace('__RATE_LIMIT_FORMATTER__', require('../github/rate-limit').rateLimitMessage.toString())
+    .replace('__TIMESTAMP_FORMATTER__', fs.readFileSync(path.join(__dirname, 'dashboard-timestamps.js'), 'utf8'));
   const catalog = ponyCatalog();
   const persistence = createMergeDashboardPersistence(context, selection);
   const prs = selection.pullRequests.map(pr => ({
@@ -485,7 +485,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const files = await paged(readFetch, token, selection.repository,
         '/pulls/' + item.number + '/files');
       try {
-        item.commits = require('./commit_tree').mergeCommitHistory(item.commits, await paged(readFetch, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
+        item.commits = require('./commit-tree').mergeCommitHistory(item.commits, await paged(readFetch, token, selection.repository, '/pulls/' + item.number + '/commits', 30));
         await context?.workspaceState?.update('sweetiebot.prCommits.' + selection.repository + '.' + item.number, item.commits);
         item.commitError = '';
       }
@@ -582,8 +582,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       return queuedRefresh;
     }
     activeRefresh = (async () => {
-    if (working || disposed || Date.now() < rateLimitedUntil || (!require('../github/app_identity').separateAppsEnabled() &&
-          require('../github/rate_limit').activeRateLimit(vscode)) || (!force && !isActive())) return;
+    if (working || disposed || Date.now() < rateLimitedUntil || (!require('../github/app-identity').separateAppsEnabled() &&
+          require('../github/rate-limit').activeRateLimit(vscode)) || (!force && !isActive())) return;
     working = true;
     cycle++;
     error = '';
@@ -602,7 +602,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             error = failure.message;
             if (failure.rateLimited) {
               rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt || Date.now() + 60000);
-              void require('../github/rate_limit').promptRateLimit(vscode, failure, { context, retry: () => refresh({ force: true }) }).catch(() => {});
+              void require('../github/rate-limit').promptRateLimit(vscode, failure, { context, retry: () => refresh({ force: true }) }).catch(() => {});
               rateLimitedUntil = Math.max(rateLimitedUntil, failure.retryAt);
             }
             if (pr.lastError !== failure.message) {
@@ -764,7 +764,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       let target;
       try { target = new URL(message.url); } catch { return; }
       if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) return;
-      return require('../github/pr_workflows').openWorkflow(vscode, target.href, { openToSide: true });
+      return require('../github/pr-workflows').openWorkflow(vscode, target.href, { openToSide: true });
     }
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);
@@ -818,12 +818,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     if (message.type === 'open-commit') {
       if (!pr.commits?.some(commit => commit.sha === message.url)) return;
-      return require('../github/pr_workflows').openWorkflow(vscode,
+      return require('../github/pr-workflows').openWorkflow(vscode,
         'https://github.com/' + selection.repository + '/commit/' + message.url, { openToSide: true });
     }
     if (message.type === 'open-pr' || message.type === 'open-diff') {
       const target = pr.url + (message.type === 'open-diff' ? '/files' : '');
-      await require('../github/pr_workflows').openWorkflow(vscode, target, { openToSide: true });
+      await require('../github/pr-workflows').openWorkflow(vscode, target, { openToSide: true });
     }
   });
   const config = () => vscode.workspace?.getConfiguration('sweetiebot');
@@ -931,7 +931,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         total: Number(worker.total) || 0, numbers: (Array.isArray(worker.numbers) ? worker.numbers : []).filter(number => byNumber.has(number)) }));
     if (state.rateLimit) {
       rateLimitedUntil = Math.max(rateLimitedUntil, state.rateLimit.retryAt); error = state.rateLimit.message;
-      if (rateLimitedUntil > Date.now()) void require('../github/rate_limit').promptRateLimit(vscode,
+      if (rateLimitedUntil > Date.now()) void require('../github/rate-limit').promptRateLimit(vscode,
         Object.assign(Error(error), { rateLimited: true, retryAt: rateLimitedUntil, configured: true }),
         { context, retryPriority: 1, retry: () => vscode.commands.executeCommand('sweetiebot.mergeAllPullRequests') }).catch(() => {});
     }
@@ -958,7 +958,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           /The selected PR changed (?:outside this batch|while its parallel review)/.test(String(item.reason || ''));
         pr.snapshotChanged = Boolean(pr.snapshotDeferred || (pr.currentBase && pr.currentBase !== pr.base));
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
-        pr.localReview = require('./blocker_report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
+        pr.localReview = require('./blocker-report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
       }
     }
     for (const pr of prs) {

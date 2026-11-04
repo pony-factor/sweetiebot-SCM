@@ -46,7 +46,7 @@ app.whenReady().then(async () => {
   bridge.setPrompt(prompt);
   const preload = path.join(temporary, 'preload.cjs');
   fs.writeFileSync(preload, 'globalThis.sweetiebotEnsureMaximumThinking=()=>true;\n'
-    + fs.readFileSync(path.join(root,'assets/browser/pull_request_submit.js'),'utf8'));
+    + fs.readFileSync(path.join(root,'assets/browser/pull-request-submit.js'),'utf8'));
   await protocol.handle('https', request => {
     assert.equal(new URL(request.url).origin,'https://chatgpt.com');
     assert(request.url.length<1000,'Prompt text must never enter a browser request URL');
@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
   });
   win = new BrowserWindow({show:false,webPreferences:{preload,sandbox:true,contextIsolation:true}});
   // Install the same per-WebContents native bridge the VS Code installer uses.
-  new Function(fs.readFileSync(path.join(root,'assets/browser/pr_background.js'),'utf8'))
+  new Function(fs.readFileSync(path.join(root,'assets/browser/pr-background.js'),'utf8'))
     .call({_view:{webContents:win.webContents}});
   win.webContents.on('preload-error',(_event,_file,error)=>finish(error));
   win.webContents.on('console-message',(...args)=>{

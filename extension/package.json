@@ -11,7 +11,7 @@
     "Other",
     "Machine Learning"
   ],
-  "main": "./trust_activation.js",
+  "main": "./trust-activation.js",
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
