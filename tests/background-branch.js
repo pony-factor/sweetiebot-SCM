@@ -46,6 +46,29 @@ async function run() {
     async checkout() { throw new Error('Must never switch the current worktree to main'); }
   };
   const options = { defaultBranch: 'main', remote: 'origin', names: ['fresh'] };
+  // A disposable single-branch clone need not have a local main at all.
+  const baseTip = git(local, 'rev-parse', 'main');
+  git(local, 'branch', '-D', 'main');
+  await createBranch(repository, { ...options, names: ['missing-main'] });
+  assert.equal(git(local, 'rev-parse', 'HEAD'), baseTip);
+  assert.equal(git(local, 'rev-parse', 'main'), baseTip);
+  assert.equal(git(local, 'rev-parse', '--symbolic-full-name', 'main@{upstream}'), 'refs/remotes/origin/main');
+  git(local, 'checkout', 'topic');
+  git(local, 'branch', '--unset-upstream', 'main');
+  await createBranch(repository, { ...options, names: ['untracked-main'] });
+  assert.equal(git(local, 'rev-parse', 'main'), baseTip);
+  assert.equal(git(local, 'rev-parse', '--symbolic-full-name', 'main@{upstream}'), 'refs/remotes/origin/main');
+  git(local, 'checkout', 'topic');
+  git(local, 'config', 'branch.main.remote', 'other-remote');
+  await assert.rejects(createBranch(repository, { ...options, names: ['wrong-upstream'] }), /upstream|must track/);
+  assert.equal(git(local, 'config', '--get', 'branch.main.remote'), 'other-remote',
+    'An explicit upstream must never be replaced with origin');
+  assert.equal(git(local, 'branch', '--show-current'), 'topic');
+  git(local, 'config', 'branch.main.remote', 'origin');
+  await assert.rejects(createBranch(repository, { ...options, defaultBranch: 'absent', names: ['blocked-base'] }));
+  assert.equal(git(local, 'branch', '--show-current'), 'topic');
+  assert.equal(git(local, 'branch', '--list', 'absent'), '', 'Never invent a base when the remote branch is absent');
+  checkouts.length = 0;
   fs.writeFileSync(path.join(other, 'remote.txt'), 'remote\n');
   git(other, 'add', 'remote.txt');
   git(other, 'commit', '-m', 'Remote');
@@ -96,6 +119,7 @@ async function run() {
   git(local, 'commit', '-m', 'Local');
   const localTip = git(local, 'rev-parse', 'HEAD');
   git(local, 'checkout', 'topic');
+  git(local, 'branch', '--unset-upstream', 'main');
   fs.writeFileSync(path.join(other, 'remote.txt'), 'remote update\n');
   git(other, 'add', 'remote.txt');
   git(other, 'commit', '-m', 'Remote update');

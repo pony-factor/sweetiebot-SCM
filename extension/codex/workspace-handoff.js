@@ -4,6 +4,25 @@ const { createHash } = require('node:crypto');
 const path = require('node:path');
 const keyFor = workspace => 'sweetiebot.codexHandoff.' + createHash('sha256').update(path.resolve(workspace)).digest('hex');
 
+function handoffAttachments(plan) {
+  const source = plan.source && path.resolve(plan.source);
+  const destination = plan.destination && path.resolve(plan.destination);
+  const move = value => {
+    if (typeof value === 'string' && source && destination) {
+      if (value.startsWith(source + path.sep)) return destination + value.slice(source.length);
+      // Native attachment-order entries encode type/path tuples as JSON.
+      if (value.startsWith('[')) {
+        try { const tuple = JSON.parse(value); if (Array.isArray(tuple)) return JSON.stringify(tuple.map(move)); }
+        catch { /* Other strings retain their original bytes. */ }
+      }
+    }
+    if (Array.isArray(value)) return value.map(move);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, move(item)]));
+    return value;
+  };
+  return move(plan.attachmentDrafts);
+}
+
 async function prepareCodexHandoff(vscode, from) {
   const extension = vscode.extensions?.getExtension('openai.chatgpt');
   if (!extension) return null;
@@ -15,9 +34,13 @@ async function prepareCodexHandoff(vscode, from) {
   // Read the draft before interrupting, so a draft-provider failure leaves the worker running.
   const saved = commands.includes('sweetiebot.codexDraft.read')
     ? await vscode.commands.executeCommand('sweetiebot.codexDraft.read') : null;
+  const attachments = commands.includes('sweetiebot.codexDraft.readAttachments')
+    ? await vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments') : null;
   const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
-  if (!plan) return null;
-  return { ...plan, draft: typeof saved?.draft === 'string' ? saved.draft : null };
+  const draft = typeof saved?.draft === 'string' ? saved.draft : null;
+  const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
+  if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
+  return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts };
 }
 
 function registerCodexWorkspaceHandoff(vscode, context) {
@@ -46,6 +69,11 @@ function registerCodexWorkspaceHandoff(vscode, context) {
       // failed response must never submit the same continuation a second time.
       await context.globalState.update(key, { ...plan, wasActive: false });
       if (plan.draft !== null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
+      if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
+      if (plan.draftOnly) {
+        await context.globalState.update(key, undefined);
+        return;
+      }
       const result = await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff', plan);
       if (result?.threadId !== plan.threadId) throw new Error('The destination did not confirm the same Codex chat.');
       // Once complete, ordinary reloads must not reopen a chat the user has left.
@@ -62,4 +90,4 @@ function registerCodexWorkspaceHandoff(vscode, context) {
   setImmediate(() => void resume());
 }
 
-module.exports = { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor };
+module.exports = { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttachments };

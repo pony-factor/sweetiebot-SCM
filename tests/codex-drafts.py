@@ -23,6 +23,20 @@ import codex_drafts
 class DraftPatchTests(unittest.TestCase):
     HOST = 'subscriptions.push(vscode.window.registerWebviewViewProvider(View.viewType,provider,{}));'
     WEB = 'let api=acquireVsCodeApi();'
+    COMPOSER = ('pi=he(`composer-auto-context-enabled`,!0);'
+                'Fi=m(T,({scope:e})=>e.get(X)?.viewState,{});'
+                'function V(e,t){let r=t;if(r){e.set(Ni,w(e.value),{images:r.imageAttachments,attachmentOrder:[]});e.set(Fi,r)}}'
+                'function Fr(e){}'
+                'n.imageAttachments=e(X)?.viewState.imageAttachments??r.images;')
+
+    def test_attachment_state_is_reversible_and_guarded(self):
+        patched = codex_drafts.transform_attachments(self.COMPOSER)
+        self.assertEqual(codex_drafts.transform_attachments(patched), patched)
+        self.assertEqual(codex_drafts.transform_attachments(patched, False), self.COMPOSER)
+        self.assertIn('scmToolkitRestoreComposerAttachments(e,scmToolkitComposerAttachmentDrafts,w)', patched)
+        self.assertIn('scmToolkitSaveComposerAttachments(e,r,scmToolkitComposerAttachmentDrafts,w)', patched)
+        with self.assertRaisesRegex(ValueError, 'Unsupported Codex attachment'):
+            codex_drafts.transform_attachments('vendor contract changed')
 
     def test_idempotent_and_reversible(self):
         host = codex_drafts.transform_host(self.HOST)
@@ -51,6 +65,9 @@ class DraftPatchTests(unittest.TestCase):
             webview.write_text(self.WEB)
             (assets / 'app-initial-old.js').write_text('bootstrap();')
             self.assertEqual({p for p, _, _ in codex_drafts.patch_files(root)}, {root / 'out/extension.js', webview})
+            composer = assets / 'composer-view-state-new.js'
+            composer.write_text(self.COMPOSER)
+            self.assertEqual({p for p, _, _ in codex_drafts.patch_files(root)}, {root / 'out/extension.js', webview, composer})
             (assets / 'another-api.js').write_text(self.WEB)
             with self.assertRaisesRegex(ValueError, 'ambiguous bootstrap'):
                 codex_drafts.patch_files(root)

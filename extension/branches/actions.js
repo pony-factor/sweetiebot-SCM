@@ -499,15 +499,46 @@ async function syncDefaultBranch(repository, defaultBranch, remote, checkout = t
 async function syncDefaultBranchInBackground(repository, defaultBranch, remote) {
   await repository.status();
   const original = repository.state.HEAD?.name;
-  if (original === defaultBranch) {
-    await syncDefaultBranch(repository, defaultBranch, remote, false);
-    return `refs/heads/${defaultBranch}`;
-  }
+  const root = repository.rootUri?.fsPath;
   const run = promisify(execFile);
   const git = async (cwd, args) => (await run('git', args, {
     cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_MERGE_AUTOEDIT: 'no' }
   })).stdout.trim();
-  const root = repository.rootUri.fsPath;
+  // Single-branch clones may have only the topic branch. Initialize the
+  // default branch without checking it out or replacing an existing tip.
+  if (root && existsSync(path.join(root, '.git')) &&
+      !(original === defaultBranch && repository.state.HEAD.upstream)) {
+    const config = async key => {
+      try { return await git(root, ['config', '--get', key]); }
+      catch (error) { if (error.code === 1) return null; throw error; }
+    };
+    const configuredRemote = await config(`branch.${defaultBranch}.remote`);
+    const configuredMerge = await config(`branch.${defaultBranch}.merge`);
+    if (configuredRemote === null && configuredMerge === null) {
+      const tracking = `refs/remotes/${remote}/${defaultBranch}`;
+      await git(root, ['check-ref-format', `refs/heads/${defaultBranch}`]);
+      await git(root, ['check-ref-format', tracking]);
+      let exists = true;
+      try { await git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${defaultBranch}`]); }
+      catch (error) { if (error.code === 1) exists = false; else throw error; }
+      await retryFetch(() => git(root, ['fetch', '--no-tags', remote,
+        `+refs/heads/${defaultBranch}:${tracking}`]));
+      if (await config(`branch.${defaultBranch}.remote`) !== null ||
+          await config(`branch.${defaultBranch}.merge`) !== null) {
+        throw new Error(`The upstream for ${defaultBranch} changed while preparing the new branch. Retry the operation.`);
+      }
+      if (!exists) await git(root, ['branch', '--no-track', defaultBranch, tracking]);
+      await git(root, ['branch', `--set-upstream-to=${remote}/${defaultBranch}`, defaultBranch]);
+      await repository.status();
+      if (repository.state.HEAD?.name !== original) {
+        throw new Error('The active branch changed while preparing the new branch.');
+      }
+    }
+  }
+  if (original === defaultBranch) {
+    await syncDefaultBranch(repository, defaultBranch, remote, false);
+    return `refs/heads/${defaultBranch}`;
+  }
   const upstream = await git(root, ['rev-parse', '--symbolic-full-name', `${defaultBranch}@{upstream}`]);
   const prefix = `refs/remotes/${remote}/`;
   if (!upstream.startsWith(prefix)) throw new Error(`${defaultBranch} must track a branch on ${remote} before syncing.`);

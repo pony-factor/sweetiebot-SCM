@@ -15,6 +15,32 @@ function codexDraftStorageKey(vscode) {
 
 function registerCodexDraftCommands(vscode, context) {
   const key = codexDraftStorageKey(vscode);
+  const attachmentKey = key && `${key}.attachments`;
+  let attachmentError;
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.readAttachments', () => {
+    if (!attachmentKey) return { enabled: false };
+    if (attachmentError) throw attachmentError;
+    const workspace = vscode.workspace.workspaceFile?.fsPath;
+    const pending = workspace && context.globalState.get(require('./workspace-handoff').keyFor(workspace));
+    const roots = (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.fsPath);
+    const drafts = pending && roots.includes(pending.destination) && pending.attachmentDrafts &&
+      require('./workspace-handoff').handoffAttachments(pending)
+      || context.globalState.get(attachmentKey) || {};
+    return { enabled: true, drafts };
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.writeAttachments', async drafts => {
+    if (!attachmentKey) return false;
+    if (!drafts || typeof drafts !== 'object' || Array.isArray(drafts) ||
+        JSON.stringify(drafts).length > 32 * 1024 * 1024) {
+      attachmentError = new Error('Invalid or oversized Codex attachment draft. Keep this window open; the checkout handoff is paused.');
+      throw attachmentError;
+    }
+    try {
+      await context.globalState.update(attachmentKey, drafts);
+      attachmentError = undefined;
+    } catch (error) { attachmentError = error; throw error; }
+    return true;
+  }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.read', () => {
     if (!key) return { enabled: false };
     const saved = context.globalState.get(key);
