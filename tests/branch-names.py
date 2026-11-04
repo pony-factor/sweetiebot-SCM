@@ -38,6 +38,13 @@ class BranchNamePackTests(unittest.TestCase):
         ):
             self.assertNotIn(noisy, names)
 
+    def test_g4_catalog_excludes_undepicted_joke_names(self):
+        catalog = branch_names.load_catalog()
+        names = {
+            name for pack in catalog["packs"] for name in pack["names"]
+        }
+        self.assertNotIn("blazing-donut-glaze", names)
+
     def test_trixie_uses_full_name_as_canonical_branch_slug(self):
         catalog = branch_names.load_catalog()
         packs = {pack["id"]: pack for pack in catalog["packs"]}
