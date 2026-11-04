@@ -7,7 +7,7 @@ const path = require('node:path');
 const http = require('node:http');
 const {root, injections} = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const phase = process.argv[3];
-app.setPath('userData', path.join(root, 'electron-user-data'));
+app.setPath('userData', root);
 app.on('window-all-closed', () => {});
 const windows = new Set();
 const deadline = setTimeout(() => finish(Error('Cookie session checks timed out')), 30000);
@@ -54,6 +54,9 @@ app.whenReady().then(async () => {
   for (const [index, injection] of injections.entries()) {
     const Sessions = {_bySession: new Map()};
     const home = path.join(root, `lifecycle-${index}`);
+    // Match launchSession's creation of the shared profile's parent directories.
+    fs.mkdirSync(path.join(home, 'Library', 'Application Support', 'Sweetiebot', 'browserStorage'),
+      {recursive: true, mode: 0o700});
     const host = {environmentMainService: {userHome: {fsPath: home}},
       instantiationService: {createInstance(cls, id, session, scope) {
         const instance = {id, session, scope};
