@@ -125,6 +125,15 @@ assert(errors.includes('API rate limit exceeded'));
         self.assertEqual(github_pr.transform_refresh(patched), patched)
         self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
 
+    def test_tree_refresh_supports_boolean_multiselect_in_0174(self):
+        source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:!0,manageCheckboxStateManually:!0});'
+                  'a=>{this.prsTreeModel.forceClearCache()}')
+        patched = github_pr.transform_refresh(source)
+        subprocess.run(['node', '--check'], input=patched, text=True, check=True)
+        self.assertIn('canSelectMany:!0', patched)
+        self.assertEqual(github_pr.transform_refresh(patched), patched)
+        self.assertEqual(github_pr.transform_refresh(patched, remove=True), source)
+
     def test_reversible_idempotent_and_guarded(self):
         for kind, original in [('host', HOST), ('webview', LINK)]:
             source = 'prefix;' + original + ';suffix;'

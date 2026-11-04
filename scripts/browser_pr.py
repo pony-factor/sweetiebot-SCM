@@ -33,28 +33,44 @@ def transform_storage(source, remove=False):
         rf'({ident})=({ident})\.fromPath\(\4\.fsPath\);return ({ident})\._bySession',
         source,
     )
+    affinity_session = re.search(
+        rf'static getOrCreateWorkspace\(({ident}),({ident}),({ident}),({ident}),({ident})\)'
+        rf'\{{let ({ident})=\5===void 0\?void 0:({ident})\("sha256"\)\.update\(\5\)\.digest\("hex"\),'
+        rf'({ident})=\6\?({ident})\(({ident})\.getWorkspaceAffinityStorageHome\(\3,\2\),\6\):\9\(\3,\2,"browserStorage"\),'
+        rf'({ident})=\6\?`workspace:\$\{{\2\}}:\$\{{\6\}}`:`workspace:\$\{{\2\}}`,'
+        rf'({ident})=({ident})\.fromPath\(\8\.fsPath\);return \10\._bySession\.get\(\12\)'
+        rf'\?\?\1\.createInstance\(\10,\11,\12,"workspace",\4,\5\)\}}',
+        source,
+    )
     resolver = re.compile(
-        rf'return ({ident})\.getOrCreate\(this\.instantiationService,({ident}),({ident}),'
-        rf'this\.environmentMainService\.workspaceStorageHome,({ident})\.openedWorkspace\?\.id,({ident})\)'
+        rf'(?:return |let {ident}=)(({ident})\.getOrCreate\(this\.instantiationService,({ident}),({ident}),'
+        rf'this\.environmentMainService\.workspaceStorageHome,({ident})\.openedWorkspace\?\.id,({ident})\))'
     )
     matches = list(resolver.finditer(source))
-    if not session or len(matches) != 1 or session[8] != matches[0][1]:
+    if len(matches) != 1 or bool(session) == bool(affinity_session):
         raise ValueError('Unsupported Integrated Browser persistent session lifecycle.')
     match = matches[0]
-    cls, options = match[1], match[3]
-    join, electron = session[5], session[7]
+    cls, options = match[2], match[4]
+    if affinity_session:
+        join, electron, session_cls = affinity_session[9], affinity_session[13], affinity_session[10]
+    else:
+        join, electron, session_cls = session[5], session[7], session[8]
+    if session_cls != cls:
+        raise ValueError('Unsupported Integrated Browser persistent session lifecycle.')
     # Ordinary repository and PR windows share the same persistent profile.
     # Ephemeral and agent sessions retain their isolation and network protections.
     insertion = (
         STORAGE_START
-        + f'if({options}.scope==="workspace"||{options}.scope==="global")'
-        + '{let sweetiebotPath='
+        + f'(({options}.scope==="workspace"||{options}.scope==="global")'
+        + (f'&&{options}.network===void 0&&{options}.affinity===void 0' if affinity_session else '')
+        + ')?(()=>{let sweetiebotPath='
         + f'{join}(this.environmentMainService.userHome,"Library","Application Support","Sweetiebot","browserStorage"),'
         + f'sweetiebotSession={electron}.fromPath(sweetiebotPath.fsPath);'
-        + f'return {cls}._bySession.get(sweetiebotSession)??this.instantiationService.createInstance({cls},"sweetiebot-pr",sweetiebotSession,"workspace")'
-        + '}' + STORAGE_END
+        + f'return {cls}._bySession.get(sweetiebotSession)??this.instantiationService.createInstance({cls},"sweetiebot-pr",sweetiebotSession,"workspace"'
+        + (',void 0,void 0' if affinity_session else '') + ')'
+        + '})():' + STORAGE_END
     )
-    return source[:match.start()] + insertion + source[match.start():]
+    return source[:match.start(1)] + insertion + source[match.start(1):]
 
 
 def transform_background(source, remove=False):

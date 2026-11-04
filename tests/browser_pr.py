@@ -11,6 +11,14 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
         'return Sessions.getOrCreate(this.instantiationService,e,r,'
         'this.environmentMainService.workspaceStorageHome,o.openedWorkspace?.id,t)'
     )
+    AFFINITY_STORAGE_FIXTURE = (
+        'static getOrCreateWorkspace(n,e,t,r,o){let s=o===void 0?void 0:hash("sha256").update(o).digest("hex"),'
+        'a=s?join(Sessions.getWorkspaceAffinityStorageHome(t,e),s):join(t,e,"browserStorage"),'
+        'l=s?`workspace:${e}:${s}`:`workspace:${e}`,c=electron.fromPath(a.fsPath);'
+        'return Sessions._bySession.get(c)??n.createInstance(Sessions,l,c,"workspace",r,o)}'
+        'let s=Sessions.getOrCreate(this.instantiationService,e,r,'
+        'this.environmentMainService.workspaceStorageHome,o.openedWorkspace?.id,t),a=network(r);'
+    )
 
     def test_persistent_pr_storage_is_guarded_and_reversible(self):
         original = self.STORAGE_FIXTURE
@@ -23,7 +31,22 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
                 browser_pr.transform_storage(source)
 
     def test_repo_and_pr_windows_share_one_path_without_reusing_isolated_sessions(self):
-        installed = browser_pr.transform_storage(self.STORAGE_FIXTURE)
+        self.check_session_isolation(self.STORAGE_FIXTURE)
+
+    def test_affinity_lifecycle_is_guarded_idempotent_and_reversible(self):
+        original = self.AFFINITY_STORAGE_FIXTURE
+        installed = browser_pr.transform_storage(original)
+        self.assertEqual(browser_pr.transform_storage(installed), installed)
+        self.assertEqual(browser_pr.transform_storage(installed, remove=True), original)
+        self.check_session_isolation(original, affinity=True)
+        for source in (original + original,
+                       original.replace('Sessions.getWorkspaceAffinityStorageHome', 'Other.getWorkspaceAffinityStorageHome'),
+                       original.replace('"workspace",r,o)', '"workspace",o,r)')):
+            with self.assertRaises(ValueError):
+                browser_pr.transform_storage(source)
+
+    def check_session_isolation(self, fixture, affinity=False):
+        installed = browser_pr.transform_storage(fixture)
         injected = installed.split(browser_pr.STORAGE_START)[1].split(browser_pr.STORAGE_END)[0]
         script = r'''
 const assert = require('node:assert/strict');
@@ -36,7 +59,7 @@ const host = {environmentMainService: {userHome:{fsPath:'/Users/test'}},
   instantiationService: {createInstance(cls, id, session, scope) {
     const instance = {id, session, scope}; cls._bySession.set(session, instance); return instance;
   }}};
-const resolve = new Function('r', 'o', INJECTION + ';return "isolated";');
+const resolve = new Function('r', 'o', 'return ' + INJECTION + '"isolated";');
 const windowFor = name => ({openedWorkspace:{configPath:{path:
   '/repo/.git/sweetiebot-pr-sessions/session-' + name + '/Pony PR.code-workspace'}}});
 const first = resolve.call(host, {scope:'workspace'}, windowFor('one'));
@@ -50,7 +73,15 @@ for (const window of [{}, {openedWorkspace:{id:'repo'}},
   for (const scope of ['workspace', 'global'])
     assert.equal(resolve.call(host, {scope}, window), first);
 assert.equal(sessions.size, 1);
-'''.replace('INJECTION', json.dumps(injected))
+if (AFFINITY) {
+  for (const scope of ['workspace', 'global']) {
+    for (const options of [{network:{authority:'remote'}}, {affinity:'project'},
+                           {network:{authority:'remote'}, affinity:'project'}])
+      assert.equal(resolve.call(host, {scope, ...options}, windowFor('remote')), 'isolated');
+  }
+  assert.equal(sessions.size, 1);
+}
+'''.replace('INJECTION', json.dumps(injected)).replace('AFFINITY', json.dumps(affinity))
         subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
 
     def test_install_is_idempotent_and_reversible(self):
