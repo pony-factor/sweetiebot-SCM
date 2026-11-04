@@ -22,7 +22,8 @@ jobs:
           python -m compileall -q scripts tests
       - name: Create verified migration commit
         run: |
-          git rm -f .github/workflows/one-time-kebab.yml scripts/rename-to-kebab.py
+          git restore --worktree -- .github/workflows
+          git rm -f scripts/rename-to-kebab.py
           git add -A
           if git diff --cached --quiet; then
             echo "No actual filename or reference changes" >&2
