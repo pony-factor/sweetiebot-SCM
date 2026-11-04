@@ -20,6 +20,14 @@ class PackagedRuntimeTests(unittest.TestCase):
             self.assertIn(key, packaged, name)
             self.assertEqual(packaged[key].read_bytes(), source.read_bytes())
 
+    def test_executable_extension_can_import_the_complete_commit_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative, source in workspace_search.source_files().items():
+                if len(relative.parts) == 1 and relative.suffix in {'.py', '.json'}:
+                    (root / relative).write_bytes(source.read_bytes())
+            wrapper_dependencies.validate_imports(root)
+
     def test_installed_repair_payload_contains_cannon_and_stop_artwork(self):
         files = workspace_search.source_files()
         for name in ('activity-cannon.png', 'twi-stop.png'):
