@@ -37,6 +37,9 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
           assert.equal(params.cwd, destination);
           assert(!('approvalPolicy' in params));
           result = { thread: { id: newThreadId, cwd: wrongCwd ? from : destination } };
+        } else if (method === 'turn/steer') {
+          assert.equal(params.expectedTurnId, 'running-turn');
+          result = { turnId: 'running-turn' };
         } else if (method === 'turn/start') {
           assert([threadId, newThreadId].includes(params.threadId)); assert([from, destination].includes(params.cwd)); result = { turn: { id: 'continued-turn' } };
         } else assert.fail(method);
@@ -93,9 +96,28 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));
     assert(!requests.some(request => request.method === 'turn/start'), 'Do not continue in the old host');
+    const sandbox = path.join(temporary, 'experiment');
+    await fs.mkdir(sandbox);
+    const notifyExperiment = commands.get('sweetiebot.codex.sendExperimentDirection');
+    assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic' }), true);
+    assert.equal(requests.at(-1).method, 'turn/start', 'Idle chats receive the direction without moving their cwd');
+    assert.equal(requests.at(-1).params.cwd, from);
+    assert(requests.at(-1).params.input[0].text.includes(sandbox));
+    assert(requests.at(-1).params.input[0].text.includes('Run tests'));
+    active = true;
+    assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic' }), true);
+    assert.equal(requests.at(-1).method, 'turn/steer', 'In-flight chats receive a steer, not an interruption');
+    assert.equal(requests.at(-1).params.expectedTurnId, 'running-turn');
+    active = false;
+    await assert.rejects(notifyExperiment({ source: destination, destination: sandbox, branch: 'topic' }), /another checkout/);
+    assert.equal(await notifyExperiment({ source: from, destination: from, branch: 'topic' }).then(() => false, () => true), true,
+      'Never treat the original checkout as a disposable experiment');
+
+    const beforeResumption = requests.filter(request => request.method === 'turn/start').length;
     await resume({ ...plan, destination });
     assert.deepEqual(routes, ['/local/' + threadId]);
-    assert.equal(requests.filter(request => request.method === 'turn/start').length, 1);
+    assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
+
     connection.sendProviderRequest('frontend', 'frontend-request', 'thread/resume', { threadId, cwd: from });
     assert.equal(requests.at(-1).params.cwd, destination, 'A stale frontend resume cannot reattach the worker to main');
 

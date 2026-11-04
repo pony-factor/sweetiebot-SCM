@@ -899,6 +899,33 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertIn('url:options?.viewState?.url||"https://chatgpt.com/"', updated[0])
         self.assertEqual(install.transform(*updated, remove=True, settings=enabled), (original, "base-css"))
 
+    def test_browser_home_preserves_normalized_view_state(self):
+        resolver = browser_resolver_fixture().replace(
+            "...options?.viewState", "...normalize(options?.viewState)"
+        )
+        original = workbench_fixture() + resolver
+        settings = dict(SETTINGS, browserChatgptHome=True)
+        patched = install.transform(original, "base-css", settings=settings)
+        self.assertEqual(
+            install.transform(*patched, remove=True, settings=settings),
+            (original, "base-css"),
+        )
+        call = install.browser_chatgpt_home_edits(resolver)[0][1]
+        code = (
+            'const parsed={id:"saved-id"};'
+            'function normalize(s){return {url:typeof s?.url==="string"?s.url:undefined,'
+            'session:s?.session}};'
+            'const browserViews={getOrCreateLazy:data=>data};'
+            'for(const url of [undefined,"","https://example.com/draft",123]){'
+            'const options={viewState:{url,session:"workspace"}};'
+            f'const result={call};'
+            'const expected=typeof url==="string"&&url?url:"https://chatgpt.com/";'
+            'if(result.url!==expected||result.session!=="workspace"||result.id!=="saved-id")'
+            'process.exit(1);}'
+        )
+        result = subprocess.run(["node", "-e", code], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_blank_project_home_preserves_draft_and_explicit_prompts(self):
         source = workbench_fixture() + browser_resolver_fixture()
         project = "https://chatgpt.com/g/g-p-example123/project"
