@@ -10,7 +10,7 @@
         flex: 0 0 auto; }
       :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > :last-child {
         flex: 0 0 auto; min-width: max-content; }
-      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > :is(button.bg-composer-primary, :has(button.bg-composer-primary)) {
+      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer:not(.scm-toolkit-custom-layout-controlled) > :is(button.bg-composer-primary, :has(button.bg-composer-primary)) {
         margin-inline-start: auto !important; }
       :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > [class*="AdaptiveFooterInput_"] {
         flex-basis: 100%; order: -1; min-width: 0; }
