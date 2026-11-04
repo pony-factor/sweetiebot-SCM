@@ -278,7 +278,7 @@ jobs:
         run: node --test tests/case_only_renames.js
 
   native-prompt-transport:
-    name: Sandboxed browser prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
+    name: Native browser cookies and prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
     needs: inventory
     runs-on: ${{ matrix.os }}
     strategy:
@@ -293,6 +293,9 @@ jobs:
           node-version: '22'
       - name: Install the native test runtime
         run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@${{ matrix.electron }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Exercise sandbox, strict CSP, prompt delivery and JSON handoff
         shell: bash
         run: |
@@ -311,4 +314,13 @@ jobs:
             xvfb-run -a "$runner" tests/fixtures/prompt-transport.cjs
           else
             "$runner" tests/fixtures/prompt-transport.cjs
+          fi
+      - name: Verify shared cookies, session isolation and persistence after restart
+        shell: bash
+        run: |
+          runner="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/.bin/electron"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a python tests/fixtures/browser-cookie-sessions.py "$runner"
+          else
+            python tests/fixtures/browser-cookie-sessions.py "$runner"
           fi

@@ -225,10 +225,14 @@ class UpdateTests(unittest.TestCase):
             payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                        'scripts/repair.py': 'repair',
                        update.THINKING_ASSET.as_posix(): 'thinking guard'}
-            for force in (False, True):
-                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
-                    result = update.prepare_update(root, force=force)
-                self.assertEqual(result is not None, force)
+            for profile in (None, 'SHARED_BROWSER_PROFILE = 2', update.SHARED_PROFILE_MARKER):
+                if profile is not None:
+                    payload[update.SHARED_PROFILE_SOURCE.as_posix()] = profile
+                for force in (False, True):
+                    with self.subTest(profile=profile, force=force), patch.object(
+                            update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                        result = update.prepare_update(root, force=force)
+                    self.assertEqual(result is not None, force or profile == update.SHARED_PROFILE_MARKER)
 
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
