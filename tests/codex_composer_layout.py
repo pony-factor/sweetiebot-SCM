@@ -9,17 +9,20 @@ import codex_composer_layout as layout
 class ComposerLayoutTests(unittest.TestCase):
     def test_defaults_include_input_and_native_actions(self):
         actual = layout.parse_layout(layout.DEFAULT_LAYOUT_JSON)
-        self.assertEqual(actual["visible"], list(layout.IDS))
+        self.assertEqual(actual["left"], list(layout.IDS[:-1]))
+        self.assertEqual(actual["right"], ["send"])
         self.assertEqual(actual["hidden"], [])
 
     def test_reordering_and_hiding_survive_serialization(self):
-        value = {"visible": ["send", "clipboard", "input", "attachments"],
+        value = {"left": ["input", "clipboard", "attachments"], "right": ["send"],
                  "hidden": ["access", "location"]}
         self.assertEqual(layout.parse_layout(layout.serialize_layout(value)), value)
         page = layout.render_control(layout.serialize_layout(value))
         self.assertIn('name="codexComposerLayout"', page)
-        self.assertIn("Available controls", page)
-        self.assertLess(page.index("Send / Stop (wing)"), page.index("Clipboard Send / Queue"))
+        self.assertIn("Hidden controls", page)
+        self.assertIn("Left aligned", page)
+        self.assertIn("Right aligned", page)
+        self.assertIn("codex-layout-drop-marker", layout.CONFIG_SCRIPT)
         self.assertIn("Access permissions", page)
         self.assertIn("Attachments", page)
         self.assertNotIn("Attachments / usage", page)
@@ -30,9 +33,10 @@ class ComposerLayoutTests(unittest.TestCase):
         values = [
             "not JSON",
             [],
-            {"visible": ["input"], "hidden": []},
-            {"visible": list(layout.IDS) + ["input"], "hidden": []},
-            {"visible": list(layout.IDS[:-1]) + ["unknown"], "hidden": []},
+            {"left": ["input"], "right": [], "hidden": []},
+            {"left": list(layout.IDS), "right": ["send"], "hidden": []},
+            {"left": list(layout.IDS[:-1]) + ["unknown"], "right": [], "hidden": []},
+            {"left": ["attachments", "access"], "right": ["send", "input"], "hidden": ["location", "clipboard"]},
             {"visible": ["attachments", "access"], "hidden": ["input", "location", "clipboard", "send"]},
         ]
         for value in values:
@@ -41,7 +45,7 @@ class ComposerLayoutTests(unittest.TestCase):
 
     def test_optional_composer_patch_is_idempotent_and_reversible(self):
         native = '/* composer.placeholder.localFollowUp.locally */\nbase;'
-        custom = json.dumps({"visible": ["input", "clipboard", "send"],
+        custom = json.dumps({"left": ["input", "clipboard"], "right": ["send"],
                              "hidden": ["attachments", "access", "location"]})
         patched = codex_composer.transform_layout(native, inline=False, composer_layout=custom)
         self.assertIn(codex_composer.CUSTOM_START, patched)
@@ -53,13 +57,33 @@ class ComposerLayoutTests(unittest.TestCase):
             codex_composer.transform_layout(native + codex_composer.CUSTOM_START,
                                             inline=False, composer_layout=custom)
 
+    def test_legacy_visible_hidden_layout_is_migrated_without_losing_controls(self):
+        old = {"visible": ["clipboard", "input", "attachments", "send"],
+               "hidden": ["location", "access"]}
+        self.assertEqual(layout.parse_layout(old), {
+            "left": ["input", "clipboard", "attachments"],
+            "right": ["send"], "hidden": ["location", "access"]})
+
+    def test_compact_icons_have_tooltips_and_no_text_labels(self):
+        page = layout.render_control(layout.DEFAULT_LAYOUT_JSON)
+        self.assertIn('title="Attachments"', page)
+        self.assertIn('title="Send / Stop (wing)"', page)
+        self.assertIn('data-codex-layout-toggle', page)
+        self.assertIn('class="codex-layout-icon"', page)
+        self.assertIn('aria-label="Message input (required)"', page)
+
     def test_input_always_remains_in_composer_preview(self):
         page = layout.render_control(layout.DEFAULT_LAYOUT_JSON)
         self.assertIn("Message input (required)", page)
+        self.assertIn("codex-layout-left", page)
+        self.assertIn("codex-layout-right", page)
         self.assertIn('data-codex-layout-zone="hidden"', page)
-        self.assertIn('data-codex-layout-zone="visible"', page)
+        self.assertIn('data-codex-layout-zone="left"', page)
+        self.assertIn('data-codex-layout-zone="right"', page)
         self.assertIn("dragstart", layout.CONFIG_SCRIPT)
         self.assertIn("ArrowLeft", layout.CONFIG_SCRIPT)
+        self.assertIn("marker.parentElement", layout.CONFIG_SCRIPT)
+        self.assertIn("updateActions", layout.CONFIG_SCRIPT)
 
 
 if __name__ == "__main__":

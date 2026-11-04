@@ -21,7 +21,9 @@
     ".scm-toolkit-composer-more-menu[hidden]{display:none!important;}",
     ".scm-toolkit-composer-more-menu button{display:block;width:100%;text-align:left;padding:7px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer;}",
     ".scm-toolkit-composer-more-menu button:hover,.scm-toolkit-composer-more-menu button:focus{background:var(--vscode-list-hoverBackground,#444);}",
-    ".scm-toolkit-composer-more-menu button:disabled{opacity:.5;cursor:default;}"
+    ".scm-toolkit-composer-more-menu button:disabled{opacity:.5;cursor:default;}",
+    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
+    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
   ].join("\n");
   document.head.append(style);
   const roots = new WeakMap();
@@ -104,10 +106,19 @@
     const found = locate();
     if (!found) return;
     const { footer, controls } = found;
+    const left = layout.left || (layout.visible || []).filter(id => id !== "send");
+    const right = layout.right || (layout.visible || []).filter(id => id === "send");
+    const ordered = [...left, ...right];
+    const firstRight = right.find(id => {
+      const target = slot(controls[id], footer);
+      return target?.parentElement === footer;
+    });
+    if (!footer.classList.contains("scm-toolkit-custom-layout-controlled"))
+      footer.classList.add("scm-toolkit-custom-layout-controlled");
     const reserved = new Set();
-    // The input is never concealed. Reordering follows native flex/grid order;
-    // mixed-purpose wrapper groups remain in their native position.
-    layout.visible.forEach((id, index) => {
+    // Keep React's native nodes in place and use footer flex order for the
+    // left/right rail. A single auto margin starts the right-aligned group.
+    ordered.forEach((id, index) => {
       const node = controls[id];
       if (!node) return;
       const target = slot(node, footer);
@@ -115,6 +126,10 @@
       reserved.add(target);
       if (target.style.order !== String(index)) target.style.order = String(index);
       if (id === "input" && target.style.flexBasis !== "100%") target.style.flexBasis = "100%";
+      if (target.parentElement === footer) {
+        target.classList.toggle("scm-toolkit-layout-aligned", true);
+        target.classList.toggle("scm-toolkit-layout-right-start", id === firstRight);
+      }
     });
     for (const id of Object.keys(names)) {
       const node = controls[id];
