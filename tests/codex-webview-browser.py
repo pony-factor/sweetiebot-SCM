@@ -427,6 +427,32 @@ def run():
         assert queue_page.locator('#real-attachment').count() == 1
         queue_page.close()
         print('PASS: queued rate-limit prose is untouched; only native status gets artwork; real attachments survive')
+        sticker_page = browser.new_page(viewport={"width": 320, "height": 600})
+        sticker_page.set_content("""<main><section data-codex-composer-root>
+          <aside id="native-card"><div><strong>You're out of Codex messages</strong>
+            <p>Your rate limit resets on 6:00 PM.</p></div>
+            <div><button>Upgrade</button><button>Add Credits</button></div></aside>
+          <textarea>Retained draft</textarea>
+        </section></main>""")
+        sticker_page.add_script_tag(content=(ASSETS / 'hide-reset-times.js').read_text())
+        sticker_page.add_script_tag(content=rate_script)
+        sticker_page.wait_for_selector('#native-card img', state='attached')
+        sticker_page.wait_for_function('''() => {
+            const img = document.querySelector('#native-card img');
+            return img.complete && img.naturalWidth > 0;
+        }''')
+        assert sticker_page.locator('#native-card img').is_visible(), 'Reset-time compaction must preserve Twilight artwork'
+        for _ in range(3):
+            sticker_page.locator('#native-card').evaluate('''card => {
+                card.innerHTML = '<div><strong>You’re out of Codex messages</strong><p>Your rate limit resets on 6:00 PM.</p></div><div><button>Upgrade</button><button>Add Credits</button></div>';
+            }''')
+            sticker_page.wait_for_selector('#native-card img', state='visible')
+            assert sticker_page.locator('#native-card img').get_attribute('aria-hidden') is None
+            assert not sticker_page.get_by_role('button', name='Upgrade').is_visible()
+            assert not sticker_page.get_by_role('button', name='Add Credits').is_visible()
+        assert sticker_page.locator('textarea').input_value() == 'Retained draft'
+        sticker_page.close()
+        print('PASS: native rate-limit artwork survives reset-time compaction')
         hidden_page = browser.new_page()
         hidden_page.set_content("""<div data-conversation-role="assistant"><p id="limit-notice"></p></div>
           <div data-conversation-role="user"><p id="user-copy"></p></div>
