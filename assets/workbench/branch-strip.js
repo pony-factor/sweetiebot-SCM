@@ -27,7 +27,9 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     const doc = widget.element.ownerDocument;
     const win = doc.defaultView;
     const bar = doc.createElement('div');
-    bar.className = 'scm-toolkit-branch-strip';
+    // The native browser overlay manager tracks context views so its separate
+    // composited surface yields to this popup and returns when it is removed.
+    bar.className = 'scm-toolkit-branch-strip context-view';
     bar.setAttribute('role', 'dialog');
     bar.setAttribute('aria-label', 'Git branches');
     const filterInput = doc.createElement('input');
