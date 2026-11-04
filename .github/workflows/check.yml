@@ -65,7 +65,7 @@ jobs:
         with:
           python-version: "3.x"
       - name: Verify exhaustive, exclusive test assignments
-        run: python3 scripts/ci/ci_test_runner.py verify
+        run: python3 scripts/ci/ci-test-runner.py verify
 
   coreml-bridge:
     name: Compile optional Neural Engine bridge
@@ -120,7 +120,7 @@ jobs:
           node-version: "22"
       - name: Detect browser-test dependencies
         id: browser
-        run: python3 scripts/ci/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/ci/ci-test-runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
       - name: Ignore unavailable optional Microsoft feed during Chromium setup
         if: steps.browser.outputs.required == 'true'
         run: |
@@ -137,7 +137,7 @@ jobs:
           npm install --ignore-scripts --no-save --no-package-lock playwright@1.64.1
           ./node_modules/.bin/playwright install --with-deps chromium
       - name: Run ${{ matrix.label }} checks
-        run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
+        run: python3 scripts/ci/ci-test-runner.py run "${{ matrix.group }}"
 
   worktree-window-handoff:
     name: Worktree window handoff (${{ matrix.os }})
@@ -157,18 +157,18 @@ jobs:
       - name: Check worktree handoff source and test syntax
         run: |
           node --check extension/branches/window.js
-          node --check extension/branches/shared_main.js
+          node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branch_window.js
-          node --check tests/branch_strip.js
-          node --check tests/shared_main.js
+          node --check tests/branch-window.js
+          node --check tests/branch-strip.js
+          node --check tests/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
-        run: node tests/branch_window.js
+        run: node tests/branch-window.js
       - name: Test Git's occupied-branch checkout guard
-        run: node tests/branch_strip.js
+        run: node tests/branch-strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
-        run: node tests/shared_main.js
+        run: node tests/shared-main.js
 
   worktree-shutdown-safety:
     name: Closed worktree safety (${{ matrix.os }})
@@ -184,15 +184,15 @@ jobs:
           node-version: '22'
       - name: Check shutdown and pruning source and test syntax
         run: |
-          node --check extension/branches/workspace_activity.js
-          node --check extension/branches/workspace_prune.js
-          node --check extension/branches/closed_worktree.js
-          node --check tests/workspace_activity.js
-          node --check tests/workspace_prune.js
+          node --check extension/branches/workspace-activity.js
+          node --check extension/branches/workspace-prune.js
+          node --check extension/branches/closed-worktree.js
+          node --check tests/workspace-activity.js
+          node --check tests/workspace-prune.js
       - name: Test window shutdown scheduling and heartbeat cleanup
-        run: node tests/workspace_activity.js
+        run: node tests/workspace-activity.js
       - name: Test real Git worktree detachment and data-preservation gates
-        run: node tests/workspace_prune.js
+        run: node tests/workspace-prune.js
 
   codex-webview-browser:
     name: Chromium CSS and DOM regression
@@ -224,17 +224,17 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser-backed Codex webview simulation
         run: |
-          python tests/codex_queued_edit_browser.py
-          python tests/codex_webview_browser.py
-          python tests/codex_webview_iframe.py
+          python tests/codex-queued-edit-browser.py
+          python tests/codex-webview-browser.py
+          python tests/codex-webview-iframe.py
       - name: Commit wand placement, shared outline and workflow recovery
-        run: python tests/workflow_recovery_browser.py
+        run: python tests/workflow-recovery-browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
-          node tests/codex_hide_chat_timestamps.js
-          node tests/codex_window_label.js
-          node tests/codex_usage.js
-          node tests/codex_countdown.js
+          node tests/codex-hide-chat-timestamps.js
+          node tests/codex-window-label.js
+          node tests/codex-usage.js
+          node tests/codex-countdown.js
       - name: Current Codex usage-banner compatibility
         env:
           PYTHONPATH: scripts
@@ -255,15 +255,15 @@ jobs:
           node-version: "22"
       - name: Check separate App auth wiring and regressions
         run: |
-          node --check extension/github/app_identity.js
-          node --check extension/codex/kefania_runner.js
-          node --check extension/github/local_pull_request.js
-          node --check extension/merge/lindsey_bulk_merge.js
-          node --check extension/github/pull_request.js
-          node tests/github_app_identity.js
-          node tests/github_app_settings.js
-          node tests/kefania_app_environment.js
-          node tests/lindsey_bulk_merge.js
+          node --check extension/github/app-identity.js
+          node --check extension/codex/kefania-runner.js
+          node --check extension/github/local-pull-request.js
+          node --check extension/merge/lindsey-bulk-merge.js
+          node --check extension/github/pull-request.js
+          node tests/github-app-identity.js
+          node tests/github-app-settings.js
+          node tests/kefania-app-environment.js
+          node tests/lindsey-bulk-merge.js
 
   packaged-runtime:
     name: Installed extension imports (${{ matrix.os }})
@@ -295,7 +295,7 @@ jobs:
         with:
           node-version: '22'
       - name: Detect and stage filename capitalization renames on macOS
-        run: node --test tests/case_only_renames.js
+        run: node --test tests/case-only-renames.js
 
   native-prompt-transport:
     name: Native browser cookies and prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
