@@ -4,7 +4,8 @@ from __future__ import annotations
 import sys as _sb_sys
 from pathlib import Path as _sb_path
 for _sb_parent in _sb_path(__file__).resolve().parents:
-    _sb_scripts = _sb_parent / 'scripts'
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
         if str(_sb_scripts) not in _sb_sys.path:
             _sb_sys.path.insert(0, str(_sb_scripts))
@@ -30,7 +31,7 @@ RESOURCE_FILES = {"branch_names": "branch-name-packs.json"}
 def runtime_sources(directory):
     """Discover the complete sibling-import closure and its required resources."""
     directory = Path(directory)
-    candidates = {path.stem: path for path in directory.glob("*.py") if path.is_file()}
+    candidates = {path.stem.replace("-", "_"): path for path in directory.glob("*.py") if path.is_file()}
     modules = {}
     pending = list(ENTRYPOINTS)
     while pending:
@@ -53,7 +54,7 @@ def runtime_sources(directory):
                 local = imported.partition(".")[0]
                 if local in candidates and local not in modules:
                     pending.append(local)
-    sources = {f"{name}.py": source for name, source in modules.items()}
+    sources = {source.name: source for source in modules.values()}
     for module, filename in RESOURCE_FILES.items():
         if module in modules:
             resource = directory / filename
@@ -82,7 +83,7 @@ def wrapper_files(directory, executable):
 def validate_imports(directory):
     """Exercise runtime imports isolated from the checkout, user site and PYTHONPATH."""
     directory = Path(directory).resolve()
-    modules = sorted(name[:-3] for name in runtime_sources(directory)
+    modules = sorted(name[:-3].replace("-", "_") for name in runtime_sources(directory)
                      if name.endswith(".py"))
     code = """
 import importlib
@@ -90,9 +91,11 @@ from pathlib import Path
 import sys
 root = Path(sys.argv[1])
 sys.path.insert(0, str(root))
+import importaliases
+importaliases.install()
 for name in sys.argv[2:]:
     module = importlib.import_module(name)
-    if Path(module.__file__).resolve() != root / (name + ".py"):
+    if Path(module.__file__).resolve() != root / (name.replace("_", "-") + ".py"):
         raise RuntimeError("Module resolved outside the toolkit: " + name)
 """
     result = subprocess.run(

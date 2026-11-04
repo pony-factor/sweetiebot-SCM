@@ -16,7 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const moduleRoot = path.resolve(__dirname, process.env.LINDSEY_MODULE_ROOT || '../extension');
-const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr_session');
+const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr-session');
 
 (async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'parallel-pr-session-'));

@@ -6,7 +6,8 @@ from __future__ import annotations
 import sys as _sb_sys
 from pathlib import Path as _sb_path
 for _sb_parent in _sb_path(__file__).resolve().parents:
-    _sb_scripts = _sb_parent / 'scripts'
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
         if str(_sb_scripts) not in _sb_sys.path:
             _sb_sys.path.insert(0, str(_sb_scripts))
@@ -153,6 +154,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     # Preserve extension/THIRD_PARTY_NOTICES.md and its existing creator credits.
     files[Path("prune-merged-branches.py")] = here / "prune-merged-branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
+    files[Path("importaliases.py")] = here / "importaliases.py"
     files[Path("github-apps.py")] = here / "github-apps.py"
     files[Path("github-apps-ui.py")] = here / "github-apps-ui.py"
     files[Path("codex-sticker.py")] = here / "codex-sticker.py"

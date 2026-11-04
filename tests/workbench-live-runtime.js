@@ -56,7 +56,7 @@ function harness() {
     const context = vm.createContext(sandbox);
     sandbox.__testImport = async href => {
         imports++;
-        assert.match(href, /\/vs\/workbench\/sweetiebot\/codex_file_drag\.js\?v=/);
+        assert.match(href, /\/vs\/workbench\/sweetiebot\/codex-file-drag\.js\?v=/);
         vm.runInContext(`globalThis.__sweetiebotWorkbenchComponents.register(
             'codex-file-drag', () => {
                 if (globalThis.__testThrow()) throw Error('activation failed');
