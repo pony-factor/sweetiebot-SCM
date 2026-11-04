@@ -464,8 +464,10 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     segment = js[anchor_index : anchor_index + 4000]
     pattern = re.compile(
         r"(?P<prefix>[A-Za-z_$][\w$]*\.getOrCreateLazy\(\{id:"
-        r"[A-Za-z_$][\w$]*\.id,\.\.\.(?P<options>[A-Za-z_$][\w$]*)"
-        r"\?\.viewState)(?P<suffix>\}\))"
+        r"[A-Za-z_$][\w$]*\.id,\.\.\.(?P<state>"
+        r"(?:(?P<sanitize>[A-Za-z_$][\w$]*)\()?"
+        r"(?P<options>[A-Za-z_$][\w$]*)\?\.viewState"
+        r"(?(sanitize)\))))(?P<suffix>\}\))"
     )
     matches = list(pattern.finditer(segment))
     if len(matches) != 1:
@@ -477,7 +479,7 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     original = match.group(0)
     destination = home_url or "https://chatgpt.com/"
     replacement = (
-        f'{match.group("prefix")},url:{match.group("options")}?.viewState?.url'
+        f'{match.group("prefix")},url:{match.group("state")}?.url'
         f'||{json.dumps(destination)}{match.group("suffix")}'
     )
     return [(original, replacement)]
