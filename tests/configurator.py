@@ -11,6 +11,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
         importaliases.install()
         break
 
+import re
 import json
 import io
 import threading
@@ -47,6 +48,40 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_sidebar_categories_keep_every_settings_page(self):
+        page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        sidebar = page.split('<nav class="settings-tabs"', 1)[1].split("</nav>", 1)[0]
+        groups = re.findall(
+            r'<div class="settings-tab-group" role="presentation">'
+            r'<div class="settings-tab-category" aria-hidden="true">([^<]+)</div>'
+            r'(.*?)</div>', sidebar, re.S
+        )
+        self.assertEqual([label for label, _ in groups], [
+            "Source Control &amp; Commits", "Branches &amp; Workspaces",
+            "AI &amp; Spellcheck", "GitHub &amp; Pull Requests",
+            "Interface &amp; Customization", "System &amp; Diagnostics",
+        ])
+        tabs = re.findall(
+            r'<button class="settings-tab"[^>]+aria-controls="(settings-panel-\d+)"'
+            r'[^>]*>([^<]+)</button>', sidebar
+        )
+        expected = {s.section for s in configurator.SETTINGS} | {"GitHub Apps", "Diagnostics"}
+        expected_labels = {"Apps" if name == "GitHub Apps" else name for name in expected}
+        self.assertEqual({name for _, name in tabs}, expected_labels)
+        self.assertEqual(len(tabs), len(expected), "Every page appears exactly once")
+        self.assertEqual(
+            [target for target, _ in tabs],
+            [f"settings-panel-{i}" for i in range(len(expected))],
+        )
+        grouped_tabs = [
+            name for _, group in groups
+            for name in re.findall(r'<button class="settings-tab"[^>]*>([^<]+)</button>', group)
+        ]
+        self.assertEqual(grouped_tabs, [name for _, name in tabs])
+        for i in range(len(expected)):
+            self.assertIn(f'id="settings-panel-{i}"', page)
+        self.assertNotIn('>Other</div>', sidebar)
+
     def test_missing_gpg_does_not_claim_no_keys_exist(self):
         status = {"gpgAvailable": False, "configured": "0123456789ABCDEF", "enabled": True, "keys": []}
         with patch.object(configurator, "signing_status", return_value=status), \
