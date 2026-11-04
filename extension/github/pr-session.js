@@ -34,7 +34,7 @@ async function launchPRSession(vscode, context, root, options) {
 }
 
 async function launchMergeSession(vscode, context, root, url, selection) {
-  return launchSession(vscode, context, root, {}, url, selection);
+  return launchSession(vscode, context, root, { expandedOnStartup: true }, url, selection);
 }
 
 async function launchBlockerWebSession(vscode, context, root, url, number, selection) {
@@ -75,8 +75,9 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
       settings: {
         'sweetiebot.openPanelOnStartup': false,
         'sweetiebot.automaticBranchCleanup': false,
-        // Both PR drafts and Lindsey merge dashboards open compact; expanding remains manual.
-        'sweetiebot.startCompactPRSession': true,
+        // PR drafts and repair sessions open compact; bulk merges start expanded.
+        'sweetiebot.startCompactPRSession': options.expandedOnStartup !== true,
+        'sweetiebot.startExpandedMergeSession': options.expandedOnStartup === true,
         'workbench.browser.dataStorage': 'workspace',
         'sweetiebot.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'sweetiebot.autoPublishPullRequests': config.get('autoPublishPullRequests', true),

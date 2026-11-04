@@ -80,7 +80,8 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert.deepEqual(saved.folders, [{ path: root.fsPath }]);
     assert.equal(saved.settings['sweetiebot.autoPublishPullRequests'], false);
     assert.equal(saved.settings['sweetiebot.automaticBranchCleanup'], false);
-    assert.equal(saved.settings['sweetiebot.startCompactPRSession'], true, 'Only the PR workspace opts into compact startup');
+    assert.equal(saved.settings['sweetiebot.startCompactPRSession'], true, 'PR drafting starts compact');
+    assert.equal(saved.settings['sweetiebot.startExpandedMergeSession'], false, 'PR drafting does not auto-expand');
     assert.equal(saved.settings['workbench.browser.dataStorage'], 'workspace');
     const browserStorage = path.join(storage, 'Library/Application Support/Sweetiebot/browserStorage');
     assert.equal((await fs.stat(browserStorage)).mode & 0o777, 0o700);
@@ -131,6 +132,10 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     const mergeWorkspace = calls.at(-1)[1];
     assert.deepEqual(calls.at(-1)[2], { forceNewWindow: true });
     assert.equal(path.basename(mergeWorkspace.fsPath), 'Bulk Merge [repository].code-workspace');
+    const initialMergeSettings = JSON.parse(await fs.readFile(mergeWorkspace.fsPath, 'utf8')).settings;
+    assert.equal(initialMergeSettings['sweetiebot.startCompactPRSession'], false);
+    assert.equal(initialMergeSettings['sweetiebot.startExpandedMergeSession'], true,
+      'Even bulk merges without a saved selection start expanded');
     const mergeCalls = [];
     const mergeHost = { ...target, workspace: { workspaceFile: mergeWorkspace, workspaceFolders: [{ uri: root }] },
       window: {}, commands: { async executeCommand(...args) { mergeCalls.push(args); } } };
@@ -160,8 +165,9 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert.deepEqual(JSON.parse(await fs.readFile(
       path.join(dashboardDirectory, 'merge-selection.json'), 'utf8')), selection);
     const mergeSettings = JSON.parse(await fs.readFile(dashboardWorkspace.fsPath, 'utf8'));
-    assert.equal(mergeSettings.settings['sweetiebot.startCompactPRSession'], true,
-      'Lindsey merge sessions also start in the 640px compact window');
+    assert.equal(mergeSettings.settings['sweetiebot.startCompactPRSession'], false);
+    assert.equal(mergeSettings.settings['sweetiebot.startExpandedMergeSession'], true,
+      'Lindsey merge dashboards start at 75% of the display');
     let launches = 0;
     const dashboardModulePath = require.resolve('../extension/merge/dashboard');
     const dashboardExports = require('../extension/merge/dashboard');
@@ -261,6 +267,10 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);
     assert.equal(path.basename(actionWorkspace.fsPath), 'Resolve #12 [repository].code-workspace');
+    const repairSettings = JSON.parse(await fs.readFile(actionWorkspace.fsPath, 'utf8')).settings;
+    assert.equal(repairSettings['sweetiebot.startCompactPRSession'], true,
+      'Individual PR repair windows remain compact');
+    assert.equal(repairSettings['sweetiebot.startExpandedMergeSession'], false);
     const actionRequest = JSON.parse(await fs.readFile(path.join(actionDirectory, 'request.json'), 'utf8'));
     const actionPrompt = new URLSearchParams(new URL(actionRequest.mergeUrl).hash.slice(1)).get('q');
     assert(actionPrompt.includes('LOCAL KEFANIA REPAIR'));

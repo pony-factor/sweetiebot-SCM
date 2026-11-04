@@ -3012,7 +3012,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     if (doc.__sweetiebotCompactWindow) return;
     const win = doc.defaultView;
     if (!win || !nativeHost?.positionWindow) return;
-    const state = { restore: null, busy: false, opening: false, autoCompactStarted: false };
+    const state = { restore: null, busy: false, opening: false, autoLayoutStarted: false };
     doc.__sweetiebotCompactWindow = state;
     const placementKey = 'sweetiebot.compact-window-placements.v1';
     const readPlacements = () => {
@@ -3135,11 +3135,12 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         action.title = compact ? 'Expand to 75% of this display' : 'Compact window';
         action.setAttribute('aria-label', action.title);
     };
-    const toggle = async action => {
+    const toggle = async (action, expandOnStartup = false) => {
         if (state.busy) return;
+        const expanding = Boolean(state.restore) || expandOnStartup;
         // VS Code enforces a 600px minimum width when its panel is on the side.
         // Do not squeeze or rearrange the user's resizable vertical columns.
-        if (!state.restore && (win.screen.availWidth < 640 || win.screen.availHeight < 640)) {
+        if (!expanding && (win.screen.availWidth < 640 || win.screen.availHeight < 640)) {
             action.title = 'Display too small for a 640px square window';
             action.setAttribute('aria-label', action.title);
             return;
@@ -3155,10 +3156,10 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             const screen = win.screen;
             // Expand on the current display instead of restoring stale bounds
             // from whichever display the window was originally compacted on.
-            const width = state.restore
+            const width = expanding
                 ? Math.min(screen.availWidth, Math.max(600, Math.round(screen.availWidth * 0.75))) : 640;
-            const height = state.restore ? Math.round(screen.availHeight * 0.75) : 640;
-            const bounds = state.restore ? {
+            const height = expanding ? Math.round(screen.availHeight * 0.75) : 640;
+            const bounds = expanding ? {
                 x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
                 y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
                 width, height
@@ -3167,7 +3168,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 await nativeHost.unmaximizeWindow({ targetWindowId: win.vscodeWindowId });
             }
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
-            state.restore = state.restore ? null : previous;
+            state.restore = expanding ? null : previous;
             if (state.restore) watchCompactDisplay();
             else {
                 await releasePlacement();
@@ -3186,12 +3187,14 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             }
         }
     };
-    const startCompactIfRequested = action => {
-        if (state.autoCompactStarted ||
-            configuration?.getValue('sweetiebot.startCompactPRSession') !== true) return;
-        state.autoCompactStarted = true;
-        // Share the button's native square resize and restore behavior.
-        void toggle(action);
+    const startLayoutIfRequested = action => {
+        if (state.autoLayoutStarted) return;
+        const expanded = configuration?.getValue('sweetiebot.startExpandedMergeSession') === true;
+        if (!expanded && configuration?.getValue('sweetiebot.startCompactPRSession') !== true) return;
+        state.autoLayoutStarted = true;
+        // Use the same native resizing path as the title-bar button, without
+        // briefly compacting a bulk-merge session before expanding it.
+        void toggle(action, expanded);
     };
     const mount = () => {
         if (doc.getElementById(actionId)) return;
@@ -3274,7 +3277,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             actions.appendChild(newItem);
         }
         refreshVisibility();
-        startCompactIfRequested(action);
+        startLayoutIfRequested(action);
     };
     mount();
     const observer = new win.MutationObserver(mount);
@@ -3282,9 +3285,10 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     const visibilityListener = configuration?.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('sweetiebot.compactWindowButton')
             || event.affectsConfiguration('sweetiebot.newWorkspaceWindowButton')) refreshVisibility();
-        if (event.affectsConfiguration('sweetiebot.startCompactPRSession')) {
+        if (event.affectsConfiguration('sweetiebot.startCompactPRSession')
+            || event.affectsConfiguration('sweetiebot.startExpandedMergeSession')) {
             const action = doc.getElementById(actionId)?.querySelector('a');
-            if (action) startCompactIfRequested(action);
+            if (action) startLayoutIfRequested(action);
         }
     });
     win.addEventListener('unload', () => {

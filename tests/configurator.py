@@ -623,6 +623,7 @@ class SubmissionTests(unittest.TestCase):
             "sweetiebot.caseOnlyRenameDetection",
             "sweetiebot.postCommitSpellcheck",
             "sweetiebot.startCompactPRSession",
+            "sweetiebot.startExpandedMergeSession",
             "sweetiebot.promptForIndependentWorkspaceTrust",
             "sweetiebot.mergePostStatusUpdates",
             "sweetiebot.mergeAutoFixCi",
