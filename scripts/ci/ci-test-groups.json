@@ -352,6 +352,7 @@
       "label": "Installation and configuration",
       "tests": [
         "ci-browser-routing.py",
+        "ci-workflow-concurrency.js",
         "configurator.py",
         "diagnostics.py",
         "extension-cache.js",
