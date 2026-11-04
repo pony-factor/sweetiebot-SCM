@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { generateKeyPairSync } = require('node:crypto');
+const { decodeKeychainPassword } = require('../extension/github/app_settings');
 const { separateAppsEnabled, roleSettings, workflowBotLogin, stripAppSecrets,
   getRoleInstallationToken } = require('../extension/github/app_identity');
 
@@ -81,6 +82,26 @@ async function run() {
   });
   assert.equal(retrievedRole, 'kefania');
   assert.equal(keychainResult.login, 'kefania-pony[bot]');
+  // macOS security -w emits multiline PEM passwords as hexadecimal.
+  for (const type of ['pkcs1', 'pkcs8']) {
+    const pem = require('node:crypto').createPrivateKey(privateKey)
+      .export({ type, format: 'pem' });
+    for (const output of [pem, Buffer.from(pem).toString('hex'),
+      Buffer.from(pem).toString('hex').toUpperCase()]) {
+      const fake = mockGitHub('kefania');
+      const result = await getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM', {
+        env: keychainEnv, now, fetchImpl: fake.fetchImpl,
+        keychainKey: async () => decodeKeychainPassword(output + '\n')
+      });
+      assert.equal(result.login, 'kefania-pony[bot]');
+      const jwt = fake.requests[0].init.headers.Authorization.slice('Bearer '.length);
+      const [header, payload, signature] = jwt.split('.');
+      assert(require('node:crypto').verify('RSA-SHA256', Buffer.from(header + '.' + payload),
+        require('node:crypto').createPublicKey(pem), Buffer.from(signature, 'base64url')));
+    }
+  }
+  assert.equal(decodeKeychainPassword('abc\n'), 'abc', 'Odd hex must not be truncated');
+  assert.equal(decodeKeychainPassword('aazz\n'), 'aazz', 'Invalid hex must not be partially decoded');
   await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM', {
     env: keychainEnv, now, keychainKey: async () => { throw new Error('Keychain locked'); }
   }), /Keychain locked/);
