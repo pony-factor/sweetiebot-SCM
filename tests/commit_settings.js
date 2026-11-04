@@ -16,16 +16,33 @@ for (const initiallyAttached of [false, true]) {
   let disposed;
   let index = 0;
   let dropdown;
+  let singleButton;
   const documentRoot = {};
   const classes = new Set();
+  const singleClasses = new Set();
+  const actionContainer = {
+    classList: {
+      add: value => singleClasses.add(value),
+      remove: (...values) => values.forEach(value => singleClasses.delete(value))
+    },
+    querySelector(selector) {
+      if (selector === ':scope > .monaco-button-dropdown') return dropdown;
+      if (selector === ':scope > .monaco-button') return singleButton;
+      throw Error(`Unexpected action selector: ${selector}`);
+    },
+    append(button) { button.parentElement = this; }
+  };
   const makeDropdown = () => ({
-    classList: { add: value => classes.add(value), remove: value => classes.delete(value) },
+    classList: { add: value => classes.add(value), remove: (...values) => values.forEach(value => classes.delete(value)) },
     append(button) { button.parentElement = this; }
   });
   dropdown = makeDropdown();
   const rows = { querySelector(selector) {
     assert.equal(selector, `.monaco-list-row[data-index="${index + 1}"]`);
-    return { querySelector() { return dropdown; } };
+    return { querySelector(selector) {
+      assert.equal(selector, '.button-container');
+      return actionContainer;
+    } };
   } };
   const row = { parentElement: rows, getAttribute() { return String(index); } };
   const root = {};
@@ -68,10 +85,29 @@ for (const initiallyAttached of [false, true]) {
   callback();
   assert.equal(button.parentElement, dropdown);
   dropdown = null;
+  singleButton = { getClientRects: () => [{}] };
+  callback();
+  assert.equal(button.parentElement, actionContainer,
+    'Native Sync receives the same enclosed wand as the Commit dropdown');
+  assert(singleClasses.has('scm-toolkit-commit-settings'));
+  assert(singleClasses.has('scm-toolkit-single-action-settings'));
+  assert(!classes.has('scm-toolkit-commit-settings'));
+
+  singleButton.getClientRects = () => [];
   callback();
   assert.equal(button.parentElement, widget.element,
-    'Fall back to the input toolbar when VS Code recycles the native dropdown');
-  assert(!classes.has('scm-toolkit-commit-settings'));
+    'Hidden Sync actions temporarily fall back to the message toolbar');
+  assert(!singleClasses.has('scm-toolkit-single-action-settings'));
+
+  singleButton.getClientRects = () => [{}];
+  callback();
+  assert.equal(button.parentElement, actionContainer,
+    'The wand reattaches when Sync returns without a dropdown');
+  singleButton = null;
+  callback();
+  assert.equal(button.parentElement, widget.element,
+    'Fall back to the input toolbar when VS Code recycles all native actions');
+  assert(!singleClasses.has('scm-toolkit-commit-settings'));
   index = 4;
   dropdown = makeDropdown();
   callback();
@@ -80,5 +116,6 @@ for (const initiallyAttached of [false, true]) {
   assert.equal(observed, undefined);
   assert.equal(button.parentElement, null);
   assert(!classes.has('scm-toolkit-commit-settings'));
+  assert(!singleClasses.has('scm-toolkit-single-action-settings'));
 }
 console.log('Commit settings attachment tests passed');

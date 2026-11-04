@@ -189,6 +189,27 @@ const css = name => fs.readFileSync(path.join(__dirname, '../assets/workbench', 
     assert.equal(await page.locator('button').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
     await page.mouse.up();
 
+    // A clean repository renders Sync as a single native button. Its wand
+    // must share the same outline and border press feedback as Commit.
+    await setup(true);
+    await page.addStyleTag({content: theme + css('picker.css') + css('outlined_buttons.css')});
+    await page.evaluate(() => {
+      const container = document.getElementById('actions');
+      container.classList.add('scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings');
+      const wand = document.createElement('button');
+      wand.className = 'scm-toolkit-settings';
+      wand.textContent = '🪄';
+      container.append(wand);
+    });
+    assert.equal(await page.locator('#actions').evaluate(node => getComputedStyle(node).borderTopStyle), 'solid');
+    assert.equal(await page.locator('#actions > .monaco-button').evaluate(node => getComputedStyle(node).borderTopWidth), '0px');
+    assert.equal(await page.locator('#actions > .scm-toolkit-settings').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
+    const singleBox = await page.locator('#actions > .monaco-button').boundingBox();
+    await page.mouse.move(singleBox.x + singleBox.width / 2, singleBox.y + singleBox.height / 2);
+    await page.mouse.down();
+    assert.equal(await page.locator('#actions').evaluate(node => getComputedStyle(node).borderTopColor), 'rgb(180, 90, 220)');
+    await page.mouse.up();
+
     await setup(true);
     for (let i = 0; i < 20; i++) {
       await press();
