@@ -95,7 +95,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   let autoCompact = true;
   let changed;
   const sessionConfiguration = {
-    getValue(key) { return key === 'sweetiebot.startCompactPRSession' ? autoCompact : true; },
+    getValue(key) {
+      if (key === 'sweetiebot.startExpandedMergeSession') return false;
+      return key === 'sweetiebot.startCompactPRSession' ? autoCompact : true;
+    },
     onDidChangeConfiguration(callback) { changed = callback; return { dispose() {} }; },
   };
   ctx.scmToolkitMountCompactWindow(session, sessionNative, null, sessionConfiguration);
@@ -117,6 +120,51 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   changed({ affectsConfiguration: key => key === 'sweetiebot.startCompactPRSession' });
   await flush();
   assert.equal(sessionCalls.length, 2, 'Setting changes never reapply automatic compaction');
+
+  // Bulk-merge workspaces start directly at the expanded 75% layout without
+  // a brief 640px resize, and the ordinary title-bar control remains reversible.
+  const bulk = documentFixture();
+  const bulkCalls = [];
+  let bulkEnabled = true;
+  let bulkChanged;
+  const bulkConfiguration = {
+    getValue(key) {
+      if (key === 'sweetiebot.startExpandedMergeSession') return bulkEnabled;
+      if (key === 'sweetiebot.startCompactPRSession') return false;
+      return true;
+    },
+    onDidChangeConfiguration(callback) { bulkChanged = callback; return { dispose() {} }; }
+  };
+  const bulkNative = {
+    async positionWindow(bounds, options) {
+      bulkCalls.push(JSON.parse(JSON.stringify({ bounds, options })));
+    }
+  };
+  ctx.scmToolkitMountCompactWindow(bulk, bulkNative, null, bulkConfiguration);
+  await flush();
+  assert.deepEqual(bulkCalls, [{
+    bounds: { x: -1260, y: 135, width: 1080, height: 656 },
+    options: { targetWindowId: 7 }
+  }], 'Bulk-merge window expands directly on startup');
+  assert.equal(bulk.action().attrs['aria-pressed'], 'false');
+  assert.equal(bulk.defaultView.localStorage.getItem('sweetiebot.compact-window-placements.v1'),
+    '{}', 'Expanded startup does not reserve a compact-window tile');
+  bulk.rebuild();
+  assert.equal(bulkCalls.length, 1, 'Remount does not resize the expanded window again');
+  bulk.action().events.click(event);
+  await flush();
+  assert.equal(bulkCalls.at(-1).bounds.width, 640);
+  assert.equal(bulk.action().attrs['aria-pressed'], 'true');
+  bulk.action().events.click(event);
+  await flush();
+  assert.deepEqual(bulkCalls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
+  assert.equal(bulk.action().attrs['aria-pressed'], 'false');
+  bulkEnabled = false;
+  bulkChanged({ affectsConfiguration: key => key === 'sweetiebot.startExpandedMergeSession' });
+  bulkEnabled = true;
+  bulkChanged({ affectsConfiguration: key => key === 'sweetiebot.startExpandedMergeSession' });
+  await flush();
+  assert.equal(bulkCalls.length, 3, 'Configuration changes do not reapply expansion');
 
   // Cross-display resizing must preserve compact size at the drag destination.
   const moving = documentFixture();
@@ -243,7 +291,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   let lateEnabled = false;
   let lateChanged;
   const lateConfiguration = {
-    getValue(key) { return key === 'sweetiebot.startCompactPRSession' ? lateEnabled : true; },
+    getValue(key) {
+      if (key === 'sweetiebot.startExpandedMergeSession') return false;
+      return key === 'sweetiebot.startCompactPRSession' ? lateEnabled : true;
+    },
     onDidChangeConfiguration(callback) { lateChanged = callback; return { dispose() {} }; },
   };
   ctx.scmToolkitMountCompactWindow(late, sessionNative, null, lateConfiguration);
@@ -254,6 +305,27 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(sessionCalls.length, 3, 'Late session setting applies compact layout once');
   assert.equal(sessionCalls.at(-1).bounds.width, 640);
   assert.equal(sessionCalls.at(-1).bounds.height, 640);
+
+  const lateExpanded = documentFixture();
+  let expandedLateEnabled = false;
+  let expandedLateChanged;
+  ctx.scmToolkitMountCompactWindow(lateExpanded, bulkNative, null, {
+    getValue(key) {
+      if (key === 'sweetiebot.startExpandedMergeSession') return expandedLateEnabled;
+      if (key === 'sweetiebot.startCompactPRSession') return false;
+      return true;
+    },
+    onDidChangeConfiguration(callback) {
+      expandedLateChanged = callback;
+      return { dispose() {} };
+    }
+  });
+  assert.equal(bulkCalls.length, 3, 'No expansion before the bulk-merge setting arrives');
+  expandedLateEnabled = true;
+  expandedLateChanged({ affectsConfiguration: key => key === 'sweetiebot.startExpandedMergeSession' });
+  await flush();
+  assert.equal(bulkCalls.length, 4, 'Late bulk-merge setting expands exactly once');
+  assert.deepEqual(bulkCalls.at(-1).bounds, { x: -1260, y: 135, width: 1080, height: 656 });
 
   const other = documentFixture();
   ctx.scmToolkitMountCompactWindow(other, native);

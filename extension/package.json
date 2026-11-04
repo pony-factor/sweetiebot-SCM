@@ -359,7 +359,13 @@
           "type": "boolean",
           "default": false,
           "scope": "window",
-          "description": "Open a dedicated pull-request session window in the compact 600px square layout."
+          "description": "Open a dedicated pull-request session window in the compact 640px square layout."
+        },
+        "sweetiebot.startExpandedMergeSession": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Open a dedicated bulk-merge session window at 75% of the current display's available size."
         },
         "sweetiebot.squashOmitBulletsForEmojiTitles": {
           "type": "boolean",
