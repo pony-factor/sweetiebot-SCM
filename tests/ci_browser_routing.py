@@ -70,6 +70,20 @@ class BrowserRoutingTests(unittest.TestCase):
         self.assertNotIn("npx playwright install", suites)
         self.assertIn("python -m playwright install --with-deps chromium", chromium)
 
+    def test_chromium_jobs_isolate_optional_broken_ubuntu_feed(self):
+        workflow = (ROOT / ".github/workflows/check.yml").read_text(encoding="utf-8")
+        suites = workflow.split("  suites:\n", 1)[1].split("\n  worktree-window-handoff:", 1)[0]
+        chromium = workflow.split("  codex-webview-browser:\n", 1)[1].split("\n  bot-app-identities:", 1)[0]
+        for block, install in ((suites, "Install browser-test dependencies"),
+                               (chromium, "Install Chromium automation")):
+            with self.subTest(install=install):
+                self.assertIn("packages.microsoft.com/ubuntu/26.04/prod", block)
+                self.assertIn('sudo mv -- "$source" "$source.disabled"', block)
+                self.assertLess(block.index("Ignore unavailable optional Microsoft feed"),
+                                block.index(install))
+                self.assertIn("playwright install --with-deps chromium", block)
+        self.assertIn("if: steps.browser.outputs.required == 'true'\n        run: |", suites)
+
     def test_codex_browser_follows_playwright_managed_revision(self):
         source = (ROOT / "tests/codex_webview_browser.py").read_text(encoding="utf-8")
         self.assertIn('custom_browser = os.environ.get("CODEX_TEST_CHROMIUM")', source)
