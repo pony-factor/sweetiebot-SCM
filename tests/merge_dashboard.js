@@ -399,6 +399,9 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   const refreshedQueues = [];
   panel.visible = false;
   const reactionStorage = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'dashboard-reactions-'));
+  // Local handoffs use the signed-in user's token even when separate Apps are enabled.
+  const previousIdentityMode = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+  process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'separate-apps';
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
     onRefresh: async numbers => { refreshedQueues.push(numbers); },
     onFocusWorker: async id => { workerFocus.push(id); },
@@ -412,6 +415,8 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
   assert.equal(apiRequests, 0, 'A dashboard opened in a background tab does not fetch');
   panel.visible = true;
   await dashboard.refresh();
+  if (previousIdentityMode === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+  else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = previousIdentityMode;
   const firstCheckAt = events.at(-1).prs[0].lastGitHubCheckAt;
   assert(Number.isFinite(Date.parse(firstCheckAt)), 'Successful GitHub refreshes update Current activity metadata');
   const initialEvents = events.at(-1).events.length;
