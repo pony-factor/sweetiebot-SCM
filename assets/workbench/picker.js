@@ -484,13 +484,14 @@ function scmToolkitAttachCommitSettings(widget, button) {
             if (!container) return undefined;
             const dropdown = container.querySelector(':scope > .monaco-button-dropdown');
             const single = container.querySelector(':scope > .monaco-button');
-            if (dropdown?.getClientRects?.().length) return { container, dropdown };
-            if (single?.getClientRects?.().length) return { container, single: true };
+            const visible = element => element && element.getClientRects?.().length !== 0;
+            if (visible(dropdown)) return { container, dropdown };
+            if (visible(single)) return { container, single: true };
             return undefined;
         };
         let action = visibleAction(actionRow?.querySelector('.button-container'));
         if (!action && root) {
-            const candidates = [...root.querySelectorAll('.button-container')]
+            const candidates = [...(root.querySelectorAll?.('.button-container') ?? [])]
                 .map(visibleAction).filter(Boolean);
             // Attach only when the target is unambiguous. Multiple SCM
             // providers can share a view; never move Settings to another one.
