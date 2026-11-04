@@ -9,8 +9,10 @@ const refresh = source.match(/    const refreshPullRequest = \(\) => \{[\s\S]*?\
 const settingsAttachment = source.match(/function scmToolkitAttachCommitSettings\([\s\S]*?\n}\n\nasync function scmToolkitPullCleanRepository/)[0];
 assert.match(settingsAttachment, /widget\.element\.append\(button\)/,
   'Magic Settings must remain reachable while VS Code has no action dropdown');
-assert.match(settingsAttachment, /const destination = dropdown \|\| widget\.element/,
+assert.match(settingsAttachment, /const destination = dropdown \|\| singleAction \|\| widget\.element/,
   'Magic Settings must return to its inline fallback when action rows are recycled');
+assert.match(settingsAttachment, /const singleAction = !dropdown && nativeSingle/,
+  'Magic Settings must remain inside the native Sync action box when no Commit dropdown exists');
 const warningPreference = source.match(/function scmToolkitHighlightPrWarnings\([\s\S]*?\n}/)?.[0];
 assert.ok(warningPreference, 'PR eligibility test must include the warning-preference helper');
 const tick = () => new Promise(resolve => setImmediate(resolve));

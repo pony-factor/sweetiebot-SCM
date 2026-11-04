@@ -478,15 +478,22 @@ function scmToolkitAttachCommitSettings(widget, button) {
         const rows = inputRow?.parentElement;
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
-        const nativeDropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
-        // Clean repositories still show the disabled native action. Keep the
-        // wand after its dropdown, inside the same custom outline in all states.
+        const actionContainer = actionRow?.querySelector('.button-container');
+        const nativeDropdown = actionContainer?.querySelector(':scope > .monaco-button-dropdown');
+        const nativeSingle = actionContainer?.querySelector(':scope > .monaco-button');
+        // Commit actions render as a dropdown, but clean repositories can
+        // display a single Sync button. Keep the wand in the same action box.
         const dropdown = nativeDropdown?.getClientRects?.().length === 0 ? undefined : nativeDropdown;
-        const destination = dropdown || widget.element;
+        const singleAction = !dropdown && nativeSingle
+            && nativeSingle.getClientRects?.().length !== 0 ? actionContainer : undefined;
+        const destination = dropdown || singleAction || widget.element;
         if (button.parentElement === destination) return;
-        button.parentElement?.classList.remove('scm-toolkit-commit-settings');
+        button.parentElement?.classList.remove(
+            'scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings'
+        );
         button.remove();
-        if (dropdown) dropdown.classList.add('scm-toolkit-commit-settings');
+        if (dropdown || singleAction) destination.classList.add('scm-toolkit-commit-settings');
+        if (singleAction) destination.classList.add('scm-toolkit-single-action-settings');
         destination.append(button);
         widget.layout();
     };
@@ -497,7 +504,9 @@ function scmToolkitAttachCommitSettings(widget, button) {
     widget.disposables.add({
         dispose() {
             observer.disconnect();
-            button.parentElement?.classList.remove('scm-toolkit-commit-settings');
+            button.parentElement?.classList.remove(
+                'scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings'
+            );
             button.remove();
         }
     });

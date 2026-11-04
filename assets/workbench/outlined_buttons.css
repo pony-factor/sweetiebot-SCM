@@ -24,6 +24,19 @@
     color: var(--vscode-foreground) !important;
 }
 
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings {
+    /* Match the dropdown outline when VS Code supplies only a Sync button. */
+    border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder, var(--vscode-widget-border)));
+    background: transparent !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-button,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .scm-toolkit-settings {
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--vscode-foreground) !important;
+}
+
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown {
     /* One continuous themed outline includes the dropdown and settings icon. */
     border: 1px solid var(--vscode-button-border, var(--vscode-focusBorder, var(--vscode-widget-border)));
@@ -47,6 +60,7 @@
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:hover,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .scm-toolkit-settings:hover,
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:hover,
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .scm-toolkit-settings:hover {
     background: var(--vscode-toolbar-hoverBackground) !important;
@@ -54,17 +68,21 @@
 
 /* Outlined mode acknowledges a press with the theme's accent outline. */
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:not(.disabled):active,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings:has(> .monaco-button:first-child:not(.disabled):active),
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown:not(.disabled):has(> .monaco-button:first-child:not(.disabled):active),
 .scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button:not(.disabled),
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings.scm-toolkit-action-pressed:has(> .monaco-button:first-child:not(.disabled)),
 .scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown:not(.disabled) {
     border-color: var(--vscode-focusBorder) !important;
 }
 
-.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown:not(.disabled) {
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-action-pressed > .monaco-button-dropdown:not(.disabled),
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings.scm-toolkit-action-pressed {
     animation: scm-toolkit-action-flash 260ms ease-out;
 }
 
 .scm-view:not(.scm-history-view) .button-container > .monaco-button:not(.disabled):active,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings:has(> .monaco-button:first-child:not(.disabled):active),
 .scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown:not(.disabled):has(> .monaco-button:first-child:not(.disabled):active) {
     box-shadow: 0 0 0 2px var(--vscode-focusBorder) !important;
 }

@@ -608,6 +608,28 @@
     border-bottom-right-radius: 0;
 }
 
+/* Native Sync uses a single button instead of the Commit dropdown. Give it
+   the same continuous action box so Magic Settings stays attached. */
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings {
+    display: flex;
+    align-items: stretch;
+    box-sizing: border-box;
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: var(--vscode-cornerRadius-small, 4px);
+    background: var(--vscode-button-background);
+}
+
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-button {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0 !important;
+    border-radius: var(--vscode-cornerRadius-small, 4px) 0 0 var(--vscode-cornerRadius-small, 4px);
+}
+
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .scm-toolkit-settings {
+    flex: 0 0 27px;
+}
+
 /* Includes Source Control Graph, which also uses .scm-view. */
 .scm-view .monaco-list-row:hover .monaco-action-bar .action-item:not(.disabled) .action-label.codicon:not(.disabled),
 .scm-view .monaco-action-bar .action-item:not(.disabled):hover .action-label.codicon:not(.disabled) {
