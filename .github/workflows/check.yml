@@ -5,6 +5,12 @@ on:
   # PRs opened from this repository use the checks on their head commit.
   push:
 
+# PRs are checked by head-branch pushes. New pushes supersede older runs
+# of this workflow on the same ref, without cancelling other branches.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
