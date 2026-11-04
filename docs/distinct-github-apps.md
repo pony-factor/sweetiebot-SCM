@@ -44,6 +44,12 @@ token without returning it to the page. After both checks succeed, choose
 **Separate Kefania and Lindsey Apps** and click **Apply mode**. New local actions
 read this configuration immediately. Choose **Legacy** to roll back.
 
+Lindsey's connection check validates both write and read tokens. New PR also
+uses Lindsey to look for an existing PR, so its installation needs **Checks:
+Read** and **Commit statuses: Read** even before a merge. If permissions are
+missing, the check names them; update the App and approve the changed permissions
+on the organization installation before checking again.
+
 Credential imports use a separate save action and never enter normal settings
 autosave. Environment variables take precedence over saved configuration.
 The Keychain import UI currently requires macOS; other platforms can use the

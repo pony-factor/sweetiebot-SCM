@@ -16,7 +16,9 @@ const env = {
   SWEETIEBOT_LINDSEY_APP_PRIVATE_KEY: privateKey
 };
 const now = () => Date.parse('2026-10-22T12:00:00Z');
-function mockGitHub(role, { wrongSlug = false, missingInstall = false, expired = false } = {}) {
+function mockGitHub(role, { wrongSlug = false, missingInstall = false, expired = false,
+  permissions = { contents: 'write', pull_requests: 'write', issues: 'write',
+    checks: 'read', statuses: 'read' } } = {}) {
   const requests = [];
   const id = role === 'kefania' ? 1234 : 5678;
   const slug = role === 'kefania' ? 'kefania-pony' : 'lindsey-pony';
@@ -25,7 +27,7 @@ function mockGitHub(role, { wrongSlug = false, missingInstall = false, expired =
     if (url.endsWith('/app')) return { ok: true, json: async () =>
       ({ id, slug: wrongSlug ? 'codex-pony' : slug }) };
     if (url.endsWith('/installation')) return missingInstall
-      ? { ok: false, status: 404 } : { ok: true, json: async () => ({ id: 90 }) };
+      ? { ok: false, status: 404 } : { ok: true, json: async () => ({ id: 90, permissions }) };
     if (url.endsWith('/access_tokens')) return { ok: true, json: async () => ({
       token: role + '-install-token', expires_at: expired
         ? '2026-10-22T12:00:30Z' : '2026-10-22T12:59:00Z'
@@ -72,6 +74,20 @@ async function run() {
   assert.deepEqual(JSON.parse(readOnly.requests[2].init.body).permissions,
     { contents: 'read', pull_requests: 'read', issues: 'read',
       checks: 'read', statuses: 'read' });
+  const writeOnly = mockGitHub('lindsey', { permissions: {
+    contents: 'write', pull_requests: 'write', issues: 'write'
+  } });
+  await getRoleInstallationToken('lindsey', 'pony-factor/sweetiebot-SCM',
+    { env, now, fetchImpl: writeOnly.fetchImpl });
+  await assert.rejects(getRoleInstallationToken('lindsey', 'pony-factor/sweetiebot-SCM',
+    { env, now, readOnly: true, fetchImpl: writeOnly.fetchImpl }), error => {
+    assert.equal(error.code, 'SWEETIEBOT_APP_PERMISSIONS');
+    assert.match(error.message, /Checks: Read, Commit statuses: Read/);
+    assert.match(error.message, /approve the updated organization installation/);
+    return true;
+  });
+  assert.equal(writeOnly.requests.filter(item => item.url.endsWith('/access_tokens')).length, 1,
+    'Missing read permissions are reported before GitHub rejects token creation');
   const keychainEnv = { ...env, SWEETIEBOT_KEFANIA_APP_PRIVATE_KEY: undefined,
     SWEETIEBOT_KEFANIA_APP_KEYCHAIN: 'true' };
   let retrievedRole;
