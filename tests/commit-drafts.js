@@ -1,6 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {registerCommitDrafts,preserveCommitDraft}=require('../extension/branches/commit-drafts');
+assert.strictEqual(require('../extension/branches/commit_drafts'),
+ require('../extension/branches/commit-drafts'),
+ 'Pre-upgrade windows use the same draft state through the legacy import');
 (async()=>{
  const values=new Map();let opened;
  const source={rootUri:{fsPath:'/workspace/source'},inputBox:{value:'✨ Keep this exact subject\n\nUnsent details 🪄'}};
