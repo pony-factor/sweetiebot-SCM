@@ -15,6 +15,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -40,6 +41,32 @@ class PackagedRuntimeTests(unittest.TestCase):
                 if len(relative.parts) == 1 and relative.suffix in {'.py', '.json'}:
                     (root / relative).write_bytes(source.read_bytes())
             wrapper_dependencies.validate_imports(root)
+
+    def test_upgrade_ignores_stale_underscore_modules(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name, source in wrapper_dependencies.runtime_sources(
+                    Path(__file__).resolve().parents[1] / 'scripts').items():
+                (root / name).write_bytes(source.read_bytes())
+                if '-' in name and name.endswith('.py'):
+                    (root / name.replace('-', '_')).write_text(
+                        'raise RuntimeError("Stale module loaded")\n')
+            wrapper_dependencies.validate_imports(root)
+
+    def test_alias_preserves_earlier_normal_module(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            earlier, later = root / 'earlier', root / 'later'
+            earlier.mkdir()
+            later.mkdir()
+            (earlier / 'sample_module.py').write_text('value = "earlier"\n')
+            (later / 'sample-module.py').write_text('value = "later"\n')
+            script_dir = Path(__file__).resolve().parents[1] / 'scripts'
+            subprocess.run([sys.executable, '-I', '-B', '-c',
+                            'import sys; sys.path[:0] = sys.argv[1:]; '
+                            'import importaliases; importaliases.install(); '
+                            'import sample_module; assert sample_module.value == "earlier"',
+                            str(earlier), str(later), str(script_dir)], check=True)
 
     def test_installed_repair_payload_contains_cannon_and_stop_artwork(self):
         files = workspace_search.source_files()
