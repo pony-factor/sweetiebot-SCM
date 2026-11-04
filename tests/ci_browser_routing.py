@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -54,6 +55,26 @@ class BrowserRoutingTests(unittest.TestCase):
                         test_path.write_text(code, encoding="utf-8")
                         self.assertEqual(
                             bool(ci.browser_needed({"tests": [test_path.name]})), expected)
+
+    def test_ci_uses_matching_playwright_versions_and_local_cli(self):
+        workflow = (ROOT / ".github/workflows/check.yml").read_text(encoding="utf-8")
+        suites = workflow.split("  suites:\n", 1)[1].split("\n  worktree-window-handoff:", 1)[0]
+        chromium = workflow.split("  codex-webview-browser:\n", 1)[1].split("\n  bot-app-identities:", 1)[0]
+        node_pin = re.search(r"npm install [^\n]*playwright@(\d+\.\d+\.\d+)", suites)
+        python_pin = re.search(r"python -m pip install playwright==(\d+\.\d+\.\d+)", chromium)
+        self.assertIsNotNone(node_pin, "Pin Node Playwright before browser installation")
+        self.assertIsNotNone(python_pin, "Pin Python Playwright before browser installation")
+        self.assertEqual(node_pin.group(1), python_pin.group(1))
+        self.assertIn("npm install --ignore-scripts", suites)
+        self.assertIn("./node_modules/.bin/playwright install --with-deps chromium", suites)
+        self.assertNotIn("npx playwright install", suites)
+        self.assertIn("python -m playwright install --with-deps chromium", chromium)
+
+    def test_codex_browser_follows_playwright_managed_revision(self):
+        source = (ROOT / "tests/codex_webview_browser.py").read_text(encoding="utf-8")
+        self.assertIn('custom_browser = os.environ.get("CODEX_TEST_CHROMIUM")', source)
+        self.assertIn("executable_path=custom_browser or None", source)
+        self.assertNotIn("shutil.which", source)
 
     def test_commit_button_scenarios_use_real_chromium(self):
         source = (ROOT / "tests/commit_button_browser.js").read_text(encoding="utf-8")

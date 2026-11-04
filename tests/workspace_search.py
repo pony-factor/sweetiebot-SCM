@@ -243,6 +243,16 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                     build_installer_app.source_files()[Path("extension/merge/header.css")],
                     stylesheet)
 
+    def test_chromium_ci_uses_one_latest_runner(self):
+        workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/check.yml").read_text()
+        browser = workflow.split("  codex-webview-browser:\n", 1)[1].split("\n  bot-app-identities:", 1)[0]
+        self.assertEqual(browser.count("runs-on: ubuntu-latest"), 1)
+        self.assertNotIn("matrix:", browser)
+        self.assertNotIn("ubuntu-24.04", browser)
+        self.assertNotIn("ubuntu-26.04", browser)
+        self.assertRegex(browser, r"python -m pip install playwright(?:==[0-9.]+)?")
+        self.assertIn("python -m playwright install --with-deps chromium", browser)
+
     def test_installs_exact_extension_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
