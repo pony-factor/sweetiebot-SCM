@@ -1588,7 +1588,7 @@ Describe the staged change.
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
                 patch.object(ai_commit, "select_priority_emoji") as classify:
             self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
-                             ("🖼️ Update icon.png", ""))
+                             ("🖼️ Update `icon.png`", ""))
             parse.assert_not_called()
             classify.assert_not_called()
 
@@ -1599,7 +1599,7 @@ Describe the staged change.
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
                 patch.object(ai_commit, "select_priority_emoji") as classify:
             self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
-                             ("🖼️ Update icon.png", ""))
+                             ("🖼️ Update `icon.png`", ""))
             classify.assert_not_called()
 
     def test_nested_conditions_and_fallback_remain_ordered(self):
@@ -1617,7 +1617,7 @@ Describe the staged change.
                 patch.object(ai_commit, "selected_model", return_value=(None, False)), \
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")):
             self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
-                             ("🖼️ Update icon.png", ""))
+                             ("🖼️ Update `icon.png`", ""))
             with patch.object(ai_commit, "commit_fallback_enabled", return_value=False):
                 with self.assertRaisesRegex(RuntimeError, "Install.*model"):
                     ai_commit.generate_message("", "Binary files differ", ["icon.png"])
@@ -2003,7 +2003,7 @@ class ArtifactContextTests(unittest.TestCase):
     def test_missing_model_uses_image_fallback(self, _models):
         self.assertEqual(
             ai_commit.generate_title("1 binary file", "Binary files differ", ["assets/logo.png"]),
-            "🖼️ Update logo.png",
+            "🖼️ Update `logo.png`",
         )
 
     def test_large_single_file_diff_keeps_beginning_and_tail(self):
