@@ -140,12 +140,8 @@ jobs:
         run: python3 scripts/ci/ci-test-runner.py run "${{ matrix.group }}"
 
   worktree-window-handoff:
-    name: Worktree window handoff (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Worktree window handoff (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -171,12 +167,8 @@ jobs:
         run: node tests/shared-main.js
 
   worktree-shutdown-safety:
-    name: Closed worktree safety (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Closed worktree safety (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -266,13 +258,9 @@ jobs:
           node tests/lindsey-bulk-merge.js
 
   packaged-runtime:
-    name: Installed extension imports (${{ matrix.os }})
+    name: Installed extension imports (ubuntu-latest)
     needs: inventory
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: ubuntu-latest
     env:
       PYTHONPATH: scripts
     steps:
@@ -286,25 +274,110 @@ jobs:
       - name: Resolve every installed relative JavaScript dependency
         run: python -m unittest tests.packaged_runtime -v
 
-  case-only-rename-macos:
-    name: Case-only filename changes (macOS)
+
+  macos-functionality:
+    name: macOS functionality, worktrees, packaging, and filenames
+    needs: inventory
+    runs-on: macos-latest
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check worktree handoff source and test syntax
+        if: \${{ !cancelled() }}
+        run: |
+          node --check extension/branches/window.js
+          node --check extension/branches/shared-main.js
+          node --check extension/branches/strip.js
+          node --check extension/branches/actions.js
+          node --check tests/branch-window.js
+          node --check tests/branch-strip.js
+          node --check tests/shared-main.js
+      - name: Test live-window focus, refusal, and stale session handling
+        if: \${{ !cancelled() }}
+        run: node tests/branch-window.js
+      - name: Test Git's occupied-branch checkout guard
+        if: \${{ !cancelled() }}
+        run: node tests/branch-strip.js
+      - name: Test real Git worktrees, session publication, and branch handoff
+        if: \${{ !cancelled() }}
+        run: node tests/shared-main.js
+      - name: Check shutdown and pruning source and test syntax
+        if: \${{ !cancelled() }}
+        run: |
+          node --check extension/branches/workspace-activity.js
+          node --check extension/branches/workspace-prune.js
+          node --check extension/branches/closed-worktree.js
+          node --check tests/workspace-activity.js
+          node --check tests/workspace-prune.js
+      - name: Test window shutdown scheduling and heartbeat cleanup
+        if: \${{ !cancelled() }}
+        run: node tests/workspace-activity.js
+      - name: Test real Git worktree detachment and data-preservation gates
+        if: \${{ !cancelled() }}
+        run: node tests/workspace-prune.js
+      - name: Resolve every installed relative JavaScript dependency
+        if: \${{ !cancelled() }}
+        run: python -m unittest tests.packaged_runtime -v
+      - name: Detect and stage filename capitalization renames on macOS
+        if: \${{ !cancelled() }}
+        run: node --test tests/case-only-renames.js
+
+
+  macos-native-prompt-transport:
+    name: macOS native browser transport (Electron 43 and 45)
+    needs: inventory
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Detect and stage filename capitalization renames on macOS
-        run: node --test tests/case-only-renames.js
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Separate installs prevent one Electron version from replacing the other.
+      # Keep each test as a separate step, even when an earlier test fails.
+      - name: Install Electron 43.7.7
+        id: electron43
+        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci-43" --no-save electron@43.7.7
+      - name: Electron 43.7.7 sandbox, CSP, prompt and JSON handoff
+        if: ${{ !cancelled() && steps.electron43.outcome == 'success' }}
+        shell: bash
+        run: |
+          unset ELECTRON_RUN_AS_NODE
+          "$RUNNER_TEMP/sweetiebot-native-ci-43/node_modules/.bin/electron" tests/fixtures/prompt-transport.cjs
+      - name: Electron 43.7.7 cookie and session persistence
+        if: ${{ !cancelled() && steps.electron43.outcome == 'success' }}
+        shell: bash
+        run: python tests/fixtures/browser-cookie-sessions.py "$RUNNER_TEMP/sweetiebot-native-ci-43/node_modules/.bin/electron"
+      - name: Install Electron 45.1.0
+        id: electron45
+        if: ${{ !cancelled() }}
+        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci-45" --no-save electron@45.1.0
+      - name: Electron 45.1.0 sandbox, CSP, prompt and JSON handoff
+        if: ${{ !cancelled() && steps.electron45.outcome == 'success' }}
+        shell: bash
+        run: |
+          unset ELECTRON_RUN_AS_NODE
+          "$RUNNER_TEMP/sweetiebot-native-ci-45/node_modules/.bin/electron" tests/fixtures/prompt-transport.cjs
+      - name: Electron 45.1.0 cookie and session persistence
+        if: ${{ !cancelled() && steps.electron45.outcome == 'success' }}
+        shell: bash
+        run: python tests/fixtures/browser-cookie-sessions.py "$RUNNER_TEMP/sweetiebot-native-ci-45/node_modules/.bin/electron"
   native-prompt-transport:
-    name: Native browser cookies and prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
+    name: Native browser cookies and prompt transport (ubuntu-latest, Electron ${{ matrix.electron }})
     needs: inventory
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         electron: ['43.7.7', '45.1.0']
     steps:
       - uses: actions/checkout@v4
