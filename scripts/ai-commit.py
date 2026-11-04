@@ -1603,7 +1603,9 @@ Output rules:
 - distinguish adding a new file from adding information to an existing file
 - never say 'appears to', 'seems', 'likely', 'probably', or 'the provided text'
 - no input explanations, analysis, alternatives, or commentary in the subject or description
-- plain text only in both fields: no markdown, backticks, links, headings, lists, or labels
+- use paired inline Markdown backticks in the subject for filenames, file paths, branch names, commands, settings, and other code identifiers; avoid Markdown links, headings, lists, or emphasis
+- keep quotation marks, parentheses, brackets, and backticks balanced; shorten wording rather than omitting closing delimiters to fit 72 characters
+- write descriptions in plain text without Markdown or emojis
 - do not add emoji to descriptions; subject emoji is assigned independently
 - do not invent contents, motivation, outcomes, or validation absent from the evidence
 - deletions establish removal only; do not call files duplicate, redundant, obsolete, unnecessary, or no longer needed without evidence
@@ -1633,8 +1635,11 @@ Staged diff:
 
 def sanitize_title(text: str) -> str:
     line = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    line = re.sub(r"^(?:[-*]\s+|`+|[\"'])", "", line)
-    line = re.sub(r"(?:`+|[\"'])$", "", line).strip()
+    line = re.sub(r"^[-*]\s+", "", line)
+    # Only unwrap a matching pair enclosing the entire subject; otherwise
+    # the final quote or backtick may belong to an identifier.
+    if len(line) >= 2 and line[0] == line[-1] and line[0] in "\"'`":
+        line = line[1:-1].strip()
     line = line.rstrip(".")
     if len(line) > 72:
         shortened = line[:72]
@@ -1667,12 +1672,43 @@ def sanitize_description(text: str) -> str:
     return " ".join(kept)
 
 
-def plain_commit_text(text: str) -> str:
+def plain_commit_text(text: str, preserve_inline_code: bool = False) -> str:
     text = re.sub(r"\[([^]\n]+)\]\([^)\n]+\)", r"\1", text)
     text = re.sub(r"(?m)^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*)", "", text)
+    if preserve_inline_code:
+        # Remove prose emphasis without changing literal identifier bytes,
+        # including underscores in backticked filenames.
+        segments = re.split(r"(`[^`\n]+`)", text)
+        for index in range(0, len(segments), 2):
+            segment = segments[index].replace("**", "").replace("__", "").replace("~~", "")
+            segments[index] = re.sub(r"(?<!\w)[*_]([^*_\n]+)[*_](?!\w)", r"\1", segment)
+        return re.sub(r"\s+", " ", "".join(segments)).strip()
     text = text.replace("`", "").replace("**", "").replace("__", "").replace("~~", "")
     text = re.sub(r"(?<!\w)[*_]([^*_\n]+)[*_](?!\w)", r"\1", text)
     return re.sub(r"\s+", " ", text).strip(" \"'")
+
+
+def balanced_title_delimiters(title: str) -> bool:
+    """Reject truncated quoted identifiers and unmatched paired punctuation."""
+    opening = []
+    quote = None
+    pairs = {")": "(", "]": "[", "}": "{"}
+    for index, char in enumerate(title):
+        # Apostrophes inside contractions and possessives are not quotes.
+        if (char == "'" and 0 < index < len(title) - 1
+                and title[index - 1].isalnum() and title[index + 1].isalnum()):
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char in ("'", '"', "`"):
+            quote = char
+        elif char in "([{":
+            opening.append(char)
+        elif char in ")]}":
+            if not opening or opening.pop() != pairs[char]:
+                return False
+    return quote is None and not opening
 
 
 def sanitize_generated_message(
@@ -1688,7 +1724,7 @@ def sanitize_generated_message(
     if first is None:
         return "", ""
 
-    raw_title = plain_commit_text(lines[first])
+    raw_title = plain_commit_text(lines[first], preserve_inline_code=True)
     # Local models sometimes prepend a conventional-commit label even when
     # asked for an imperative subject. Preserve the wording and leading emoji;
     # the normal validator still checks the remaining subject.
@@ -1864,11 +1900,13 @@ def fallback_title(files: list[str], file_context: str = "", diff: str = "") -> 
     if len(files) == 1:
         name = os.path.basename(files[0])
         source = _fallback_rename_source(file_context, diff) if action == "Rename" else ""
+        name_label = f"`{name}`" if "`" not in name else name
+        source_label = f"`{source}`" if "`" not in source else source
         if source and source != name:
-            title = f"{fallback_emoji(files)} Rename {source} to {name}"
+            title = f"{fallback_emoji(files)} Rename {source_label} to {name_label}"
             if len(title) <= 72:
                 return title
-        title = f"{fallback_emoji(files)} {action} {name}"
+        title = f"{fallback_emoji(files)} {action} {name_label}"
         return title if len(title) <= 72 else f"{fallback_emoji(files)} {action} repository file"
     categories = [_fallback_category(path) for path in files]
     labels = list(dict.fromkeys(label for label, _ in categories))
@@ -1938,7 +1976,8 @@ def valid_generated_message(title: str, description: str, include_description: b
         r"here(?:'s| is)|breakdown|base64 encoded string)\b", title + " " + description, re.I
     ):
         return False
-    return len(title) <= 72 and (bool(description) if include_description else True)
+    return (len(title) <= 72 and balanced_title_delimiters(title)
+            and (bool(description) if include_description else True))
 
 
 def has_unsupported_removal_claim(message: str, evidence: str) -> bool:

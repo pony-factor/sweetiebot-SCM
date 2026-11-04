@@ -880,7 +880,7 @@ class TitleTests(unittest.TestCase):
             generate = stack.enter_context(patch.object(ai_commit, "ollama_json", side_effect=error))
             self.assertEqual(
                 ai_commit.generate_message("", "+Exhibit references", ["notes.md"]),
-                ("📝 Update notes.md", ""),
+                ("📝 Update `notes.md`", ""),
             )
             self.assertEqual(generate.call_count, 3)
             self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2])
@@ -896,7 +896,7 @@ class TitleTests(unittest.TestCase):
             stack.enter_context(patch.object(ai_commit, 'git_config_string',
                                              side_effect=lambda key, default: '2' if key.endswith('attempts') else default))
             request = stack.enter_context(patch.object(ai_commit, 'ollama_json', return_value={'response': '{}'}))
-            self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']), ('🔧 Update app.py', ''))
+            self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']), ('🔧 Update `app.py`', ''))
             self.assertEqual(request.call_count, 2)
 
     def test_configured_request_timeout_can_exceed_old_transport_default(self):
@@ -951,7 +951,7 @@ class TitleTests(unittest.TestCase):
             request = stack.enter_context(patch.object(ai_commit, 'ollama_json', side_effect=timeout))
             logs = stack.enter_context(patch.object(ai_commit, 'log_event'))
             self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
-                             ('🔧 Update app.py', ''))
+                             ('🔧 Update `app.py`', ''))
             request.assert_called_once()
             self.sleep.assert_not_called()
             self.assertEqual(logs.call_args_list[-1].kwargs['reason'], 'deadline_exceeded')
@@ -1014,6 +1014,50 @@ class TitleTests(unittest.TestCase):
         self.assertLessEqual(len(prompt), (ai_commit.NUM_CTX - 768) * 2 + len(instructions))
         self.assertIn(instructions, prompt)
         self.assertIn("+Exhibit 3 redaction\n+Exhibit 5 fee references", prompt)
+
+    def test_generated_title_preserves_quotes_and_inline_code(self):
+        title, body = ai_commit.sanitize_generated_message(json.dumps({
+            "subject": "🗣️ Update tab title from 'Meeting Notes' to 'Meetings'",
+            "description": "",
+        }))
+        self.assertEqual(title, "🗣️ Update tab title from 'Meeting Notes' to 'Meetings'")
+        self.assertTrue(ai_commit.valid_generated_message(title, body, False))
+        title, body = ai_commit.sanitize_generated_message(json.dumps({
+            "subject": "🔧 Update `docs.json` on `mintlify`", "description": "",
+        }))
+        self.assertEqual(title, "🔧 Update `docs.json` on `mintlify`")
+        self.assertTrue(ai_commit.valid_generated_message(title, body, False))
+        title, body = ai_commit.sanitize_generated_message(json.dumps({
+            "subject": "🔧 Update `__init__.py` settings", "description": "",
+        }))
+        self.assertEqual(title, "🔧 Update `__init__.py` settings")
+
+    def test_generated_title_rejects_unclosed_delimiters(self):
+        for title in (
+            "🗣️ Update tab title from 'Meeting Notes' to 'Meetings",
+            "🔧 Update parser (draft",
+            "🔧 Update parser draft)",
+            "🔧 Update `docs.json",
+            "🔧 Update docs [pending",
+            '🔧 Update "draft',
+        ):
+            with self.subTest(title=title):
+                self.assertFalse(ai_commit.valid_generated_message(title, "", False))
+        for title in (
+            "🗣️ Update tab title from 'Meeting Notes' to 'Meetings'",
+            "🔧 Update parser (draft)",
+            "🔧 Update `docs.json` on `main`",
+            "🔧 Update O'Reilly's parser (draft)",
+        ):
+            with self.subTest(title=title):
+                self.assertTrue(ai_commit.valid_generated_message(title, "", False))
+
+    def test_generated_title_prompt_prefers_backticked_identifiers(self):
+        with patch.object(ai_commit, "recent_subjects", return_value=""):
+            prompt = ai_commit.prompt_for_diff("", "")
+        self.assertIn("inline Markdown backticks in the subject", prompt)
+        self.assertIn("branch names", prompt)
+        self.assertIn("closing delimiters", prompt)
 
     def test_json_response_has_plain_text_and_complete_sentences(self):
         title, body = ai_commit.sanitize_generated_message(
@@ -1150,7 +1194,7 @@ class TitleTests(unittest.TestCase):
             generate = ai_commit.ollama_json
             self.assertEqual(
                 ai_commit.generate_message("", "", ["parser.py"]),
-                ("🔧 Update parser.py", ""),
+                ("🔧 Update `parser.py`", ""),
             )
             self.assertEqual(generate.call_count, 3)
 
@@ -1216,7 +1260,7 @@ class TitleTests(unittest.TestCase):
                 generate = stack.enter_context(patch.object(ai_commit, "ollama_json", return_value=response))
                 self.assertEqual(
                     ai_commit.generate_message("1 file changed", "+Document DTC exhibit references.", ["notes.md"]),
-                    ("📝 Update notes.md", ""),
+                    ("📝 Update `notes.md`", ""),
                 )
                 self.assertEqual(generate.call_count, 3 if response else 0)
 
@@ -1351,7 +1395,7 @@ class TitleTests(unittest.TestCase):
         self.assertFalse(title.endswith("."))
 
     def test_fallback_uses_staged_paths_only(self):
-        self.assertEqual(ai_commit.fallback_title(["src/widget.js"]), "🔧 Update widget.js")
+        self.assertEqual(ai_commit.fallback_title(["src/widget.js"]), "🔧 Update `widget.js`")
         self.assertEqual(
             ai_commit.fallback_title(["src/a.js", "src/b.js"]),
             "🔧 Update code",
@@ -1361,7 +1405,7 @@ class TitleTests(unittest.TestCase):
     def test_missing_model_uses_local_fallback(self, _models):
         self.assertEqual(
             ai_commit.generate_title("1 file", "diff", ["README.md"]),
-            "📝 Update README.md",
+            "📝 Update `README.md`",
         )
 
     def test_fallback_setting_is_enabled_by_default_and_can_be_disabled(self):
@@ -1461,7 +1505,7 @@ class CommitDiagnosticsTests(unittest.TestCase):
             events = stack.enter_context(patch.object(ai_commit, "log_event"))
             self.assertEqual(
                 ai_commit.generate_message("private stat", "+private text", ["notes.md"]),
-                ("📝 Update notes.md", ""),
+                ("📝 Update `notes.md`", ""),
             )
             self.assertEqual(
                 [call.args[1] for call in events.call_args_list],
@@ -1509,7 +1553,7 @@ class CommitDiagnosticsTests(unittest.TestCase):
             events = stack.enter_context(patch.object(ai_commit, "log_event"))
             self.assertEqual(
                 ai_commit.generate_message("one file", "+secret text", ["notes.md"]),
-                ("📝 Update notes.md", ""),
+                ("📝 Update `notes.md`", ""),
             )
             attempts = [call.kwargs for call in events.call_args_list if call.args[1] == "request_failed"]
             self.assertEqual([event["outcome"] for event in attempts], ["retry", "retry", "stopped"])
@@ -1544,7 +1588,7 @@ Describe the staged change.
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
                 patch.object(ai_commit, "select_priority_emoji") as classify:
             self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
-                             ("🖼️ Update icon.png", ""))
+                             ("🖼️ Update `icon.png`", ""))
             parse.assert_not_called()
             classify.assert_not_called()
 
@@ -1555,7 +1599,7 @@ Describe the staged change.
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")), \
                 patch.object(ai_commit, "select_priority_emoji") as classify:
             self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
-                             ("🖼️ Update icon.png", ""))
+                             ("🖼️ Update `icon.png`", ""))
             classify.assert_not_called()
 
     def test_nested_conditions_and_fallback_remain_ordered(self):
@@ -1573,7 +1617,7 @@ Describe the staged change.
                 patch.object(ai_commit, "selected_model", return_value=(None, False)), \
                 patch.object(ai_commit, "configured_models", return_value=("local", "small")):
             self.assertEqual(ai_commit.generate_message("", "Binary files differ", ["icon.png"]),
-                             ("🖼️ Update icon.png", ""))
+                             ("🖼️ Update `icon.png`", ""))
             with patch.object(ai_commit, "commit_fallback_enabled", return_value=False):
                 with self.assertRaisesRegex(RuntimeError, "Install.*model"):
                     ai_commit.generate_message("", "Binary files differ", ["icon.png"])
@@ -1587,7 +1631,7 @@ Describe the staged change.
                 patch.object(ai_commit, "select_priority_emoji", side_effect=RuntimeError("Cannot classify")), \
                 patch.object(ai_commit, "log_event") as logs:
             self.assertEqual(ai_commit.generate_message("", "+Update handler", ["app.py"]),
-                             ("🔧 Update app.py", ""))
+                             ("🔧 Update `app.py`", ""))
             self.assertEqual(logs.call_args_list[-1].kwargs["reason"], "priority_validation_failed")
 
     def test_priority_requests_share_budget_and_preserve_strict_mode(self):
@@ -1616,7 +1660,7 @@ Describe the staged change.
                         ai_commit.generate_message('', '+Fix handler', ['app.py'], require_model=True)
                 else:
                     self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
-                                     ('🔧 Update app.py', ''))
+                                     ('🔧 Update `app.py`', ''))
                 self.assertEqual(timeouts, [45, 45, 45])
                 self.assertIsNone(ai_commit.GENERATION_DEADLINE.get())
 
@@ -1841,8 +1885,8 @@ class ArtifactContextTests(unittest.TestCase):
         self.addCleanup(instructions.stop)
 
     def test_artifact_fallbacks(self):
-        self.assertEqual(ai_commit.fallback_title(["assets/DASH.PNG"]), "🖼️ Update DASH.PNG")
-        self.assertEqual(ai_commit.fallback_title(["docs/report.pdf"]), "🖋️ Update report.pdf")
+        self.assertEqual(ai_commit.fallback_title(["assets/DASH.PNG"]), "🖼️ Update `DASH.PNG`")
+        self.assertEqual(ai_commit.fallback_title(["docs/report.pdf"]), "🖋️ Update `report.pdf`")
         self.assertEqual(
             ai_commit.fallback_title(["assets/a.png", "assets/b.svg"]),
             "🖼️ Update 2 image assets",
@@ -1904,11 +1948,11 @@ class ArtifactContextTests(unittest.TestCase):
         )
         self.assertEqual(
             ai_commit.fallback_title(["src/session.ts"], diff=diff),
-            "🔧 Add session.ts",
+            "🔧 Add `session.ts`",
         )
         self.assertEqual(
             ai_commit.fallback_message(["src/session.ts"], False, diff=diff),
-            ("🔧 Add session.ts", ""),
+            ("🔧 Add `session.ts`", ""),
         )
 
     def test_offline_fallback_describes_deletions_without_staged_claims(self):
@@ -1924,7 +1968,7 @@ class ArtifactContextTests(unittest.TestCase):
     def test_offline_fallback_preserves_non_english_and_spaces_in_paths(self):
         self.assertEqual(
             ai_commit.fallback_title(["docs/rapport final.md"]),
-            "📝 Update rapport final.md",
+            "📝 Update `rapport final.md`",
         )
         self.assertEqual(
             ai_commit.fallback_title(["src/überarbeitet.py", "src/ändern.py"]),
@@ -1945,7 +1989,7 @@ class ArtifactContextTests(unittest.TestCase):
 
     def test_single_file_status_tracks_rename(self):
         context = "Change totals: 1 renamed\n\nStatus:\nR100\told.py\tnew.py"
-        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename old.py to new.py")
+        self.assertEqual(ai_commit.fallback_title(["new.py"], context), "🔧 Rename `old.py` to `new.py`")
         diff = (
             "diff --git a/old.py b/new.py\n"
             "similarity index 98%\n"
@@ -1953,13 +1997,13 @@ class ArtifactContextTests(unittest.TestCase):
             "rename to new.py\n"
         )
         self.assertEqual(ai_commit.fallback_title(["new.py"], diff=diff),
-                         "🔧 Rename old.py to new.py")
+                         "🔧 Rename `old.py` to `new.py`")
 
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
     def test_missing_model_uses_image_fallback(self, _models):
         self.assertEqual(
             ai_commit.generate_title("1 binary file", "Binary files differ", ["assets/logo.png"]),
-            "🖼️ Update logo.png",
+            "🖼️ Update `logo.png`",
         )
 
     def test_large_single_file_diff_keeps_beginning_and_tail(self):
