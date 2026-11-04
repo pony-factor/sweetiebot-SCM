@@ -41,7 +41,11 @@ class RepairTests(unittest.TestCase):
                 'class Repository{async commit(e,t=Object.create(null)){'
                 'let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
                 'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));'
-                'return "native"}}'
+                'return "native"}'
+                'async updateWhenIdleAndWait(){await this.whenIdleAndFocused(),'
+                'await this.status(),await pause(5e3)}}'
+                'decorate([debounce(1e3)],Repository.prototype,'
+                '"eventuallyUpdateWhenIdleAndWait",1)'
             )
             stack.enter_context(patch('sys.argv', ['install.py', '--repair', '--app', str(app)]))
             stack.enter_context(patch.object(install, 'application_paths', side_effect=lambda _app: ('test', [js, css])))
