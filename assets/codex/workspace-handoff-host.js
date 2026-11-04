@@ -92,6 +92,50 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         return { threadId, cwd: root };
     }));
 
+    // Inform the visible chat about the isolated test clone. Unlike branch
+    // switching, this deliberately does not migrate its cwd or interrupt work.
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, destination, branch }) => {
+        const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (!identity?.threadId) return false;
+        const thread = await read(identity.threadId);
+        const original = await canonical(source);
+        const sandbox = await canonical(destination);
+        const cwd = await canonical(thread.cwd);
+        const relative = path.relative(original, cwd);
+        if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+            throw new Error('The visible Codex chat belongs to another checkout.');
+        }
+        if (sandbox === original || sandbox.startsWith(original + path.sep)) {
+            throw new Error('The experiment must be outside the original checkout.');
+        }
+        const direction = 'A separate, disposable Sweetiebot experiment is now open in another VS Code window.\n' +
+            'Original checkout: ' + JSON.stringify(original) + '\n' +
+            'Experimental checkout: ' + JSON.stringify(sandbox) + '\n' +
+            'Copied branch: ' + JSON.stringify(branch) + '\n\n' +
+            'Run tests, builds, destructive resets, trial edits, and other experimental commands ONLY in the experimental checkout. ' +
+            'Use that exact directory as the working directory and check pwd before running destructive commands. ' +
+            'Keep this original checkout, its index, working files, and current Codex conversation unchanged. ' +
+            'The experiment contains a snapshot of committed, staged, unstaged, and non-ignored untracked files. ' +
+            'Do not run git reset/clean/checkout against the original repository. ' +
+            'Do not publish experimental commits or copy experimental edits back without explicit permission. ' +
+            'The separate window is available for its own Codex session if sandbox permissions prevent access from this one.';
+        const input = [{ type: 'text', text: direction, text_elements: [] }];
+        if (thread.status?.type === 'active') {
+            const turns = await send('thread/turns/list', {
+                threadId: identity.threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded'
+            });
+            const activeTurn = turns?.data?.[0];
+            if (!activeTurn?.id || activeTurn.status !== 'inProgress') {
+                throw new Error('Cannot identify the active Codex turn; the experiment remains available.');
+            }
+            await send('turn/steer', { threadId: identity.threadId, expectedTurnId: activeTurn.id, input });
+        } else {
+            await send('turn/start', { threadId: identity.threadId, cwd,
+                clientUserMessageId: randomUUID(), input });
+        }
+        return true;
+    }));
+
     const continuedResets = new Set();
     let limitLookup;
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.readRateLimitReset', async ({ threadId }) => {

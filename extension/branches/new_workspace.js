@@ -173,4 +173,4 @@ function registerNewWorkspaceCommand(vscode, context) {
 }
 
 module.exports = { OPEN_WORKSPACE_COMMAND, openIndependentWorkspace,
-  openIndependentClone, registerNewWorkspaceCommand };
+  openIndependentClone, copyRemotes, registerNewWorkspaceCommand };

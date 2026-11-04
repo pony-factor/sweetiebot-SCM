@@ -12,6 +12,14 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
+## Isolated experiments
+
+Use **Open Experimental Workspace** (the beaker button in Source Control) to create a separate clone of the current branch under `/var/tmp/Sweetiebot/<repo>/<branch>-<color>/<repo>`. VS Code opens it in a new window. The source repository, staged/index state, worktree, branch, and original Codex chat are not moved. This clone includes tracked staged/unstaged modifications and non-ignored untracked regular files, but not Git-ignored build outputs. Conflicted indexes, unsafe untracked symlinks and special files fail closed rather than silently creating an incomplete experiment.
+
+Add `/var/tmp/Sweetiebot` (macOS may display `/private/var/tmp/Sweetiebot`) to **Manage Workspace Trust** once; trust is controlled by VS Code, never bypassed by Sweetiebot. The parent directory is created with private owner-only permissions. An existing unsafe or symlinked parent is rejected.
+
+Once the separate window opens, Sweetiebot sends the *original*, visible Codex conversation an automatic direction to run experiments and resets only in the clone. An active turn is steered without interruption; an idle thread receives a new turn. If Codex is unavailable, the cloned workspace remains open and the failed notification is shown. Experiments are not registered for automatic managed-worktree pruning; review and remove them manually when no longer needed.
+
 ## Sync and cleanup
 
 **Automatically pull clean branches** uses guarded fast-forward behavior and does not silently merge divergent histories. The distinct `sweetiebot.cloudRepositorySync=false` option schedules eligible clean-main checkouts every 15 minutes via macOS; it skips dirty/divergent work. `sweetiebot.autoPublishNewBranches=false` controls publishing newly created branches, not PR creation.
