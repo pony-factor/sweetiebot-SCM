@@ -78,6 +78,7 @@
         "merged_branch.js",
         "merged_branch.py",
         "new_workspace.js",
+        "experiment_workspace.js",
         "workspace_layout.js",
         "prune_merged_branches.py",
         "routine_sync.js",
