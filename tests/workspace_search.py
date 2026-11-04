@@ -225,6 +225,34 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertEqual(view["name"], "Research")
         self.assertEqual(view["contextualTitle"], "Research")
 
+    def test_extension_stylesheets_survive_installer_and_repair_bundles(self):
+        import build_installer_app
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stylesheet = root / "extension/merge/header.css"
+            stylesheet.parent.mkdir(parents=True)
+            stylesheet.write_text(".merge-header { display: flex; }\n")
+            files = workspace_search.source_files(root)
+            self.assertEqual(files[Path("merge/header.css")], stylesheet)
+            self.assertEqual(
+                files[Path("codex-customizations/extension/merge/header.css")], stylesheet)
+            with patch.object(build_installer_app, "ROOT", root):
+                self.assertEqual(
+                    build_installer_app.source_files()[Path("extension/merge/header.css")],
+                    stylesheet)
+
+    def test_chromium_ci_matrix_supports_both_lts_runner_images(self):
+        # The runner images must be explicit: ubuntu-latest changes during rollouts.
+        workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/check.yml").read_text()
+        browser = workflow.split("  codex-webview-browser:\n", 1)[1].split("\n  bot-app-identities:", 1)[0]
+        self.assertIn("os: [ubuntu-24.04, ubuntu-26.04]", browser)
+        self.assertIn("runs-on: ${{ matrix.os }}", browser)
+        self.assertIn("python -m pip install playwright==1.64.1", browser)
+        self.assertIn("python -m playwright install --with-deps chromium", browser)
+        self.assertNotIn("runs-on: ubuntu-latest", browser)
+
     def test_installs_exact_extension_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
