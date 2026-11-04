@@ -2,7 +2,7 @@
 
 Commit titles should start with one professional emoji that matches the change type, followed by a space and a concise imperative title.
 
-Briefly describe the actual staged change in the title.
+Briefly describe the actual staged change in the title. Use paired Markdown backticks for literal filenames, paths, branch names, commands, settings, and similar identifiers. Keep quotation marks, parentheses, and backticks balanced; shorten wording instead of dropping closing punctuation.
 
 When committing directly to main, add one or two descriptive body sentences explaining what changed and why.
 
