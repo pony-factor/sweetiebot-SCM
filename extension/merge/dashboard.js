@@ -207,6 +207,7 @@ async function githubGet(fetchImpl, token, repository, endpoint) {
       }
     });
   } catch (failure) {
+    if (failure?.code === 'SWEETIEBOT_LINDSEY_READ_AUTH') throw failure;
     const causes = [failure, failure?.cause, ...(failure?.cause?.errors || [])];
     const reasons = {
       ENOTFOUND: 'Could not resolve api.github.com. Check your network or DNS settings.',
