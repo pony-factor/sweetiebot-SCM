@@ -476,6 +476,95 @@ class BackgroundCommitTests(unittest.TestCase):
         worker.wait_for_background('/usr/bin/git', [])
         self.assertEqual(self.job(directory)['phase'], 'done')
 
+    def superseded_blocked_job(self):
+        self.git('commit', '-qm', 'Base')
+        self.git('push', '-q', '-u', 'origin', 'main')
+        base = self.git('rev-parse', 'HEAD')
+        (self.repo / 'story.txt').write_text('Old queued change\n')
+        self.git('add', 'story.txt')
+        directory = self.queue(push=True)
+        job = self.job(directory)
+        job.update(phase='blocked', error='The branch advanced outside the queued commits; background work was paused.')
+        worker.write_journal(directory / 'job.json', job)
+        self.git('reset', '--hard', base)
+        return directory
+
+    def test_superseded_job_is_archived_without_touching_history_or_work(self):
+        directory = self.superseded_blocked_job()
+        old = self.job(directory)['sha']
+        head = self.git('rev-parse', 'HEAD')
+        (self.repo / 'story.txt').write_text('Staged work\n')
+        self.git('add', 'story.txt')
+        (self.repo / 'story.txt').write_text('Unstaged work\n')
+        (self.repo / 'untracked.txt').write_text('Untracked work\n')
+        index = (self.repo / '.git/index').read_bytes()
+        status = self.git('status', '--porcelain')
+        worker.reconcile_published_jobs(self.repo / '.git')
+        job = self.job(directory)
+        self.assertEqual(job['phase'], 'cancelled')
+        self.assertFalse(job['push'])
+        self.assertIn('synchronized', job['retired_reason'])
+        self.assertEqual(self.git('rev-parse', job['recovery_ref']), old)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'), head)
+        self.assertEqual((self.repo / '.git/index').read_bytes(), index)
+        self.assertEqual(self.git('status', '--porcelain'), status)
+        self.assertEqual((self.repo / 'story.txt').read_text(), 'Unstaged work\n')
+        self.assertEqual((self.repo / 'untracked.txt').read_text(), 'Untracked work\n')
+        self.assertFalse(worker.queue_entries(self.repo / '.git' / worker.MARKER))
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory), job)
+
+    def test_superseded_job_stays_blocked_when_local_and_remote_differ(self):
+        directory = self.superseded_blocked_job()
+        self.git('commit', '--allow-empty', '-qm', 'Unpublished follow-up')
+        worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
+    def test_superseded_job_requires_live_remote_and_recovery_ref(self):
+        directory = self.superseded_blocked_job()
+        original = worker.git
+        for fail_command in ('ls-remote', 'update-ref'):
+            def fail(*args, **kwargs):
+                if args[0] == fail_command:
+                    raise RuntimeError('Unavailable')
+                return original(*args, **kwargs)
+            with patch.object(worker, 'git', side_effect=fail):
+                worker.reconcile_published_jobs(self.repo / '.git')
+            self.assertEqual(self.job(directory)['phase'], 'blocked')
+
+    def test_superseded_job_keeps_unfinished_active_and_uncertain_cases_paused(self):
+        directory = self.superseded_blocked_job()
+        original_job = self.job(directory)
+        for changes in ({'provisional': True}, {'replacement_sha': original_job['sha']},
+                        {'error': 'Authentication failed.'}):
+            worker.write_journal(directory / 'job.json', {**original_job, **changes})
+            worker.reconcile_published_jobs(self.repo / '.git')
+            self.assertEqual(self.job(directory)['phase'], 'blocked')
+        worker.write_journal(directory / 'job.json', original_job)
+        with (directory / 'worker.lock').open('a+b') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        original = worker.git
+        def uncertain(*args, **kwargs):
+            if args[0] == 'merge-base':
+                return subprocess.CompletedProcess(args, 128, '', 'Cannot determine ancestry')
+            return original(*args, **kwargs)
+        with patch.object(worker, 'git', side_effect=uncertain):
+            worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
+    def test_superseded_job_rechecks_branch_under_lock(self):
+        directory = self.superseded_blocked_job()
+        original = worker.repository_lock
+        def changed(meta):
+            self.git('commit', '--allow-empty', '-qm', 'Concurrent branch change')
+            return original(meta)
+        with patch.object(worker, 'repository_lock', side_effect=changed):
+            worker.reconcile_published_jobs(self.repo / '.git')
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+
     def test_published_job_removed_from_local_branch_stays_blocked(self):
         directory = self.published_blocked_job()
         self.git('checkout', '--orphan', 'replacement')

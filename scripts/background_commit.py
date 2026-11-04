@@ -986,7 +986,7 @@ def sync_with_lindsey(job, remote_tip):
 
 
 def reconcile_published_jobs(meta):
-    """Retire finalized blocked jobs already published or belonging to deleted branches."""
+    """Retire finalized blocked jobs already published or superseded by a branch sync."""
     meta = Path(meta).resolve()
     marker = meta / MARKER
     published = {}
@@ -1018,8 +1018,12 @@ def reconcile_published_jobs(meta):
                 if local.returncode not in (0, 1):
                     continue
                 deleted = local.returncode == 1
-                if not deleted and query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode:
+                local_tip = '' if deleted else query('rev-parse', '--verify', job['branch'])
+                local_ancestry = (1 if deleted else query(
+                    'merge-base', '--is-ancestor', job['sha'], local_tip, check=False).returncode)
+                if local_ancestry not in (0, 1):
                     continue
+                local_contains = local_ancestry == 0
                 remote, destination = job.get('remote'), job.get('destination')
                 if not remote or remote.startswith('-') or not destination or not destination.startswith('refs/heads/'):
                     continue
@@ -1037,24 +1041,36 @@ def reconcile_published_jobs(meta):
                     published[key] = (tip, result.returncode == 0 and not rows)
                 tip, remote_deleted = published[key]
                 obsolete = deleted and remote_deleted
-                if not obsolete and (not tip or query('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode):
+                remote_ancestry = (query('merge-base', '--is-ancestor', job['sha'], tip,
+                                         check=False).returncode if tip else 1)
+                if remote_ancestry not in (0, 1):
+                    continue
+                remote_contains = remote_ancestry == 0
+                superseded = (not deleted and local_tip == tip and not local_contains
+                              and not remote_contains and job.get('error') ==
+                              'The branch advanced outside the queued commits; background work was paused.')
+                if not (obsolete or superseded or (remote_contains and (deleted or local_contains))):
                     continue
                 with repository_lock(meta):
                     current = read_journal(file)
                     if (current != job or (meta / TRANSACTION).exists()
                             or not any(item['id'] == job['id'] for item in queue_entries(marker))
                             or query('show-ref', '--verify', '--quiet', job['branch'], check=False).returncode != local.returncode
-                            or (not deleted and query('merge-base', '--is-ancestor', job['sha'], job['branch'], check=False).returncode)):
+                            or (not deleted and query('rev-parse', '--verify', job['branch']) != local_tip)):
                         continue
-                    if obsolete:
-                        # Never recreate a deleted branch to finish an old push.
+                    if obsolete or superseded:
+                        # Do not resurrect a deleted branch or superseded history.
                         # Retain the actual commit, rather than only its tree.
-                        recovery = 'refs/sweetiebot/recovery/' + job['id'] + '/deleted-branch'
+                        recovery = ('refs/sweetiebot/recovery/' + job['id']
+                                    + ('/superseded-branch' if superseded else '/deleted-branch'))
                         if query('update-ref', recovery, job['sha'], '', check=False).returncode:
                             if query('rev-parse', '--verify', recovery) != job['sha']:
                                 continue
                         job.update(phase='cancelled', push=False, context='',
-                                   retired_reason='Local and remote branches were deleted; queued commit retained for recovery.')
+                                   recovery_ref=recovery,
+                                   retired_reason=('Local and remote branches were synchronized without the queued commit; '
+                                                   'queued commit retained for recovery.' if superseded else
+                                                   'Local and remote branches were deleted; queued commit retained for recovery.'))
                     else:
                         job.update(phase='done', context='')
                     job.pop('error', None)

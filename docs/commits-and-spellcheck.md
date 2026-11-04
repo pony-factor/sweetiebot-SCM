@@ -30,3 +30,5 @@ A co-author action adds `Co-authored-by` after a **blank line**, without replaci
 Markdown code, links, author quotes, protected terminology, file paths and model suggestions need manual review. For a PR review thread, use [the dedicated AI-review workflow](ai-review-reply.md), not a generic spellcheck action.
 
 Evidence: [commit wrapper](../scripts/ai_commit.py), [co-author bridge](../extension/commits/codex_commit.js), [filename preview](../extension/commits/filename_spellcheck.js), [post-commit implementation](../scripts/post_commit_spellcheck.py). See [troubleshooting](troubleshooting.md).
+
+If a finalized push pauses because the branch moved, recovery checks the live remote. When local and remote tips match and both exclude the old queued commit, Sweetiebot cancels that superseded push and retains its complete commit under `refs/sweetiebot/recovery/<job-id>/superseded-branch`. The job records the recovery ref and cancellation reason. Recovery preserves the index and working files; offline, unfinished, active, or divergent cases stay paused.
