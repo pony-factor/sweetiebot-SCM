@@ -1077,7 +1077,7 @@ def render_form(
         tabs.append(
             f'<button class="settings-tab" type="button" role="tab" id="{tab_id}" '
             f'aria-controls="{panel_id}" aria-selected="{selected}" tabindex="{tabindex}">'
-            f'{html.escape(section)}</button>'
+            f'{html.escape("Apps" if section == "GitHub Apps" else section)}</button>'
         )
         sections.append(
             f'<section class="settings-panel" id="{panel_id}" role="tabpanel" '

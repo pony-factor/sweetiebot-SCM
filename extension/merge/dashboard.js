@@ -7,7 +7,6 @@ const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerAct
 const { createReactionChoices } = require('./reaction-choices');
 const { createMergeDashboardPersistence } = require('./dashboard-persistence');
 const { deferredCiRepairCandidate } = require('./auto-ci-repair');
-const { createLindseyReadFetch } = require('../github/read-api');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -296,7 +295,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
-  const readFetch = createLindseyReadFetch(selection.repository, { fetchImpl });
+  // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
+  const readFetch = fetchImpl;
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
     'Lindsey · Merge progress', viewColumn,
     { enableScripts: true, retainContextWhenHidden: true,
@@ -582,8 +582,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       return queuedRefresh;
     }
     activeRefresh = (async () => {
-    if (working || disposed || Date.now() < rateLimitedUntil || (!require('../github/app-identity').separateAppsEnabled() &&
-          require('../github/rate-limit').activeRateLimit(vscode)) || (!force && !isActive())) return;
+    if (working || disposed || Date.now() < rateLimitedUntil ||
+        require('../github/rate-limit').activeRateLimit(vscode) ||
+        (!force && !isActive())) return;
     working = true;
     cycle++;
     error = '';

@@ -244,7 +244,8 @@ async function resumePRSession(vscode, context) {
       const auth = await require('./session').githubSession(vscode);
       const { invokeResolutionCLI } = require('../merge/resolution');
       const { githubGet } = require('../merge/dashboard');
-      const readFetch = require('./read-api').createLindseyReadFetch(selection.repository);
+      // Local handoff verification uses the same human GitHub session as Git.
+      const readFetch = globalThis.fetch;
       const prefix = 'repos/' + selection.repository;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
       const runLocal = (result, snapshot) => require('../merge/progress').withMergeProgress(vscode,

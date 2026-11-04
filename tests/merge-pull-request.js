@@ -45,6 +45,31 @@ const { squashMergePullRequest } = require('../extension/merge/pull-request');
     if (originalCommand === undefined) delete process.env.KEFANIA_GH_COMMAND;
     else process.env.KEFANIA_GH_COMMAND = originalCommand;
   }
+  // Exercise the actual gh subprocess path, rather than the injected spawn mock.
+  // The missing Lindsey App must not prevent a selected local merge from reading PRs.
+  const previousIdentityMode = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+  const previousUserToken = process.env.GH_TOKEN;
+  const fakeGhDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-local-gh-'));
+  try {
+    const fakeGh = path.join(fakeGhDirectory, 'gh');
+    await fs.writeFile(fakeGh, '#!/bin/sh\n' +
+      '[ "$GH_TOKEN" = "local-user-token" ] || exit 11\n' +
+      '[ "$1" = "api" ] || exit 12\n' +
+      'printf \'HTTP/2 200 OK\\n\\n{"source":"local-gh"}\'\n', { mode: 0o700 });
+    process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'separate-apps';
+    process.env.KEFANIA_GH_COMMAND = fakeGh;
+    process.env.GH_TOKEN = 'local-user-token';
+    assert.deepEqual(await githubApi('repos/owner/repo/pulls/12'), { source: 'local-gh' },
+      'Local merge repository reads must use the signed-in CLI instead of Lindsey');
+  } finally {
+    await fs.rm(fakeGhDirectory, { recursive: true, force: true });
+    if (previousIdentityMode === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+    else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = previousIdentityMode;
+    if (previousUserToken === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = previousUserToken;
+    if (originalCommand === undefined) delete process.env.KEFANIA_GH_COMMAND;
+    else process.env.KEFANIA_GH_COMMAND = originalCommand;
+  }
   const input = {repository:'owner/repo',head:'pony',base:'main',
     result:{number:12,url:'https://github.com/owner/repo/pull/12'}};
   const pr = {html_url:input.result.url,title:'🖌️ Improve settings',state:'open',draft:false,merged_at:null,
