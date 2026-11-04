@@ -385,8 +385,8 @@ function installPullRequestRefresh(vscode, view, owner, { checkBulkEligibility =
           // Every earlier merge may change this PR's base or invalidate its
           // checks. Never rely on the confirmation-time eligibility snapshot.
           const fresh = await checkBulkEligibility(request, accessToken);
-          const changed = fresh.headSha !== status.headSha || fresh.head !== status.head ||
-            fresh.base !== status.base || fresh.title !== status.title;
+          const changed = fresh.eligible && (fresh.headSha !== status.headSha ||
+            fresh.head !== status.head || fresh.base !== status.base || fresh.title !== status.title);
           if (!fresh.eligible || changed) {
             counts.skipped++;
             skippedReasons.push(`#${request.number}: ${changed ? "PR changed since confirmation" : fresh.reason}`);
