@@ -12,6 +12,10 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | Pull requests, Kefania, Lindsey, GitHub | Drafts, publication, dashboard, auto-refresh, checks, rate-limit handling, App identities |
 | Codex, Browser, Window, Initialization | UI injection and labels, composer options, wake behavior, repair/reload |
 
+## Sidebar navigation
+
+Magic Settings organizes its existing pages under **Source Control & Commits**, **Branches & Workspaces**, **AI & Spellcheck**, **GitHub & Pull Requests**, **Interface & Customization**, and **System & Diagnostics**. Group headings do not change settings or saved preferences. Individual pages remain keyboard navigable, with scrolling and a responsive layout for smaller windows.
+
 ## Key manifest defaults (not current saved user values)
 
 | Setting | Default | Meaning |
