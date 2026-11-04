@@ -215,8 +215,11 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             )
             # Retain the checked-in extension media mirrors for development use.
             self.assertEqual((workspace_search.SOURCE / "media" / name).read_bytes(), source.read_bytes())
-        notices = workspace_search.SOURCE / "THIRD_PARTY_NOTICES.md"
-        self.assertEqual(workspace_search.source_files()[Path("THIRD_PARTY_NOTICES.md")], notices)
+        readme = workspace_search.SOURCE / "README.md"
+        self.assertEqual(workspace_search.source_files()[Path("README.md")], readme)
+        self.assertIn("## Credits", readme.read_text())
+        self.assertIn("The Overmare Studios", readme.read_text())
+        self.assertIn("CaptainPudgeMuffin", readme.read_text())
         self.assertEqual(
             build_installer_app.source_files()[Path("assets/imgs/README.md")],
             image_root / "README.md",
@@ -323,8 +326,8 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                     (workspace_search.HERE.parent / "assets/imgs" / relative_path).read_bytes(),
                 )
             self.assertEqual(
-                (destination / "THIRD_PARTY_NOTICES.md").read_bytes(),
-                (workspace_search.SOURCE / "THIRD_PARTY_NOTICES.md").read_bytes(),
+                (destination / "README.md").read_bytes(),
+                (workspace_search.SOURCE / "README.md").read_bytes(),
             )
             self.assertFalse(
                 workspace_search.sync_extension(
