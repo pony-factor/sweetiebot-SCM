@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { generateKeyPairSync } = require('node:crypto');
+const { decodeKeychainPassword } = require('../extension/github/app_settings');
 const { separateAppsEnabled, roleSettings, workflowBotLogin, stripAppSecrets,
   getRoleInstallationToken } = require('../extension/github/app_identity');
 
@@ -15,7 +16,9 @@ const env = {
   SWEETIEBOT_LINDSEY_APP_PRIVATE_KEY: privateKey
 };
 const now = () => Date.parse('2026-10-22T12:00:00Z');
-function mockGitHub(role, { wrongSlug = false, missingInstall = false, expired = false } = {}) {
+function mockGitHub(role, { wrongSlug = false, missingInstall = false, expired = false,
+  permissions = { contents: 'write', pull_requests: 'write', issues: 'write',
+    checks: 'read', statuses: 'read' } } = {}) {
   const requests = [];
   const id = role === 'kefania' ? 1234 : 5678;
   const slug = role === 'kefania' ? 'kefania-pony' : 'lindsey-pony';
@@ -24,7 +27,7 @@ function mockGitHub(role, { wrongSlug = false, missingInstall = false, expired =
     if (url.endsWith('/app')) return { ok: true, json: async () =>
       ({ id, slug: wrongSlug ? 'codex-pony' : slug }) };
     if (url.endsWith('/installation')) return missingInstall
-      ? { ok: false, status: 404 } : { ok: true, json: async () => ({ id: 90 }) };
+      ? { ok: false, status: 404 } : { ok: true, json: async () => ({ id: 90, permissions }) };
     if (url.endsWith('/access_tokens')) return { ok: true, json: async () => ({
       token: role + '-install-token', expires_at: expired
         ? '2026-10-22T12:00:30Z' : '2026-10-22T12:59:00Z'
@@ -71,6 +74,20 @@ async function run() {
   assert.deepEqual(JSON.parse(readOnly.requests[2].init.body).permissions,
     { contents: 'read', pull_requests: 'read', issues: 'read',
       checks: 'read', statuses: 'read' });
+  const writeOnly = mockGitHub('lindsey', { permissions: {
+    contents: 'write', pull_requests: 'write', issues: 'write'
+  } });
+  await getRoleInstallationToken('lindsey', 'pony-factor/sweetiebot-SCM',
+    { env, now, fetchImpl: writeOnly.fetchImpl });
+  await assert.rejects(getRoleInstallationToken('lindsey', 'pony-factor/sweetiebot-SCM',
+    { env, now, readOnly: true, fetchImpl: writeOnly.fetchImpl }), error => {
+    assert.equal(error.code, 'SWEETIEBOT_APP_PERMISSIONS');
+    assert.match(error.message, /Checks: Read, Commit statuses: Read/);
+    assert.match(error.message, /approve the updated organization installation/);
+    return true;
+  });
+  assert.equal(writeOnly.requests.filter(item => item.url.endsWith('/access_tokens')).length, 1,
+    'Missing read permissions are reported before GitHub rejects token creation');
   const keychainEnv = { ...env, SWEETIEBOT_KEFANIA_APP_PRIVATE_KEY: undefined,
     SWEETIEBOT_KEFANIA_APP_KEYCHAIN: 'true' };
   let retrievedRole;
@@ -81,6 +98,26 @@ async function run() {
   });
   assert.equal(retrievedRole, 'kefania');
   assert.equal(keychainResult.login, 'kefania-pony[bot]');
+  // macOS security -w emits multiline PEM passwords as hexadecimal.
+  for (const type of ['pkcs1', 'pkcs8']) {
+    const pem = require('node:crypto').createPrivateKey(privateKey)
+      .export({ type, format: 'pem' });
+    for (const output of [pem, Buffer.from(pem).toString('hex'),
+      Buffer.from(pem).toString('hex').toUpperCase()]) {
+      const fake = mockGitHub('kefania');
+      const result = await getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM', {
+        env: keychainEnv, now, fetchImpl: fake.fetchImpl,
+        keychainKey: async () => decodeKeychainPassword(output + '\n')
+      });
+      assert.equal(result.login, 'kefania-pony[bot]');
+      const jwt = fake.requests[0].init.headers.Authorization.slice('Bearer '.length);
+      const [header, payload, signature] = jwt.split('.');
+      assert(require('node:crypto').verify('RSA-SHA256', Buffer.from(header + '.' + payload),
+        require('node:crypto').createPublicKey(pem), Buffer.from(signature, 'base64url')));
+    }
+  }
+  assert.equal(decodeKeychainPassword('abc\n'), 'abc', 'Odd hex must not be truncated');
+  assert.equal(decodeKeychainPassword('aazz\n'), 'aazz', 'Invalid hex must not be partially decoded');
   await assert.rejects(getRoleInstallationToken('kefania', 'pony-factor/sweetiebot-SCM', {
     env: keychainEnv, now, keychainKey: async () => { throw new Error('Keychain locked'); }
   }), /Keychain locked/);

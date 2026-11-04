@@ -140,7 +140,14 @@ def check_connection(role, repository):
     program = """
 const {getRoleInstallationToken} = require(process.argv[1]);
 process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'separate-apps';
-getRoleInstallationToken(process.argv[2], process.argv[3]).then(
+async function check() {
+  const result = await getRoleInstallationToken(process.argv[2], process.argv[3]);
+  if (process.argv[2] === 'lindsey') {
+    await getRoleInstallationToken('lindsey', process.argv[3], {readOnly: true});
+  }
+  return result;
+}
+check().then(
   result => console.log(JSON.stringify({login: result.login})),
   error => { console.log(JSON.stringify({error: error.message})); process.exitCode = 1; });
 """

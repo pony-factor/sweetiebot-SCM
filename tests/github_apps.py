@@ -67,6 +67,23 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(status['apps']['lindsey']['id'], '5436447')
         self.assertNotIn('key', status['apps']['kefania'])
 
+    def test_lindsey_connection_catches_missing_read_permissions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            module = root / 'extension/github/app_identity.js'
+            module.parent.mkdir(parents=True)
+            module.write_text("""
+exports.getRoleInstallationToken = async (role, repository, options = {}) => {
+  if (options.readOnly) throw Error('Missing Checks: Read');
+  return {login: role + '-pony[bot]'};
+};
+""")
+            with patch.object(github_apps, '__file__', str(root / 'scripts/github_apps.py')):
+                self.assertIn('Connected as kefania-pony[bot]',
+                              github_apps.check_connection('kefania', 'owner/repo')['message'])
+                with self.assertRaisesRegex(RuntimeError, 'Missing Checks: Read'):
+                    github_apps.check_connection('lindsey', 'owner/repo')
+
     def test_default_ids_preserve_saved_ids_and_custom_apps(self):
         settings = {'kefania-app-id': '1234', 'lindsey-app-slug': 'custom-lindsey'}
         with patch.object(github_apps, 'git_setting', side_effect=lambda name: settings.get(name, '')):

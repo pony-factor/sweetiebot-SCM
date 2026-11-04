@@ -120,6 +120,20 @@ async function getRoleInstallationToken(role, repository, {
       checks: 'read', statuses: 'read' }
     : { contents: role === 'lindsey' ? 'write' : 'read',
       pull_requests: 'write', issues: 'write' };
+  const labels = { contents: 'Contents', pull_requests: 'Pull requests',
+    issues: 'Issues', checks: 'Checks', statuses: 'Commit statuses' };
+  const missing = Object.entries(permissions).filter(([name, level]) => {
+    const granted = installation.permissions?.[name];
+    return granted !== 'write' && (level === 'write' || granted !== 'read');
+  });
+  if (missing.length) {
+    const failure = new Error('GitHub App ' + role + ' installation is missing repository permissions: ' +
+      missing.map(([name, level]) => labels[name] + ': ' +
+        (level === 'write' ? 'Read and write' : 'Read')).join(', ') +
+      '. Update the App permissions in GitHub, approve the updated organization installation, then retry Check connection.');
+    failure.code = 'SWEETIEBOT_APP_PERMISSIONS';
+    throw failure;
+  }
   const authorized = await request('/app/installations/' + installation.id + '/access_tokens',
     jwt, 'POST', { repositories: [repository.split('/')[1]], permissions });
   if (typeof authorized?.token !== 'string' || !authorized.token ||

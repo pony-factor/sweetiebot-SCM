@@ -121,6 +121,16 @@ jobs:
       - name: Detect browser-test dependencies
         id: browser
         run: python3 scripts/ci/ci_test_runner.py browser-needed "${{ matrix.group }}" >> "$GITHUB_OUTPUT"
+      - name: Ignore unavailable optional Microsoft feed during Chromium setup
+        if: steps.browser.outputs.required == 'true'
+        run: |
+          # Ubuntu 26.04 hosted runners may have a failing Microsoft apt source.
+          # Chromium dependencies use Ubuntu packages, not this optional feed.
+          for source in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [[ -f "$source" ]] && grep -Fq 'packages.microsoft.com/ubuntu/26.04/prod' "$source"; then
+              sudo mv -- "$source" "$source.disabled"
+            fi
+          done
       - name: Install browser-test dependencies
         if: steps.browser.outputs.required == 'true'
         run: |
@@ -198,6 +208,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Ignore unavailable optional Microsoft feed during Chromium setup
+        run: |
+          # Ubuntu 26.04 hosted runners may have a failing Microsoft apt source.
+          # Chromium dependencies use Ubuntu packages, not this optional feed.
+          for source in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [[ -f "$source" ]] && grep -Fq 'packages.microsoft.com/ubuntu/26.04/prod' "$source"; then
+              sudo mv -- "$source" "$source.disabled"
+            fi
+          done
       - name: Install Chromium automation
         run: |
           python -m pip install playwright==1.64.1
