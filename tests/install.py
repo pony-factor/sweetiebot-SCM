@@ -1,3 +1,16 @@
+
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
 import json
 import contextlib
 import io
@@ -389,7 +402,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertIn("background: var(--vscode-button-hoverBackground);", css)
 
     def test_unfilled_buttons_match_their_background_with_a_border(self):
-        css = (install.WORKBENCH_ASSETS / "outlined_buttons.css").read_text()
+        css = (install.WORKBENCH_ASSETS / "outlined-buttons.css").read_text()
 
         self.assertIn(
             ".scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown", css
@@ -1036,14 +1049,14 @@ class AiWrapperTests(unittest.TestCase):
             self.assertFalse(destination.exists())
 
             self.assertTrue(install.sync_ai_wrapper(destination=destination))
-            self.assertEqual(destination.read_bytes(), (install.HERE / "ai_commit.py").read_bytes())
+            self.assertEqual(destination.read_bytes(), (install.HERE / "ai-commit.py").read_bytes())
             sources = wrapper_dependencies.wrapper_files(install.HERE, destination)
             for target, source in sources.items():
                 self.assertEqual(target.read_bytes(), source.read_bytes())
                 self.assertTrue(target.stat().st_mode & 0o111)
             wrapper_dependencies.validate_imports(destination.parent)
-            backend = destination.with_name("coreml_backend.py")
-            self.assertEqual(backend.read_bytes(), (install.HERE / "coreml_backend.py").read_bytes())
+            backend = destination.with_name("coreml-backend.py")
+            self.assertEqual(backend.read_bytes(), (install.HERE / "coreml-backend.py").read_bytes())
             # Exercise the installed wrapper without source-tree imports.
             result = subprocess.run(
                 [sys.executable, str(destination), "--version"],
@@ -1052,10 +1065,10 @@ class AiWrapperTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("git version", result.stdout)
-            diagnostics = destination.with_name("sweetiebot_diagnostics.py")
-            self.assertEqual(diagnostics.read_bytes(), (install.HERE / "sweetiebot_diagnostics.py").read_bytes())
-            async_worker = destination.with_name("sweetiebot_async_commit.py")
-            self.assertEqual(async_worker.read_bytes(), (install.HERE / "sweetiebot_async_commit.py").read_bytes())
+            diagnostics = destination.with_name("sweetiebot-diagnostics.py")
+            self.assertEqual(diagnostics.read_bytes(), (install.HERE / "sweetiebot-diagnostics.py").read_bytes())
+            async_worker = destination.with_name("sweetiebot-async-commit.py")
+            self.assertEqual(async_worker.read_bytes(), (install.HERE / "sweetiebot-async-commit.py").read_bytes())
             self.assertTrue(destination.stat().st_mode & 0o111)
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
 
@@ -1063,10 +1076,10 @@ class AiWrapperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "bin" / "scm-toolkit-git"
             install.sync_ai_wrapper(destination=destination)
-            for name in ("toolkit_settings.py", "codex_composer_layout.py",
-                         "message_bar.py", "branch_names.py", "branch_name_packs.json"):
+            for name in ("toolkit-settings.py", "codex-composer-layout.py",
+                         "message-bar.py", "branch-names.py", "branch-name-packs.json"):
                 self.assertTrue(destination.with_name(name).is_file(), name)
-            missing = destination.with_name("toolkit_settings.py")
+            missing = destination.with_name("toolkit-settings.py")
             missing.unlink()
             self.assertTrue(install.sync_ai_wrapper(check=True, destination=destination))
             with self.assertRaisesRegex(RuntimeError, "dependencies cannot load"):
@@ -1100,11 +1113,11 @@ class AiWrapperTests(unittest.TestCase):
                     verify.assert_called_once_with(home / "runtime")
                     args, kwargs = launch.call_args
                     self.assertEqual(args[0][-1], "--resume")
-                    self.assertEqual(Path(args[0][1]), home / "runtime/background_commit.py")
+                    self.assertEqual(Path(args[0][1]), home / "runtime/background-commit.py")
                     self.assertTrue(kwargs["start_new_session"])
                 self.assertEqual(json.loads(file.read_text())["phase"], "committed")
-                self.assertTrue((home / "runtime/toolkit_settings.py").is_file())
-                self.assertTrue((home / "runtime/wrapper_dependencies.py").is_file())
+                self.assertTrue((home / "runtime/toolkit-settings.py").is_file())
+                self.assertTrue((home / "runtime/wrapper-dependencies.py").is_file())
                 wrapper_dependencies.validate_imports(home / "runtime")
 
     def test_install_ignores_untrusted_stale_job_entries(self):
@@ -1136,8 +1149,8 @@ class AiWrapperTests(unittest.TestCase):
             (repo / "file.txt").write_text("changed")
             git("add", "file.txt")
             env = {**os.environ, "PYTHONPATH": "", "SCM_TOOLKIT_REAL_GIT": real_git}
-            for missing in ("toolkit_settings.py", "coreml_backend.py",
-                            "sweetiebot_diagnostics.py", "background_commit.py"):
+            for missing in ("toolkit-settings.py", "coreml-backend.py",
+                            "sweetiebot-diagnostics.py", "background-commit.py"):
                 install.sync_ai_wrapper(destination=destination)
                 destination.with_name(missing).unlink()
                 version = subprocess.run([sys.executable, str(destination), "--version"],
@@ -1175,7 +1188,7 @@ class AiWrapperTests(unittest.TestCase):
             git("add", "file.txt")
             git("commit", "-qm", "Initial commit")
             original_head = git("rev-parse", "HEAD").stdout.strip()
-            destination.with_name("toolkit_settings.py").unlink()
+            destination.with_name("toolkit-settings.py").unlink()
             env = {**os.environ, "PYTHONPATH": "", "SCM_TOOLKIT_REAL_GIT": real_git}
 
             # Both the canonical executable and the old VS Code git.path alias
@@ -1205,7 +1218,7 @@ class AiWrapperTests(unittest.TestCase):
             # The installer already repairs the missing sibling dependency.
             self.assertTrue(install.sync_ai_wrapper(check=True, destination=destination))
             install.sync_ai_wrapper(destination=destination)
-            self.assertTrue(destination.with_name("toolkit_settings.py").is_file())
+            self.assertTrue(destination.with_name("toolkit-settings.py").is_file())
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=destination))
 
     def test_canonical_installer_call_migrates_existing_legacy_wrapper(self):
@@ -1229,7 +1242,7 @@ class AiWrapperTests(unittest.TestCase):
                     install.sync_ai_wrapper(check=True, destination=primary)
                 )
 
-            expected = (install.HERE / "ai_commit.py").read_bytes()
+            expected = (install.HERE / "ai-commit.py").read_bytes()
             helper = legacy.with_name(legacy.name + "-spellcheck.py")
             primary_helper = primary.with_name(primary.name + "-spellcheck.py")
             self.assertEqual(primary.read_bytes(), expected)
@@ -1268,13 +1281,13 @@ class AiWrapperTests(unittest.TestCase):
             spec.loader.exec_module(core)
             worker = core.load_post_commit_spellcheck()
             helper = destination.with_name(destination.name + "-spellcheck.py")
-            self.assertEqual(helper.read_bytes(), (install.HERE / "post_commit_spellcheck.py").read_bytes())
+            self.assertEqual(helper.read_bytes(), (install.HERE / "post-commit-spellcheck.py").read_bytes())
             with patch.object(worker, "CORE_PATH", str(destination)):
                 self.assertTrue(callable(worker.load_core().generate_message))
             install.sync_ai_wrapper(remove=True, destination=destination)
             self.assertFalse(helper.exists())
-            self.assertFalse(destination.with_name("sweetiebot_diagnostics.py").exists())
-            self.assertFalse(destination.with_name("sweetiebot_async_commit.py").exists())
+            self.assertFalse(destination.with_name("sweetiebot-diagnostics.py").exists())
+            self.assertFalse(destination.with_name("sweetiebot-async-commit.py").exists())
 
     def test_sync_ai_wrapper_uninstall_removes_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1284,8 +1297,8 @@ class AiWrapperTests(unittest.TestCase):
             self.assertTrue(destination.exists())
             install.sync_ai_wrapper(remove=True, destination=destination)
             self.assertFalse(destination.exists())
-            self.assertFalse(destination.with_name("sweetiebot_diagnostics.py").exists())
-            self.assertFalse(destination.with_name("sweetiebot_async_commit.py").exists())
+            self.assertFalse(destination.with_name("sweetiebot-diagnostics.py").exists())
+            self.assertFalse(destination.with_name("sweetiebot-async-commit.py").exists())
 
 
     def test_sync_model_picker_installs_executable_copy(self):
@@ -1303,7 +1316,7 @@ class AiWrapperTests(unittest.TestCase):
             )
             self.assertEqual(
                 destination.read_bytes(),
-                (install.HERE / "model_picker.py").read_bytes(),
+                (install.HERE / "model-picker.py").read_bytes(),
             )
             self.assertTrue(destination.stat().st_mode & 0o111)
 
@@ -1705,17 +1718,17 @@ class InstallerScriptsLayoutTests(unittest.TestCase):
         self.assertFalse((root / "Install Sweetiebot.command").exists())
         source = launcher.read_text(encoding="utf-8")
         self.assertIn('cd -- "$(dirname -- "$0")/.."', source)
-        self.assertIn("python3 scripts/build_installer_app.py", source)
+        self.assertIn("python3 scripts/build-installer-app.py", source)
         self.assertIn('open "$PWD/Sweetiebot Installer.app"', source)
 
     def test_ci_runner_and_inventory_share_directory(self):
         root = Path(__file__).resolve().parents[1]
-        self.assertTrue((root / "scripts/ci/ci_test_runner.py").is_file())
-        self.assertTrue((root / "scripts/ci/ci_test_groups.json").is_file())
-        self.assertFalse((root / "scripts/ci_test_runner.py").exists())
-        self.assertFalse((root / "scripts/ci_test_groups.json").exists())
+        self.assertTrue((root / "scripts/ci/ci-test-runner.py").is_file())
+        self.assertTrue((root / "scripts/ci/ci-test-groups.json").is_file())
+        self.assertFalse((root / "scripts/ci-test-runner.py").exists())
+        self.assertFalse((root / "scripts/ci-test-groups.json").exists())
         workflow = (root / ".github/workflows/check.yml").read_text(encoding="utf-8")
-        self.assertEqual(workflow.count("scripts/ci/ci_test_runner.py"), 3)
+        self.assertEqual(workflow.count("scripts/ci/ci-test-runner.py"), 3)
 
 
 class ResolvedCountdownTests(unittest.TestCase):

@@ -1,0 +1,195 @@
+"""Scoped appearance overrides for the installed Codex IDE composer."""
+
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
+
+from pathlib import Path
+import json
+import re
+from html.parser import HTMLParser
+
+START = '\n/* scm-toolkit-codex-colors:start */\n'
+END = '/* scm-toolkit-codex-colors:end */\n'
+COLOR_SETTINGS = (
+    "codexSendBackground",
+    "codexNewChatDotColor",
+    "codexSendForeground",
+    "codexComposerLabelColor",
+    "codexDropAccent",
+)
+APPEARANCE_SETTINGS = COLOR_SETTINGS + ("codexHideAccessLabel", "codexFlatComposer", "codexShowQueuedDelete", "codexShowQueuePause")
+FONT_START = '/* scm-toolkit-font-fallback:'
+FONT_END = '/* scm-toolkit-font-fallback:end */'
+
+
+def fallback_fonts(css, remove=False):
+    """Use shipped fallback fonts when the webview CSP blocks embedded fonts."""
+    wrapped = re.compile(re.escape(FONT_START) + r'(.*?) \*/(.*?)' + re.escape(FONT_END), re.S)
+    def restore(match):
+        original, replacement = json.loads(match[1])
+        if match[2] != replacement:
+            raise ValueError('Codex font fallback changed; refusing to overwrite it.')
+        return original
+    css = wrapped.sub(restore, css)
+    if remove:
+        return css
+    def replace(match):
+        original = match[0]
+        # Keep the existing local WOFF/TTF alternatives and their font metrics.
+        replacement = re.sub(r'url\(data:font/woff2;base64,[A-Za-z0-9+/=]+\)format\("woff2"\),'
+                             r'(?=url\(\./)', '', original)
+        if original == replacement:
+            return original
+        return FONT_START + json.dumps([original, replacement]) + ' */' + replacement + FONT_END
+    return re.sub(r'@font-face\{[^}]*\}', replace, css)
+
+
+def validate_color(value):
+    value = str(value).strip()
+    if value and not re.fullmatch(r"#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})", value):
+        raise ValueError("Colors must be hexadecimal, such as #43AF49, or blank to use the theme.")
+    return value
+
+
+class _StylesheetLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.names = []
+
+    def handle_starttag(self, tag, attributes):
+        attributes = dict(attributes)
+        if tag != 'link' or 'stylesheet' not in (attributes.get('rel') or '').split():
+            return
+        href = (attributes.get('href') or '').split('?', 1)[0].split('#', 1)[0]
+        if href.startswith('./assets/'):
+            name = href.removeprefix('./assets/')
+            if Path(name).name == name and name.endswith('.css'):
+                self.names.append(name)
+
+
+def stylesheet_path(extension_path=None):
+    candidates = (
+        [Path(extension_path)] if extension_path is not None
+        else sorted((Path.home() / '.vscode/extensions').glob('openai.chatgpt-*'), reverse=True)
+    )
+    for candidate in candidates:
+        assets = candidate / 'webview/assets'
+        index = candidate / 'webview/index.html'
+        if index.is_file():
+            links = _StylesheetLinks()
+            links.feed(index.read_text())
+            referenced = list(dict.fromkeys(assets / name for name in links.names))
+            if len(referenced) == 1 and referenced[0].is_file():
+                return referenced[0]
+        matches = []
+        for path in assets.glob('*.css'):
+            css = path.read_text()
+            if START in css or (':root[data-codex-window-type=extension]' in css and '.bg-composer-primary{' in css):
+                matches.append(path)
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def transform(css, settings, remove=False):
+    css = fallback_fonts(css, remove=remove)
+    if css.count(START) != css.count(END) or css.count(START) > 1:
+        raise ValueError("Incomplete Codex color patch; refusing to overwrite it.")
+    if START in css:
+        before, remainder = css.split(START, 1)
+        _, after = remainder.split(END, 1)
+        css = before + after
+    if remove:
+        return css
+    background, dot, foreground, label, drop = [validate_color(settings.get(key, '')) for key in COLOR_SETTINGS]
+    scope = ':root[data-codex-window-type=extension]'
+    # The New Chat unread dot can be customized independently. If unset,
+    # follow the Send button background and finally the VS Code theme.
+    # Match only this specific SVG circle so other badges keep their colors.
+    dot_color = dot or background or (
+        'var(--vscode-focusBorder, var(--vscode-textLink-foreground, '
+        'var(--color-text-info)))'
+    )
+    # The queued-message controls share the user's theme accent.
+    rules = [
+        f'{scope} {{ --scm-toolkit-queue-accent: {label or background or "var(--vscode-focusBorder, var(--color-text-info))"}; }}',
+        f'{scope} svg circle.fill-text-info[cx="15.75"][cy="4"][r="3.25"] '
+        f'{{ fill: {dot_color} !important; }}'
+    ]
+    # Current chat rows use a CSS dot (or a count), rather than the old SVG.
+    chat_row = f'{scope} :is(button, [role="button"], a):has([data-thread-title])'
+    rules.extend([
+        f'{scope} svg circle.fill-text-info[cx="12.6"][cy="3.2"][r="2.6"] {{ fill: {dot_color} !important; }}',
+        f'{chat_row} .icon-xs.scale-50 > :is(.bg-info-solid, .bg-text-info) '
+        f'{{ background-color: {dot_color} !important; }}',
+        f'{chat_row} span[style*="--color-text-info"] '
+        f'{{ color: {dot_color} !important; background-color: color-mix(in srgb, {dot_color} 18%, transparent) !important; '
+        f'box-shadow: inset 0 0 0 1px color-mix(in srgb, {dot_color} 72%, transparent) !important; }}',
+    ])
+    if not settings.get('codexShowQueuedDelete', True):
+        rules.append(f'{scope} [data-scm-toolkit-queue-id] button[aria-label="Delete queued message"] {{ display: none !important; }}')
+    if settings.get('codexShowQueuePause', False):
+        rules.append(f'{scope} {{ --scm-toolkit-queue-pause-display: flex; }}')
+    if settings.get('codexFlatComposer', False):
+        rules.append((Path(__file__).resolve().parent.parent / 'assets/codex/flat-composer.css').read_text())
+    if settings.get('codexHideAccessLabel', False):
+        # Keep the current mode in the accessibility tree via aria-describedby.
+        # The icon is a sibling of the value, so it stays visible and clickable.
+        rules.append(
+            f'{scope} button[data-composer-navigation-target="permissions"] '
+            '[class*="ComposerDropdownLabelValue_"] { '
+            'position: absolute !important; width: 1px !important; height: 1px !important; '
+            'padding: 0 !important; margin: -1px !important; overflow: hidden !important; '
+            'clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; '
+            'border: 0 !important; display: block !important; }'
+        )
+    if drop:
+        rules.append(f'{scope} {{ --color-codex-drop-overlay: {drop}; --color-codex-drop-prompt: {drop}; }}')
+        rules.append(f'{scope} [class*="bg-codex-drop-overlay"] {{ border-color: {drop} !important; }}')
+        rules.append(f'{scope} .bg-codex-drop-prompt {{ color: #ffffff !important; border-color: {drop} !important; }}')
+    if background:
+        rules.append(f'{scope} button.bg-composer-primary {{ background-color: {background} !important; }}')
+    if foreground:
+        rules.append(f'{scope} button.bg-composer-primary .text-composer-primary {{ color: {foreground} !important; }}')
+        rules.append(f'{scope} button.bg-composer-primary.scm-toolkit-pegasus-send::after '
+                     f'{{ background-color: {foreground} !important; }}')
+    if label:
+        selectors = [
+            f'{scope} button[data-composer-navigation-target="{target}"]{descendant}'
+            for target in ('permissions', 'run-location', 'add-context') for descendant in ('', ' *')
+        ]
+        rules.append(',\n'.join(selectors) + f' {{ color: {label} !important; }}')
+    # Important rules in native layers outrank unlayered important rules.
+    # Codex establishes theme first, giving our overrides the required priority.
+    return css + START + '@layer theme {\n' + '\n'.join(rules) + '\n}\n' + END if rules else css
+
+
+INLINE_START = '<!-- scm-toolkit-codex-appearance:start -->'
+INLINE_END = '<!-- scm-toolkit-codex-appearance:end -->'
+
+
+def webview_appearance(index, css, remove=False):
+    """Embed scoped overrides in fresh HTML, independent of resource caches."""
+    if index.count(INLINE_START) != index.count(INLINE_END) or index.count(INLINE_START) > 1:
+        raise ValueError('Incomplete Codex inline appearance patch.')
+    if INLINE_START in index:
+        before, rest = index.split(INLINE_START, 1)
+        _, after = rest.split(INLINE_END, 1)
+        index = before + after
+    if remove:
+        return index
+    if index.count('</head>') != 1 or css.count(START) != 1 or css.count(END) != 1:
+        raise ValueError('Codex appearance insertion point could not be identified uniquely.')
+    rules = css.split(START, 1)[1].split(END, 1)[0]
+    payload = INLINE_START + '<style>' + rules + '</style>' + INLINE_END
+    return index.replace('</head>', payload + '</head>', 1)

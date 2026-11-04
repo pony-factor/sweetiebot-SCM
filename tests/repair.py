@@ -1,3 +1,16 @@
+
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
 from contextlib import ExitStack
 import os
 from pathlib import Path
@@ -59,14 +72,14 @@ class RepairTests(unittest.TestCase):
             self.assertIn(install.BACKGROUND_GIT_START, git_extension.read_text())
             destination = workspace_search.extension_destination(extensions)
             helper = wrapper_path.with_name(wrapper_path.name + '-spellcheck.py')
-            notice = destination / 'commits' / 'post_commit_spellcheck_notice.js'
+            notice = destination / 'commits' / 'post-commit-spellcheck-notice.js'
             # A later startup must repair these even when the app patch is current.
             helper.write_text('stale helper')
             notice.write_text('stale notice')
             with patch.object(install, 'write_pair') as write:
                 install.main()
                 write.assert_not_called()
-            self.assertEqual(helper.read_bytes(), (install.HERE / 'post_commit_spellcheck.py').read_bytes())
+            self.assertEqual(helper.read_bytes(), (install.HERE / 'post-commit-spellcheck.py').read_bytes())
             self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / 'commits' / notice.name).read_bytes())
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=wrapper_path))
             self.assertFalse(workspace_search.sync_extension(check=True, settings=dict(toolkit_settings.DEFAULT_SETTINGS)))
@@ -74,11 +87,11 @@ class RepairTests(unittest.TestCase):
 
     def test_bundled_repair_has_workbench_assets(self):
         sources = workspace_search.source_files()
-        for name in ('picker.js', 'picker.css', 'hide_progress.css', 'outlined_buttons.css'):
+        for name in ('picker.js', 'picker.css', 'hide-progress.css', 'outlined-buttons.css'):
             self.assertIn(Path('codex-customizations/assets/workbench') / name, sources)
         self.assertIn(Path('codex-customizations/scripts/repair.py'), sources)
         self.assertIn(Path('codex-customizations/scripts/update.py'), sources)
-        for name in ('github/pr_refresh.js', 'github/pr_actions.js', 'package.json'):
+        for name in ('github/pr-refresh.js', 'github/pr-actions.js', 'package.json'):
             self.assertIn(Path('codex-customizations/extension') / name, sources)
 
     def test_remote_update_check_is_shared_between_windows(self):

@@ -84,7 +84,7 @@ jobs:
           export CODEX_PROBE_CSS="$RUNNER_TEMP/codex-dot.css"
           mkdir -p "$GITHUB_WORKSPACE/codex-probe-artifacts"
           export CODEX_PROBE_REPORT="$GITHUB_WORKSPACE/codex-probe-artifacts/codex-dot-report.json"
-          node scripts/ci/probe_codex_new_chat.js || {
+          node scripts/ci/probe-codex-new-chat.js || {
             echo "Codex live probe could not verify the dot. Sanitized diagnostics:"
             cat "$CODEX_PROBE_REPORT" || true
             echo "Headless VS Code startup tail:"

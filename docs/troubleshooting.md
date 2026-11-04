@@ -23,7 +23,7 @@ git status --short
 git branch -vv
 git worktree list --porcelain
 python3 scripts/install.py --check
-python3 scripts/ci/ci_test_runner.py verify
+python3 scripts/ci/ci-test-runner.py verify
 ```
 
 For bug reports, include VS Code/Codex version, affected control, recent update, effective settings and **redacted** diagnostics. Never paste tokens, private keys, sensitive diffs or entire private logs. See [App identity boundaries](distinct-github-apps.md), [installation](installation-and-repair.md) and [the manual audit plan](functionality-audit.md).

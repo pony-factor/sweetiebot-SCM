@@ -8,15 +8,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
-const { isConflictState, offerConflictRecoveryOptions } = require('../merge/lindsey_conflicts');
-const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = require('../merge/sync_review');
-const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name_selection');
+const { isConflictState, offerConflictRecoveryOptions } = require('../merge/lindsey-conflicts');
+const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = require('../merge/sync-review');
+const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name-selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./strip');
-const { resolvePythonExecutable } = require('../ui/python_runtime');
-const { recoveryPlan } = require('../commits/finalized_commit_recovery');
-const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged_branch');
-const { routeBranch, routeExistingBranchWorktree } = require('./shared_main');
-const { createStackedBranch } = require('./stacked_branch');
+const { resolvePythonExecutable } = require('../ui/python-runtime');
+const { recoveryPlan } = require('../commits/finalized-commit-recovery');
+const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
+const { routeBranch, routeExistingBranchWorktree } = require('./shared-main');
+const { createStackedBranch } = require('./stacked-branch');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -28,8 +28,8 @@ async function asyncCommitPending(repository, { background = true, refs = ['HEAD
   // A checkout may have a .git directory or a linked-worktree .git file.
   // If a real checkout's metadata cannot be inspected, fail closed.
   try {
-    const installedScript = path.join(__dirname, '../background_commit.py');
-    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/background_commit.py');
+    const installedScript = path.join(__dirname, '../background-commit.py');
+    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/background-commit.py');
     const { stdout } = await promisify(execFile)(resolvePythonExecutable(), [
       script, background ? '--pending' : '--pending-legacy', ...refs
     ], { cwd: root, timeout: 10000 });
@@ -273,8 +273,8 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
 }
 
 async function cleanupMergedBranch(repository, branch) {
-  const installedScript = path.join(__dirname, '../prune_merged_branches.py');
-  const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/prune_merged_branches.py');
+  const installedScript = path.join(__dirname, '../prune-merged-branches.py');
+  const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/prune-merged-branches.py');
   await promisify(execFile)(process.platform === 'win32' ? 'python' : 'python3', [
     script, '--force', '--repo', repository.rootUri.fsPath, `--branch=${branch}`
   ], { timeout: 120000 });
@@ -588,9 +588,9 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     if (hasGitMetadata) {
       // Use Sweetiebot's own lock-aware fork to avoid the Git wrapper's
       // pending-job checkout gate. The original tip is pinned under that lock.
-      const localScript = path.join(__dirname, '../background_commit.py');
+      const localScript = path.join(__dirname, '../background-commit.py');
       const script = existsSync(localScript) ? localScript
-        : path.join(__dirname, '../../scripts/background_commit.py');
+        : path.join(__dirname, '../../scripts/background-commit.py');
       await promisify(execFile)(resolvePythonExecutable(), [
         script, '--fork-verified', `refs/heads/${continueFromBranch}`,
         branch, `refs/heads/${continueFromBranch}`, originalTip
@@ -631,8 +631,8 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     unfinishedBase = /^(?:placeholder_[0-9a-f]{16}|💭 Generate local commit message \[[0-9a-f]{16}\])$/.test(stdout.trim());
   }
   if (unfinishedBase || await asyncCommitPending(repository, { refs: [`refs/heads/${defaultBranch}`] })) {
-    const installedScript = path.join(__dirname, '../background_commit.py');
-    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/background_commit.py');
+    const installedScript = path.join(__dirname, '../background-commit.py');
+    const script = existsSync(installedScript) ? installedScript : path.join(__dirname, '../../scripts/background-commit.py');
     forkScript = script;
   } else if (repository.state.indexChanges?.length || repository.state.workingTreeChanges?.length) {
     // Preserve pending edits and their staging by avoiding a remote merge.
@@ -1233,7 +1233,7 @@ function registerBranchCommands(vscode, context) {
         const repository = await resolveRepository(uri);
         const commitDraftValue = repository.inputBox?.value;
         if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
-          await require('./commit_drafts').preserveCommitDraft(vscode, repository.rootUri.fsPath, undefined, commitDraftValue);
+          await require('./commit-drafts').preserveCommitDraft(vscode, repository.rootUri.fsPath, undefined, commitDraftValue);
         const attempt = async () => {
           const remote = options?.remote || 'origin';
           const defaultBranch = needsDefaultBranch.has(command)
