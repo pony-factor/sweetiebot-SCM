@@ -110,7 +110,7 @@ CONFIG_STYLE = """
 .codex-layout-editor{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .codex-layout-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .codex-layout-pickers{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
-.codex-layout-pickers label{display:flex;flex:1 1 160px;flex-direction:column;gap:5px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.codex-layout-editor .codex-layout-pickers label{display:flex;flex:1 1 160px;flex-direction:column;gap:5px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
 .codex-layout-pickers select{width:100%;min-height:34px;padding:5px 24px 5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:inherit;cursor:pointer}
 .codex-layout-item.is-selected{outline:2px solid var(--accent);outline-offset:1px}
 .codex-layout-editor label{display:block;margin:10px 0 5px;font-size:12px;font-weight:600;color:var(--muted)}
