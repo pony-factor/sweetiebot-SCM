@@ -479,7 +479,7 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     destination = home_url or "https://chatgpt.com/"
     saved_url = f'{match.group("options")}?.viewState?.url'
     if match.group("normalize"):
-        saved_url = f'{match.group("normalize")}({match.group("options")}?.viewState).url'
+        saved_url = f'{match.group("normalize")}({match.group("options")}?.viewState)?.url'
     replacement = (
         f'{match.group("prefix")},url:{saved_url}'
         f'||{json.dumps(destination)}{match.group("suffix")}'
