@@ -160,14 +160,16 @@ async function run() {
   assert.match(withOrigin, /snapshot, not a live transcript/);
   const codexLinks = conversationSourceLinks({ ...codexSource, sharedUrl: share });
   assert.deepEqual(codexLinks, { online: share,
-    local: 'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid,
+    local: codexConversationUrl(codexSource.uuid),
     desktop: 'codex://threads/' + codexSource.uuid });
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
   assert.match(decorated, /<summary>Source details<\/summary>/);
   assert.match(decorated, /public snapshot that can expose user prompts and assistant replies/i);
-  assert.match(decorated, /- \*\*Local:\*\* \[Local\]\(vscode:\/\//);
-  assert.match(decorated, /- \*\*Desktop:\*\* \[Desktop\]\(codex:\/\/threads\//);
+  assert(decorated.includes('- **Local:** [Local](' + codexConversationUrl(codexSource.uuid) + ')'));
+  assert.equal(new URL(codexLinks.local).searchParams.get('url'),
+    'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid);
+  assert(decorated.includes('- **Desktop:** [Desktop](codex://threads/' + codexSource.uuid + ')'));
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
   assert(!appendSourceDetails('Local only.', codexSource).includes('Sweetiebot cannot unpublish'));

@@ -97,6 +97,19 @@ const sourceRows=output.children.at(-1).children[1].children;
 assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
 assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),[sourceShared,localLink,desktopLink]);
 assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
+const generatedSource = require('../extension/github/pull-request').sourceDetailsMarkdown({
+  kind: 'codex', uuid: sourceId,
+  url: require('../extension/github/pull-request').codexConversationUrl(sourceId)
+});
+context.renderMarkdown(output, 'Body.\n\n' + generatedSource);
+const generatedRows = output.children.at(-1).children[1].children;
+assert.equal(generatedRows[1].children[1].tag, 'a');
+assert(generatedRows[1].children[1].href.startsWith('https://vscode.dev/redirect?'));
+assert.equal(generatedRows[2].children[1].tag, 'a');
+assert.equal(generatedRows[2].children[1].href, desktopLink);
+assert.equal(generatedRows[2].children[1].textContent, desktopLink);
+assert(!generatedRows[2].textContent.includes('copy into your browser'));
+
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
 assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
   'Untrusted source links are not activated');

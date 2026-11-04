@@ -122,16 +122,22 @@ function renderMarkdown(target, markdown) {
     label.textContent = entry[1] + ': ';
     row.append(label);
     const markdownLink = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(entry[2]);
-    const value = markdownLink?.[2] || entry[2];
+    const desktopCode = entry[1] === 'Desktop' && /^`(codex:\/\/threads\/[0-9a-f-]{36})`(.*)$/i.exec(entry[2]);
+    const value = markdownLink?.[2] || desktopCode?.[1] || entry[2];
     const valid = entry[1] === 'Online'
       ? /^https:\/\/chatgpt\.com\/(?:s\/cx_[A-Za-z0-9_-]{16,128}|c\/[0-9a-f-]{36})$/i.test(value)
       : entry[1] === 'Local'
-        ? /^vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}$/i.test(value)
+        ? /^(?:vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2Fjfwooten4\.scm-toolkit-workspace-search%2Fcodex%2F[0-9a-f-]{36})$/i.test(value)
         : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
-    const node = document.createElement(valid ? 'a' : 'span');
+    const node = document.createElement(desktopCode ? 'code' : valid ? 'a' : 'span');
     node.textContent = value;
-    if (valid) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
+    if (valid && !desktopCode) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
     row.append(node);
+    if (desktopCode) {
+      const hint = document.createElement('span');
+      hint.textContent = desktopCode[2];
+      row.append(hint);
+    }
     list.append(row);
   }
   disclosure.append(list);

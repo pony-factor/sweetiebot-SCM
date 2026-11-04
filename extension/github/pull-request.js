@@ -181,7 +181,7 @@ function conversationSourceLinks(source) {
       normalized.url === `https://chatgpt.com/c/${normalized.uuid}` ? normalized.url : undefined);
   return normalized.kind === 'codex' ? {
     online,
-    local: `vscode://${CODEX_URI_EXTENSION}/codex/${normalized.uuid}`,
+    local: codexConversationUrl(normalized.uuid),
     desktop: `codex://threads/${normalized.uuid}`,
   } : { online };
 }
@@ -326,7 +326,7 @@ function pullRequestPrompt({
     );
   }
   if (source) sections.push(browserDraft
-    ? 'The local confirmation receiver will append the verified expandable Source details block at the end of the PR description. Do not add or duplicate this block yourself; it uses the complete Online, vscode:// Local and codex:// Desktop links.'
+    ? 'The local confirmation receiver will append the verified expandable Source details block at the end of the PR description. Do not add or duplicate this block yourself; it uses the Online link, GitHub-compatible HTTPS Local link, and native codex:// Desktop link.'
     : 'End the published PR description with exactly this expandable Source details block, without inventing unavailable links:\n\n' + sourceDetailsMarkdown(source));
 
   return sections.join('\n\n');
