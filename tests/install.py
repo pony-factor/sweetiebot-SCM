@@ -332,6 +332,33 @@ getWindowTitle(){let z=this.configurationService.getValue("window.title");typeof
         with self.assertRaisesRegex(ValueError, 'ambiguous'):
             install.window_title_status_edits(listener + listener)
 
+    def test_native_status_scheduling_is_fast_and_reversible(self):
+        original = ('class Repository{async updateWhenIdleAndWait(){await this.whenIdleAndFocused(),'
+                    'await this.status(),await pause(5e3)}}'
+                    'decorate([debounce(1e3)],Repository.prototype,"eventuallyUpdateWhenIdleAndWait",1)')
+        installed = install.transform_git_refresh(original)
+        self.assertEqual(install.transform_git_refresh(installed), installed)
+        self.assertEqual(install.transform_git_refresh(installed, remove=True), original)
+        # Exercise the transformed scheduling hooks; preserve idle-before-status ordering.
+        subprocess.run(['node', '-e', '''
+            const assert = require('node:assert/strict');
+            const events=[];
+            const pause=async ms=>events.push(ms);
+            const debounce=ms=>{assert.equal(ms,100);return ()=>{}};
+            const decorate=()=>{};
+        ''' + installed + '''
+            const repo=new Repository();
+            repo.whenIdleAndFocused=async()=>events.push('idle');
+            repo.status=async()=>events.push('status');
+            repo.updateWhenIdleAndWait().then(()=>assert.deepEqual(events,['idle','status',250]));
+        '''], check=True, capture_output=True, text=True)
+        with self.assertRaisesRegex(ValueError, 'Unsupported native Git status'):
+            install.transform_git_refresh(original.replace('debounce(1e3)', 'debounce(2e3)'))
+        with self.assertRaisesRegex(ValueError, 'Unsupported native Git status'):
+            install.transform_git_refresh(original + original)
+        with self.assertRaisesRegex(ValueError, 'Incomplete fast Git status'):
+            install.transform_git_refresh(installed.replace('/* sweetiebot-fast-status:end */', '', 1))
+
     def test_native_push_handoff_is_reversible(self):
         original = ('class Repository{async commit(e,t=Object.create(null)){let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
                     'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));}'
@@ -1907,7 +1934,9 @@ class IndependentRepairTests(WorkbenchFixture):
         self.git_extension.write_text(
             'class Repository{async commit(e,t=Object.create(null)){'
             'let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
-            'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}}')
+            'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}'
+            'async updateWhenIdleAndWait(){await this.whenIdleAndFocused(),await this.status(),await pause(5e3)}}'
+            'decorate([debounce(1e3)],Repository.prototype,"eventuallyUpdateWhenIdleAndWait",1)')
         self.preload = resources / 'out/vs/platform/browserView/electron-browser/preload-browserView.js'
         self.preload.parent.mkdir(parents=True)
         self.preload.write_text('"vscode:browserView:preloadReady";')

@@ -1236,6 +1236,28 @@ BACKGROUND_GIT_START = '/* sweetiebot-background-commit:start */'
 BACKGROUND_GIT_END = '/* sweetiebot-background-commit:end */'
 
 
+def transform_git_refresh(source, remove=False):
+    """Shorten native status scheduling without bypassing Git's idle guards."""
+    start = '/* sweetiebot-fast-status:'
+    end = '/* sweetiebot-fast-status:end */'
+    patch = re.compile(re.escape(start) + r'(1e3|1000|5e3|5000)\*/(?:100|250)' + re.escape(end))
+    source = patch.sub(lambda match: match[1], source)
+    if start in source or end in source:
+        raise ValueError('Incomplete fast Git status patch.')
+    if remove:
+        return source
+    ident = r'[A-Za-z_$][\w$]*'
+    patterns = (
+        (rf'({ident}\(\[{ident}\()(1e3|1000)(\)\],{ident}\.prototype,"eventuallyUpdateWhenIdleAndWait",1\))', '100'),
+        (rf'(async updateWhenIdleAndWait\(\)\{{await this.whenIdleAndFocused\(\),await this.status\(\),await {ident}\()(5e3|5000)(\)\}})', '250'),
+    )
+    for pattern, delay in patterns:
+        if len(re.findall(pattern, source)) != 1:
+            raise ValueError('Unsupported native Git status scheduling.')
+        source = re.sub(pattern, lambda match: match[1] + start + match[2] + '*/' + delay + end + match[3], source)
+    return source
+
+
 def transform_git_background(source, remove=False):
     for start, end in ((BACKGROUND_GIT_START, BACKGROUND_GIT_END),
                        ('/* sweetiebot-background-push:start */', '/* sweetiebot-background-push:end */')):
@@ -1889,7 +1911,8 @@ def main():
         git_old = git_extension.read_text()
         paths.append(git_extension)
         old.append(git_old)
-        new.append(transform_git_background(git_old, remove=args.uninstall))
+        new.append(transform_git_refresh(
+            transform_git_background(git_old, remove=args.uninstall), remove=args.uninstall))
         for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
             paths.append(browser_path)
             old.append(browser_old)
