@@ -48,8 +48,13 @@ async function copyRemotes(source, destination, git) {
     const refs = (await git(['-C', destination, 'for-each-ref',
       '--format=%(refname:short)', 'refs/remotes/origin'])).split(/\r?\n/).filter(Boolean);
     for (const ref of refs) {
-      if (ref.startsWith('origin/') && ref !== 'origin/main' && ref !== 'origin/HEAD') {
-        await git(['-C', destination, 'branch', ref.slice('origin/'.length), ref]);
+      if (ref.startsWith('origin/') && ref !== 'origin/HEAD') {
+        const name = ref.slice('origin/'.length);
+        // The cloned active topic branch already exists. Recreate only the
+        // other local branches before dropping the clone's temporary origin.
+        const exists = await git(['-C', destination, 'show-ref', '--verify',
+          '--quiet', 'refs/heads/' + name]).then(() => true, () => false);
+        if (!exists) await git(['-C', destination, 'branch', name, ref]);
       }
     }
     await git(['-C', destination, 'remote', 'remove', 'origin']);
@@ -173,4 +178,4 @@ function registerNewWorkspaceCommand(vscode, context) {
 }
 
 module.exports = { OPEN_WORKSPACE_COMMAND, openIndependentWorkspace,
-  openIndependentClone, registerNewWorkspaceCommand };
+  openIndependentClone, copyRemotes, registerNewWorkspaceCommand };

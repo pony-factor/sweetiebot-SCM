@@ -28,6 +28,7 @@
     "onCommand:sweetiebot.openPullRequestBatchChat",
     "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
+    "onCommand:sweetiebot.openExperimentWorkspace",
     "onCommand:sweetiebot.configureIndependentWorkspaceTrust",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.copyTerminalContents",
@@ -178,6 +179,12 @@
         "icon": "$(git-branch)"
       },
       {
+        "command": "sweetiebot.openExperimentWorkspace",
+        "title": "Open Experimental Workspace",
+        "category": "Sweetiebot",
+        "icon": "$(beaker)"
+      },
+      {
         "command": "sweetiebot.configureIndependentWorkspaceTrust",
         "title": "Configure Independent Workspace Trust",
         "icon": "$(shield)"
@@ -259,6 +266,11 @@
         }
       ],
       "scm/title": [
+        {
+          "command": "sweetiebot.openExperimentWorkspace",
+          "when": "!isWeb",
+          "group": "navigation@75"
+        },
         {
           "command": "sweetiebot.spellcheckFilenames",
           "group": "navigation@90"
