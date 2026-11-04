@@ -161,6 +161,7 @@ for (const actionCount of [1, 2]) {
         } }
       },
       closest(selector) { return selector === '.scm-view' ? root : row; },
+      classList: { remove() {} },
       append(button) { button.parentElement = this; }
     },
     layout() {},
