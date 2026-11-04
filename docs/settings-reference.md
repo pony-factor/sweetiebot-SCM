@@ -4,13 +4,15 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 
 | Section | What it changes |
 | --- | --- |
-| Message bar, Source control | Commit buttons/hotkeys, push toggle, branch strip, sync counts/arrows, labels, whitespace |
+| Message bar, Source control | Commit buttons/hotkeys, Codex co-author icon upload/reset, push toggle, branch strip, sync counts/arrows, labels, whitespace |
 | Ollama | Commit-title models, budgets, low-memory options, direct/background workflows |
 | Spellcheck Changes | Draft-title suggestions, filename proposals, post-commit Markdown, manual Spellcheck Only |
 | Branch names, Workspaces | Name packs, worktree windows, cleanup, stack selection, trust |
 | Search | EFS index scope, mode, model, limits, exclusions and Ask Ollama |
 | Pull requests, Kefania, Lindsey, GitHub | Drafts, publication, dashboard, auto-refresh, checks, rate-limit handling, App identities |
 | Codex, Browser, Window, Initialization | UI injection and labels, composer options, wake behavior, repair/reload |
+
+Magic Settings → Message bar → **Codex co-author button icon** uses `assets/imgs/sweetiebot.png` by default. You can upload a local PNG, JPEG, GIF or WebP (up to 2 MB), or reset to Sweetiebot. Uploaded artwork remains in private local app data and is never written to the repository or Git settings. Click **Rebuild app** after changes to update the SCM button. The co-author commit behavior and trailer remain unchanged.
 
 ## Sidebar navigation
 

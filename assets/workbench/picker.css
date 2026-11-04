@@ -311,6 +311,15 @@
     cursor: pointer;
 }
 
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor > .scm-toolkit-codex-coauthor-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
+    max-width: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
 .scm-view .scm-editor > .scm-toolkit-codex-coauthor[hidden] {
     display: none;
 }

@@ -38,6 +38,7 @@ import codex_image_drop
 import codex_recent_chats
 import codex_startup
 import codex_sticker
+import codex_button_icon
 import github_pr
 import browser_pr
 from pathlib import Path
@@ -1357,6 +1358,7 @@ def transform(js, css, remove=False, settings=None):
 
     settings = load_settings() if settings is None else settings
     runtime_settings = resolve_runtime_settings(settings)
+    runtime_settings["codexCoauthorIconDataUrl"] = codex_button_icon.icon_data_url()
     changes = edits(js, settings=settings)
     for edit in changes:
         original, replacement, expected_count = unpack_edit(edit)
