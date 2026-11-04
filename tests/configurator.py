@@ -112,6 +112,18 @@ class SubmissionTests(unittest.TestCase):
                 self.assertIn("Backend preference order", page)
                 self.assertIn(f'<option value="{value}" selected>{label}</option>', page)
 
+    def test_default_branch_pull_remote_is_separate_from_publish_remote(self):
+        self.assertEqual(install.DEFAULT_SETTINGS["remote"], "origin")
+        self.assertEqual(install.DEFAULT_SETTINGS["pullRemote"], "auto")
+        values = form_values()
+        values["remote"] = ["origin"]
+        values["pullRemote"] = ["upstream"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["remote"], "origin")
+        self.assertEqual(parsed["pullRemote"], "upstream")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="pullRemote"', page)
+
     def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
         values = form_values()
         for name in ('windowHeading', 'windowName'):
