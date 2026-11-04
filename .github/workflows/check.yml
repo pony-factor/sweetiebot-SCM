@@ -124,8 +124,8 @@ jobs:
       - name: Install browser-test dependencies
         if: steps.browser.outputs.required == 'true'
         run: |
-          npm install --no-save --no-package-lock playwright@1.64.0
-          npx playwright install --with-deps chromium
+          npm install --ignore-scripts --no-save --no-package-lock playwright@1.64.1
+          ./node_modules/.bin/playwright install --with-deps chromium
       - name: Run ${{ matrix.label }} checks
         run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
 
