@@ -42,7 +42,12 @@ def parse_layout(value):
         raise ValueError("Codex composer layout contains missing, duplicate or unknown controls.")
     if "input" not in obj["left"]:
         raise ValueError("The Codex input must remain left aligned and available.")
-    return {name: obj[name][:] for name in ("left", "right", "hidden")}
+    result = {name: obj[name][:] for name in ("left", "right", "hidden")}
+    # Recover saved hidden permissions to restore the native dropdown.
+    if "access" in result["hidden"]:
+        result["hidden"].remove("access")
+        result["left"].insert(result["left"].index("input") + 1, "access")
+    return result
 
 
 def serialize_layout(value):
@@ -73,8 +78,17 @@ def render_control(current):
             html.escape(serialize_layout(layout), quote=True) + '">'
             '<div class="codex-layout-head"><strong>Codex composer layout</strong>'
             '<button type="button" id="codex-layout-reset">Reset</button></div>'
-            '<small>Drag icons between left, right and hidden. The insertion bar follows your pointer; '
-            'hover for control names and action tooltips. Message input stays on the left.</small>'
+            '<small>Drag icons to reorder or choose a control and placement below. '
+            'Access permissions remains visible; the message input stays left.</small>'
+            '<div class="codex-layout-pickers"><label for="codex-layout-control-picker">Control'
+            '<select id="codex-layout-control-picker" aria-label="Choose a composer control">' +
+            "".join('<option value="' + key + '">' + html.escape(label) + '</option>'
+                    for key, label in zip(IDS, LABELS)) + '</select></label>'
+            '<label for="codex-layout-position-picker">Position'
+            '<select id="codex-layout-position-picker" aria-label="Choose control position">'
+            '<option value="left">Left aligned</option>'
+            '<option value="right">Right aligned</option>'
+            '<option value="hidden">Hidden</option></select></label></div>'
             '<div class="codex-layout-rail" aria-label="Composer toolbar preview">'
             '<div class="codex-layout-side codex-layout-side-left">'
             '<span class="codex-layout-caption">Left aligned</span>'
@@ -84,7 +98,7 @@ def render_control(current):
             '<span class="codex-layout-caption">Right aligned</span>'
             '<div id="codex-layout-right" role="list" class="codex-layout-zone" '
             'data-codex-layout-zone="right">' + "".join(map(item, layout["right"])) + '</div></div></div>'
-            '<label>Hidden controls (available in More controls)</label>'
+            '<label>Hidden controls (restore through Settings)</label>'
             '<div id="codex-layout-hidden" role="list" class="codex-layout-zone codex-layout-hidden" '
             'data-codex-layout-zone="hidden">' + "".join(map(item, layout["hidden"])) + '</div>'
             '<small>Use ↔ to cycle alignment or Alt+arrow keys to reorder; '
@@ -95,6 +109,10 @@ def render_control(current):
 CONFIG_STYLE = """
 .codex-layout-editor{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .codex-layout-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.codex-layout-pickers{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.codex-layout-pickers label{display:flex;flex:1 1 160px;flex-direction:column;gap:5px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.codex-layout-pickers select{width:100%;min-height:34px;padding:5px 24px 5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:inherit;cursor:pointer}
+.codex-layout-item.is-selected{outline:2px solid var(--accent);outline-offset:1px}
 .codex-layout-editor label{display:block;margin:10px 0 5px;font-size:12px;font-weight:600;color:var(--muted)}
 .codex-layout-rail{display:flex;align-items:stretch;gap:8px;margin-top:10px;padding:6px;border:1px dashed var(--line);border-radius:8px}
 .codex-layout-side{display:flex;flex-direction:column;gap:5px;min-width:0}
@@ -122,6 +140,8 @@ CONFIG_SCRIPT = """
   const input = document.getElementById("codex-composer-layout");
   if (!input) return;
   const names = ["left", "right", "hidden"];
+  const controlPicker = document.getElementById("codex-layout-control-picker");
+  const positionPicker = document.getElementById("codex-layout-position-picker");
   const zone = name => document.querySelector('[data-codex-layout-zone="' + name + '"]');
   const zones = names.map(zone);
   const items = [...document.querySelectorAll("[data-codex-layout-id]")];
@@ -129,19 +149,36 @@ CONFIG_SCRIPT = """
   marker.className = "codex-layout-drop-marker";
   marker.setAttribute("aria-hidden", "true");
   let dragging = null;
-
+  const byId = new Map(items.map(item => [item.dataset.codexLayoutId, item]));
+  function updatePicker() {
+    const item = byId.get(controlPicker.value);
+    if (!item) return;
+    const id = item.dataset.codexLayoutId;
+    positionPicker.value = item.parentElement.dataset.codexLayoutZone;
+    for (const option of positionPicker.options) {
+      option.disabled = (id === "input" && option.value !== "left")
+        || (id === "access" && option.value === "hidden");
+    }
+    items.forEach(el => el.classList.toggle("is-selected", el === item));
+  }
+  function selectItem(item) {
+    controlPicker.value = item.dataset.codexLayoutId;
+    updatePicker();
+  }
   function sync() {
     const read = name => [...zone(name).children]
       .filter(el => el.dataset.codexLayoutId).map(el => el.dataset.codexLayoutId);
     input.value = JSON.stringify({left:read("left"),right:read("right"),hidden:read("hidden")});
     input.dispatchEvent(new Event("input", {bubbles:true}));
+    updatePicker();
   }
   function updateActions() {
     for (const item of items) {
       const button = item.querySelector("[data-codex-layout-toggle]");
       if (!button) continue;
       const location = item.parentElement.dataset.codexLayoutZone;
-      const next = names[(names.indexOf(location) + 1) % names.length];
+      const next = item.dataset.codexLayoutId === "access" && location === "right"
+        ? "left" : names[(names.indexOf(location) + 1) % names.length];
       const label = item.getAttribute("aria-label");
       const action = next === "hidden" ? "Hide" : "Move to " + next + " aligned:";
       button.title = action + " " + label;
@@ -149,7 +186,8 @@ CONFIG_SCRIPT = """
     }
   }
   function move(item, target, before = null) {
-    if (!target || (item.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
+    if (!target || (item.dataset.codexLayoutId === "input" && target !== zone("left"))
+      || (item.dataset.codexLayoutId === "access" && target === zone("hidden"))) return;
     target.insertBefore(item, before);
     updateActions();
     sync();
@@ -172,10 +210,20 @@ CONFIG_SCRIPT = """
     }
     return null;
   }
+  controlPicker.value = "access";
+  controlPicker.addEventListener("change", updatePicker);
+  positionPicker.addEventListener("change", () => {
+    const item = byId.get(controlPicker.value);
+    if (!item) return;
+    move(item, zone(positionPicker.value));
+    updatePicker();
+  });
   for (const item of items) {
+    item.addEventListener("click", () => selectItem(item));
     item.addEventListener("dragstart", event => {
       if (event.target.closest?.("button")) {event.preventDefault(); return;}
       dragging = item;
+      selectItem(item);
       item.classList.add("is-dragging");
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setDragImage?.(item, 8, 8);
@@ -189,7 +237,9 @@ CONFIG_SCRIPT = """
     const button = item.querySelector("[data-codex-layout-toggle]");
     button?.addEventListener("click", () => {
       const current = item.parentElement.dataset.codexLayoutZone;
-      move(item, zone(names[(names.indexOf(current) + 1) % names.length]));
+      const next = item.dataset.codexLayoutId === "access" && current === "right"
+        ? "left" : names[(names.indexOf(current) + 1) % names.length];
+      move(item, zone(next));
     });
     item.addEventListener("keydown", event => {
       if (!event.altKey || !["ArrowLeft","ArrowRight","ArrowDown","ArrowUp"].includes(event.key)) return;
@@ -208,7 +258,8 @@ CONFIG_SCRIPT = """
   }
   for (const target of zones) {
     target.addEventListener("dragover", event => {
-      if (!dragging || (dragging.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
+      if (!dragging || (dragging.dataset.codexLayoutId === "input" && target !== zone("left"))
+          || (dragging.dataset.codexLayoutId === "access" && target === zone("hidden"))) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       zones.forEach(el => el.classList.toggle("is-over", el === target));
@@ -234,5 +285,6 @@ CONFIG_SCRIPT = """
     sync();
   });
   updateActions();
+  updatePicker();
 })();
 """
