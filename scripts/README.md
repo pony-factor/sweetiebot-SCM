@@ -8,33 +8,33 @@ double-clicked on macOS or run with `bash scripts/install.command`. It builds
 ## Installation, updates, and configuration
 
 - `install.command`: signed installer app launcher.
-- `build_installer_app.py`: build and sign the local macOS installer app.
+- `build-installer-app.py`: build and sign the local macOS installer app.
 - `install.py`: direct VS Code/Codex installer and patch validator.
 - `repair.py`, `update.py`: automatic repair and source updates.
-- `configure.py`, `configurator.py`, `toolkit_settings.py`: settings UI and persistence.
-- `local_setup.py`: local workspace/setup helpers.
+- `configure.py`, `configurator.py`, `toolkit-settings.py`: settings UI and persistence.
+- `local-setup.py`: local workspace/setup helpers.
 
 ## Commits, branches, and Git
 
-- `ai_commit.py`, `background_commit.py`, `sweetiebot_async_commit.py`: commit wrappers and durable finalization.
-- `local_codex_commit.py`, `post_commit_spellcheck.py`, `commit_hotkey.py`: co-author commits, spellchecking, and shortcuts.
-- `commit_diagnostics_dashboard.py`, `sweetiebot_diagnostics.py`: operational diagnostics.
-- `branch_names.py`, `branch_name_packs.json`: branch-name selection and character packs.
-- `cloud_repo_sync.py`, `merged_branch.py`, `prune_merged_branches.py`: synchronization and branch maintenance.
+- `ai-commit.py`, `background-commit.py`, `sweetiebot-async-commit.py`: commit wrappers and durable finalization.
+- `local-codex-commit.py`, `post-commit-spellcheck.py`, `commit-hotkey.py`: co-author commits, spellchecking, and shortcuts.
+- `commit-diagnostics-dashboard.py`, `sweetiebot-diagnostics.py`: operational diagnostics.
+- `branch-names.py`, `branch-name-packs.json`: branch-name selection and character packs.
+- `cloud-repo-sync.py`, `merged-branch.py`, `prune-merged-branches.py`: synchronization and branch maintenance.
 
 ## Codex and UI integrations
 
-- `codex_colors.py`, `codex_composer.py`, `codex_context.py`, `codex_drafts.py`: Codex appearance, composer, context, and drafts.
-- `codex_image_drop.py`, `codex_keep_awake.py`, `codex_label.py`: Codex attachments, wake behavior, and labels.
-- `codex_recent_chats.py`, `codex_startup.py`, `codex_usage.py`: recent conversations, startup, and usage indicators.
-- `model_picker.py`, `message_bar.py`, `message_bar_configurator.py`: picker and message-bar controls.
-- `workspace_search.py`, `ollama_concurrency.py`: local search and Ollama integration.
+- `codex-colors.py`, `codex-composer.py`, `codex-context.py`, `codex-drafts.py`: Codex appearance, composer, context, and drafts.
+- `codex-image-drop.py`, `codex-keep-awake.py`, `codex-label.py`: Codex attachments, wake behavior, and labels.
+- `codex-recent-chats.py`, `codex-startup.py`, `codex-usage.py`: recent conversations, startup, and usage indicators.
+- `model-picker.py`, `message-bar.py`, `message-bar-configurator.py`: picker and message-bar controls.
+- `workspace-search.py`, `ollama-concurrency.py`: local search and Ollama integration.
 
 ## Pull requests and CI
 
-- `github_pr.py`, `github_pr_reactions.py`, `browser_pr.py`: GitHub PR integration.
-- `ci/ci_test_runner.py`: CI inventory validation and suite execution.
-- `ci/ci_test_groups.json`: exclusive test-suite assignments and syntax checks.
+- `github-pr.py`, `github-pr-reactions.py`, `browser-pr.py`: GitHub PR integration.
+- `ci/ci-test-runner.py`: CI inventory validation and suite execution.
+- `ci/ci-test-groups.json`: exclusive test-suite assignments and syntax checks.
 
 The Python modules remain at the root of `scripts/` because the installer,
 repair/update payload, VS Code extension, and Python tests currently use
@@ -46,5 +46,5 @@ paths together rather than breaking existing installations.
 Run inventory verification with:
 
 ```sh
-python3 scripts/ci/ci_test_runner.py verify
+python3 scripts/ci/ci-test-runner.py verify
 ```

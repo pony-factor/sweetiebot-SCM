@@ -2920,7 +2920,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                     ? historyItemRef.name
                     : undefined;
                 currentBranchRevision = historyItemRef?.revision;
-                // Repository events in auto_publish.js own automatic publication,
+                // Repository events in auto-publish.js own automatic publication,
                 // including a branch opened in a fresh workspace window.
 
                 const branch = command?.title?.replace(/\$\([^)]+\)/g, '').trim();

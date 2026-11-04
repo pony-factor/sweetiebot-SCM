@@ -1,6 +1,6 @@
 'use strict';
 
-const { separateAppsEnabled, getRoleInstallationToken, workflowBotLogin } = require('../github/app_identity');
+const { separateAppsEnabled, getRoleInstallationToken, workflowBotLogin } = require('../github/app-identity');
 const MARKER = '<!-- sweetiebot-merge-report -->\n<!-- sweetiebot-generated-summary -->';
 const SHA = /^[a-f0-9]{40}$/i;
 

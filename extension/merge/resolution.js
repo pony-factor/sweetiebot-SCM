@@ -1,14 +1,14 @@
 'use strict';
 
-const { humanSquashMerge } = require('./local_human_squash');
-const { reviewPublicationInstructions } = require('./review_policy');
-const { reportOptionsInstructions } = require('./blocker_actions');
+const { humanSquashMerge } = require('./local-human-squash');
+const { reviewPublicationInstructions } = require('./review-policy');
+const { reportOptionsInstructions } = require('./blocker-actions');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { validateResolutionHunks } = require('./conflict_hunks');
+const { validateResolutionHunks } = require('./conflict-hunks');
 const SHA = /^[a-f0-9]{40}$/i;
 const MAX_PATCH_BYTES = 32 * 1024 * 1024;
 
@@ -31,12 +31,12 @@ function validateResolution(input, selection) {
       throw Error('Handoff must identify a selected PR, its exact head/base, and a complete bounded patch or null.');
     }
     if ((item.commitTitle !== undefined || item.commitMessage !== undefined) &&
-        (typeof item.commitTitle !== 'string' || item.commitTitle !== require('./squash_attribution').exactSquashTitle(pr.title, pr.number) ||
+        (typeof item.commitTitle !== 'string' || item.commitTitle !== require('./squash-attribution').exactSquashTitle(pr.title, pr.number) ||
          typeof item.commitMessage !== 'string' || !item.commitMessage.trim() || Buffer.byteLength(item.commitMessage) > 30000 || /\x00/.test(item.commitMessage))) {
       throw Error('Proposed commit message must use the exact PR title and a nonempty bounded body.');
     }
     seen.add(item.number);
-    const decisions = require('./resolution_commits').validateDecisions(item.decisions);
+    const decisions = require('./resolution-commits').validateDecisions(item.decisions);
     if (resolutionHunks.length && (decisions.length !== resolutionHunks.length ||
         resolutionHunks.some(file => !decisions.some(item => item.path === file.path)))) {
       throw Error('Each compact conflicted file requires one concrete conflict decision.');
@@ -94,7 +94,7 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
     const file = path.join(temporary, 'handoff.json');
     await fs.writeFile(file, JSON.stringify({ input, selection }), { mode: 0o600 });
     const running = runner(process.execPath,
-      [path.join(__dirname, 'resolution_cli.js'), '--input', file], {
+      [path.join(__dirname, 'resolution-cli.js'), '--input', file], {
         timeout: 15 * 60 * 1000, maxBuffer: 1024 * 1024,
         env: { ...process.env, GH_TOKEN: token, GIT_TERMINAL_PROMPT: '0',
           GH_PROMPT_DISABLED: '1', ELECTRON_RUN_AS_NODE: '1',

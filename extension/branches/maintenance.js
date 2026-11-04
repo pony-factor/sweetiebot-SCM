@@ -1,6 +1,6 @@
 'use strict';
 const { spawn } = require('child_process');
-const { resolvePythonExecutable } = require('../ui/python_runtime');
+const { resolvePythonExecutable } = require('../ui/python-runtime');
 
 function registerBranchMaintenance(vscode, context) {
   let running, disposed = false;
@@ -14,7 +14,7 @@ function registerBranchMaintenance(vscode, context) {
     if (disposed || running || !vscode.workspace.getConfiguration('sweetiebot').get('automaticBranchCleanup', true)) return;
     const repositories = git.getAPI(1).repositories.filter(repo => repo.rootUri.scheme === 'file');
     if (!repositories.length) return;
-    const script = vscode.Uri.joinPath(context.extensionUri, 'prune_merged_branches.py').fsPath;
+    const script = vscode.Uri.joinPath(context.extensionUri, 'prune-merged-branches.py').fsPath;
     const args = [script, '--force', ...repositories.flatMap(repo => ['--repo', repo.rootUri.fsPath])];
     const child = spawn(resolvePythonExecutable(), args, { stdio: ['ignore', 'pipe', 'pipe'] });
     running = child;

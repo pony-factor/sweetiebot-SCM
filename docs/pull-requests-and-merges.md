@@ -16,7 +16,7 @@ Lindsey checks the current PR head to distinguish **Checks in progress** (queued
 
 The sync-commit filter normally omits routine `Sync brach/branch to main` entries from summaries without discarding legitimate author credits. Conflict repair belongs on the PR's head branch, preserving compatible behavior. A deterministic failing check needs analysis and a targeted fix, not repeated ungrounded reruns. Defer materially ambiguous behavior; do not silently bypass protections.
 
-The optional external Lindsey runner is discovered by [`extension/lindsey_bulk_merge.js`](../extension/merge/lindsey_bulk_merge.js). **There is no local `scripts/bulk-merge.js` in Sweetiebot.** Its remote script and deployment must be managed separately.
+The optional external Lindsey runner is discovered by [`extension/lindsey-bulk-merge.js`](../extension/merge/lindsey-bulk-merge.js). **There is no local `scripts/bulk-merge.js` in Sweetiebot.** Its remote script and deployment must be managed separately.
 
 ## One-click Lindsey handoffs and bulk conflict resolutions
 
@@ -32,4 +32,4 @@ Complete text patches remain supported when a compact hunk is unsuitable. Resour
 
 In optional separate-App mode, Lindsey may read PRs/checks/diffs via a repository-scoped installation token; write operations, merges, pushes and reactions still require appropriately authorized accounts. Missing credentials **fail closed** without impersonation. See [App identity configuration](distinct-github-apps.md).
 
-Source: [PR flow](../extension/github/pull_request.js), [Kefania runner](../extension/codex/kefania_runner.js), [merge batch](../extension/merge/batch.js), [dashboard](../extension/merge/dashboard.js), [review reply](../extension/codex/ai_review_reply.js). See [troubleshooting](troubleshooting.md).
+Source: [PR flow](../extension/github/pull-request.js), [Kefania runner](../extension/codex/kefania-runner.js), [merge batch](../extension/merge/batch.js), [dashboard](../extension/merge/dashboard.js), [review reply](../extension/codex/ai-review-reply.js). See [troubleshooting](troubleshooting.md).
