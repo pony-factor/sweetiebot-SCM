@@ -23,6 +23,19 @@ LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick
 
 
 class GitHubPRTests(unittest.TestCase):
+    def test_refresh_helper_loads_without_sweetiebot_modules_on_host(self):
+        script = '''
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const helper = vm.runInNewContext(HELPER, {
+  require(id) { throw new Error('Unexpected host dependency: ' + id); }
+});
+assert.equal(typeof helper.installPullRequestRefresh, 'function');
+assert.equal(typeof helper.checkFolderMergeEligibility, 'function');
+helper.checkFolderMergeEligibility({}, '').then(result => assert.equal(result.eligible, false));
+'''.replace('HELPER', json.dumps(github_pr.bundled_refresh_helper()))
+        subprocess.run(['node', '-e', script], check=True)
+
     def test_new_build_tree_handlers_survive_unsupported_optional_cleanup(self):
         source = ('s.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,canSelectMany:ji(),manageCheckboxStateManually:!0});'
                   'a=>{this.prsTreeModel.forceClearCache()}')
