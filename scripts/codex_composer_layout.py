@@ -61,10 +61,10 @@ def render_control(current):
         toggle = ("" if key == "input" else
                   '<button type="button" data-codex-layout-toggle title="Change alignment of ' +
                   label + '" aria-label="Change alignment of ' + label + '">↔</button>')
-        return ('<div class="codex-layout-item" draggable="true" tabindex="0" role="listitem" '
+        return ('<div class="codex-layout-item" tabindex="0" role="listitem" '
                 'data-codex-layout-id="' + key + '" title="' + title +
                 '" aria-label="' + title + '">'
-                '<span class="codex-layout-grip" aria-hidden="true">⋮⋮</span>'
+                '<span class="codex-layout-grip" draggable="true" title="Drag ' + label + '" aria-hidden="true">⋮⋮</span>'
                 '<span class="codex-layout-icon" aria-hidden="true">' + ICONS[key] + '</span>' +
                 toggle + '</div>')
 
@@ -106,13 +106,14 @@ CONFIG_STYLE = """
 .codex-layout-side-right .codex-layout-zone{justify-content:flex-end}
 .codex-layout-hidden{border-color:var(--line);min-height:44px}
 .codex-layout-zone.is-over{border-color:var(--accent);background:var(--panel)}
-.codex-layout-item{display:inline-flex;align-items:center;gap:4px;height:32px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:grab;user-select:none;transition:transform .12s,opacity .12s}
+.codex-layout-item{display:inline-flex;align-items:center;gap:4px;height:32px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:default;user-select:none;transition:transform .12s,opacity .12s}
 .codex-layout-grip{color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}
 .codex-layout-icon{display:inline-flex;align-items:center;justify-content:center;min-width:17px;font-size:16px}
 .codex-layout-item button{padding:2px 5px;min-width:22px;cursor:pointer}
 .codex-layout-item:focus-visible,.codex-layout-item button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .codex-layout-item.is-dragging{opacity:.2;cursor:grabbing}
-.codex-layout-drop-marker{display:block;align-self:stretch;width:3px;min-height:30px;margin:0 2px;border-radius:4px;background:var(--accent);box-shadow:0 0 0 2px var(--bg);pointer-events:none}
+.codex-layout-drop-marker{display:block;position:relative;align-self:stretch;flex:0 0 34px;min-height:32px;border:1px dashed var(--accent);border-radius:6px;background:var(--bg);pointer-events:none}
+.codex-layout-drop-marker:before{content:"";position:absolute;top:4px;bottom:4px;left:calc(50% - 1px);width:3px;border-radius:3px;background:var(--accent)}
 @media(max-width:540px){.codex-layout-rail{gap:4px}.codex-layout-side-right{min-width:72px}}
 """
 
@@ -177,6 +178,7 @@ CONFIG_SCRIPT = """
       dragging = item;
       item.classList.add("is-dragging");
       event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setDragImage?.(item, 8, 8);
       event.dataTransfer.setData("text/plain", item.dataset.codexLayoutId);
     });
     item.addEventListener("dragend", () => {
