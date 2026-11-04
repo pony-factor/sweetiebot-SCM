@@ -29,6 +29,12 @@ function createLindseyReadFetch(repository, {
       }
       credential = value;
       return value.token;
+    }).catch(cause => {
+      // Authentication runs before the repository request. Do not let callers
+      // misreport it as a failed GET or expose arbitrary credential-provider text.
+      throw Object.assign(new Error('Could not authenticate Lindsey for GitHub repository reads. ' +
+        'Check the Lindsey GitHub App configuration, repository installation and permissions in Magic Settings.',
+      { cause }), { code: 'SWEETIEBOT_LINDSEY_READ_AUTH' });
     }).finally(() => { pending = undefined; });
     return pending;
   }
