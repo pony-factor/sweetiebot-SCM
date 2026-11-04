@@ -293,6 +293,7 @@ async function main() {
         showWarningMessage(message, options, action) {
           if (options?.modal) {
             folderConfirmations.push({ message, options, action });
+            if (action === undefined) return Promise.resolve(undefined);
             return new Promise(resolve => confirmationResolvers.push(resolve));
           }
           folderWarnings.push(message);
