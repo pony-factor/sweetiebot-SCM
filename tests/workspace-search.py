@@ -306,6 +306,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             icon = subprocess.run(
                 [sys.executable, "-E", "-s", "-B", "-c",
                  "import sys; sys.path.insert(0, sys.argv[1]); "
+                 "import importaliases; importaliases.install(); "
                  "import codex_button_icon; "
                  "assert codex_button_icon.icon_data_url().startswith('data:image/png;base64,')",
                  str(destination)],
