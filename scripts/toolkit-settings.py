@@ -188,6 +188,7 @@ DEFAULT_SETTINGS = {
     "codexFollowUpPlaceholder": "",
     "defaultBranch": "main",
     "remote": "origin",
+    "pullRemote": "auto",
 }
 
 
@@ -461,6 +462,7 @@ SETTING_KEYS = {
     "codexFollowUpPlaceholder": "scm-toolkit.codex-follow-up-placeholder",
     "defaultBranch": "scm-toolkit.default-branch",
     "remote": "scm-toolkit.remote",
+    "pullRemote": "scm-toolkit.pull-remote",
 }
 
 

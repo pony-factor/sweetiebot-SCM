@@ -30,7 +30,8 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
         const key = args.at(-1);
         const value = key === 'scm-toolkit.auto-pull-clean' ? (enabled ? 'true\n' : 'false\n')
           : key === 'scm-toolkit.default-branch' ? 'main\n'
-          : key === 'scm-toolkit.remote' ? 'upstream\n'
+          : key === 'scm-toolkit.remote' ? 'origin\n'
+          : key === 'scm-toolkit.pull-remote' ? 'upstream\n'
           : '';
         callback(null, value, '');
       } else if (args[0] === 'rev-list') {
@@ -96,7 +97,7 @@ const vscode = {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(fetches, 1, 'Main fetches without any renderer or commit input widget');
   assert.equal(fetchCalls[0]?.remote, 'upstream',
-    'Default-branch auto-pull uses the configured remote instead of the tracked origin');
+    'Default-branch auto-pull uses the separate pull remote, not the origin publishing remote');
   assert.equal(fetchCalls[0]?.ref, 'main');
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
   assert.equal(topicFetches, 1, 'Tracked non-default branches are fetched without a renderer');

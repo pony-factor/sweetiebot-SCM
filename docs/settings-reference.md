@@ -25,6 +25,8 @@ Magic Settings organizes its existing pages under **Source Control & Commits**, 
 | `scm-toolkit.placeholder-prefix` | `hoof_` | Custom prefix for temporary background commit titles; configure in the Source control settings panel. |
 | `scm-toolkit.graph-prefer-open-commit` | `false` | Switch the built-in Source Control Graph's inline action from Open Changes to Open Commit, displaying native commit metadata; right-click Open Changes remains available |
 | `sweetiebot.cloudRepositorySync` | `false` | 15-minute clean-main sync |
+| `scm-toolkit.remote` | `origin` | Publish/push remote, independent of auto-pull |
+| `scm-toolkit.pull-remote` | `auto` | On the default branch, prefer an existing `upstream` remote for auto-pull; fall back to the publish remote |
 | `sweetiebot.gitGraphRelativeDates` | `false` | Enforce `git-graph.date.format = Relative` for the separate Git Graph extension; disabling stops enforcement without reverting the format |
 | `sweetiebot.automaticBranchCleanup` | `true` | Eligible merged branch cleanup |
 | `sweetiebot.automaticWorkspaceCleanup` | `true` | Guarded managed workspace/worktree pruning |
@@ -45,6 +47,8 @@ Magic Settings organizes its existing pages under **Source Control & Commits**, 
 | `scm-toolkit.codex-continue-at-reset` | `false` | Drag **Resume at reset** from SCM Settings → Message bar → Available buttons into either message-bar row. The live checkbox is compact, with its explanatory wording in a tooltip |
 
 **Kefania chat privacy:** In Magic Settings → Kefania, **Publicly share Codex chat when launching Kefania** is off by default. When enabled, clicking Kefania uses native Share on whichever Codex conversation is active, publicly exposing a snapshot of prompts and AI replies to anyone with the link; the link is also included in the PR's final expandable Source details block. Sweetiebot cannot unpublish or revoke a shared chat, so treat the action as permanent. This preference governs public links, not the separate transmission of captured conversation text to the AI preparing the PR draft.
+
+For fork checkouts where local `main` tracks `origin/main`, automatic pull fetches `upstream/main` when an `upstream` remote exists, then performs a safe fast-forward only. It leaves `origin` as the push and publishing destination and never force-pushes, rewrites divergent history, or changes branch tracking. Use Magic Settings → Initialization → **Default-branch auto-pull remote** to choose `origin` instead, or another named remote. Non-default branches continue using their configured tracking branches. The manual Sync action still syncs and publishes against the tracked branch.
 
 The retired `scm-toolkit.ai-commit-async` Git setting is ignored. Use `sweetiebot.durableBackgroundCommits` for background finalization, including commit-only actions; it does not require automatic pushing. Pending legacy commits retain recovery protection.
 

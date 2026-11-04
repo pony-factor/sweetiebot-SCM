@@ -22,7 +22,7 @@ async function run() {
   git(local, 'add', '.'); git(local, 'commit', '-m', 'Base'); git(local, 'push', '-u', 'origin', 'main');
   git(local, 'remote', 'add', 'upstream', upstream);
   git(local, 'push', 'upstream', 'main');
-  git(local, 'config', 'scm-toolkit.remote', 'upstream');
+  git(local, 'config', 'scm-toolkit.remote', 'origin');
   git(directory, 'clone', upstream, other);
   git(other, 'config', 'user.name', 'Test'); git(other, 'config', 'user.email', 'test@example.invalid');
   git(other, 'config', 'core.hooksPath', '/dev/null');
@@ -49,10 +49,18 @@ async function run() {
     'Pending local commit title prevents a direct-Git auto-pull');
   assert.equal(git(local, 'rev-parse', 'HEAD'), pendingHead);
   fs.unlinkSync(pendingJournal);
-  assert.equal(await autoPullClean(repository, { fetch: true }), true);
+  git(local, 'config', 'scm-toolkit.pull-remote', 'origin');
+  assert.equal(await autoPullClean(repository, { fetch: true }), false,
+    'An explicit pull-remote override uses origin even when upstream exists');
+  git(local, 'config', '--unset', 'scm-toolkit.pull-remote');
+  assert.equal(await autoPullClean(repository, { fetch: true }), true,
+    'Auto-detection pulls upstream with the publish remote still set to origin');
+  assert.equal(git(local, 'config', '--get', 'branch.main.remote'), 'origin',
+    'Auto-pull never changes the tracked push remote');
+  assert.equal(git(local, 'config', '--get', 'scm-toolkit.remote'), 'origin');
   assert.equal(git(local, 'rev-parse', 'HEAD'), git(other, 'rev-parse', 'HEAD'));
   assert.notEqual(git(local, 'rev-parse', 'HEAD'), git(local, 'rev-parse', 'origin/main'),
-    'Configured upstream advances main even when the tracked origin has not moved');
+    'Auto-detected upstream advances main even when tracked origin has not moved');
   assert.equal(fs.readFileSync(path.join(local, 'note.txt'), 'utf8'), 'Keep my unstaged note\n');
   assert.equal(git(local, 'show', ':staged.txt'), 'Keep my staged note');
   assert.equal(git(local, 'diff', '--name-only'), 'note.txt');

@@ -189,13 +189,28 @@ async function resolveDefaultBranch(repository, remote = 'origin') {
 }
 
 async function automaticPullTarget(repository, head, remote) {
-  const defaultBranch = await resolveDefaultBranch(repository, remote || 'origin');
+  const defaultBranch = await resolveDefaultBranch(repository, head?.upstream?.remote || 'origin');
   if (head?.name === defaultBranch) {
-    return {
-      remote: remote || await gitConfig(repository, 'scm-toolkit.remote', head.upstream?.remote),
-      name: defaultBranch
-    };
+    // Pulling from a fork's source must not redirect publishing or pushes to it.
+    // An explicit pull remote wins; otherwise prefer an existing upstream remote.
+    let pullRemote = remote || await gitConfig(repository, 'scm-toolkit.pull-remote', 'auto');
+    if (pullRemote === 'auto') {
+      const root = repository.rootUri?.fsPath;
+      if (root) {
+        try {
+          await promisify(execFile)('git', ['remote', 'get-url', 'upstream'], {
+            cwd: root, timeout: 10000
+          });
+          pullRemote = 'upstream';
+        } catch { /* No upstream remote; use the existing publishing remote. */ }
+      }
+      if (pullRemote === 'auto') {
+        pullRemote = await gitConfig(repository, 'scm-toolkit.remote', head.upstream?.remote || 'origin');
+      }
+    }
+    return { remote: pullRemote, name: defaultBranch };
   }
+  // Topic branches must continue to follow their own tracked branches.
   return { remote: head?.upstream?.remote, name: head?.upstream?.name };
 }
 
