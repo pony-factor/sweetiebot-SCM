@@ -133,7 +133,7 @@ for (const actionCount of [1, 2]) {
       querySelector(selector) {
         if (selector === ':scope > .monaco-button-dropdown') return null;
         if (selector === ':scope > .monaco-button') return nativeSync;
-        throw Error(\`Unexpected selector: \${selector}\`);
+        throw Error('Unexpected selector: ' + selector);
       },
       append(button) { button.parentElement = this; }
     };
