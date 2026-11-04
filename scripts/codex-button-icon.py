@@ -24,7 +24,9 @@ from pathlib import Path
 import codex_sticker
 
 
-BUNDLED_ICON = Path(__file__).resolve().parent.parent / "assets" / "imgs" / "sweetiebot.png"
+SOURCE_ICON = Path(__file__).resolve().parent.parent / "assets" / "imgs" / "sweetiebot.png"
+PACKAGED_ICON = Path(__file__).resolve().parent / "codex-customizations" / "assets" / "imgs" / "sweetiebot.png"
+BUNDLED_ICON = SOURCE_ICON if SOURCE_ICON.is_file() else PACKAGED_ICON
 MAX_ICON_BYTES = codex_sticker.MAX_STICKER_BYTES
 
 
