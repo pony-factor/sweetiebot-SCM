@@ -67,6 +67,10 @@
     const found = locate();
     if (!found) return;
     const { footer, controls } = found;
+    // Custom layouts own access visibility; an older hide-icon preference must
+    // not suppress Codex's native permissions chooser.
+    if (!document.documentElement.hasAttribute("data-sweetiebot-composer-access-visible"))
+      document.documentElement.setAttribute("data-sweetiebot-composer-access-visible", "");
     const left = layout.left || (layout.visible || []).filter(id => id !== "send");
     const right = layout.right || (layout.visible || []).filter(id => id === "send");
     const ordered = [...left, ...right];

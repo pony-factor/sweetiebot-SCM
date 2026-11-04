@@ -13,6 +13,11 @@ const load = (name, context) => vm.runInContext(fs.readFileSync(path.join(__dirn
     querySelectorAll:()=>[button],querySelector:selector=>selector.startsWith('button')?button:{}
   }});
   load('permissions-webview.js',context);
+  const permissionsCss = fs.readFileSync(path.join(__dirname,'../assets/codex/permissions-webview.js'),'utf8');
+  assert(permissionsCss.includes(':not([data-sweetiebot-composer-access-visible])'));
+  const composerRuntime = fs.readFileSync(path.join(__dirname,'../assets/codex/composer-layout.js'),'utf8');
+  assert(composerRuntime.includes('setAttribute("data-sweetiebot-composer-access-visible"'));
+  assert(!composerRuntime.includes('scm-toolkit-composer-more'));
   context.scmToolkitRegisterCodexPermissionsMenu({postMessage:message=>posted.push(message)});
   assert.equal(posted[0].type,'sweetiebot-permissions-ready');
   receive({data:{type:'sweetiebot-permissions-visibility',hidden:true}}); assert.equal(hidden,true);
