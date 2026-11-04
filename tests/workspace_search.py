@@ -220,6 +220,24 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertEqual(view["name"], "Research")
         self.assertEqual(view["contextualTitle"], "Research")
 
+    def test_extension_stylesheets_survive_installer_and_repair_bundles(self):
+        import build_installer_app
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stylesheet = root / "extension/merge/header.css"
+            stylesheet.parent.mkdir(parents=True)
+            stylesheet.write_text(".merge-header { display: flex; }\n")
+            files = workspace_search.source_files(root)
+            self.assertEqual(files[Path("merge/header.css")], stylesheet)
+            self.assertEqual(
+                files[Path("codex-customizations/extension/merge/header.css")], stylesheet)
+            with patch.object(build_installer_app, "ROOT", root):
+                self.assertEqual(
+                    build_installer_app.source_files()[Path("extension/merge/header.css")],
+                    stylesheet)
+
     def test_installs_exact_extension_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
