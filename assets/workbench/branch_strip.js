@@ -98,13 +98,12 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
         const rect = trigger.getBoundingClientRect();
         const view = widget.element.closest('.scm-view');
         const host = view?.getBoundingClientRect() || rect;
-        // The popup occupies the SCM area's remaining height, not the entire panel width.
+        // Fill the SCM width, but let the popup escape a short bottom panel.
+        // It is mounted on the workbench, so either side can use the viewport.
         const width = Math.max(0, Math.min(host.width || win.innerWidth - 16,
-            Math.min(360, Math.max(245, Math.round(win.innerWidth * .24))),
             win.innerWidth - 16));
-        const bottom = Math.min(host.bottom || win.innerHeight - 8, win.innerHeight - 8);
-        const above = Math.max(0, rect.top - Math.max(8, host.top) - 4);
-        const below = Math.max(0, bottom - rect.bottom - 4);
+        const above = Math.max(0, rect.top - 8 - 4);
+        const below = Math.max(0, win.innerHeight - 8 - rect.bottom - 4);
         const placeBelow = below >= above;
         const height = Math.min(Math.max(above, below), win.innerHeight - 16);
         bar.style.width = `${width}px`;
