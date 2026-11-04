@@ -151,7 +151,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     image_root = here.parent / "assets/imgs"
     for icon_name, asset_path in IMAGE_SOURCES.items():
         files[Path("media") / icon_name] = image_root / asset_path
-    # Preserve extension/THIRD_PARTY_NOTICES.md and its existing creator credits.
+    # runtime_files includes extension/README.md with its third-party credits.
     files[Path("prune-merged-branches.py")] = here / "prune-merged-branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
     files[Path("importaliases.py")] = here / "importaliases.py"
