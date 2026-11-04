@@ -1,3 +1,76 @@
+const { readMergeChecks } = require("../merge/checks");
+const { githubSession } = require("./session");
+
+// A folder action is only a shortcut for independently safe one-PR merges.
+// Live GitHub state, not the sidebar glyph or cached tree model, determines
+// which PRs are offered. Any unavailable evidence excludes that PR.
+async function checkFolderMergeEligibility(request, accessToken, fetchImpl = globalThis.fetch) {
+  const match = String(request?.url || "").match(
+    /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/
+  );
+  if (!match || Number(match[3]) !== request.number || !accessToken) {
+    return { eligible: false, reason: "Cannot verify the selected PR identity or GitHub session" };
+  }
+  const repository = match[1] + "/" + match[2];
+  const prefix = "repos/" + repository + "/";
+  const api = async endpoint => {
+    if (!endpoint.startsWith(prefix)) throw Error("Unexpected GitHub eligibility endpoint");
+    const response = await fetchImpl("https://api.github.com/" + endpoint, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: "Bearer " + accessToken,
+        "X-GitHub-Api-Version": "2022-11-28"
+      }
+    });
+    if (!response.ok) throw Error("GitHub returned HTTP " + response.status);
+    return response.json();
+  };
+  try {
+    const pr = await api(prefix + "pulls/" + request.number);
+    if (pr?.state !== "open" || pr.draft) {
+      return { eligible: false, reason: "PR is closed or in draft" };
+    }
+    if (String(pr.html_url || "").toLowerCase() !== request.url.toLowerCase() ||
+        !/^[a-f0-9]{40}$/i.test(pr.head?.sha || "") || !pr.base?.ref ||
+        !pr.title || !pr.head?.ref) {
+      return { eligible: false, reason: "GitHub did not confirm the PR head, base and title" };
+    }
+    const snapshot = {
+      headSha: pr.head.sha, head: pr.head.ref, base: pr.base.ref, title: pr.title
+    };
+    if (pr.stack) return { ...snapshot, eligible: false, reason: "Use the stack-aware bulk merge workflow" };
+    if (pr.mergeable === false || pr.mergeable_state === "dirty") {
+      return { ...snapshot, eligible: false, reason: "Merge conflicts" };
+    }
+    if (pr.mergeable_state === "blocked") {
+      return { ...snapshot, eligible: false, reason: "Reviews or GitHub merge rules are blocking" };
+    }
+    if (pr.mergeable_state === "behind") {
+      return { ...snapshot, eligible: false, reason: "Branch needs an update before merging" };
+    }
+    // "unstable" alone does not tell us whether checks failed or are pending.
+    // Reuse the actual CI reader for cancelled, failed and in-progress checks.
+    const checks = await readMergeChecks(api, repository, pr.head.sha);
+    if (checks.state === "failed") {
+      return { ...snapshot, eligible: false,
+        reason: "Checks not passing: " + checks.names.slice(0, 3).join(", ") +
+          (checks.names.length > 3 ? "…" : "") };
+    }
+    if (checks.state === "pending") {
+      return { ...snapshot, eligible: false, reason: "Checks pending" };
+    }
+    if (pr.mergeable !== true || pr.mergeable_state !== "clean") {
+      return { ...snapshot, eligible: false,
+        reason: "GitHub has not confirmed merge readiness (" + (pr.mergeable_state || "unknown") + ")" };
+    }
+    return { ...snapshot, eligible: true };
+  } catch (error) {
+    // An API, permission or rate-limit failure must not become permission
+    // to merge, including if the sidebar still displays a green checkmark.
+    return { eligible: false, reason: "Unable to verify eligibility: " + (error?.message || String(error)) };
+  }
+}
+
 function pullRequestFromTreeNode(node) {
   if (Array.isArray(node)) node = node.length === 1 ? node[0] : undefined;
   if (!node) return { url: undefined, number: undefined };
@@ -118,7 +191,7 @@ async function pullRequestsInFolder(owner, folder) {
   return requests;
 }
 
-function installPullRequestRefresh(vscode, view, owner) {
+function installPullRequestRefresh(vscode, view, owner, { checkBulkEligibility = checkFolderMergeEligibility } = {}) {
   // Sweetiebot owns the public merge commands and their legacy aliases.
   // Only resolve nodes here, in the extension that owns the GitHub PR tree.
   const resolve = async node => {
@@ -250,25 +323,75 @@ function installPullRequestRefresh(vscode, view, owner) {
       vscode.window.showErrorMessage('No pull requests were found in the selected folder.');
       return { state: 'failed', total: 0 };
     }
-    const count = requests.length;
-    const action = `Merge ${count} PR${count === 1 ? '' : 's'}`;
-    const detail = requests.map(request =>
-      `#${request.number} — ${request.title || request.url}`).join('\n');
+    let accessToken;
+    try {
+      accessToken = (await githubSession(vscode))?.accessToken;
+      if (!accessToken) throw Error("A GitHub session is required");
+    } catch (error) {
+      vscode.window.showErrorMessage("Cannot verify bulk-merge eligibility: " + error.message);
+      return { state: "failed", total: requests.length };
+    }
+    // Bound concurrent preflights to avoid a burst of GitHub API calls. Keep
+    // the tree's displayed order without trusting its cached status badges.
+    const checked = await vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: "Checking folder PR merge eligibility",
+      cancellable: false
+    }, async progress => {
+      const results = [];
+      for (let index = 0; index < requests.length; index += 3) {
+        const group = await Promise.all(requests.slice(index, index + 3).map(async request => ({
+          request, status: await checkBulkEligibility(request, accessToken)
+        })));
+        results.push(...group);
+        progress?.report?.({ message: `Checked ${results.length}/${requests.length} PRs` });
+      }
+      return results;
+    });
+    const eligible = checked.filter(entry => entry.status.eligible);
+    const excluded = checked.filter(entry => !entry.status.eligible);
+    const count = eligible.length;
+    const action = `Merge ${count} PR${count === 1 ? "" : "s"}`;
+    const detail = [
+      ...eligible.map(({ request }) => `#${request.number} — ${request.title || request.url}`),
+      ...(excluded.length ? [
+        "", `Excluded ${excluded.length} of ${requests.length} PRs:`,
+        ...excluded.map(({ request, status }) => `#${request.number} — ${status.reason}`)
+      ] : [])
+    ].join("\n");
+    if (!count) {
+      await vscode.window.showWarningMessage(
+        "No pull requests are currently eligible for bulk merge.",
+        { modal: true, detail }
+      );
+      return { state: "blocked", total: requests.length, excluded: excluded.length };
+    }
     const confirmed = await vscode.window.showWarningMessage(
-      `Squash merge ${count} pull request${count === 1 ? '' : 's'}?`,
+      `Squash merge ${count} eligible pull request${count === 1 ? "" : "s"}?`,
       { modal: true, detail }, action
     );
-    if (confirmed !== action) return { state: 'cancelled', total: count };
+    if (confirmed !== action) return { state: "cancelled", total: requests.length };
 
     return vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: 'Squash merge folder pull requests',
+      title: "Squash merge eligible folder pull requests",
       cancellable: false
     }, async progress => {
-      const counts = { merged: 0, queued: 0, pending: 0, cancelled: 0, failed: 0 };
-      for (const [index, request] of requests.entries()) {
+      const counts = { merged: 0, queued: 0, pending: 0, cancelled: 0, failed: 0, skipped: 0 };
+      const skippedReasons = [];
+      for (const [index, { request, status }] of eligible.entries()) {
         progress?.report?.({ message: `PR ${index + 1}/${count}: #${request.number}` });
         try {
+          // Every earlier merge may change this PR's base or invalidate its
+          // checks. Never rely on the confirmation-time eligibility snapshot.
+          const fresh = await checkBulkEligibility(request, accessToken);
+          const changed = fresh.headSha !== status.headSha || fresh.head !== status.head ||
+            fresh.base !== status.base || fresh.title !== status.title;
+          if (!fresh.eligible || changed) {
+            counts.skipped++;
+            skippedReasons.push(`#${request.number}: ${changed ? "PR changed since confirmation" : fresh.reason}`);
+            continue;
+          }
           const result = await mergeTreeRow(request.node);
           const state = result?.state;
           if (Object.hasOwn(counts, state)) counts[state]++;
@@ -278,10 +401,11 @@ function installPullRequestRefresh(vscode, view, owner) {
           vscode.window.showErrorMessage(`Unable to merge PR #${request.number}: ${error.message}`);
         }
       }
-      const summary = `Folder merge: ${counts.merged} merged, ${counts.queued} queued, ${counts.pending} pending, ${counts.cancelled} cancelled, ${counts.failed} failed (${count} PRs attempted).`;
-      if (counts.failed || counts.cancelled) vscode.window.showWarningMessage(summary);
-      else vscode.window.showInformationMessage(summary);
-      return { state: 'completed', total: count, ...counts };
+      const summary = `Folder merge: ${counts.merged} merged, ${counts.queued} queued, ${counts.pending} pending, ${counts.cancelled} cancelled, ${counts.failed} failed, ${counts.skipped} skipped (${excluded.length} excluded before confirmation).`;
+      if (counts.failed || counts.cancelled || counts.skipped) {
+        vscode.window.showWarningMessage(summary + (skippedReasons.length ? "\n" + skippedReasons.join("\n") : ""));
+      } else vscode.window.showInformationMessage(summary);
+      return { state: "completed", total: requests.length, excluded: excluded.length, ...counts };
     });
   };
   owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', node => {
@@ -380,4 +504,4 @@ function installPullRequestRefresh(vscode, view, owner) {
   return view;
 }
 
-module.exports = { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder };
+module.exports = { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder, checkFolderMergeEligibility };

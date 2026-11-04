@@ -1,9 +1,59 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder } = require('../extension/github/pr-refresh');
+const { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder, checkFolderMergeEligibility } = require('../extension/github/pr-refresh');
+
+async function testBulkEligibility() {
+  const request = { number: 12, url: "https://github.com/owner/repo/pull/12" };
+  const head = "a".repeat(40);
+  const pr = { state: "open", draft: false, mergeable: true, mergeable_state: "clean",
+    html_url: request.url, head: { sha: head, ref: "topic" }, base: { ref: "main" }, title: "Feature" };
+  const checkRun = { id: 1, name: "Unit tests", status: "completed", conclusion: "success" };
+  let currentPr = pr, run = checkRun, responseStatus = 200;
+  const visited = [];
+  const fetchImpl = async (url, options) => {
+    visited.push(url);
+    assert.equal(options.headers.Authorization, "Bearer test-token");
+    if (responseStatus !== 200) return { ok: false, status: responseStatus };
+    const json = url.includes("/pulls/12") ? currentPr
+      : url.includes("/check-runs") ? { check_runs: [run] }
+      : url.includes("/check-suites") ? { check_suites: [] }
+      : url.includes("/status") ? { statuses: [] } : undefined;
+    assert(json, "No unexpected GitHub endpoint: " + url);
+    return { ok: true, json: async () => json };
+  };
+  const check = () => checkFolderMergeEligibility(request, "test-token", fetchImpl);
+  assert.deepEqual(await check(), { eligible: true, headSha: head,
+    head: "topic", base: "main", title: "Feature" });
+  assert(visited.some(url => url.includes("/check-runs")));
+  for (const conclusion of ["failure", "cancelled", "timed_out"]) {
+    run = { ...checkRun, conclusion };
+    assert.match((await check()).reason, /Checks not passing: Unit tests/);
+  }
+  run = { ...checkRun, status: "in_progress", conclusion: null };
+  assert.match((await check()).reason, /Checks pending/);
+  run = checkRun;
+  for (const state of ["dirty", "blocked", "behind", "unstable", "unknown"]) {
+    currentPr = { ...pr, mergeable_state: state };
+    assert.equal((await check()).eligible, false, "Reject mergeability state " + state);
+  }
+  currentPr = { ...pr, mergeable: null };
+  assert.equal((await check()).eligible, false, "Unknown mergeability is not approval");
+  currentPr = { ...pr, draft: true };
+  assert.equal((await check()).eligible, false);
+  currentPr = { ...pr, state: "closed" };
+  assert.equal((await check()).eligible, false);
+  currentPr = { ...pr, stack: { id: "native-stack" } };
+  assert.match((await check()).reason, /stack-aware/);
+  currentPr = pr;
+  responseStatus = 403;
+  assert.match((await check()).reason, /Unable to verify eligibility/);
+  assert.equal((await checkFolderMergeEligibility(request, "", fetchImpl)).eligible, false);
+  assert.equal((await checkFolderMergeEligibility({ ...request, number: 99 }, "test-token", fetchImpl)).eligible, false);
+}
 
 async function main() {
+  await testBulkEligibility();
   const originalSetInterval = global.setInterval;
   const originalClearInterval = global.clearInterval;
   const originalNow = Date.now;
@@ -204,6 +254,21 @@ async function main() {
     const folderSubscriptions = [], folderCommands = new Map();
     const folderCalls = [], folderResolvers = [], folderProgress = [], folderWarnings = [], folderErrors = [];
     const folderConfirmations = [], confirmationResolvers = [];
+    let filterBlocked = true;
+    const eligibilityCalls = new Map();
+    const checkBulkEligibility = async request => {
+      const count = (eligibilityCalls.get(request.number) || 0) + 1;
+      eligibilityCalls.set(request.number, count);
+      if (filterBlocked && request.number === 13) {
+        return { eligible: false, reason: "Checks not passing: Unit tests" };
+      }
+      if (filterBlocked && request.number === 14 && count > 1) {
+        return { eligible: false, reason: "Merge conflicts" };
+      }
+      return { eligible: true, headSha: "a".repeat(40),
+        head: "topic-" + request.number, base: "main",
+        title: "PR " + request.number };
+    };
     const folderOwner = {
       _register: item => folderSubscriptions.push(item),
       async getChildren(node) {
@@ -235,6 +300,7 @@ async function main() {
         showErrorMessage: message => folderErrors.push(message),
         showInformationMessage: () => {}
       },
+      authentication: { getSession: async () => ({ accessToken: "test-token", scopes: ["repo"] }) },
       commands: {
         registerCommand(id, fn) {
           folderCommands.set(id, fn);
@@ -253,50 +319,86 @@ async function main() {
     };
     installPullRequestRefresh(folderVscode, {
       visible: false, onDidChangeVisibility: () => ({ dispose() {} })
-    }, folderOwner);
+    }, folderOwner, { checkBulkEligibility });
     const folderMerge = folderCommands.get('sweetiebot.squashMergeTreePullRequest');
     assert.deepEqual((await pullRequestsInFolder(folderOwner, folder)).map(pr => pr.url),
       [url, secondPr.url, thirdPr.url]);
     const mergingFolder = folderMerge(folder);
     await new Promise(setImmediate);
-    assert.equal(folderProgress.length, 0, 'No merge progress before confirmation');
-    assert.deepEqual(folderCalls, [], 'No PR is merged before confirmation');
+    assert.deepEqual(folderCalls, [], "No PR is merged during eligibility checks");
     assert.equal(folderConfirmations.length, 1);
-    assert.equal(folderConfirmations[0].message, 'Squash merge 3 pull requests?');
-    assert.equal(folderConfirmations[0].action, 'Merge 3 PRs');
+    assert.equal(folderConfirmations[0].message, "Squash merge 2 eligible pull requests?");
+    assert.equal(folderConfirmations[0].action, "Merge 2 PRs");
     assert.equal(folderConfirmations[0].options.modal, true);
-    assert.deepEqual(folderConfirmations[0].options.detail.split('\n'), [
-      '#12 — First PR title', '#13 — Second PR title', '#14 — Third PR title'
+    assert.deepEqual(folderConfirmations[0].options.detail.split("\n"), [
+      "#12 — First PR title", "#14 — Third PR title", "",
+      "Excluded 1 of 3 PRs:", "#13 — Checks not passing: Unit tests"
     ]);
     await folderMerge(folder);
-    assert.equal(folderConfirmations.length, 1, 'Repeated clicks cannot open a second confirmation');
-    confirmationResolvers.shift()('Merge 3 PRs');
+    assert.equal(folderConfirmations.length, 1, "Duplicate clicks cannot open another confirmation");
+    confirmationResolvers.shift()("Merge 2 PRs");
     await new Promise(setImmediate);
-    assert.equal(folderProgress[0].title, 'Squash merge folder pull requests');
-    assert.deepEqual(folderCalls, [url]);
-    folderResolvers[0].resolve({ state: 'merged' });
-    await new Promise(setImmediate);
-    assert.deepEqual(folderCalls, [url, secondPr.url]);
-    folderResolvers[1].reject(new Error('Merge checks failed'));
-    await new Promise(setImmediate);
-    assert.deepEqual(folderCalls, [url, secondPr.url, thirdPr.url],
-      'An individual failure cannot prevent attempting the next PR');
-    folderResolvers[2].resolve({ state: 'pending' });
+    assert.deepEqual(folderCalls, [url], "Only an eligible PR is dispatched");
+    folderResolvers[0].resolve({ state: "merged" });
     assert.deepEqual(await mergingFolder,
-      { state: 'completed', total: 3, merged: 1, queued: 0, pending: 1, cancelled: 0, failed: 1 });
-    assert.match(folderWarnings[0], /1 merged, 0 queued, 1 pending, 0 cancelled, 1 failed/);
+      { state: "completed", total: 3, excluded: 1, merged: 1, queued: 0,
+        pending: 0, cancelled: 0, failed: 0, skipped: 1 });
+    assert.deepEqual(folderCalls, [url], "Fresh conflicts prevent even attempting the second PR");
+    assert.match(folderWarnings[0], /1 merged, 0 queued, 0 pending, 0 cancelled, 0 failed, 1 skipped/);
+    assert.match(folderWarnings[0], /#14: Merge conflicts/);
+
+    // Once all three PRs become eligible, merges remain sequential and one
+    // failed merge still allows the next independently eligible PR to run.
+    filterBlocked = false;
+    const allMerge = folderMerge(folder);
+    await new Promise(setImmediate);
+    assert.equal(folderConfirmations[1].message, "Squash merge 3 eligible pull requests?");
+    confirmationResolvers.shift()("Merge 3 PRs");
+    await new Promise(setImmediate);
+    assert.deepEqual(folderCalls, [url, url]);
+    folderResolvers[1].resolve({ state: "merged" });
+    await new Promise(setImmediate);
+    assert.deepEqual(folderCalls, [url, url, secondPr.url]);
+    folderResolvers[2].reject(new Error("Merge checks failed"));
+    await new Promise(setImmediate);
+    assert.deepEqual(folderCalls, [url, url, secondPr.url, thirdPr.url]);
+    folderResolvers[3].resolve({ state: "pending" });
+    assert.deepEqual(await allMerge,
+      { state: "completed", total: 3, excluded: 0, merged: 1, queued: 0,
+        pending: 1, cancelled: 0, failed: 1, skipped: 0 });
     assert.match(folderErrors[0], /PR #13: Merge checks failed/);
-    assert.deepEqual(folderProgress.filter(item => item.message).map(item => item.message),
-      ['PR 1/3: #12', 'PR 2/3: #13', 'PR 3/3: #14']);
+
     const cancellingFolder = folderMerge(folder);
     await new Promise(setImmediate);
-    assert.equal(folderConfirmations.length, 2);
+    assert.equal(folderConfirmations.length, 3);
     confirmationResolvers.shift()(undefined);
-    assert.deepEqual(await cancellingFolder, { state: 'cancelled', total: 3 });
-    assert.deepEqual(folderCalls, [url, secondPr.url, thirdPr.url],
-      'Dismissal must not invoke the merge command');
-    assert.equal(folderProgress.filter(item => item.title).length, 1,
-      'Cancellation must not show merge progress');
+    assert.deepEqual(await cancellingFolder, { state: "cancelled", total: 3 });
+    assert.equal(folderCalls.length, 4, "Dismissal must not invoke a merge command");
+    assert.equal(folderProgress.filter(item => item.title === "Squash merge eligible folder pull requests").length, 2,
+      "Cancellation must not show merge execution progress");
+
+    // No eligible candidates: show a blocker, never a merge-confirm button.
+    filterBlocked = true;
+    eligibilityCalls.clear();
+    const blockedChecker = () => ({ eligible: false, reason: "Checks pending" });
+    // The checker is injected per installation; use a fresh isolated view.
+    const noEligibleCommands = new Map();
+    const noEligibleOwner = { ...folderOwner,
+      _register: item => folderSubscriptions.push(item) };
+    const noEligibleVscode = { ...folderVscode, commands: {
+      ...folderVscode.commands,
+      registerCommand(id, fn) {
+        noEligibleCommands.set(id, fn);
+        return { dispose() { noEligibleCommands.delete(id); } };
+      }
+    } };
+    installPullRequestRefresh(noEligibleVscode, {
+      visible: false, onDidChangeVisibility: () => ({ dispose() {} })
+    }, noEligibleOwner, { checkBulkEligibility: blockedChecker });
+    const none = await noEligibleCommands.get("sweetiebot.squashMergeTreePullRequest")(folder);
+    assert.deepEqual(none, { state: "blocked", total: 3, excluded: 3 });
+    assert.equal(folderConfirmations.at(-1).action, undefined);
+    assert.match(folderConfirmations.at(-1).message, /No pull requests are currently eligible/);
     assert.deepEqual(await folderMerge({ id: 'empty' }), { state: 'failed', total: 0 });
     assert.match(folderErrors.at(-1), /No pull requests were found/);
     for (const subscription of folderSubscriptions) subscription.dispose();
