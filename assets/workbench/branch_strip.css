@@ -1,4 +1,4 @@
-/* Compact branch picker covers the remaining SCM sidebar/panel space. */
+/* Branch picker fills the SCM width and opens into available viewport space. */
 .monaco-workbench .scm-toolkit-branch-strip {
     position: fixed;
     z-index: 2600;

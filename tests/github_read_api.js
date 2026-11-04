@@ -38,6 +38,28 @@ const env = { SWEETIEBOT_BOT_IDENTITY_MODE: 'separate-apps' };
   const broken = createLindseyReadFetch(repo, {
     env, fetchImpl, getToken: async () => { throw Error('Missing installation'); }
   });
-  await assert.rejects(broken(url), /Missing installation/);
+  const { githubGet } = require('../extension/merge/dashboard');
+  await assert.rejects(githubGet(broken, 'user-token', repo, '/pulls/12/files'), error => {
+    assert.equal(error.code, 'SWEETIEBOT_LINDSEY_READ_AUTH');
+    assert.match(error.message, /Check the Lindsey GitHub App configuration/);
+    assert(!error.message.includes('No HTTP response'));
+    assert(!error.message.includes('Missing installation'));
+    assert.equal(error.cause.message, 'Missing installation');
+    return true;
+  });
   assert.equal(called.length, 4, 'App failure never silently borrows the user quota');
+  let attempts = 0;
+  const recoverable = createLindseyReadFetch(repo, { env, fetchImpl, now: () => now,
+    getToken: async (...args) => {
+      if (++attempts === 1) throw Error('credential-provider-sensitive-text');
+      return getToken(...args);
+    }
+  });
+  await assert.rejects(recoverable(url), error => {
+    assert.equal(error.code, 'SWEETIEBOT_LINDSEY_READ_AUTH');
+    assert(!error.message.includes('credential-provider-sensitive-text'));
+    return true;
+  });
+  await recoverable(url);
+  assert.equal(attempts, 2, 'Authentication can be retried after configuration is repaired');
 })().catch(error => { console.error(error); process.exitCode = 1; });

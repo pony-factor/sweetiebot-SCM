@@ -236,7 +236,7 @@ def load_settings():
     if (settings["codexHidePermissionsIcon"]
             and read_git_string(SETTING_KEYS["codexComposerLayout"], None) is None):
         layout = parse_codex_layout(settings["codexComposerLayout"])
-        layout["visible"].remove("access")
+        layout["left"].remove("access")
         layout["hidden"].append("access")
         settings["codexComposerLayout"] = serialize_codex_layout(layout)
     # Honor an existing right-hand preference until the user saves a dropdown choice.

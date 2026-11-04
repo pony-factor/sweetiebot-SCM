@@ -124,8 +124,8 @@ jobs:
       - name: Install browser-test dependencies
         if: steps.browser.outputs.required == 'true'
         run: |
-          npm install --no-save --no-package-lock playwright@1.64.0
-          npx playwright install --with-deps chromium
+          npm install --ignore-scripts --no-save --no-package-lock playwright@1.64.1
+          ./node_modules/.bin/playwright install --with-deps chromium
       - name: Run ${{ matrix.label }} checks
         run: python3 scripts/ci/ci_test_runner.py run "${{ matrix.group }}"
 
@@ -187,8 +187,8 @@ jobs:
   codex-webview-browser:
     name: Chromium CSS and DOM regression
     needs: inventory
-    # Playwright 1.57.0 cannot install Chromium on ubuntu-26.04 runners.
-    runs-on: ubuntu-24.04
+    # Playwright 1.64.1 supports Chromium on the current ubuntu-latest image.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -200,7 +200,8 @@ jobs:
           node-version: '22'
       - name: Install Chromium automation
         run: |
-          python -m pip install playwright==1.57.0
+          python -m pip install playwright==1.64.1
+          python -m playwright --version
           python -m playwright install --with-deps chromium
       - name: Browser-backed Codex webview simulation
         run: |
@@ -278,7 +279,7 @@ jobs:
         run: node --test tests/case_only_renames.js
 
   native-prompt-transport:
-    name: Sandboxed browser prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
+    name: Native browser cookies and prompt transport (${{ matrix.os }}, Electron ${{ matrix.electron }})
     needs: inventory
     runs-on: ${{ matrix.os }}
     strategy:
@@ -293,6 +294,9 @@ jobs:
           node-version: '22'
       - name: Install the native test runtime
         run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@${{ matrix.electron }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Exercise sandbox, strict CSP, prompt delivery and JSON handoff
         shell: bash
         run: |
@@ -311,4 +315,13 @@ jobs:
             xvfb-run -a "$runner" tests/fixtures/prompt-transport.cjs
           else
             "$runner" tests/fixtures/prompt-transport.cjs
+          fi
+      - name: Verify shared cookies, session isolation and persistence after restart
+        shell: bash
+        run: |
+          runner="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/.bin/electron"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a python tests/fixtures/browser-cookie-sessions.py "$runner"
+          else
+            python tests/fixtures/browser-cookie-sessions.py "$runner"
           fi

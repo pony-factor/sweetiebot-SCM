@@ -10,7 +10,6 @@ This runs real JS assets in a browser DOM, not the proprietary Codex extension.
 from pathlib import Path
 import os
 import base64
-import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +36,8 @@ def run():
     # the dedicated browser integration job.
     from playwright.sync_api import sync_playwright
 
-    custom_browser = os.environ.get("CODEX_TEST_CHROMIUM") or shutil.which("chromium") or shutil.which("chromium-browser")
+    # Prefer the browser revision installed with Playwright; local overrides are explicit.
+    custom_browser = os.environ.get("CODEX_TEST_CHROMIUM")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             executable_path=custom_browser or None, headless=True, args=["--no-sandbox"]

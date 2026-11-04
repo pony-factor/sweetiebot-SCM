@@ -115,6 +115,14 @@ class RetiredComposerPatchTests(unittest.TestCase):
                   'assert.equal(calls,3);')
         subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
 
+    def test_inline_toolbar_keeps_send_right_aligned_and_hidden_location_compact(self):
+        script = codex_composer.ASSET.read_text()
+        self.assertIn('flex: 0 0 auto; min-width: max-content;', script)
+        self.assertIn('> :is(button.bg-composer-primary, :has(button.bg-composer-primary))', script)
+        self.assertIn('margin-inline-start: auto !important;', script)
+        self.assertIn("location.closest('.scm-toolkit-layout-concealed')", script)
+        self.assertNotIn('flex: 1 0 auto; min-width: max-content;', script)
+
     def test_inline_location_is_reversible_and_preserves_native_source(self):
         source = '/* composer.placeholder.localFollowUp.locally */\nbase;'
         patched = codex_composer.transform_layout(source)
