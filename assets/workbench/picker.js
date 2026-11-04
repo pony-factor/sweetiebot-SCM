@@ -478,14 +478,27 @@ function scmToolkitAttachCommitSettings(widget, button) {
         const rows = inputRow?.parentElement;
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
-        const actionContainer = actionRow?.querySelector('.button-container');
-        const nativeDropdown = actionContainer?.querySelector(':scope > .monaco-button-dropdown');
-        const nativeSingle = actionContainer?.querySelector(':scope > .monaco-button');
-        // Commit actions render as a dropdown, but clean repositories can
-        // display a single Sync button. Keep the wand in the same action box.
-        const dropdown = nativeDropdown?.getClientRects?.().length === 0 ? undefined : nativeDropdown;
-        const singleAction = !dropdown && nativeSingle
-            && nativeSingle.getClientRects?.().length !== 0 ? actionContainer : undefined;
+        // SCM can insert other rows between the message editor and native
+        // Commit/Sync actions. Do not assume the action is always at index + 1.
+        const visibleAction = container => {
+            if (!container) return undefined;
+            const dropdown = container.querySelector(':scope > .monaco-button-dropdown');
+            const single = container.querySelector(':scope > .monaco-button');
+            const visible = element => element && element.getClientRects?.().length !== 0;
+            if (visible(dropdown)) return { container, dropdown };
+            if (visible(single)) return { container, single: true };
+            return undefined;
+        };
+        let action = visibleAction(actionRow?.querySelector('.button-container'));
+        if (!action && root) {
+            const candidates = [...(root.querySelectorAll?.('.button-container') ?? [])]
+                .map(visibleAction).filter(Boolean);
+            // Attach only when the target is unambiguous. Multiple SCM
+            // providers can share a view; never move Settings to another one.
+            if (candidates.length === 1) action = candidates[0];
+        }
+        const dropdown = action?.dropdown;
+        const singleAction = action?.single ? action.container : undefined;
         const destination = dropdown || singleAction || widget.element;
         if (button.parentElement === destination) return;
         button.parentElement?.classList.remove(

@@ -118,4 +118,62 @@ for (const initiallyAttached of [false, true]) {
   assert(!classes.has('scm-toolkit-commit-settings'));
   assert(!singleClasses.has('scm-toolkit-single-action-settings'));
 }
+
+for (const actionCount of [1, 2]) {
+  let callback;
+  const containers = Array.from({ length: actionCount }, () => {
+    const classes = new Set();
+    const nativeSync = { getClientRects: () => [{}] };
+    return {
+      classes,
+      classList: {
+        add: value => classes.add(value),
+        remove: (...values) => values.forEach(value => classes.delete(value))
+      },
+      querySelector(selector) {
+        if (selector === ':scope > .monaco-button-dropdown') return null;
+        if (selector === ':scope > .monaco-button') return nativeSync;
+        throw Error('Unexpected selector: ' + selector);
+      },
+      append(button) { button.parentElement = this; }
+    };
+  });
+  const root = {
+    querySelectorAll(selector) {
+      assert.equal(selector, '.button-container');
+      return containers;
+    }
+  };
+  // VS Code inserts an unrelated row: the native action is no longer at
+  // the hard-coded index + 1 used by the original attachment logic.
+  const row = {
+    parentElement: { querySelector() { return null; } },
+    getAttribute() { return '0'; }
+  };
+  const widget = {
+    element: {
+      ownerDocument: {
+        documentElement: {},
+        defaultView: { MutationObserver: class {
+          constructor(onChange) { callback = onChange; }
+          observe() {}
+          disconnect() {}
+        } }
+      },
+      closest(selector) { return selector === '.scm-view' ? root : row; },
+      classList: { remove() {} },
+      append(button) { button.parentElement = this; }
+    },
+    layout() {},
+    disposables: { add() {} }
+  };
+  const button = { parentElement: null, remove() { this.parentElement = null; } };
+  vm.runInNewContext(attach + '\nscmToolkitAttachCommitSettings(widget, button);', { widget, button });
+  assert.equal(button.parentElement, actionCount === 1 ? containers[0] : widget.element,
+    'Attach Sync when its native action is unique; do not guess between providers');
+  assert.equal(containers[0].classes.has('scm-toolkit-single-action-settings'), actionCount === 1);
+  callback();
+  assert.equal(button.parentElement, actionCount === 1 ? containers[0] : widget.element);
+}
+
 console.log('Commit settings attachment tests passed');
