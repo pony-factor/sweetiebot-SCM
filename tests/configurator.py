@@ -1150,6 +1150,9 @@ class SubmissionTests(unittest.TestCase):
         expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 2  # Diagnostics and GitHub Apps manage their own state.
         self.assertEqual(len(tab_markup), expected_sections)
         self.assertEqual(len(panel_markup), expected_sections)
+        self.assertTrue(any(">Apps</button>" in tab for tab in tab_markup))
+        self.assertFalse(any(">GitHub Apps</button>" in tab for tab in tab_markup))
+        self.assertIn("<h2>GitHub Apps</h2>", page)
         self.assertEqual(
             sum('aria-selected="true"' in item.split('>', 1)[0] for item in tab_markup),
             1,
