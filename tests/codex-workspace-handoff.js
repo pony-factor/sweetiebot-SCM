@@ -71,6 +71,13 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     const prepare = commands.get('sweetiebot.codex.prepareWorkspaceHandoff');
     const resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
     const openCheckout = commands.get('sweetiebot.codex.openChatCheckout');
+    const visibility = commands.get('sweetiebot.codex.chatCheckoutVisibility');
+    assert.equal((await visibility(threadId)).needsNewWindow, true, 'A checkout outside this window needs the shortcut');
+    vscode.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: from } }];
+    assert.equal((await visibility(threadId)).needsNewWindow, false, 'The current checkout must hide the shortcut');
+    await openCheckout(threadId);
+    assert.equal(opened.length, 0, 'Do not open a duplicate window for the active checkout');
+    vscode.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: destination } }];
     await assert.rejects(openCheckout('stale-chat'), /visible chat changed/);
     assert.equal(requests.length, 0, 'Reject stale clicks before querying a different chat');
     await openCheckout(threadId);
@@ -116,6 +123,8 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     const beforeResumption = requests.filter(request => request.method === 'turn/start').length;
     await resume({ ...plan, destination });
     assert.deepEqual(routes, ['/local/' + threadId]);
+    assert.equal((await visibility(threadId)).needsNewWindow, false,
+      'A rebound worker in the current checkout must not show the shortcut');
     assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
 
     connection.sendProviderRequest('frontend', 'frontend-request', 'thread/resume', { threadId, cwd: from });
