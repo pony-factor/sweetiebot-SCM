@@ -78,6 +78,7 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     await openCheckout(threadId);
     assert.equal(opened.length, 0, 'Do not open a duplicate window for the active checkout');
     vscode.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: destination } }];
+    requests.length = 0;
     await assert.rejects(openCheckout('stale-chat'), /visible chat changed/);
     assert.equal(requests.length, 0, 'Reject stale clicks before querying a different chat');
     await openCheckout(threadId);
