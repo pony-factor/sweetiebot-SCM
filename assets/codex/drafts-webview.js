@@ -22,9 +22,13 @@
     };
     Storage.prototype.getItem = function(key) {
         const value = originalGet.call(this, key);
+        if (this === storage && key === 'codex:persisted-atom:sweetiebot-composer-attachments-v1') return '{}';
         return this === storage && key === storageKey ? cleaned(value) : value;
     };
     Storage.prototype.setItem = function(key, value) {
+        if (this === storage && key === 'codex:persisted-atom:sweetiebot-composer-attachments-v1') {
+            return originalSet.call(this, key, '{}');
+        }
         return originalSet.call(this, key,
             this === storage && key === storageKey ? cleaned(String(value)) : value);
     };

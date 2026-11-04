@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const vm = require('node:vm');
-const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/workspace-handoff');
+const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttachments } = require('../extension/codex/workspace-handoff');
 
 (async () => {
   const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'codex-handoff-test-')));
@@ -154,7 +154,7 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
 
     const workspace = path.join(temporary, 'workspace.code-workspace');
     const state = new Map([[keyFor(workspace), { ...plan, destination, draft: 'Unsent draft' }]]);
-    const tasks = [], errors = [], resumed = [], drafts = [];
+    const tasks = [], errors = [], resumed = [], drafts = [], attachmentWrites = [];
     const globalState = { get: key => state.get(key), async update(key, value) { state.set(key, value); } };
     let foldersChanged;
     const editor = {
@@ -163,6 +163,7 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
       extensions: { getExtension: () => ({ async activate() {} }) },
       commands: { registerCommand() { return { dispose() {} }; }, async executeCommand(id, value) {
         if (id === 'sweetiebot.codexDraft.write') drafts.push(value);
+        else if (id === 'sweetiebot.codexDraft.writeAttachments') attachmentWrites.push(value);
         else if (id === 'sweetiebot.codex.resumeWorkspaceHandoff') { resumed.push(value); return { threadId }; }
         else assert.fail(id);
       } },
@@ -175,6 +176,22 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     tasks[0]();
     for (let i = 0; i < 15; i++) await Promise.resolve();
     assert.equal(errors.length, 0);
+    const attachmentDrafts = { 'new-conversation': {
+      imageAttachments:[{id:'image',src:'data:image/png;base64,aGVsbG8=',localPath:'/tmp/image.png'}],
+      fileAttachments:[path.join(from,'report.pdf')],
+      attachmentOrder:[JSON.stringify(['file',path.join(from,'report.pdf')])]
+    }};
+    const attachmentPlan=await prepareCodexHandoff({
+      extensions:{getExtension:()=>({activate:async()=>{}})},
+      commands:{getCommands:async()=>['sweetiebot.codex.prepareWorkspaceHandoff','sweetiebot.codexDraft.readAttachments'],
+        executeCommand:async id=>id==='sweetiebot.codexDraft.readAttachments'?{enabled:true,drafts:attachmentDrafts}:null}
+    },from);
+    assert.equal(attachmentPlan.draftOnly,true,'Image-only new chats need a handoff without a thread ID');
+    const moved=handoffAttachments({...attachmentPlan,destination});
+    assert.equal(moved['new-conversation'].fileAttachments[0],path.join(destination,'report.pdf'));
+    assert.equal(moved['new-conversation'].attachmentOrder[0],JSON.stringify(['file',path.join(destination,'report.pdf')]));
+    assert.deepEqual(moved['new-conversation'].imageAttachments,attachmentDrafts['new-conversation'].imageAttachments);
+    assert.equal(attachmentDrafts['new-conversation'].fileAttachments[0],path.join(from,'report.pdf'),'Source attachment state is unchanged');
     assert.equal(resumed[0].threadId, threadId);
     assert.deepEqual(drafts, ['Unsent draft']);
     assert.equal(state.get(keyFor(workspace)), undefined, 'Completed handoffs must not reopen stale chats on reload');
@@ -188,6 +205,12 @@ const { registerCodexWorkspaceHandoff, keyFor } = require('../extension/codex/wo
     foldersChanged();
     for (let i = 0; i < 15; i++) await Promise.resolve();
     assert.equal(resumed.length, 2, 'Later folder events must not reopen the chat');
+    state.set(keyFor(workspace), { ...attachmentPlan, destination });
+    foldersChanged();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    assert.deepEqual(attachmentWrites.at(-1),moved,'Draft-only navigation restores the full attachment record');
+    assert.equal(resumed.length,2,'A new-chat attachment draft must not open or submit an existing conversation');
+    assert.equal(state.get(keyFor(workspace)),undefined);
     assert.equal(errors.length, 0);
     console.log('Same-chat interruption, verified cwd resume, stale frontend guard and draft handoff passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }

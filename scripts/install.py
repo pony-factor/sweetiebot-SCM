@@ -1622,6 +1622,7 @@ def plan_codex_patches(args, settings):
         if draft_path in paths:
             index = paths.index(draft_path)
             draft_transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
+                               else codex_drafts.transform_attachments if draft_path.name.startswith('composer-view-state-')
                                else codex_drafts.transform_webview)
             new[index] = draft_transform(new[index], enabled=not args.uninstall)
         else:
