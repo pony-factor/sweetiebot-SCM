@@ -233,3 +233,4 @@ CONFIG_SCRIPT = """
   });
   updateActions();
 })();
+"""
