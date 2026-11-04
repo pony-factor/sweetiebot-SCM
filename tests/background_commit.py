@@ -145,7 +145,7 @@ class BackgroundCommitTests(unittest.TestCase):
             worker.resume()
         self.assertEqual(launches, [
             ('pony', self.root / 'jobs' / accepted['id']),
-            ('commit', str(self.repo / '.git')),
+            ('commit', str((self.repo / '.git').resolve())),
         ], 'Independent pony work must start before lengthy title generation')
 
     def test_pony_worker_waits_behind_background_commits(self):
