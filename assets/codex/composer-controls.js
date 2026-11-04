@@ -9,7 +9,9 @@
       :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > * {
         flex: 0 0 auto; }
       :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > :last-child {
-        flex: 1 0 auto; min-width: max-content; }
+        flex: 0 0 auto; min-width: max-content; }
+      :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > :is(button.bg-composer-primary, :has(button.bg-composer-primary)) {
+        margin-inline-start: auto !important; }
       :root[data-codex-window-type="extension"] .scm-toolkit-composer-footer > [class*="AdaptiveFooterInput_"] {
         flex-basis: 100%; order: -1; min-width: 0; }
       :root[data-codex-window-type="extension"] [data-composer-body] div:has(> .scm-toolkit-codex-clipboard-button) {
@@ -34,7 +36,8 @@
             }
             if (!composer || composer === document.body || composer === document.documentElement) return;
             const access = composer.querySelector('button[data-composer-navigation-target="permissions"]');
-            if (location.classList.contains('scm-toolkit-usage-replaced')) {
+            if (location.classList.contains('scm-toolkit-usage-replaced')
+                || location.closest('.scm-toolkit-layout-concealed')) {
                 const margin = margins.get(access);
                 if (margin) {
                     set(access, 'marginInlineStart', margin.start);
