@@ -473,6 +473,25 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
+  assert(panel.webview.html.includes('id="github-post-menu"'),
+    'Group the two GitHub posting preferences in one compact disclosure');
+  assert(panel.webview.html.includes('<summary class="github-post-trigger">Post to GitHub'),
+    'Label the posting menu without adding a master on/off switch');
+  assert(panel.webview.html.includes('role="group" aria-label="GitHub posting options"'),
+    'Expose the individual posting preferences accessibly');
+  assert(panel.webview.html.includes('id="post-summaries"> AI summaries</label>'),
+    'AI summaries retain their independent checkbox');
+  assert(panel.webview.html.includes('id="post-status-updates"> Status updates</label>'),
+    'Status updates retain their independent checkbox');
+  assert(panel.webview.html.includes('function updateGitHubPostingCount()') &&
+    panel.webview.html.includes("enabled === 0 ? 'Off' : enabled + ' enabled'"),
+    'The collapsed menu reflects how many posting options are enabled');
+  assert(panel.webview.html.includes("type: 'post-summaries', enabled: event.target.checked") &&
+    panel.webview.html.includes("type: 'post-status-updates', enabled: event.target.checked"),
+    'Both existing GitHub posting messages are preserved');
+  assert(panel.webview.html.includes("event.key === 'Escape' && menu.open") &&
+    panel.webview.html.includes("!menu.contains(event.target)"),
+    'Escape and outside clicks dismiss the menu');
   assert(panel.webview.html.includes('class="merge-header"'), 'Bulk dashboard uses the shared header');
   assert(panel.webview.html.includes('.merge-header .dashboard-brand'), 'Shared header CSS is inlined');
   assert(!panel.webview.html.includes('__MERGE_HEADER_CSS__'), 'No unexpanded header placeholder');
