@@ -1,8 +1,15 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
 const { registerAutoPublish } = require('../../extension/branches/auto-publish');
 const tick = () => new Promise(resolve => setTimeout(resolve,650));
 (async () => {
+  const trial = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-publish-trial-'));
+  const trialRoot = path.join(trial, 'repository');
+  await fs.mkdir(trialRoot);
+  await fs.writeFile(path.join(trial, '.sweetiebot-experiment.json'), '{}');
   const {resolveDefaultBranch} = require('../../extension/branches/actions');
   const module = require('../../extension/branches/actions');
   module.resolveDefaultBranch = async () => 'main';
@@ -20,6 +27,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
     assert.equal(calls.length,1,'A branch in a new workspace publishes without a prior branch event');
     assert.equal(calls[0][2].silentMerged, true,
       'Background publishing must not display the merged-PR recovery dialog');
+    assert.equal(calls[0][2].automatic, true);
     change(); await tick(); assert.equal(calls.length,1,'Tracking branches are not republished');
     repository.state.HEAD={name:'manual-two',commit:'a'.repeat(40),upstream:{remote:'origin',name:'main'}};
     change(); await tick(); assert.equal(calls.length,2,'Inherited tracking does not suppress a new branch');
@@ -31,7 +39,15 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
     assert.equal(calls.length,2,'Repositories without the publish remote are skipped');
     module.resolveDefaultBranch=async ()=>'main';repository.state.remotes=[{name:'origin'}];
     change();await tick();assert.equal(calls.length,3,'Adding the publish remote enables publishing');
-    enabled=false;repository.state.HEAD={name:'local',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,3);
+    repository.rootUri = { fsPath: trialRoot };
+    repository.state.HEAD = { name: 'trial-12345678', commit: 'a'.repeat(40) };
+    change();await tick();assert.equal(calls.length,3,'Existing trial workspaces never auto-publish with the preference enabled');
+    repository.state.HEAD = { name: 'renamed-experiment', commit: 'a'.repeat(40) };
+    change();await tick();assert.equal(calls.length,3,'Renaming a trial branch does not enable automatic publishing');
+    await fs.unlink(path.join(trial, '.sweetiebot-experiment.json'));
+    repository.state.HEAD = { name: 'trial-87654321', commit: 'a'.repeat(40) };
+    change();await tick();assert.equal(calls.length,4,'A normal workspace is not excluded merely by its branch name');
+    enabled=false;repository.state.HEAD={name:'local',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,4);
     console.log('Repository automatic publishing watcher checks passed.');
-  } finally {context.subscriptions.forEach(item=>item.dispose()); module.resolveDefaultBranch=resolveDefaultBranch;}
+  } finally {context.subscriptions.forEach(item=>item.dispose()); module.resolveDefaultBranch=resolveDefaultBranch;await fs.rm(trial,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -2021,7 +2021,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const published = await commands.executeCommand(
                 'sweetiebot.publishBranch',
                 currentRepositoryUri,
-                { branch, remote: settings.remote }
+                { branch, remote: settings.remote, automatic: true }
             );
             return Boolean(published);
         } catch (error) {

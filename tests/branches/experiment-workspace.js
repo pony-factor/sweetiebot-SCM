@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { openExperimentWorkspace, privateParent } = require('../../extension/branches/experiment-workspace');
+const { isExperimentWorkspace } = require('../../extension/branches/experiment-policy');
 
 function git(...args) {
   return execFileSync('git', args, {
@@ -59,6 +60,11 @@ function editor(root) {
     const vscode = editor(original);
     const first = await openExperimentWorkspace(vscode, { baseDirectory: copies });
     assert.match(first.branch, /^trial-[a-f0-9]{8}$/);
+    assert.equal(await isExperimentWorkspace(first.destination), true);
+    assert.equal(await isExperimentWorkspace(original), false);
+    const alias = path.join(tmp, 'trial-alias');
+    await fs.symlink(first.destination, alias);
+    assert.equal(await isExperimentWorkspace(alias), true, 'A folder alias preserves the trial publishing policy');
     assert.equal(first.handoffSaved, true);
     assert.deepEqual(vscode.calls.map(call => call[0]), [
       'sweetiebot.codex.prepareWorkspaceHandoff', 'sweetiebot.codexHandoff.save', 'vscode.openFolder'
