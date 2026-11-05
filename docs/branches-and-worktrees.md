@@ -6,7 +6,7 @@ Sweetiebot's topic workspaces are **linked Git worktrees** sharing one repositor
 ~/Library/Application Support/Sweetiebot/Workspaces/
 ```
 
-The branch selector can be a horizontal popup or native picker. **Branch names** settings manage built-in packs, imported/custom names and disabled lists. Each worktree owns its own working directory/index and ordinarily can check out a branch only once. If a target branch is already active elsewhere, inspect/focus its existing window instead of using forced checkout; preserve staged/unstaged changes.
+The branch selector can be a horizontal popup or native picker. **Branch names** settings manage built-in packs, imported/custom names and disabled lists. Each worktree owns its own working directory/index and ordinarily can check out a branch only once. Home and the branch selector reuse the current VS Code window, including when the destination worktree is open in another window. Saved workspaces replace their repository folder in place, preserving the workspace identity and Codex chat handoff. Each worktree keeps its staged and unstaged changes.
 
 **Open a Window on Shared Main** provides a managed main window. The ordinary new-branch action starts at the resolved default branch where possible; the **stacked branch** action starts at the current topic branch. Optional `gh-stack` manages native stacks. Creating a stacked branch is not publishing a PR; verify parent/base relationships before merging.
 
@@ -14,11 +14,11 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 ## Isolated experiments
 
-Use **Open Experimental Workspace** (the beaker button in Source Control) to create a separate clone of the current branch under `/var/tmp/Sweetiebot/<repo>/<branch>-<color>/<repo>`. VS Code opens it in a new window. The source repository, staged/index state, worktree, branch, and original Codex chat are not moved. This clone includes tracked staged/unstaged modifications and non-ignored untracked regular files, but not Git-ignored build outputs. Conflicted indexes, unsafe untracked symlinks and special files fail closed rather than silently creating an incomplete experiment.
+Use **Open Experimental Workspace** (the beaker button in Source Control) to create a separate clone of the current branch on a random `trial-<hex>` branch under `/var/tmp/Sweetiebot/<repo>/<branch>-<color>/<repo>`. VS Code reuses the current window and moves the same Codex chat into the experiment. The source repository, staged/index state, worktree, and branch remain unchanged. This clone includes tracked staged/unstaged modifications and non-ignored untracked regular files, but not Git-ignored build outputs. Conflicted indexes, unsafe untracked symlinks and special files fail closed rather than silently creating an incomplete experiment.
 
 Add `/var/tmp/Sweetiebot` (macOS may display `/private/var/tmp/Sweetiebot`) to **Manage Workspace Trust** once; trust is controlled by VS Code, never bypassed by Sweetiebot. The parent directory is created with private owner-only permissions. An existing unsafe or symlinked parent is rejected.
 
-Once the separate window opens, Sweetiebot sends the *original*, visible Codex conversation an automatic direction to run experiments and resets only in the clone. An active turn is steered without interruption; an idle thread receives a new turn. If Codex is unavailable, the cloned workspace remains open and the failed notification is shown. Experiments are not registered for automatic managed-worktree pruning; review and remove them manually when no longer needed.
+Sweetiebot interrupts an active Codex turn before capturing the snapshot, preserves composer drafts and attachments, and saves the same checkout handoff used by New Branch. After the window reloads, Codex resumes the same chat with the verified experimental working directory and an instruction to continue the experiment and run relevant tests and builds there. An idle chat also receives that instruction. If no Codex chat is open, the experimental workspace still opens. If opening fails, Sweetiebot clears the saved handoff, removes its incomplete clone, and attempts to resume the original chat. Experiments are not registered for automatic managed-worktree pruning; review and remove them manually when no longer needed.
 
 ## Sync and cleanup
 

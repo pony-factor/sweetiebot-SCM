@@ -14,6 +14,25 @@
     --vscode-button-hoverBackground: var(--vscode-toolbar-hoverBackground);
 }
 
+/* The SCM tree also outlines its focused action row, outside the button.
+   Keep one action outline and move tree/primary-button focus onto its border. */
+.scm-view:not(.scm-history-view) .monaco-list .monaco-list-row:has(.button-container) {
+    outline: none !important;
+}
+
+.scm-view:not(.scm-history-view) .monaco-list:focus .monaco-list-row.focused .button-container > .monaco-button-dropdown,
+.scm-view:not(.scm-history-view) .monaco-list:focus .monaco-list-row.focused .button-container.scm-toolkit-single-action-settings,
+.scm-view:not(.scm-history-view) .monaco-list:focus .monaco-list-row.focused .button-container > .monaco-button,
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown:has(> .monaco-button:first-child:focus-visible),
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings:has(> .monaco-button:first-child:focus-visible) {
+    border-color: var(--vscode-focusBorder) !important;
+}
+
+.scm-view:not(.scm-history-view) .button-container > .monaco-button-dropdown > .monaco-button:first-child:focus,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-button:first-child:focus {
+    outline: none !important;
+}
+
 .scm-view .scm-editor > .scm-toolkit-branch:hover {
     background: var(--vscode-toolbar-hoverBackground);
 }

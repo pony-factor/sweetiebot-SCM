@@ -97,7 +97,7 @@ async function run() {
     const f = fixture('held-main');
     const before = f.snapshot();
     git(f.local, 'worktree', 'add', path.join(f.root, 'held'), 'main');
-    await assert.rejects(deleteBranch(f.repository, options), /checked out/);
+    await assert.rejects(deleteBranch(f.repository, options), /working-tree changes/);
     assert.equal(git(f.local, 'branch', '--show-current'), 'topic');
     assert.equal(git(f.local, 'rev-parse', 'topic'), f.merged);
     assert.deepEqual(f.snapshot(), before);

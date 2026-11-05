@@ -8,7 +8,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
   module.resolveDefaultBranch = async () => 'main';
   let change, open, enabled=true;
   const calls=[];
-  const repository={rootUri:{fsPath:'/repo'},state:{HEAD:{name:'manual'},onDidChange(fn){change=fn;return{dispose(){}};}}};
+  const repository={rootUri:{fsPath:'/repo'},state:{HEAD:{name:'manual',commit:'a'.repeat(40)},remotes:[{name:'origin'}],onDidChange(fn){change=fn;return{dispose(){}};}}};
   const api={repositories:[repository],onDidOpenRepository(fn){open=fn;return{dispose(){}};},onDidCloseRepository(){return{dispose(){}};}};
   const context={subscriptions:[]};
   const vscode={extensions:{getExtension(){return{activate:async()=>({getAPI:()=>api})};}},
@@ -21,10 +21,17 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
     assert.equal(calls[0][2].silentMerged, true,
       'Background publishing must not display the merged-PR recovery dialog');
     change(); await tick(); assert.equal(calls.length,1,'Tracking branches are not republished');
-    repository.state.HEAD={name:'manual-two',upstream:{remote:'origin',name:'main'}};
+    repository.state.HEAD={name:'manual-two',commit:'a'.repeat(40),upstream:{remote:'origin',name:'main'}};
     change(); await tick(); assert.equal(calls.length,2,'Inherited tracking does not suppress a new branch');
-    repository.state.HEAD={name:'main'};change();await tick();assert.equal(calls.length,2);
-    enabled=false;repository.state.HEAD={name:'local'};change();await tick();assert.equal(calls.length,2);
+    repository.state.HEAD={name:'main',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,2);
+    module.resolveDefaultBranch=async()=>assert.fail('Empty/local-only repositories must not resolve a remote default branch');
+    repository.state.HEAD={name:'title-startup'};change();await tick();
+    assert.equal(calls.length,2,'Unborn branches are not published');
+    repository.state.HEAD={name:'local-only',commit:'a'.repeat(40)};repository.state.remotes=[];change();await tick();
+    assert.equal(calls.length,2,'Repositories without the publish remote are skipped');
+    module.resolveDefaultBranch=async ()=>'main';repository.state.remotes=[{name:'origin'}];
+    change();await tick();assert.equal(calls.length,3,'Adding the publish remote enables publishing');
+    enabled=false;repository.state.HEAD={name:'local',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,3);
     console.log('Repository automatic publishing watcher checks passed.');
   } finally {context.subscriptions.forEach(item=>item.dispose()); module.resolveDefaultBranch=resolveDefaultBranch;}
 })().catch(error=>{console.error(error);process.exitCode=1;});

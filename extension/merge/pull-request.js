@@ -73,7 +73,7 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 }
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
-  { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath } = {}) {
+  { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath, onProgress = () => {} } = {}) {
   if (!['squash', 'merge', 'local-signed-squash'].includes(method)) throw new Error('Unknown merge method.');
   if (method === 'squash' && repositoryPath && await gitCommitSigningEnabled(repositoryPath)) {
     method = 'local-signed-squash';
@@ -86,6 +86,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     throw new Error('Invalid published pull-request identity; refusing to merge.');
   }
   const endpoint = `repos/${repository}/pulls/${result.number}`;
+  onProgress({ stage: 'reading-pr' });
   const pr = await request(endpoint);
   if (pr.html_url !== result.url || pr.base?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
       pr.head?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
@@ -104,8 +105,10 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     if (!SHA.test(branch?.commit?.sha || '')) throw new Error('Cannot verify the current PR base branch tip.');
     return branch.commit.sha;
   };
+  onProgress({ stage: 'checking-base' });
   const baseSha = await readBaseTip();
   if (method === 'merge') {
+    onProgress({ stage: 'reading-history' });
     const info = await request('repos/' + repository);
     if (info.allow_merge_commit !== true) throw new Error('This repository does not allow merge commits.');
     const actor = await request('user');
@@ -114,6 +117,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     const human = verifiedHumanAuthor(commits);
     const prepared = squashMessage(pr.title, result.number, commits,
       { primaryAuthor: human.login.toLowerCase() === actor.login.toLowerCase() ? human : undefined });
+    onProgress({ stage: 'reading-checks' });
     const checks = await require('./checks').readMergeChecks(path => request(path), repository, pr.head.sha);
     if (checks.state !== 'passed') throw new Error('PR checks must pass before merging while preserving commits.');
     const fresh = await request(endpoint);
@@ -121,10 +125,12 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
         fresh.head?.sha !== pr.head.sha || fresh.head?.ref !== head || fresh.base?.ref !== base || await readBaseTip() !== baseSha) {
       throw new Error('PR or base changed before merge; refresh and review the current branch.');
     }
+    onProgress({ stage: 'merging' });
     const merged = await request(endpoint + '/merge', { method: 'PUT', body: {
       sha: pr.head.sha, merge_method: 'merge', commit_title: prepared.title, commit_message: prepared.message
     } });
     if (!merged.merged || !SHA.test(merged.sha || '')) throw new Error('GitHub did not confirm the merge.');
+    onProgress({ stage: 'verifying-merge' });
     const destination = await request('repos/' + repository + '/commits/' + merged.sha);
     const parents = destination.parents?.map(parent => parent.sha) || [];
     const verified = await request(endpoint);
@@ -149,7 +155,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       }
       return request(endpoint, { method, body });
     };
-    const landed = await humanMerge(repository, result.number, { api, gitToken, localGitMerge: true, offerAuthorChoice: false,
+    onProgress({ stage: 'preparing-local' });
+    const landed = await humanMerge(repository, result.number, { api, gitToken, onProgress, localGitMerge: true, offerAuthorChoice: false,
       allowHistoryRewrite: false, rewriteReason: '', requireSignedCommit: signLocally,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
@@ -168,6 +175,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
     return mergeWithHumanAuthor();
   }
+  onProgress({ stage: 'reading-history' });
   const originalCommits = await readCommits(async ([url]) => request(url), repository, result.number);
   const human = verifiedHumanAuthor(originalCommits);
   if (human.login.toLowerCase() !== pr.user.login.toLowerCase()) {
@@ -181,10 +189,12 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       await readBaseTip() !== baseSha) {
     throw new Error('Pull request changed before squash merge; refresh and try again.');
   }
+  onProgress({ stage: 'merging' });
   const merged = await request(endpoint + '/merge', {method: 'PUT',
     body: {sha: pr.head.sha, merge_method: 'squash',
       commit_title: prepared.title, commit_message: prepared.message}});
   if (merged.merged !== true || !SHA.test(merged.sha)) throw new Error('GitHub did not confirm the squash merge. Check the pull request.');
+  onProgress({ stage: 'verifying-merge' });
   const landed = await request('repos/' + repository + '/git/commits/' + merged.sha);
   if (String(landed?.message || '').replace(/\r\n?/g, '\n').split('\n')[0] !== prepared.title) {
     throw new Error('GitHub merged the PR, but its squash commit title differs from the PR title. Verify the GitHub commit.');

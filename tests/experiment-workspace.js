@@ -17,11 +17,14 @@ function editor(root) {
   const calls = [], warnings = [], errors = [];
   return {
     calls, warnings, errors,
+    extensions: { getExtension: () => ({ async activate() {} }) },
     workspace: { workspaceFolders: [{ name: 'Original', uri: { scheme: 'file', fsPath: root } }] },
     Uri: { file: fsPath => ({ scheme: 'file', fsPath }) },
-    commands: { async executeCommand(id, ...args) {
+    commands: {
+      async getCommands() { return ['sweetiebot.codex.prepareWorkspaceHandoff']; },
+      async executeCommand(id, ...args) {
       calls.push([id, ...args]);
-      if (id === 'sweetiebot.codex.sendExperimentDirection') return true;
+      if (id === 'sweetiebot.codex.prepareWorkspaceHandoff') return { threadId: 'visible-chat', wasActive: true, relative: '', id: 'handoff-id' };
     } },
     window: {
       showWarningMessage(message) { warnings.push(message); },
@@ -55,17 +58,23 @@ function editor(root) {
     };
     const vscode = editor(original);
     const first = await openExperimentWorkspace(vscode, { baseDirectory: copies });
-    assert.equal(first.branch, 'topic');
-    assert.equal(first.directionSent, true);
-    assert.equal(vscode.calls[0][0], 'vscode.openFolder');
-    assert.equal(vscode.calls[0][2].forceNewWindow, true);
-    assert.equal(vscode.calls[1][0], 'sweetiebot.codex.sendExperimentDirection');
-    assert.deepEqual(vscode.calls[1][1], {
-      source: await fs.realpath(original), destination: first.destination, branch: 'topic'
-    });
+    assert.match(first.branch, /^trial-[a-f0-9]{8}$/);
+    assert.equal(first.handoffSaved, true);
+    assert.deepEqual(vscode.calls.map(call => call[0]), [
+      'sweetiebot.codex.prepareWorkspaceHandoff', 'sweetiebot.codexHandoff.save', 'vscode.openFolder'
+    ]);
+    const saved = vscode.calls[1][1];
+    assert.equal(saved.workspace, first.target);
+    assert.equal(saved.plan.threadId, 'visible-chat');
+    assert.equal(saved.plan.destination, first.destination);
+    assert.equal(saved.plan.wasActive, true);
+    assert(saved.plan.continuationText.includes(first.branch));
+    assert(saved.plan.continuationText.includes('relevant tests and builds'));
+    assert.equal(vscode.calls[2][2].forceReuseWindow, true);
+    assert.equal(JSON.parse(await fs.readFile(first.target, 'utf8')).folders[0].path, first.destination);
     assert(first.directory.startsWith(await fs.realpath(copies) + path.sep));
     assert.equal((await fs.stat(copies)).mode & 0o077, 0, 'Trusted parent stays private');
-    assert.equal(git('-C', first.destination, 'branch', '--show-current'), 'topic');
+    assert.equal(git('-C', first.destination, 'branch', '--show-current'), first.branch);
     assert.equal(git('-C', first.destination, 'rev-parse', 'HEAD'), git('-C', original, 'rev-parse', 'HEAD'));
     assert.equal(git('-C', first.destination, 'diff', '--binary', 'HEAD'), before.work);
     assert.equal(git('-C', first.destination, 'diff', '--cached', '--binary', 'HEAD'), before.index);
@@ -80,6 +89,21 @@ function editor(root) {
 
     const second = await openExperimentWorkspace(editor(original), { baseDirectory: copies });
     assert.notEqual(second.directory, first.directory);
+    assert.notEqual(second.branch, first.branch);
+    assert.equal(git('-C', original, 'branch', '--show-current'), 'topic');
+
+    const failed = editor(original);
+    const execute = failed.commands.executeCommand;
+    failed.commands.executeCommand = async (id, ...args) => {
+      if (id === 'vscode.openFolder') throw new Error('Window failed');
+      return execute(id, ...args);
+    };
+    await assert.rejects(openExperimentWorkspace(failed, { baseDirectory: copies }), /Window failed/);
+    assert.equal(failed.calls.at(-2)[0], 'sweetiebot.codexHandoff.clear');
+    assert.equal(failed.calls.at(-1)[0], 'sweetiebot.codex.resumeWorkspaceHandoff');
+    assert.equal(failed.calls.at(-1)[1].destination, await fs.realpath(original));
+    const failedWorkspace = failed.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1].workspace;
+    await assert.rejects(fs.stat(path.dirname(failedWorkspace)), { code: 'ENOENT' });
 
     const bare = path.join(tmp, 'remote.git');
     git('init', '--bare', bare);
@@ -99,7 +123,7 @@ function editor(root) {
     invalid.workspace.workspaceFolders.push({ uri: { scheme: 'file', fsPath: original } });
     await assert.rejects(openExperimentWorkspace(invalid, { baseDirectory: copies }), /exactly one/);
 
-    console.log('Experimental clone, branch, remote, snapshot, safe reset and Codex direction passed.');
+    console.log('Experimental clone, branch, remote, snapshot, safe reset and same-window Codex handoff passed.');
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

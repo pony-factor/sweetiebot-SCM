@@ -229,7 +229,7 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
             if (resumed.thread.status?.type === 'active') throw new Error('Codex is already active; a duplicate continuation was not submitted.');
             await send('turn/start', {
                 threadId: plan.threadId, cwd, clientUserMessageId: plan.id,
-                input: [{ type: 'text', text: 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
+                input: [{ type: 'text', text: plan.continuationText || 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
             });
         }
         return { threadId: plan.threadId, cwd };

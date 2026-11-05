@@ -6,6 +6,9 @@ const html=fs.readFileSync(require.resolve('../extension/ui/draft-confirmation.h
   .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../extension/merge/dashboard-markdown.js'),'utf8'));
 assert.match(html,/\.merge-buttons\{display:flex;align-items:center;gap:8px/,'Merge method buttons retain spacing beside the PR badge');
 assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
+assert.match(html,/class="merge-spinner" aria-hidden="true"/,'The progress indicator includes a visible spinner');
+assert.match(html,/@media\(prefers-reduced-motion:reduce\)\{\.merge-spinner\{animation:none\}\}/,
+  'The merge spinner respects reduced-motion preferences');
 // Themed borders—including the left warning accent—must use the current
 // workbench's line color instead of a hard-coded warning border color.
 const themedBorderRule=html.match(/[^{}]+\{border-color:var\(--line\)\}/g)
@@ -44,6 +47,10 @@ const images=getElementById('images');
 const mockWindow={innerWidth:960,innerHeight:1920,listeners:{},addEventListener(name,listener){this.listeners[name]=listener;}};
 const context=vm.createContext({URL,URLSearchParams,AbortSignal,location:{pathname:'/kefania-draft/test',hash:''},history:{replaceState(){}},document,window:mockWindow});
 vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
+context.showMergeStarting();
+assert.equal(getElementById('merge-progress').hidden,false,'Clicking merge immediately reveals progress');
+assert.equal(getElementById('merge-progress-text').textContent,'Starting merge…');
+assert.equal(vm.runInContext("mergeStageLabels['waiting-checks']",context),'Waiting for CI checks…');
 // The clip follows the fitted image edges rather than the letterboxed element.
 const artwork={clientWidth:1000,clientHeight:600,naturalWidth:400,naturalHeight:600,style:{}};
 context.roundArtwork(artwork);
@@ -97,6 +104,19 @@ const sourceRows=output.children.at(-1).children[1].children;
 assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
 assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),[sourceShared,localLink,desktopLink]);
 assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
+const generatedSource = require('../extension/github/pull-request').sourceDetailsMarkdown({
+  kind: 'codex', uuid: sourceId,
+  url: require('../extension/github/pull-request').codexConversationUrl(sourceId)
+});
+context.renderMarkdown(output, 'Body.\n\n' + generatedSource);
+const generatedRows = output.children.at(-1).children[1].children;
+assert.equal(generatedRows[1].children[1].tag, 'a');
+assert(generatedRows[1].children[1].href.startsWith('https://vscode.dev/redirect?'));
+assert.equal(generatedRows[2].children[1].tag, 'a');
+assert.equal(generatedRows[2].children[1].href, desktopLink);
+assert.equal(generatedRows[2].children[1].textContent, desktopLink);
+assert(!generatedRows[2].textContent.includes('copy into your browser'));
+
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
 assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
   'Untrusted source links are not activated');

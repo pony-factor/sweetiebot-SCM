@@ -128,6 +128,15 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
       'A rebound worker in the current checkout must not show the shortcut');
     assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
 
+    await resume({ ...plan, destination, continuationText: 'Try the experiment and run relevant tests here.' });
+    assert.equal(requests.at(-1).params.cwd, destination);
+    assert.equal(requests.at(-1).params.input[0].text, 'Try the experiment and run relevant tests here.');
+
+    const startsAfterExperiment = requests.filter(request => request.method === 'turn/start').length;
+    await resume({ ...plan, destination, wasActive: false, continuationText: 'Try the experiment.' });
+    assert.equal(requests.filter(request => request.method === 'turn/start').length, startsAfterExperiment,
+      'A consumed experiment handoff must not submit its instruction again');
+
     connection.sendProviderRequest('frontend', 'frontend-request', 'thread/resume', { threadId, cwd: from });
     assert.equal(requests.at(-1).params.cwd, destination, 'A stale frontend resume cannot reattach the worker to main');
 

@@ -162,6 +162,36 @@ const css = name => fs.readFileSync(path.join(__dirname, '../assets/workbench', 
       dropdown.insertAdjacentHTML('beforeend', '<a class="monaco-button monaco-dropdown-button">Menu</a><a class="scm-toolkit-settings">Settings</a>');
       document.getElementById('actions').append(dropdown);
     });
+    // VS Code outlines the focused tree row in addition to the action border.
+    // Keep keyboard focus visible on the action, without an outer row box.
+    await page.addStyleTag({content: `
+      .monaco-list:focus .monaco-list-row.focused { outline: 1px solid red !important; }
+      .monaco-button:focus { outline: 1px solid red; }
+    `});
+    await page.evaluate(() => {
+      const actions = document.getElementById('actions');
+      const list = document.createElement('div');
+      list.className = 'monaco-list';
+      list.tabIndex = 0;
+      const row = document.createElement('div');
+      row.className = 'monaco-list-row focused';
+      actions.replaceWith(list);
+      list.append(row);
+      row.append(actions);
+    });
+    await page.locator('.monaco-list').focus();
+    assert.equal(await page.locator('.monaco-list-row').evaluate(node => getComputedStyle(node).outlineStyle), 'none');
+    assert.equal(await page.locator('.monaco-button-dropdown').evaluate(node => getComputedStyle(node).borderTopColor), 'rgb(180, 90, 220)');
+    await page.locator('button').focus();
+    assert.equal(await page.locator('button').evaluate(node => getComputedStyle(node).outlineStyle), 'none');
+    assert.equal(await page.locator('.monaco-button-dropdown').evaluate(node => getComputedStyle(node).borderTopColor), 'rgb(180, 90, 220)');
+    await page.locator('.monaco-dropdown-button').evaluate(node => { node.tabIndex = 0; node.focus(); });
+    assert.equal(await page.locator('.monaco-dropdown-button').evaluate(node => getComputedStyle(node).outlineStyle), 'solid', 'Menu keeps its own keyboard focus indicator');
+    await page.evaluate(() => document.querySelector('.scm-view').classList.add('scm-history-view'));
+    await page.locator('.monaco-list').focus();
+    assert.equal(await page.locator('.monaco-list-row').evaluate(node => getComputedStyle(node).outlineStyle), 'solid', 'History focus is unchanged');
+    await page.evaluate(() => document.querySelector('.scm-view').classList.remove('scm-history-view'));
+
     await press();
     assert.equal(await page.locator('.monaco-button-dropdown').evaluate(node => getComputedStyle(node).borderTopColor), 'rgb(180, 90, 220)');
     assert.equal(await page.locator('button').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');

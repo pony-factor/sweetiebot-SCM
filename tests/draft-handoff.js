@@ -65,6 +65,8 @@ const {createDraftHandoff} = require('../extension/codex/draft-handoff');
     assert.equal(page.status, 200);
     const pageHtml = await page.text();
     assert.match(pageHtml, /Publish pull request/);
+    assert.match(pageHtml, /id="merge-progress" class="merge-progress" role="status" aria-live="polite" hidden/,
+      'Merge confirmation exposes an accessible, initially hidden live progress indicator');
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
     assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\)\)\)/, 'The confirmation window renders the independent pony profile as Markdown, including timestamped moment links');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
@@ -132,6 +134,37 @@ const {createDraftHandoff} = require('../extension/codex/draft-handoff');
     assert.equal((await post('/merge',{})).status,200,'Repeated requests cannot merge twice');
     assert.equal(merges,1);
     assert.equal((await (await fetch(url+'/state')).json()).mergeResult.merged,true);
+    const progressId='12121212-3434-4333-8444-121212121212';
+    let releaseMerge;
+    const mergeGate=new Promise(resolve=>{releaseMerge=resolve;});
+    handoff.register(progressId,{onMerge:async (_published,report)=>{
+      report({stage:'reading-pr'});
+      await mergeGate;
+      report({stage:'verifying-merge'});
+      return {merged:true,sha:'d'.repeat(40)};
+    }});
+    const progressUrl=handoff.origin+'/kefania-draft/'+progressId;
+    const progressPost=suffix=>fetch(progressUrl+suffix,{method:'POST',
+      headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'});
+    assert.equal((await fetch(progressUrl,{method:'POST',headers:{Origin:handoff.origin,
+      'Content-Type':'application/json'},body})).status,200);
+    const pendingMerge=progressPost('/merge');
+    let inFlight;
+    for(let attempt=0;attempt<30;attempt++){
+      inFlight=await (await fetch(progressUrl+'/state')).json();
+      if(inFlight.mergeProgress?.stage==='reading-pr')break;
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.equal(inFlight.merging,true,'The local confirmation reports an in-flight merge');
+    assert.equal(inFlight.mergeProgress.stage,'reading-pr','A real merge stage is visible while GitHub work is pending');
+    assert.equal(typeof inFlight.mergeProgress.startedAt,'number');
+    assert.equal((await progressPost('/merge')).status,409,'Progress must not permit a duplicate merge');
+    releaseMerge();
+    assert.equal((await pendingMerge).status,200);
+    const completedProgress=await (await fetch(progressUrl+'/state')).json();
+    assert.equal(completedProgress.mergeProgress,undefined,'Completed merges clear their busy indicator');
+    assert.equal(completedProgress.mergeResult.merged,true);
+    assert.equal(writes,2,'The progress fixture publishes only once, even when merge is requested twice');
     assert.equal((await post('/close',{})).status,200);
     assert.equal(closes,2,'Closing the confirmation after publication does not publish again');
     const automaticId='22222222-2222-4333-8444-555555555555';
@@ -141,7 +174,7 @@ const {createDraftHandoff} = require('../extension/codex/draft-handoff');
     const automaticState=await (await fetch(automaticUrl+'/state')).json();
     assert.equal(automaticState.result.number,2,'Auto-publish creates the PR without a confirmation POST');
     assert.equal(automaticState.profile,undefined,'Auto-publish never waits for pony research');
-    assert.equal(writes,2);
+    assert.equal(writes,3,'Auto-publish adds one publication after the progress fixture');
     assert.equal((await fetch(automaticUrl+'/close',{method:'POST',headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:'{}'})).status,200);
     assert.equal(closes,3,'Auto-published PR can close before pony research finishes');
     const cachedId='33333333-2222-4333-8444-555555555555';
@@ -149,7 +182,7 @@ const {createDraftHandoff} = require('../extension/codex/draft-handoff');
     const cachedState = await (await fetch(handoff.origin+'/kefania-draft/'+cachedId+'/state')).json();
     assert.equal(cachedState.profile,'Previously sourced character.','Cache hits are visible without a pony callback');
     assert.equal(cachedState.draft,undefined);
-    assert.equal(writes,2,'A cache hit never publishes a PR');
+    assert.equal(writes,3,'A cache hit never publishes a PR');
     const choiceId = '99999999-2222-4333-8444-555555555555';
     let preserved = 0;
     handoff.register(choiceId, { autoPublish: true,
@@ -196,6 +229,7 @@ const {createDraftHandoff} = require('../extension/codex/draft-handoff');
     assert.equal((await blockerPost('/merge')).status,409);
     const blockedState = await (await fetch(blockerUrl+'/state')).json();
     assert.equal(blockedState.mergeIssue.kind,'conflict','Overlapping edits surface as an actual conflict state');
+    assert.equal(blockedState.mergeProgress,undefined,'Failed merges also clear their busy indicator');
     assert.match(blockedState.mergeIssue.message,/overlapping edits/);
     assert.equal(blockedState.mergeResult,undefined,'Recovery never pretends a merge completed');
     assert.equal(blockedState.mergeHelpAvailable,true);

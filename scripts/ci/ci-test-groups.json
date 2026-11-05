@@ -65,6 +65,7 @@
         "branch-strip.js",
         "branch-strip-filter.js",
         "branch-strip-refresh.js",
+        "branch_strip_prs.js",
         "branch-window.js",
         "stacked-branch.js",
         "stack-pr-base.js",

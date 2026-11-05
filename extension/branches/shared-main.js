@@ -9,7 +9,6 @@ const { independentWorkspaceParent } = require('./workspace-trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
-const { focusExistingBranchWindow } = require('./window');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -315,7 +314,6 @@ async function routeExistingBranchWorktree(vscode, repository, destination, opti
   const existing = await fs.realpath(destination).catch(() => null);
   if (!existing) return false;
   if (root === existing) return true;
-  if (await focusExistingBranchWindow(vscode, existing, options)) return true;
   if (!vscode.workspace?.workspaceFolders?.length) return false;
   await switchRepository(vscode, root, existing, options);
   return true;
@@ -334,7 +332,6 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (branch === 'main') {
     const main = await mainRoot(root, options);
     if (root === main && current === 'main') return true;
-    if (await focusExistingBranchWindow(vscode, main, options)) return true;
     await switchRepository(vscode, root, main, options);
     return true;
   }
@@ -361,8 +358,8 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (existing && !create) {
     const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
-    // Reuse the live owner's window or repoint this window when the
-    // registered worktree has no live VS Code owner.
+    // Repoint the current window even when another live VS Code window
+    // already owns the registered worktree.
     return routeExistingBranchWorktree(vscode, repository, destination, { ...options, branch });
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();

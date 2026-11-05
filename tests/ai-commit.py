@@ -766,6 +766,14 @@ class ManualSpellcheckTests(unittest.TestCase):
         self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling"), "Fxi spelling")
         models.assert_not_called()
 
+    @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=False)
+    @patch.object(ai_commit, "installed_local_model_names", return_value={"spell:test"})
+    @patch.object(ai_commit, "configured_spellcheck_model", return_value="spell:test")
+    @patch.object(ai_commit, "ollama_json", return_value={"response": '{"subject":"Fix spelling"}'})
+    def test_explicit_preview_works_with_automatic_spellcheck_disabled(self, request, *_):
+        self.assertEqual(ai_commit.spellcheck_subject("Fxi spelling", manual=True), "Fix spelling")
+        request.assert_called_once()
+
     @patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True)
     @patch.object(ai_commit, "installed_local_model_names", return_value=set())
     @patch.object(ai_commit, "configured_spellcheck_model", return_value="spell:test")

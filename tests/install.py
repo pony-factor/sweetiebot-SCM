@@ -152,6 +152,71 @@ def browser_open_action_fixture():
 
 
 class TransformTests(unittest.TestCase):
+    def test_window_title_uses_single_repository_before_editor_selection(self):
+        native = '''class Title {
+getWindowTitle(){let e=this.editorService.activeEditor,t=this.contextService.getWorkspace();let v='',p='',b='';return {rootName:v,rootPath:p,rootNameShort:b}}
+}
+class Context {
+initialize(){this._activeRepositoryHistoryItemRefName=derive(r=>this.scmViewService.activeRepository.read(r)?.repository.provider.historyProvider.read(r)?.historyItemRef.read(r)?.name)}
+update(r){let u=this.scmViewService.activeRepository.read(r),p=this._activeRepositoryHistoryItemRefName.read(r);return [u?.repository.provider.name,p]}
+}'''
+        edits = install.window_title_repository_edits(native)
+        self.assertEqual(len(edits), 3)
+        for before, after in edits:
+            native = native.replace(before, after)
+        subprocess.run(['node', '-e', '''
+const assert=require('node:assert/strict');
+const derive=fn=>({read:fn});
+''' + native + '''
+const title=new Title();
+title.editorService={};title.contextService={getWorkspace:()=>({folders:[{name:'repo'}]})};
+assert.equal(title.getWindowTitle().rootName,'repo');
+let branch='topic', active, visible=[];
+const repo={provider:{name:'repo',historyProvider:{read:()=>({historyItemRef:{read:()=>({name:branch})}})}}};
+const context=new Context();
+context.scmViewService={activeRepository:{read:()=>active}};
+context._visibleRepositories={read:()=>visible};context.initialize();
+assert.deepEqual(context.update(),[undefined,undefined]);
+visible=[repo];assert.deepEqual(context.update(),['repo','topic']);
+branch='other';assert.deepEqual(context.update(),['repo','other']);
+visible=[repo,repo];assert.deepEqual(context.update(),[undefined,undefined]);
+active={repository:repo};assert.deepEqual(context.update(),['repo','other']);
+'''], check=True, capture_output=True, text=True)
+
+    def test_window_title_refreshes_on_startup_and_focus_without_editors(self):
+        native = '''class Title {
+registerListeners(){this._register(this.configurationService.onDidChangeConfiguration(()=>{}))}
+onConfigurationChanged(){}
+doUpdateTitle(){let e=this.getFullWindowTitle();if(e!==this.title){let i=getWindow(this.windowId,!0).window;i.document.title=e}}
+}'''
+        edits = install.window_title_refresh_edits(native)
+        self.assertEqual(len(edits), 1)
+        transformed = native
+        for before, after in edits:
+            self.assertEqual(transformed.count(before), 1)
+            transformed = transformed.replace(before, after)
+        subprocess.run(['node', '-e', '''
+const assert=require('node:assert/strict');
+const events=new Map(), timers=new Map(), disposables=[];
+const win={document:{title:''},addEventListener:(name,fn)=>events.set(name,fn),
+ removeEventListener:(name,fn)=>{assert.equal(events.get(name),fn);events.delete(name)},
+ setTimeout:(fn,delay)=>{timers.set(delay,fn);return delay},clearTimeout:id=>timers.delete(id)};
+function getWindow(id){assert.equal(id,42);return {window:win}}
+''' + transformed + '''
+let label='()', updates=0;
+const title=new Title();
+Object.assign(title,{windowId:42,_register:item=>disposables.push(item),
+ configurationService:{onDidChangeConfiguration:()=>({dispose(){}})},
+ getFullWindowTitle:()=>label,titleUpdater:{schedule(){updates++;title.doUpdateTitle()}}});
+title.registerListeners();
+assert.deepEqual([...timers.keys()],[0,250,1000,3000]);
+timers.get(0)();assert.equal(win.document.title,'()');
+label='repo (branch)';timers.get(250)();assert.equal(win.document.title,label);
+label='repo (other)';events.get('focus')();assert.equal(win.document.title,label);
+disposables.forEach(item=>item.dispose());
+assert.equal(events.size,0);assert.equal(timers.size,0);assert.equal(updates,3);
+'''], check=True, capture_output=True, text=True)
+
     def test_live_component_assets_update_without_repatching_workbench(self):
         import hashlib
         with tempfile.TemporaryDirectory() as root:
@@ -1001,6 +1066,16 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertEqual(second[0].count(install.END), 1)
         self.assertIn('"branchPicker":false', second[0])
         self.assertNotIn('"branchPicker":true', second[0])
+
+    def test_overlapping_patches_are_removed_in_reverse_order(self):
+        changes = [('native-title', 'toolkit-title'), ('toolkit-title', 'toolkit-title-with-repository')]
+        with patch.object(install, 'edits', return_value=changes):
+            patched = install.transform('native-title', 'base-css', settings=SETTINGS)
+            self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+            self.assertEqual(install.transform(*patched, remove=True), ('native-title', 'base-css'))
+            modified = patched[0].replace('toolkit-title-with-repository', 'custom-title', 1)
+            with self.assertRaisesRegex(ValueError, 'Installed toolkit patch changed'):
+                install.transform(modified, patched[1], remove=True)
 
     def test_incomplete_installation_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Incomplete toolkit installation"):

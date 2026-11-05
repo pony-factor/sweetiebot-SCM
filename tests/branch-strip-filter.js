@@ -11,8 +11,36 @@ const context = vm.createContext({});
 vm.runInContext(source, context);
 const filter = context.scmToolkitFilterBranchStrip;
 const sortRecent = context.scmToolkitSortBranchStrip;
+const sameSnapshot = context.scmToolkitBranchStripSameSnapshot;
+const prLabel = context.scmToolkitBranchStripPrLabel;
 assert.equal(typeof filter, 'function');
 assert.equal(typeof sortRecent, 'function');
+assert.equal(typeof sameSnapshot, 'function');
+assert.equal(prLabel({ number: 648 }), '#648');
+assert.equal(prLabel({ number: 297 }), '#297');
+assert.equal(prLabel(), 'PR');
+
+// Repeated remote refreshes must not replace identical PR rows and make their
+// pills flicker, but real PR, origin, or status changes must repaint the list.
+const verified = {
+    branches: [{ name: 'feature', local: true, origin: true, hasPr: true,
+        pr: { number: 648, state: 'OPEN' }, featured: false }],
+    featuredCount: 0, prStatus: 'available', remoteStatus: 'available'
+};
+assert.equal(sameSnapshot(verified.branches, 0, 'available', 'available', verified), true);
+assert.equal(sameSnapshot(verified.branches, 0, 'available', 'available',
+    { ...verified, branches: verified.branches.map(item => ({ ...item,
+        pr: { number: 649, state: 'OPEN' } })) }), false,
+'Changed PR number must repaint');
+assert.equal(sameSnapshot(verified.branches, 0, 'available', 'available',
+    { ...verified, branches: verified.branches.map(item => ({ ...item, origin: false })) }), false,
+'Deleted remote must remove its cloud badge');
+assert.equal(sameSnapshot(verified.branches, 0, 'available', 'available',
+    { ...verified, prStatus: 'unavailable' }), false,
+'Unverified PR status must update');
+assert.equal(sameSnapshot(verified.branches, 0, 'available', 'available',
+    { ...verified, branches: [] }), false,
+'Removed branch must not remain in the view');
 
 const branches = [
     { name: 'main' },

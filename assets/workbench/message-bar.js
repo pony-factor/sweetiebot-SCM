@@ -239,6 +239,7 @@ scmToolkitCreateControls = function(...args) {
         ponyBranch: active.has('pony-branch'),
         branchCleanup: active.has('delete'),
         autocompleteToggle: active.has('autocomplete'),
+        spellcheckPreviewButton: active.has('spellcheck'),
         codexCoauthor: active.has('codex'),
         autoCommitToggle: active.has('auto-commit'),
         autoPublishToggle: active.has('auto-publish'),

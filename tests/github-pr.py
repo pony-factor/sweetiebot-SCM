@@ -120,6 +120,10 @@ assert(errors.includes('API rate limit exceeded'));
     def test_tree_refresh_is_reversible_idempotent_and_guarded(self):
         source = 's.window.createTreeView("pr:github",{treeDataProvider:this,showCollapseAll:!0,manageCheckboxStateManually:!0});' + 'a=>{this.prsTreeModel.forceClearCache(),this.refreshAllQueryResults(!0)}'
         patched = github_pr.transform_refresh(source)
+        # Embedded dependency comments must not terminate the edit metadata early.
+        metadata = patched.split(github_pr.REFRESH_START)[1].split(github_pr.REFRESH_END)[0]
+        self.assertNotIn('*/', metadata.removeprefix('/* edits:').removesuffix(' */'))
+        self.assertIn('*\\/', metadata)
         # Compile the actual injected code, including all helper declarations.
         subprocess.run(['node', '--check'], input=patched, text=True, check=True)
         self.assertEqual(github_pr.transform_refresh(patched), patched)
