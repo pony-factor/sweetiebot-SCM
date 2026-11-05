@@ -83,6 +83,13 @@ async function run() {
         } }
       };
       registerBranchCommands(vscode, { subscriptions: [] });
+      const pending = path.join(f.local, '.git', 'sweetiebot-async-commit.json');
+      fs.writeFileSync(pending, '{}');
+      await assert.rejects(commands.get(command)({ rootUri: f.repository.rootUri }, opts),
+        /still being finalized/);
+      assert(f.localBranch(), 'Pending commits must prevent deletion');
+      if (published) assert(f.remoteBranch(), 'Pending commits must preserve the remote branch');
+      fs.unlinkSync(pending);
       assert(await commands.get(command)({ rootUri: f.repository.rootUri }, opts));
       assert.equal(f.localBranch(), '');
       assert.equal(f.remoteBranch(), '');
