@@ -88,6 +88,16 @@ def transform_refresh(source, remove=False):
     if len(tree) != 1 or len(commands) != 1:
         raise ValueError('Unsupported GitHub PR tree build: expected one matching anchor.')
     helper = (Path(__file__).resolve().parent.parent / 'extension/github/pr-refresh.js').read_text().split('\nmodule.exports')[0]
+    # This helper runs inside GitHub's bundle, where Sweetiebot's relative
+    # module paths do not exist. Embed its dependencies in isolated scopes.
+    extension = Path(__file__).resolve().parent.parent / 'extension'
+    for module, filename, exported in [
+        ('../merge/checks', 'merge/checks.js', 'readMergeChecks'),
+        ('./session', 'github/session.js', 'githubSession'),
+    ]:
+        dependency = (extension / filename).read_text().split('\nmodule.exports')[0]
+        helper = helper.replace(f'require("{module}")',
+                                f'(()=>{{{dependency}\nreturn {{ {exported} }};}})()')
     original = tree[0].group()
     factory = f'(()=>{{{helper}\nreturn installPullRequestRefresh;}})()'
     edits = [(original, f'({factory})({tree[0].group(1)},{original},this)'),
