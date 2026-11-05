@@ -108,8 +108,9 @@ const run = promisify(execFile);
     const decisions = resolving ? [{ path: 'file.txt', title: '🛠️ Preserve the feature and base update',
       description: 'Keep the updated base behavior and the feature continuation together rather than discarding either side.' }] : [];
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
+    const webModelNumber = '7.2';
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
-      api, git: localGit, expected, resolutionPatch, decisions,
+      api, git: localGit, expected, resolutionPatch, decisions, assistantModelNumber: webModelNumber,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
     if (!resolving) {
@@ -217,6 +218,7 @@ const run = promisify(execFile);
     let result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
       onProgress: event => progress.push(event), allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
       expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch, decisions,
+      assistantModelNumber: webModelNumber,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
     assert.equal(progress[0].stage, 'preparing');
     const pushedIndex = progress.findIndex(event => event.stage === 'pushed');
@@ -242,9 +244,9 @@ const run = promisify(execFile);
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
-    // Preserve historical Codex authorship, and attribute new decisions to ChatGPT 6.
+    // Preserve historical Codex authorship and attribute new decisions to the web-supplied model.
     const creditedCodex = 'Co-authored-by: Codex <noreply@openai.com>';
-    const creditedChatGPT = 'Co-authored-by: ChatGPT 6 <noreply@openai.com>';
+    const creditedChatGPT = 'Co-authored-by: ChatGPT ' + webModelNumber + ' <noreply@openai.com>';
     assert(message.includes(creditedCodex),
       'Expected source-accurate Codex attribution in merged commit: ' + JSON.stringify(message));
     assert.equal(message.split('\n').filter(line => line === creditedCodex).length,
@@ -362,6 +364,7 @@ async function successiveMerges(checkState) {
      const response = await fetch(callback, { method: 'POST', headers: {
        Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
        version: 1, repository: 'owner/repo', results: [{ number, headSha: heads[number], baseSha: await branch('main'),
+         assistantModelNumber: '6.1',
          patch, ...(patch ? { decisions: [{ path: 'price.js', title: '🛠️ Retain multiplier three while adding tax',
            description: 'Main corrected the multiplier. Preserve that correction while adding the PR’s optional tax argument; do not restore multiplier two.' }] } : {}),
          explanation: number === 1 ? 'Correct the multiplier to three.' : 'Keep multiplier three and add optional tax.' }] }) });
@@ -387,7 +390,7 @@ async function successiveMerges(checkState) {
    const syncMessage = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha);
    assert(decisionMessage.includes('do not restore multiplier two'));
    for (const commitMessage of [decisionMessage, syncMessage]) {
-     assert(commitMessage.includes('Co-authored-by: ChatGPT 6 <noreply@openai.com>'),
+     assert(commitMessage.includes('Co-authored-by: ChatGPT 6.1 <noreply@openai.com>'),
        'Both resolution and sync commits credit the current assistant');
      assert(!commitMessage.includes('Co-authored-by: Codex Web <noreply@openai.com>'),
        'Neither newly generated commit introduces the obsolete identity');
@@ -404,7 +407,7 @@ async function successiveMerges(checkState) {
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
-   const newCredit = 'Co-authored-by: ChatGPT 6 <noreply@openai.com>';
+   const newCredit = 'Co-authored-by: ChatGPT 6.1 <noreply@openai.com>';
    assert(message.includes(newCredit), 'Conflict resolution credits ChatGPT 6');
    assert.equal(message.split('\n').filter(line => line === newCredit).length,
      1, 'Only one current assistant trailer is emitted');
