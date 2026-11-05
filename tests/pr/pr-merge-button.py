@@ -14,7 +14,7 @@ for _sb_parent in _sb_path(__file__).resolve().parent.parents:
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE_JS = ROOT / "assets/workbench/picker.js"
 SOURCE_CSS = ROOT / "assets/workbench/picker.css"
 

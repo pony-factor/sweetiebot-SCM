@@ -19,7 +19,7 @@ import json
 import sys
 from playwright.sync_api import sync_playwright
 
-ROOT = Path(__file__).resolve().parent.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
 

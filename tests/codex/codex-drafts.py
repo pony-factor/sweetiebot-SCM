@@ -16,7 +16,7 @@ from pathlib import Path
 import unittest
 import tempfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parents[2] / 'scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 import codex_drafts
 
 

@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parent.parents[2] / "scripts"
+ROOT = Path(__file__).resolve().parents[2] / "scripts"
 spec = importlib.util.spec_from_file_location("coreml_backend", ROOT / "coreml-backend.py")
 coreml = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(coreml)

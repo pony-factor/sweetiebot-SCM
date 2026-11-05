@@ -23,7 +23,7 @@ from pathlib import Path
 import os
 import shutil
 
-ROOT = Path(__file__).resolve().parent.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "assets" / "codex"
 
 WEBVIEW = """<html><head><style>

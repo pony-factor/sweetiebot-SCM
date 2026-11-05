@@ -25,7 +25,7 @@ import os
 import base64
 import sys
 
-ROOT = Path(__file__).resolve().parent.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "assets" / "codex"
 
 HTML = """<!doctype html><html><head><style>

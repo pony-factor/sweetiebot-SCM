@@ -28,7 +28,7 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-SCRIPTS = Path(__file__).resolve().parent.parents[2] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 spec = importlib.util.spec_from_file_location("sweetiebot_async_commit", SCRIPTS / "sweetiebot-async-commit.py")
 asynchronous = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(asynchronous)

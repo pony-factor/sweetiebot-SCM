@@ -15,7 +15,7 @@ for _sb_parent in _sb_path(__file__).resolve().parent.parents:
 from pathlib import Path
 import os
 
-ROOT = Path(__file__).resolve().parent.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / 'assets/codex'
 
 FIXTURE = r'''

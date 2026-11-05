@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location(
-    "scm_toolkit_ai_commit", Path(__file__).parent.parents[2] / "scripts/ai-commit.py"
+    "scm_toolkit_ai_commit", Path(__file__).parents[2] / "scripts/ai-commit.py"
 )
 ai_commit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_commit)

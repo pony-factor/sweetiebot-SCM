@@ -1250,7 +1250,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertEqual(self.git('rev-list', '--count', 'HEAD'), '1')
 
     def check_divergent_push(self, conflict, dirty=True, descendants=False, crash=None, signed=False):
-        lindsey = Path(os.environ.get('LINDSEY_SYNC_REPO', Path(__file__).resolve().parent.parents[3] / 'lindsey-sync'))
+        lindsey = Path(os.environ.get('LINDSEY_SYNC_REPO', Path(__file__).resolve().parents[3] / 'lindsey-sync'))
         if not (lindsey / 'scripts/sync-local.js').is_file():
             self.skipTest('The local Lindsey Sync checkout is required for this integration check')
         self.env_lindsey = patch.dict(os.environ, {'LINDSEY_SYNC_REPO': str(lindsey)})
