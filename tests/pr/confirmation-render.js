@@ -97,51 +97,62 @@ const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
   +'- **Local:** ['+localLink+']('+localLink+')\n'
   +'- **Desktop:** ['+desktopLink+']('+desktopLink+')\n\n</details>';
 context.renderMarkdown(output,sourceBlock);
-assert.equal(output.children.at(-1).tag,'details','Verified source footer is a collapsed native disclosure');
+assert.equal(output.children.at(-1).tag,'details','Legacy source footer still renders as a collapsed disclosure');
 assert.equal(output.children.at(-1).children[0].tag,'summary');
-assert.equal(output.children.at(-1).children[0].textContent,'Source details');
-const sourceRows=output.children.at(-1).children[1].children;
-assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
-assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),['Online','Local','Desktop']);
-assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
-const generatedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
-  kind: 'codex', uuid: sourceId,
-  url: require('../../extension/github/pull-request').codexConversationUrl(sourceId)
+assert.equal(output.children.at(-1).children[0].textContent,'Source links');
+const sourceLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(sourceLinks.map(node=>node.href),[sourceShared,localLink,desktopLink]);
+assert.deepEqual(sourceLinks.map(node=>node.textContent),['Online','Local','Desktop']);
+assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
+assert(!output.textContent.includes('<details>'),'The preview must not display raw source HTML');
+const generatedSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
+  kind:'codex',uuid:sourceId,
+  url:require('../../extension/github/pull-request').codexConversationUrl(sourceId)
 });
-context.renderMarkdown(output, 'Body.\n\n' + generatedSource);
-const generatedRows = output.children.at(-1).children[1].children;
-assert.equal(generatedRows[1].children[1].tag, 'a');
-assert(generatedRows[1].children[1].href.startsWith('https://vscode.dev/redirect?'));
-assert.equal(generatedRows[2].children[1].tag, 'a');
-assert.equal(generatedRows[2].children[1].href, desktopLink);
-assert.equal(generatedRows[2].children[1].textContent, 'Desktop');
+context.renderMarkdown(output,'Body.\n\n'+generatedSource);
+const generatedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(generatedLinks.length,2,'Unavailable Online links are omitted');
+assert(generatedLinks[0].href.startsWith('https://vscode.dev/redirect?'));
+assert.equal(generatedLinks[0].textContent,'Local');
+assert.equal(generatedLinks[1].href,desktopLink);
+assert.equal(generatedLinks[1].textContent,'Desktop');
+assert(!generatedLinks[1].textContent.includes('copy into your browser'));
 const legacyLocalLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,legacyLocalLink));
-assert.equal(output.children.at(-1).children[1].children[1].children[1].href,legacyLocalLink,
-  'Historical source links remain renderable in existing PR descriptions');
+const legacyLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(legacyLinks[1].href,legacyLocalLink,
+  'Historical Codex links remain renderable inside the compact disclosure');
 const previousSweetiebotLink='vscode://pony-factor.sweetiebot-scm/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,previousSweetiebotLink));
-assert.equal(output.children.at(-1).children[1].children[1].children[1].href,previousSweetiebotLink,
-  'The prior Sweetiebot URI remains renderable in existing PR descriptions');
+const previousLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(previousLinks[1].href,previousSweetiebotLink,
+  'Earlier Sweetiebot handlers remain renderable inside the compact disclosure');
 const untrustedLocalLink='vscode://other.extension/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,untrustedLocalLink));
-assert.equal(output.children.at(-1).children[1].children[1].children[1].tag,'span',
-  'Unknown extension handlers cannot be activated from source metadata');
-assert(!generatedRows[2].textContent.includes('copy into your browser'));
+const validLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(validLinks.map(node=>node.href),[sourceShared,desktopLink],
+  'Unrecognized URI handlers must never be linked in the preview');
 
-const sharedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
-  kind: 'codex', uuid: sourceId,
-  url: require('../../extension/github/pull-request').codexConversationUrl(sourceId), sharedUrl: sourceShared
+const sharedSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
+  kind:'codex',uuid:sourceId,
+  url:require('../../extension/github/pull-request').codexConversationUrl(sourceId),
+  sharedUrl:sourceShared
 });
-context.renderMarkdown(output, 'Body.\n\n' + sharedSource);
-const sharedRows = output.children.at(-1).children[1].children;
-assert.deepEqual(sharedRows.map(row=>row.children[0].textContent), ['Online: ', 'Local: ', 'Desktop: ']);
-assert.deepEqual(sharedRows.map(row=>row.children[1].textContent), ['Online','Local','Desktop']);
-assert(!sharedSource.includes('**Privacy:**'), 'Source details contains only the three conversation links');
+context.renderMarkdown(output,'Body.\n\n'+sharedSource);
+const sharedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(sharedLinks.map(node=>node.href),[
+  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId),desktopLink
+]);
+assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local','Desktop']);
+assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
+assert(!sharedSource.includes('**Privacy:**'),'Source links contains only the three conversation links');
 
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
-assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
-  'Untrusted source links are not activated');
+assert(!output.children.some(node=>node.tag==='details'),
+  'Untrusted source links must not become clickable or produce empty controls');
+context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source links</summary>\n\n\n</details>');
+assert(!output.children.some(node=>node.tag==='details'),
+  'No input links must suppress the entire Source links feature');
 context.renderMarkdown(output,'Source: <https://example.com/pony>.');
 assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');

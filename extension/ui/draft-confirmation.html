@@ -55,6 +55,10 @@
 .merge-progress-time{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums}
 @keyframes merge-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.merge-spinner{animation:none}}
+.source-links{margin:14px 0 0;font-size:13px}
+.source-links>summary{cursor:pointer;color:var(--accent);width:max-content;max-width:100%}
+.source-links>summary:focus-visible{outline:2px solid #f5d4ff;outline-offset:3px}
+.source-links-inline{margin:8px 0 0;font-size:13px;line-height:1.7}
 </style>
 <main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window">×</button></header>
 <div class="layout">
@@ -106,46 +110,52 @@ function cleanProfileReferences(profile) {
 }
 function renderMarkdown(target, markdown) {
   target.replaceChildren();
-  // The general renderer treats HTML as inert text. Recognize only the exact
-  // trailing source disclosure produced by the verified local PR handoff.
-  const footer = /\n\n<details>\n<summary>Source details<\/summary>\n\n([\s\S]*?)\n<\/details>\s*$/.exec(markdown);
+  // Only recognize the exact trailing provenance disclosure. Older PRs retain
+  // their Markdown but render with the same compact presentation.
+  const footer = /\n\n<details>\n<summary>(?:Source details|Source links)<\/summary>\n\n([\s\S]*?)\n<\/details>\s*$/.exec(markdown);
   renderMergeMarkdown(target, footer ? markdown.slice(0, footer.index) : markdown, {
     baseUrl: 'https://github.com/',
     mapLink: imageSourcePage
   });
   if (!footer) return;
   const disclosure = document.createElement('details');
+  disclosure.className = 'source-links';
   const summary = document.createElement('summary');
-  summary.textContent = 'Source details';
+  summary.textContent = 'Source links';
   disclosure.append(summary);
-  const list = document.createElement('ul');
-  for (const line of footer[1].split('\n')) {
-    const entry = /^- \*\*(Online|Local|Desktop):\*\* (.*)$/.exec(line);
-    if (!entry) continue;
-    const row = document.createElement('li');
-    const label = document.createElement('strong');
-    label.textContent = entry[1] + ': ';
-    row.append(label);
-    const markdownLink = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(entry[2]);
-    const desktopCode = entry[1] === 'Desktop' && /^`(codex:\/\/threads\/[0-9a-f-]{36})`(.*)$/i.exec(entry[2]);
-    const value = markdownLink?.[2] || desktopCode?.[1] || entry[2];
-    const valid = entry[1] === 'Online'
+  const links = document.createElement('div');
+  links.className = 'source-links-inline';
+  const addLink = (label, value) => {
+    const valid = label === 'Online'
       ? /^https:\/\/chatgpt\.com\/(?:s\/cx_[A-Za-z0-9_-]{16,128}|c\/[0-9a-f-]{36})$/i.test(value)
-      : entry[1] === 'Local'
+      : label === 'Local'
         ? /^(?:vscode:\/\/(?:openai\.chatgpt\/local|(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)\/codex)\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2F(?:openai\.chatgpt%2Flocal|(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)%2Fcodex)%2F[0-9a-f-]{36})$/i.test(value)
         : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
-    const node = document.createElement(valid ? 'a' : 'span');
-    node.textContent = valid ? entry[1] : value;
-    if (valid) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
-    row.append(node);
-    if (desktopCode) {
-      const hint = document.createElement('span');
-      hint.textContent = desktopCode[2];
-      row.append(hint);
+    if (!valid) return;
+    if (links.children.length) links.append(document.createTextNode(' · '));
+    const node = document.createElement('a');
+    node.textContent = label;
+    node.href = value;
+    node.rel = 'noopener noreferrer';
+    node.target = '_blank';
+    links.append(node);
+  };
+  for (const line of footer[1].split('\n')) {
+    // New PRs use one dot-separated line. Older PRs used repeated bold labels.
+    const legacy = /^- \*\*(Online|Local|Desktop):\*\* (.*)$/.exec(line);
+    if (legacy) {
+      const markdownLink = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(legacy[2]);
+      const desktopCode = legacy[1] === 'Desktop' && /^\x60(codex:\/\/threads\/[0-9a-f-]{36})\x60/i.exec(legacy[2]);
+      addLink(legacy[1], markdownLink?.[2] || desktopCode?.[1] || legacy[2]);
+    } else {
+      for (const part of line.split(' · ')) {
+        const inline = /^\[(Online|Local|Desktop)\]\(([^)]+)\)$/.exec(part.trim());
+        if (inline) addLink(inline[1], inline[2]);
+      }
     }
-    list.append(row);
   }
-  disclosure.append(list);
+  if (!links.children.length) return;
+  disclosure.append(links);
   target.append(disclosure);
 }
 
