@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const Module = require('node:module');
+const { execFileSync } = require('node:child_process');
 
 let submittedInput, spawnOptions, registerLocalPullRequestCommand;
 const originalLoad = Module._load;
@@ -47,6 +48,10 @@ async function run() {
   fs.mkdirSync(repositoryPath, { recursive: true });
   fs.mkdirSync(path.dirname(runner), { recursive: true });
   fs.writeFileSync(runner, '// mocked Kefania runner\n');
+  const kefania = path.join(directory, 'kefania');
+  execFileSync('git', ['-C', kefania, 'init'], { stdio: 'ignore' });
+  execFileSync('git', ['-C', kefania, 'remote', 'add', 'origin',
+    'https://github.com/pony-factor/kefania-PR.git'], { stdio: 'ignore' });
 
   let command, openedUrl;
   const rootUri = { scheme: 'file', fsPath: repositoryPath };
