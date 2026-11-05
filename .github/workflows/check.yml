@@ -164,13 +164,13 @@ jobs:
           node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branches/branch-window.js
-          node --check tests/branches/branch-strip.js
+          node --check tests/branches/window.js
+          node --check tests/branches/strip.js
           node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
-        run: node tests/branches/branch-window.js
+        run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
-        run: node tests/branches/branch-strip.js
+        run: node tests/branches/strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
         run: node tests/branches/shared-main.js
 
@@ -231,10 +231,10 @@ jobs:
         run: python tests/browser/workflow-recovery-browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
-          node tests/codex/codex-hide-chat-timestamps.js
-          node tests/codex/codex-window-label.js
-          node tests/codex/codex-usage.js
-          node tests/codex/codex-countdown.js
+          node tests/codex/hide-chat-timestamps.js
+          node tests/codex/window-label.js
+          node tests/codex/usage.js
+          node tests/codex/countdown.js
       - name: Current Codex usage-banner compatibility
         env:
           PYTHONPATH: scripts
@@ -242,7 +242,7 @@ jobs:
       - name: Codex manifest label tests
         env:
           PYTHONPATH: scripts
-        run: python -m unittest tests.codex.codex_label -v
+        run: python -m unittest tests.codex.label -v
 
   bot-app-identities:
     name: Separate GitHub App identity regressions
@@ -262,8 +262,8 @@ jobs:
           node --check extension/github/pull-request.js
           node tests/kefania/github-app-identity.js
           node tests/kefania/github-app-settings.js
-          node tests/kefania/kefania-app-environment.js
-          node tests/lindsey/lindsey-bulk-merge.js
+          node tests/kefania/app-environment.js
+          node tests/lindsey/bulk-merge.js
 
   packaged-runtime:
     name: Installed extension imports (ubuntu-latest)
@@ -304,15 +304,15 @@ jobs:
           node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branches/branch-window.js
-          node --check tests/branches/branch-strip.js
+          node --check tests/branches/window.js
+          node --check tests/branches/strip.js
           node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
         if: ${{ !cancelled() }}
-        run: node tests/branches/branch-window.js
+        run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
         if: ${{ !cancelled() }}
-        run: node tests/branches/branch-strip.js
+        run: node tests/branches/strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
         if: ${{ !cancelled() }}
         run: node tests/branches/shared-main.js
