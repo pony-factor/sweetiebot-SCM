@@ -134,9 +134,9 @@ function renderMarkdown(target, markdown) {
       : entry[1] === 'Local'
         ? /^(?:vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2Fjfwooten4\.scm-toolkit-workspace-search%2Fcodex%2F[0-9a-f-]{36})$/i.test(value)
         : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
-    const node = document.createElement(desktopCode ? 'code' : valid ? 'a' : 'span');
-    node.textContent = value;
-    if (valid && !desktopCode) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
+    const node = document.createElement(valid ? 'a' : 'span');
+    node.textContent = valid ? entry[1] : value;
+    if (valid) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
     row.append(node);
     if (desktopCode) {
       const hint = document.createElement('span');

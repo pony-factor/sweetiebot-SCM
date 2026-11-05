@@ -102,7 +102,7 @@ assert.equal(output.children.at(-1).children[0].tag,'summary');
 assert.equal(output.children.at(-1).children[0].textContent,'Source details');
 const sourceRows=output.children.at(-1).children[1].children;
 assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
-assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),[sourceShared,localLink,desktopLink]);
+assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),['Online','Local','Desktop']);
 assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
 const generatedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
   kind: 'codex', uuid: sourceId,
@@ -114,8 +114,18 @@ assert.equal(generatedRows[1].children[1].tag, 'a');
 assert(generatedRows[1].children[1].href.startsWith('https://vscode.dev/redirect?'));
 assert.equal(generatedRows[2].children[1].tag, 'a');
 assert.equal(generatedRows[2].children[1].href, desktopLink);
-assert.equal(generatedRows[2].children[1].textContent, desktopLink);
+assert.equal(generatedRows[2].children[1].textContent, 'Desktop');
 assert(!generatedRows[2].textContent.includes('copy into your browser'));
+
+const sharedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
+  kind: 'codex', uuid: sourceId,
+  url: require('../../extension/github/pull-request').codexConversationUrl(sourceId), sharedUrl: sourceShared
+});
+context.renderMarkdown(output, 'Body.\n\n' + sharedSource);
+const sharedRows = output.children.at(-1).children[1].children;
+assert.deepEqual(sharedRows.map(row=>row.children[0].textContent), ['Online: ', 'Local: ', 'Desktop: ']);
+assert.deepEqual(sharedRows.map(row=>row.children[1].textContent), ['Online','Local','Desktop']);
+assert(!sharedSource.includes('**Privacy:**'), 'Source details contains only the three conversation links');
 
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
 assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
