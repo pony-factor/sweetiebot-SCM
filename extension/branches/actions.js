@@ -1158,7 +1158,12 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     await syncDefaultBranch(repository, branch, upstream.remote, false);
     return branch;
   }
-  await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
+  const pull = await automaticPullTarget(repository, { name: defaultBranch, upstream: { remote } });
+  const publishingRemote = remote;
+  remote = pull.remote;
+  const { refreshMain, syncPublisher } = require('./sync-main');
+  const mainRef = await refreshMain(repository, { defaultBranch, remote, checkBranch });
+  if (!mainRef) await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
   await checkBranch();
   const previousMessage = repository.inputBox.value;
   const message = defaultBranch === 'main'
@@ -1179,7 +1184,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     if (git && await git(['status', '--porcelain'])) {
       throw new Error('Commit or stash your changes before syncing the default branch. Unrelated edits must be reviewed and committed separately.');
     }
-    const target = `refs/remotes/${remote}/${defaultBranch}`;
+    const target = mainRef || `refs/remotes/${remote}/${defaultBranch}`;
+    const publish = git ? await syncPublisher(root, publishingRemote) : null;
     const isAncestor = async () => promisify(execFile)('git',
       ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
       .then(() => true, error => {
@@ -1226,6 +1232,10 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     const recordSync = async before => {
       const sha = await git(['rev-parse', 'HEAD']);
       const targetSha = await git(['rev-parse', target]);
+      if (publish) {
+        await checkBranch();
+        await publish(branch, sha);
+      }
       try {
         await queueSyncReport(root, {
           branch, defaultBranch, remote, strategy, before, target: targetSha, sha
