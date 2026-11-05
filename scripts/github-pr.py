@@ -69,6 +69,26 @@ def transform(source, kind, remove=False):
     return source.replace(original, replacement, 1) + START + "/* edit:" + json.dumps([original, replacement]) + " */" + END
 
 
+def bundled_refresh_helper():
+    root = Path(__file__).resolve().parent.parent / 'extension'
+
+    def bundle(path):
+        source = path.read_text()
+
+        def dependency(match):
+            target = (path.parent / (match.group(1) + '.js')).resolve()
+            if not target.is_relative_to(root.resolve()):
+                raise ValueError('GitHub PR helper dependency escapes the extension.')
+            return bundle(target)
+
+        source = re.sub(r'require\([\"\'](\.[^\"\']+)[\"\']\)', dependency, source)
+        return '(()=>{const module={exports:{}};\n' + source + '\nreturn module.exports;})()'
+
+    # The helper executes inside GitHub's extension, so relative imports must
+    # travel with it rather than resolve against GitHub's dist directory.
+    return bundle(root / 'github/pr-refresh.js')
+
+
 def transform_refresh(source, remove=False):
     if source.count(REFRESH_START) != source.count(REFRESH_END) or source.count(REFRESH_START) > 1:
         raise ValueError('Incomplete GitHub PR refresh patch; refusing to overwrite it.')
@@ -87,19 +107,9 @@ def transform_refresh(source, remove=False):
     commands = list(REFRESH_COMMAND.finditer(source))
     if len(tree) != 1 or len(commands) != 1:
         raise ValueError('Unsupported GitHub PR tree build: expected one matching anchor.')
-    helper = (Path(__file__).resolve().parent.parent / 'extension/github/pr-refresh.js').read_text().split('\nmodule.exports')[0]
-    # This helper runs inside GitHub's bundle, where Sweetiebot's relative
-    # module paths do not exist. Embed its dependencies in isolated scopes.
-    extension = Path(__file__).resolve().parent.parent / 'extension'
-    for module, filename, exported in [
-        ('../merge/checks', 'merge/checks.js', 'readMergeChecks'),
-        ('./session', 'github/session.js', 'githubSession'),
-    ]:
-        dependency = (extension / filename).read_text().split('\nmodule.exports')[0]
-        helper = helper.replace(f'require("{module}")',
-                                f'(()=>{{{dependency}\nreturn {{ {exported} }};}})()')
+    helper = bundled_refresh_helper()
     original = tree[0].group()
-    factory = f'(()=>{{{helper}\nreturn installPullRequestRefresh;}})()'
+    factory = f'({helper}).installPullRequestRefresh'
     edits = [(original, f'({factory})({tree[0].group(1)},{original},this)'),
              (commands[0].group(), commands[0].group().replace('{this.', '{return this.', 1))]
     notices = list(FETCH_NOTICE.finditer(source))
