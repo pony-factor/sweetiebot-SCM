@@ -840,7 +840,7 @@ async function deleteBranch(repository, { branch, defaultBranch, remote, confirm
  * branch when published. Do not reuse merged-PR cleanup for this: an empty
  * branch has no PR to validate. All remote deletion is SHA-leased.
  */
-async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = 'origin' }) {
+async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = 'origin', onlyIfEmpty = false }) {
   if (!branch || !defaultBranch || branch === defaultBranch) {
     throw new Error('Select a non-default branch to delete.');
   }
@@ -880,6 +880,7 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
     await git('merge-base', '--is-ancestor', expected, baseRef);
   } catch (error) {
     if (error.code === 1) {
+      if (onlyIfEmpty) return false;
       throw new Error(`Cannot delete ${branch}: it contains commits absent from ${remote}/${home.upstream.name}.`);
     }
     throw error;
@@ -890,6 +891,7 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
     .find(parts => parts.length === 2 && parts[1] === remoteRef)?.[0] || null;
   if (refs.trim() && !remoteTip) throw new Error('Could not verify the remote branch.');
   if (remoteTip && remoteTip !== expected) {
+    if (onlyIfEmpty) return false;
     throw new Error(`Cannot delete ${remote}/${branch}: its tip differs from the local branch.`);
   }
 
@@ -1373,6 +1375,16 @@ function registerBranchCommands(vscode, context) {
               && options.branch !== defaultBranch && repository.rootUri?.fsPath) {
             const tip = await remoteBranchTip(repository, options.branch, remote);
             if (tip) {
+              // Empty published branches have no unique work to confirm losing.
+              // Keep all empty-branch checks and the exact remote deletion lease.
+              const empty = await deleteEmptyBranch(repository, {
+                branch: options.branch, defaultBranch, remote, onlyIfEmpty: true
+              });
+              if (empty) {
+                await recordDeletedBranchReturn(repository, options.branch, defaultBranch);
+                if (defaultBranch === 'main') await routeBranch(vscode, repository, { branch: defaultBranch });
+                return empty;
+              }
               const choice = await vscode.window.showWarningMessage(
                 `Delete published branch "${options.branch}"?`,
                 { modal: true, detail: `This permanently removes ${remote}/${options.branch} and its local branch. Any associated GitHub pull request may close, and unmerged commits may become unreachable. The working tree must be clean.` },
@@ -1459,12 +1471,6 @@ function registerBranchCommands(vscode, context) {
       const defaultBranch = await resolveDefaultBranch(repository, options.remote || 'origin');
       const branch = options.branch;
       if (!branch || branch === defaultBranch) throw new Error('Select a non-default branch to delete.');
-      const choice = await vscode.window.showWarningMessage(
-        `Delete empty branch "${branch}"?`,
-        { modal: true, detail: `This deletes the local branch and, if present, ${options.remote || 'origin'}/${branch}. A branch with unique commits or unmatched remote changes is protected.` },
-        'Delete Empty Branch'
-      );
-      if (choice !== 'Delete Empty Branch') return false;
       await requireFinalizedCommit(repository, { refs: [branch] });
       return await queueRepositoryOperation(repository, async () => {
         const result = await deleteEmptyBranch(repository, {
