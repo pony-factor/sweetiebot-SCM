@@ -62,14 +62,17 @@ async function resolveKefaniaFile(repositoryPath, relativePath, options = {}) {
   async function resolveCandidate(directory) {
     if (seen.has(directory)) return null;
     seen.add(directory);
+    // Establish Git identity before probing the file: unrelated or protected
+    // sibling directories must not prevent discovery of a valid checkout.
+    if (!await isKefaniaCheckout(directory, options.git || git)) return null;
     const file = path.join(directory, relativePath);
     try {
       await (options.accessFile || access)(file);
+      return file;
     } catch (error) {
       if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
       return null;
     }
-    return await isKefaniaCheckout(directory, options.git || git) ? file : null;
   }
   for (const directory of candidates) {
     const file = await resolveCandidate(directory);
