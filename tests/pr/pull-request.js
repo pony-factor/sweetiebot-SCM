@@ -164,14 +164,24 @@ async function run() {
     desktop: 'codex://threads/' + codexSource.uuid });
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
-  assert.match(decorated, /<summary>Source details<\/summary>/);
+  assert.match(decorated, /<summary>Source links<\/summary>/);
   assert(!decorated.includes('**Privacy:**'));
-  assert(decorated.includes('- **Local:** [Local](' + codexConversationUrl(codexSource.uuid) + ')'));
+  assert(decorated.includes('[Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
     'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid);
-  assert(decorated.includes('- **Desktop:** [Desktop](codex://threads/' + codexSource.uuid + ')'));
+  assert(decorated.includes('[Desktop](codex://threads/' + codexSource.uuid + ')'));
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
-  assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
+  assert(!appendSourceDetails('Local only.', codexSource).includes('[Online]('),
+    'Unavailable web links must be omitted');
+  assert(decorated.includes('[Online](' + share + ') · [Local]('),
+    'Each source appears once on a dot-separated line');
+  const oldSource = 'Body.\n\n<details>\n<summary>Source details</summary>\n\n'
+    + '- **Online:** [Online](' + share + ')\n'
+    + '- **Local:** [Local](' + codexLinks.local + ')\n'
+    + '- **Desktop:** [Desktop](' + codexLinks.desktop + ')\n\n</details>';
+  assert.equal(appendSourceDetails(oldSource, { ...codexSource, sharedUrl: share }),
+    decorated.replace('Actual change.', 'Body.'),
+    'Reappending sources upgrades an older footer without duplication');
   assert(!appendSourceDetails('Local only.', codexSource).includes('Sweetiebot cannot unpublish'));
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
   {
