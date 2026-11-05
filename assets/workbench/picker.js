@@ -3005,6 +3005,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             /^Codex Pony opened PR #[1-9]\d*$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
             text === 'Sweetiebot update ready');
+        row.classList.toggle('scm-toolkit-lindsey-notice',
+            /^(?:(?:Applying (?:merge batch round|PR fix)|Verifying and squash-merging selected PRs)(?::| ·|$)|Bulk merge: \d+ merged,)/.test(text));
         row.classList.toggle('scm-toolkit-pr-merged',
             /^PR #[1-9]\d* merged into main\.$/.test(text));
         row.classList.toggle('scm-toolkit-pr-queued',
