@@ -408,7 +408,7 @@ function installPullRequestRefresh(vscode, view, owner, { checkBulkEligibility =
       return { state: "completed", total: requests.length, excluded: excluded.length, ...counts };
     });
   };
-  owner._register(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', node => {
+  owner._register(vscode.commands.registerCommand('sweetiebot.github.squashMergeTreePullRequest', node => {
     const clicked = pullRequestFromTreeNode(node);
     if (clicked.url && mergingUrls.has(clicked.url)) return;
     // Folders have no PR URL, but can contain several PR nodes. Do not route a

@@ -7,7 +7,6 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
 const { randomBytes } = require('node:crypto');
-const { prepareCodexHandoff } = require('../codex/workspace-handoff');
 const { copyRemotes } = require('./new-workspace');
 
 const OPEN_EXPERIMENT_COMMAND = 'sweetiebot.openExperimentWorkspace';
@@ -108,8 +107,17 @@ async function openExperimentWorkspace(vscode, {
   const relative = path.relative(root, location);
   const parent = await privateParent(baseDirectory, io);
   const label = path.basename(root);
-  // Stop the worker before capturing files, just as New Branch does.
-  const handoff = await prepareCodexHandoff(vscode, root);
+  // An experiment opens alongside this window. Keep the original chat, draft,
+  // attachments and native message queue here; do not prepare a branch handoff.
+  const codex = vscode.extensions?.getExtension('openai.chatgpt');
+  let noticeThread;
+  if (codex) {
+    await codex.activate();
+    const commands = await vscode.commands.getCommands(true);
+    if (commands.includes('sweetiebot.readCodexIdentity')) {
+      noticeThread = (await vscode.commands.executeCommand('sweetiebot.readCodexIdentity'))?.threadId;
+    }
+  }
   let directory, workspace;
   let opened = false;
   try {
@@ -138,25 +146,29 @@ async function openExperimentWorkspace(vscode, {
       version: 1, kind: 'experiment', source: root, repository: destination,
       branch, sourceBranch: snapshot.branch || null, head: snapshot.head
     }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-    const continuationText = 'The user moved this same chat into a disposable experiment on branch ' + branch + '. ' +
-      'Continue the current task by trying the experiment and running the relevant tests and builds here. ' +
-      'Working directory: ' + folder + '. Original checkout: ' + root + '. ' +
-      'Use only the experimental checkout for trial edits, resets, and other experiment commands. ' +
-      'The snapshot preserves committed, staged, unstaged, and non-ignored untracked files. ' +
-      'Keep the original checkout unchanged. Do not commit, push, or copy experimental edits back without explicit permission.';
-    if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', {
-      workspace, plan: { ...handoff, destination: folder, relative: '',
-        wasActive: !handoff.draftOnly, continuationText }
-    });
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(workspace), { forceNewWindow: true });
     opened = true;
-    return { directory, destination, target: workspace, branch, handoffSaved: Boolean(handoff) };
+    let directionSent = false;
+    if (noticeThread) {
+      try {
+        directionSent = await vscode.commands.executeCommand('sweetiebot.codex.sendExperimentDirection', {
+          source: root, destination: folder, branch, expectedThreadId: noticeThread
+        }) === true;
+        if (!directionSent) throw new Error('The original Codex chat did not confirm the notice.');
+      } catch {
+        vscode.window.showWarningMessage('The trial window is open, but its notice could not be sent to the original Codex chat. ' +
+          'The chat and queued messages are preserved. Reload the original window if Codex was recently updated. Trial checkout: ' + folder);
+      }
+    } else if (codex) {
+      const commands = await vscode.commands.getCommands(true);
+      if (!commands.includes('sweetiebot.readCodexIdentity')) {
+        vscode.window.showWarningMessage('The trial window is open. Reload the original window to enable Codex trial notices. Trial checkout: ' + folder);
+      }
+    }
+    return { directory, destination, target: workspace, branch, directionSent };
   } catch (error) {
     if (!opened) {
-      if (workspace && handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.clear', workspace).catch(() => {});
       if (directory) await io.rm(directory, { recursive: true, force: true }).catch(() => {});
-      if (handoff && !handoff.draftOnly) await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
-        { ...handoff, destination: root }).catch(() => {});
     }
     throw error;
   }

@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { openIndependentWorkspace } = require('../../extension/branches/new-workspace');
-const { routeBranch, originalRepository, reconnectManagedMain } = require('../../extension/branches/shared-main');
+const { routeBranch, originalRepository, reconnectManagedMain, recordDeletedBranchReturn, reconnectDeletedBranch } = require('../../extension/branches/shared-main');
 const { registerManagedWindowActivity, stopManagedWindowActivity } =
   require('../../extension/branches/workspace-activity');
 
@@ -380,6 +380,29 @@ async function openedRoot(result) {
     assert.equal(git('-C', root, 'diff', '--cached'), '');
     assert.equal(git('-C', newFromOriginal, 'status', '--porcelain'), originalStatus);
     assert.equal(git('-C', newFromOriginal, 'diff', '--cached'), originalIndex);
-    console.log('Shared main windows, isolated topics, reconnection and legacy preservation passed.');
+    // Only an explicit completed deletion can reroute other detached windows.
+    const retired = path.join(baseDirectory, 'retired');
+    git('-C', root, 'worktree', 'add', '-b', 'to-delete', retired, 'main');
+    git('-C', retired, 'checkout', '--detach', 'main');
+    assert.equal(await reconnectDeletedBranch(editor(retired), options), false,
+      'An ordinary detached checkout stays where the user put it');
+    await recordDeletedBranchReturn({rootUri: {fsPath: retired}}, 'to-delete', 'main');
+    assert.equal(await reconnectDeletedBranch(editor(retired), options), false, 'A surviving local branch blocks routing');
+    git('-C', retired, 'branch', '-D', 'to-delete');
+    await recordDeletedBranchReturn({rootUri: {fsPath: retired}}, 'to-delete', 'main');
+    assert.equal(await reconnectDeletedBranch(editor(retired), {...options, ignorePid: process.pid}), false,
+      'The initiating window uses its existing command route exactly once');
+    const secondWindow = editor(retired);
+    assert.equal(await reconnectDeletedBranch(secondWindow, options), true);
+    assert.equal(await openedRoot({target: secondWindow.commands.calls.at(-1)[1].fsPath}), linkedMain);
+    await fs.writeFile(path.join(retired, 'draft.txt'), 'keep this draft');
+    assert.equal(await reconnectDeletedBranch(editor(retired), options), false, 'Other windows with new edits stay put');
+    await fs.unlink(path.join(retired, 'draft.txt'));
+    const headFile = path.join(git('-C', retired, 'rev-parse', '--absolute-git-dir'), 'HEAD');
+    const stamp = await fs.stat(headFile);
+    await fs.utimes(headFile, stamp.atime, new Date(stamp.mtimeMs + 5000));
+    assert.equal(await reconnectDeletedBranch(editor(retired), options), false,
+      'A later explicit checkout must not follow a stale deletion receipt');
+    console.log('Shared main windows, deletion return, isolated topics, reconnection and legacy preservation passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
