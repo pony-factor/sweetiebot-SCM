@@ -701,21 +701,24 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('sweetiebot').get('kefaniaShowCloseButton', true),
       kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('sweetiebot')),
       decorateDraft: draft => ({ ...draft, body: appendSourceDetails(draft.body, source) }),
-      onMerge: async result => {
+      onMerge: async (result, onProgress) => {
+        onProgress({ stage: 'authenticating' });
         const session = await require('./session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result },
           require('./user-api').githubUserAPI(session.accessToken),
-          { gitToken: session.accessToken, repositoryPath: repository.rootUri.fsPath });
+          { gitToken: session.accessToken, repositoryPath: repository.rootUri.fsPath, onProgress });
       },
-      onMergePreservingCommits: async result => {
+      onMergePreservingCommits: async (result, onProgress) => {
+        onProgress({ stage: 'authenticating' });
         const session = await require('./session').githubSession(vscode);
-        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./user-api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken });
+        return merge({ repository: input.repository, head: branch, base: options.base, result }, require('./user-api').githubUserAPI(session.accessToken), { method: 'merge', gitToken: session.accessToken, onProgress });
       },
-      onMergeLocalSigned: async result => {
+      onMergeLocalSigned: async (result, onProgress) => {
+        onProgress({ stage: 'authenticating' });
         const session = await require('./session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result },
           require('./user-api').githubUserAPI(session.accessToken),
-          { method: 'local-signed-squash', gitToken: session.accessToken });
+          { method: 'local-signed-squash', gitToken: session.accessToken, onProgress });
       },
       onMergeHelp: result => openKefaniaMergeHelp(vscode, context, repository.rootUri,
         input.repository, { ...result, head: branch, base: options.base }),
