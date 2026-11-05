@@ -21,6 +21,19 @@ function scmToolkitSortBranchStrip(branches, recent = {}) {
         || a.name.localeCompare(b.name));
 }
 
+// Avoid rebuilding the branch list (and briefly repainting PR pills) when a
+// background refresh returns the same verified information.
+function scmToolkitBranchStripSameSnapshot(branches, featuredCount, prStatus, remoteStatus, next) {
+    return featuredCount === (next?.featuredCount ?? 0)
+        && prStatus === (next?.prStatus ?? 'unavailable')
+        && remoteStatus === (next?.remoteStatus ?? 'unavailable')
+        && JSON.stringify(branches) === JSON.stringify(Array.isArray(next?.branches) ? next.branches : []);
+}
+
+function scmToolkitBranchStripPrLabel(pr) {
+    return pr?.number ? `#${pr.number}` : 'PR';
+}
+
 // A compact, vertical branch popup opened from the existing SCM branch button.
 // The native branch picker stays available as the overflow action and elsewhere.
 function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, openNativePicker, trigger) {
@@ -61,6 +74,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     let generation = 0, refreshedAt = 0, refreshedRepository = '';
     let refreshTimer, pending = false, knownBranches = [], lastFeaturedCount = 0;
     let lastPrStatus = 'unavailable', lastRemoteStatus = 'available', lastScrolledBranch, showingLoading = false;
+    let renderedLocalPreview = false;
     let recentKey = '', recentBranches = Object.create(null), lastRecordedBranch = '';
     const rememberBranch = repositoryId => {
         if (!repositoryId) return;
@@ -90,6 +104,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     const close = (restoreFocus = false) => {
         opened = false;
         showingLoading = false;
+        renderedLocalPreview = false;
         filterInput.value = '';
         generation++; // Reject refresh results arriving after close.
         bar.remove();
@@ -181,7 +196,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             if (item.hasPr === true) {
                 const badge = doc.createElement('span');
                 badge.className = 'scm-toolkit-branch-strip-pr';
-                badge.textContent = pr?.number ? `PR #${pr.number}` : 'PR';
+                badge.textContent = scmToolkitBranchStripPrLabel(pr);
                 badge.title = pr?.url ? `${state}: ${pr.url}` : state;
                 metadata.append(badge);
             }
@@ -235,44 +250,61 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             && repository === uri && panelMode;
         refreshedAt = Date.now();
         refreshedRepository = key;
-        try {
-            // Render local refs before any remote network or GitHub CLI request.
-            const local = await commands.executeCommand('sweetiebot.listBranchStrip', uri,
-                { remote: settings.remote, defaultBranch: base, localOnly: true });
-            if (!active()) return;
-            rememberBranch(local?.repositoryId);
-            showingLoading = false;
-            knownBranches = Array.isArray(local?.branches) ? local.branches : [];
-            lastFeaturedCount = local?.featuredCount ?? 0;
-            lastPrStatus = 'loading';
-            lastRemoteStatus = 'loading';
-            render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
-        } catch (error) {
-            if (!active()) return;
-            showingLoading = false;
-            refreshedAt = 0;
-            lastPrStatus = 'unavailable';
-            lastRemoteStatus = 'unavailable';
-            render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
-            console.warn('Sweetiebot local branch refresh failed:', error);
-            return;
+        // Initial opening still renders local refs immediately. During later
+        // refreshes retain the last verified list and its PR associations until
+        // fresh results are ready, rather than hiding badges every 20 seconds.
+        if (!knownBranches.length) {
+            try {
+                // Render local refs before any remote network or GitHub CLI request.
+                const local = await commands.executeCommand('sweetiebot.listBranchStrip', uri,
+                    { remote: settings.remote, defaultBranch: base, localOnly: true });
+                if (!active()) return;
+                rememberBranch(local?.repositoryId);
+                showingLoading = false;
+                knownBranches = Array.isArray(local?.branches) ? local.branches : [];
+                lastFeaturedCount = local?.featuredCount ?? 0;
+                lastPrStatus = 'loading';
+                lastRemoteStatus = 'loading';
+                render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
+            } catch (error) {
+                if (!active()) return;
+                showingLoading = false;
+                refreshedAt = 0;
+                lastPrStatus = 'unavailable';
+                lastRemoteStatus = 'unavailable';
+                render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
+                console.warn('Sweetiebot local branch refresh failed:', error);
+                return;
+            }
         }
         try {
             const result = await commands.executeCommand('sweetiebot.listBranchStrip', uri,
                 { remote: settings.remote, defaultBranch: base });
             if (!active()) return;
             rememberBranch(result?.repositoryId);
+            const unchanged = scmToolkitBranchStripSameSnapshot(
+                knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus, result);
             knownBranches = Array.isArray(result?.branches) ? result.branches : [];
             lastFeaturedCount = result?.featuredCount ?? 0;
             lastPrStatus = result?.prStatus ?? 'unavailable';
             lastRemoteStatus = result?.remoteStatus ?? 'unavailable';
-            render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
+            // A reopened popup first shows a local-only preview for safety;
+            // repaint the verified snapshot even if its data is unchanged.
+            if (!unchanged || renderedLocalPreview) {
+                render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
+            }
+            renderedLocalPreview = false;
         } catch (error) {
             if (!active()) return;
             refreshedAt = 0;
             lastPrStatus = 'unavailable';
             lastRemoteStatus = 'unavailable';
-            // Keep the already loaded local branches instead of blanking the selector.
+            // A failed verification must not leave unverified remote refs or
+            // PR pills visible from a previous successful refresh.
+            knownBranches = knownBranches.filter(item => item.local)
+                .map(item => ({ ...item, origin: false, hasPr: null, pr: undefined, featured: false }));
+            lastFeaturedCount = 0;
+            renderedLocalPreview = false;
             render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
             console.warn('Sweetiebot remote branch refresh failed:', error);
         }
@@ -388,6 +420,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
                     const cachedLocal = knownBranches.filter(item => item.local)
                         .map(item => ({ ...item, origin: false }));
                     render(cachedLocal, 0, 'loading', 'loading');
+                    renderedLocalPreview = true;
                 } else scroll.textContent = 'Loading local branches…';
                 position();
                 void refresh(true);
