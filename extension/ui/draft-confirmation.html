@@ -50,11 +50,16 @@
 [data-theme-colors] button:focus-visible,[data-theme-colors] a:focus-visible{outline-color:var(--kefania-focus,var(--accent))}
 [data-theme-colors] .merge-controls .publication{color:var(--kefania-error,var(--text))}
 [data-theme-colors] .status:before,[data-theme-colors] .status.ready:before{background:var(--accent);box-shadow:none}
+.merge-progress{display:flex;align-items:center;gap:9px;margin:10px 0 0;min-height:20px;color:var(--muted);font-size:13px}
+.merge-spinner{flex:none;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:merge-spin .8s linear infinite}
+.merge-progress-time{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums}
+@keyframes merge-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.merge-spinner{animation:none}}
 </style>
 <main><header><div class="mark" aria-hidden="true">🦄</div><div><p class="eyebrow">Kefania</p><h1>Ready when you are</h1><p class="subtitle">Review the pull request draft.</p></div><button id="close-confirmation" class="close-confirmation" type="button" aria-label="Close window" title="Close window">×</button></header>
 <div class="layout">
 <div class="pony-column"><section id="pony-section" class="card" hidden><div class="card-head"><p class="eyebrow">Meet the pony</p><div class="pony-heading"><h2 id="pony-title">Pony profile</h2><p id="pony-status" class="status" role="status">Researching the pony…</p></div></div><div id="images" class="images"></div><div id="profile" class="content"></div></section></div>
-<section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><div class="pr-heading"><h2 id="title">Preparing your draft</h2></div><div id="merge-controls" class="merge-controls" hidden><div class="merge-action-row"><div id="merge-buttons" class="merge-buttons"><button id="merge" type="button">Squash and merge</button><button id="merge-history" type="button" hidden>Merge preserving commits</button><button id="merge-local-signed" type="button" hidden>Squash with local Git signer</button></div><a id="pr-number" class="pr-number" target="_blank" rel="noopener noreferrer" hidden></a></div><p id="merge-history-help" class="muted" hidden>Create a merge commit. Keep the original commits without rebasing or rewriting the PR branch.</p><p id="merge-local-signed-help" class="muted" hidden>Sign the squash commit using your local Git signing key. This rewrites only the PR branch with a guarded force-with-lease, then merges after checks pass. The base branch is never force-pushed.</p><div id="merge-issue" class="merge-issue" role="alert" hidden><strong id="merge-issue-title"></strong><p id="merge-error" class="publication"></p><button id="merge-help" type="button" aria-describedby="merge-error" hidden>Review resolution options in Lindsey ↗</button><p id="merge-help-status" class="publication" role="status"></p></div></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
+<section class="card"><div class="card-head"><p class="eyebrow">Pull request</p><div class="pr-heading"><h2 id="title">Preparing your draft</h2></div><div id="merge-controls" class="merge-controls" hidden><div class="merge-action-row"><div id="merge-buttons" class="merge-buttons"><button id="merge" type="button">Squash and merge</button><button id="merge-history" type="button" hidden>Merge preserving commits</button><button id="merge-local-signed" type="button" hidden>Squash with local Git signer</button></div><a id="pr-number" class="pr-number" target="_blank" rel="noopener noreferrer" hidden></a></div><div id="merge-progress" class="merge-progress" role="status" aria-live="polite" hidden><span class="merge-spinner" aria-hidden="true"></span><span id="merge-progress-text">Starting merge…</span><span id="merge-progress-time" class="merge-progress-time" aria-hidden="true"></span></div><p id="merge-history-help" class="muted" hidden>Create a merge commit. Keep the original commits without rebasing or rewriting the PR branch.</p><p id="merge-local-signed-help" class="muted" hidden>Sign the squash commit using your local Git signing key. This rewrites only the PR branch with a guarded force-with-lease, then merges after checks pass. The base branch is never force-pushed.</p><div id="merge-issue" class="merge-issue" role="alert" hidden><strong id="merge-issue-title"></strong><p id="merge-error" class="publication"></p><button id="merge-help" type="button" aria-describedby="merge-error" hidden>Review resolution options in Lindsey ↗</button><p id="merge-help-status" class="publication" role="status"></p></div></div><p id="draft-status" class="status" role="status">Drafting the pull request…</p></div><div id="body" class="content"></div><div class="actions"><button id="publish" disabled>Publish pull request ↗</button><p id="publication" class="publication" role="status"></p><p id="close-error" class="publication" role="alert"></p></div></section>
 </div>
 <dialog id="image-lightbox" class="lightbox" aria-label="Pony image viewer">
 <div class="lightbox-stage"><button id="lightbox-prev" class="lightbox-nav" type="button" aria-label="Previous image">‹</button><img id="lightbox-image" alt="" referrerpolicy="no-referrer" decoding="async"><p id="lightbox-error" class="image-error" hidden>Image could not be loaded. Use “View source” to open the source.</p><button id="lightbox-next" class="lightbox-nav" type="button" aria-label="Next image">›</button></div>
@@ -286,6 +291,26 @@ function applyAppearance(colors){
   }
 }
 function keepOpenForPony(state){return Boolean(state?.pony&&(!state.profile||state.ponyCachePending||state.errors?.ponyCache))}
+const mergeStageLabels={
+  starting:'Starting merge…',authenticating:'Authenticating with GitHub…',
+  'reading-pr':'Checking pull request…','checking-base':'Checking the target branch…',
+  'reading-history':'Reviewing commit attribution…','reading-checks':'Checking CI status…',
+  'preparing-local':'Preparing a safe local merge…','creating-checkout':'Preparing isolated Git checkout…',
+  cloning:'Fetching repository…','inspecting-files':'Inspecting changed files…',
+  integrating:'Integrating PR changes…','message-prepared':'Preparing commit attribution…',
+  'waiting-checks':'Waiting for CI checks…','checks-polled':'Checking latest CI results…',
+  'preparing-merge':'Preparing merge commit…',merging:'Submitting merge to GitHub…',
+  'pushing-merge':'Pushing merge commit…',pushing:'Pushing PR branch…',
+  'pushing-signed-squash-head':'Publishing signed squash…',
+  'pushing-signed-squash-base':'Updating target branch…',
+  'verifying-push':'Verifying pushed branch…','verifying-merge':'Verifying GitHub merge…',
+  'verifying-signed-squash':'Verifying signed squash…','verifying-pushed-branch':'Verifying pushed branch…'
+};
+function showMergeStarting(){
+  el('merge-progress').hidden=false;
+  el('merge-progress-text').textContent=mergeStageLabels.starting;
+  el('merge-progress-time').textContent='';
+}
 async function refresh(){try{const response=await fetch(root+'/state');const state=await response.json();if(!response.ok)throw new Error(state.error);
 applyAppearance(state.appearance);
 if(state.draft){if(lastBody!==state.draft.body){lastBody=state.draft.body;renderMarkdown(el('body'),state.draft.body)}if(!state.result)el('draft-status').textContent='Draft ready for review.';el('draft-status').classList.add('ready')}else el('draft-status').textContent=state.errors.draft||'Drafting the pull request…';
@@ -300,6 +325,13 @@ el('merge-controls').hidden=!state.result;
 el('merge-buttons').hidden=!!state.mergeResult;
 el('merge').disabled=!state.result||!!state.mergeResult||!!state.merging;
 el('merge').textContent=state.merging?'Merging…':'Squash and merge';
+el('merge-progress').hidden=!state.merging;
+if(state.merging){
+  el('merge-progress-text').textContent=mergeStageLabels[state.mergeProgress?.stage]||'Merging pull request…';
+  const started=state.mergeProgress?.startedAt;
+  el('merge-progress-time').textContent=typeof started==='number'&&Number.isFinite(started)
+    ?Math.max(0,Math.floor((Date.now()-started)/1000))+'s':'';
+}
 const mergeIssue=state.mergeResult?null:state.mergeIssue;
 el('merge-issue').hidden=!mergeIssue;
 el('merge-issue-title').textContent=mergeIssue?.kind==='conflict'?'Merge conflicts need resolution':mergeIssue?.kind==='method'?'Choose how to merge':'Merge blocked — attention required';
@@ -338,13 +370,13 @@ el('merge').onclick=async()=>{
   const state=await (await fetch(root+'/state')).json();
   if(!state.result||state.mergeResult||state.merging)return;
   if(state.ludicrousMode!==true&&!confirm('Squash and merge PR #'+state.result.number+' into '+(state.result.base||'its base branch')+'? This cannot be undone.'))return;
-  el('merge').disabled=true;el('merge-error').textContent='';
+  showMergeStarting();el('merge').disabled=true;el('merge-error').textContent='';
   try{const response=await fetch(root+'/merge',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Merge failed.');const updated=await refresh();
     // A merge must not dispose the research chat or hide a result that has
     // not yet reached Kefania's durable pony cache publication queue.
     if(result.merged===true&&state.closeAfterMerge===true&&!keepOpenForPony(state)&&updated&&!keepOpenForPony(updated))await el('close-confirmation').onclick();
-  }catch(error){el('merge').disabled=false;el('merge-error').textContent=error.message||'Merge failed. Check GitHub.';}
+  }catch(error){el('merge-progress').hidden=true;el('merge').disabled=false;el('merge-error').textContent=error.message||'Merge failed. Check GitHub.';}
 };
 el('merge-help').onclick=async()=>{
   el('merge-help').disabled=true;
@@ -355,18 +387,18 @@ el('merge-help').onclick=async()=>{
   }catch(error){el('merge-help-status').textContent=error.message||'Could not open Lindsey.';}
   finally{el('merge-help').disabled=false;}
 };
-el('merge-history').onclick=async()=>{el('merge-history').disabled=true;try{const response=await fetch(root+'/merge-history',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('merge-error').textContent=error.message}finally{el('merge-history').disabled=false}};
+el('merge-history').onclick=async()=>{el('merge-history').disabled=true;showMergeStarting();try{const response=await fetch(root+'/merge-history',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('merge-progress').hidden=true;el('merge-error').textContent=error.message}finally{el('merge-history').disabled=false}};
 el('merge-local-signed').onclick=async()=>{
   const state=await (await fetch(root+'/state')).json();
   if(!state.result||state.mergeResult||state.merging||state.mergeChoice!=='SQUASH_AUTHOR_CHOICE_REQUIRED'||state.localSignedMergeAvailable!==true)return;
   // Explicit confirmation is required even in Ludicrous mode: only the PR
   // head is rewritten with a lease, never the protected base branch.
   if(!confirm('Sign a squash commit locally and rewrite only the PR branch for #'+state.result.number+' with --force-with-lease? Its existing commit history will change. Main will not be force-pushed.'))return;
-  el('merge-local-signed').disabled=true;el('merge-error').textContent='';
+  showMergeStarting();el('merge-local-signed').disabled=true;el('merge-error').textContent='';
   try{const response=await fetch(root+'/merge-local-signed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Local signed squash failed.');const updated=await refresh();
     if(result.merged===true&&state.closeAfterMerge===true&&!keepOpenForPony(state)&&updated&&!keepOpenForPony(updated))await el('close-confirmation').onclick();
-  }catch(error){el('merge-error').textContent=error.message||'Local signing failed. Check your Git signing configuration.';}
+  }catch(error){el('merge-progress').hidden=true;el('merge-error').textContent=error.message||'Local signing failed. Check your Git signing configuration.';}
   finally{el('merge-local-signed').disabled=false;}
 };
 el('close-confirmation').onclick=async()=>{

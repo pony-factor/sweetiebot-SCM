@@ -101,7 +101,10 @@ const { squashMergePullRequest } = require('../extension/merge/pull-request');
     assert(!options.body.commit_message.includes('Sync brach to main'));
     return {merged:true,sha:'b'.repeat(40)};
   };
-  assert.equal((await squashMergePullRequest(input,api)).merged,true);
+  const progressStages=[];
+  assert.equal((await squashMergePullRequest(input,api,{onProgress:detail=>progressStages.push(detail.stage)})).merged,true);
+  assert.deepEqual(progressStages,['reading-pr','checking-base','reading-history','merging','verifying-merge'],
+    'Native squash reports real stages without changing its GitHub API requests');
   assert.equal(calls.length,7, 'PR and live base snapshots, history, merge, and landed commit');
   // Bot-opened PRs use the local commit preparation path with an exact snapshot.
   const botPR = {...pr, user:{login:'codex-pony[bot]',type:'Bot'}};

@@ -56,7 +56,7 @@ async function createDraftHandoff(publish) {
       state.expires = Math.min(now + DRAFT_IDLE_MS, state.registeredAt + DRAFT_MAX_AGE_MS);
     }
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), mergeProgress: state.mergeProgress, ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
       if (kind === 'close' || kind === 'merge' || kind === 'merge-history' || kind === 'merge-local-signed' || kind === 'merge-help') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
@@ -69,8 +69,13 @@ async function createDraftHandoff(publish) {
       if ((kind === 'merge-history' || kind === 'merge-local-signed') && state.mergeChoice !== 'SQUASH_AUTHOR_CHOICE_REQUIRED') return fail(409, 'Review the squash attribution choice first.');
       if (typeof merge !== 'function') return fail(503, 'Merging is unavailable in this confirmation window.');
       state.merging = true;
+      state.mergeProgress = { stage: 'starting', startedAt: Date.now(), updatedAt: Date.now() };
       try {
-        const result = await merge(state.result);
+        const result = await merge(state.result, detail => {
+          if (!state.merging || typeof detail?.stage !== 'string') return;
+          const stage = /^[a-z-]{1,48}$/.test(detail.stage) ? detail.stage : 'working';
+          state.mergeProgress = { stage, startedAt: state.mergeProgress.startedAt, updatedAt: Date.now() };
+        });
         if (!result?.merged) throw new Error('GitHub did not confirm the merge. Check the pull request.');
         state.mergeResult = result;
         delete state.errors.merge;
@@ -82,7 +87,7 @@ async function createDraftHandoff(publish) {
         state.mergeIssue = mergeFailure(error);
         state.errors.merge = state.mergeIssue.message;
         return fail(409, state.errors.merge);
-      } finally { state.merging = false; }
+      } finally { state.merging = false; state.mergeProgress = undefined; }
     }
     if (kind === 'merge-help') {
       if (!state.result || state.mergeResult || !state.mergeIssue) return fail(409, 'A merge blocker is required to review recovery options.');
