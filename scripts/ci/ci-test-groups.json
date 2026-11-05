@@ -233,6 +233,7 @@
         "parallel-merge-batch.js",
         "parallel-pr-session.js",
         "lindsey-bulk-merge.js",
+        "lindsey-transport.js",
         "lindsey-conflicts.js",
         "merge-keep-awake.js",
         "merge-order.js",
@@ -259,6 +260,7 @@
       ],
       "syntax": [
         "extension/merge/lindsey-bulk-merge.js",
+        "extension/merge/lindsey-transport.js",
         "extension/commits/git-failure.js",
         "extension/merge/parallel-merge-batch.js",
         "extension/merge/local-human-squash.js",
