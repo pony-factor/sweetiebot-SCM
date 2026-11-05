@@ -740,6 +740,42 @@ async function publishBranch(repository, { branch, remote }) {
   return true;
 }
 
+// A shared default workspace owns its branch. Release the topic with a
+// detached checkout instead of fetching into or checking out that occupied ref.
+async function deletionHome(repository, defaultBranch, targetRef) {
+  const root = repository.rootUri?.fsPath;
+  const git = async (...args) => (await promisify(execFile)('git', args, {
+    cwd: root, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  })).stdout.trim();
+  const listing = root ? await git('worktree', 'list', '--porcelain', '-z') : '';
+  const occupied = listing.split('\0\0').some(block =>
+    block.split('\0').includes(`branch refs/heads/${defaultBranch}`));
+  if (!occupied) return {
+    async advance() {
+      await repository.fetch({ remote: '.', ref: `${targetRef}:refs/heads/${defaultBranch}` });
+    },
+    async checkout() { await repository.checkout(defaultBranch); },
+    async verify() { return repository.state.HEAD?.name === defaultBranch; }
+  };
+  if (await git('status', '--porcelain', '--untracked-files=all')) {
+    throw new Error('Commit, stash, or discard working-tree changes before deleting a branch with a shared default workspace.');
+  }
+  const tip = await git('rev-parse', '--verify', targetRef);
+  return {
+    async advance() {},
+    async checkout() {
+      if (await git('status', '--porcelain', '--untracked-files=all')) {
+        throw new Error('The working tree changed; deletion was cancelled.');
+      }
+      await git('checkout', '--detach', tip);
+    },
+    async verify() {
+      return !await git('branch', '--show-current') && await git('rev-parse', 'HEAD') === tip;
+    },
+    detachedTip: tip
+  };
+}
+
 async function deleteBranch(repository, { branch, defaultBranch, remote, confirmUnverified }, cleanup = cleanupMergedBranch) {
   if (!branch || branch === defaultBranch) throw new Error(`Cannot delete ${defaultBranch}.`);
   await repository.status();
@@ -763,21 +799,16 @@ async function deleteBranch(repository, { branch, defaultBranch, remote, confirm
   if (home.upstream?.remote !== remote || !home.upstream.name) {
     throw new Error(`${defaultBranch} must track a branch on ${remote} before syncing.`);
   }
-  // Advance the inactive local ref before checkout. Checking out a stale default
-  // branch first can reject edits based on the merged topic, even when the updated branch
-  // can carry them intact. Git rejects non-fast-forwards and worktree-held refs;
-  // this never creates a merge commit, pushes, stashes, or changes staging.
-  await repository.fetch({
-    remote: '.',
-    ref: `refs/remotes/${remote}/${home.upstream.name}:refs/heads/${defaultBranch}`
-  });
+  const homeCheckout = await deletionHome(repository, defaultBranch,
+    `refs/remotes/${remote}/${home.upstream.name}`);
+  await homeCheckout.advance();
   await repository.status();
   if (repository.state.HEAD?.name !== branch) {
     throw new Error('The active branch changed while preparing branch cleanup.');
   }
-  await repository.checkout(defaultBranch);
+  await homeCheckout.checkout();
   await repository.status();
-  if (repository.state.HEAD?.name !== defaultBranch) {
+  if (!await homeCheckout.verify()) {
     throw new Error(`Could not switch to ${defaultBranch}.`);
   }
   try {
@@ -796,7 +827,7 @@ async function deleteBranch(repository, { branch, defaultBranch, remote, confirm
     if (await stillExists()) {
       // The ordinary merged-PR guard stays fail-closed unless the caller
       // explicitly offers a separate, user-confirmed local-only override.
-      if (typeof confirmUnverified === 'function') return confirmUnverified();
+      if (typeof confirmUnverified === 'function') return confirmUnverified(homeCheckout.detachedTip);
       throw new Error(`Cannot delete ${branch}: its current tip could not be verified as a merged pull request. The branch was preserved; you are now on ${defaultBranch}.`);
     }
     await repository.status();
@@ -874,8 +905,10 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
     if (error.code !== 1) throw error;
     canFastForward = false;
   }
+  const homeCheckout = await deletionHome(repository, defaultBranch,
+    canFastForward ? baseRef : localBaseRef);
   if (canFastForward) {
-    await repository.fetch({ remote: '.', ref: `${baseRef}:${localBaseRef}` });
+    await homeCheckout.advance();
   } else {
     try {
       await git('merge-base', '--is-ancestor', expected, localBaseRef);
@@ -891,9 +924,9 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
       || await git('status', '--porcelain')) {
     throw new Error('The branch or working tree changed during verification; deletion was cancelled.');
   }
-  await repository.checkout(defaultBranch);
+  await homeCheckout.checkout();
   await repository.status();
-  if (repository.state.HEAD?.name !== defaultBranch) {
+  if (!await homeCheckout.verify()) {
     throw new Error('Could not safely switch to the default branch; deletion was cancelled.');
   }
   if (await git('rev-parse', '--verify', localRef) !== expected) {
@@ -983,17 +1016,19 @@ async function deletePublishedBranch(repository, {
       throw error;
     });
   await checkActive();
+  const homeCheckout = await deletionHome(repository, defaultBranch,
+    canFastForward ? baseRef : localBaseRef);
   if (canFastForward) {
-    await repository.fetch({ remote: '.', ref: `${baseRef}:${localBaseRef}` });
+    await homeCheckout.advance();
   }
   await checkActive();
   if (await git('rev-parse', '--verify', localRef) !== localTip
       || await git('status', '--porcelain')) {
     throw new Error('The branch or working tree changed during verification; deletion was cancelled.');
   }
-  await repository.checkout(defaultBranch);
+  await homeCheckout.checkout();
   await repository.status();
-  if (repository.state.HEAD?.name !== defaultBranch
+  if (!await homeCheckout.verify()
       || await git('rev-parse', '--verify', localRef) !== localTip
       || await git('status', '--porcelain')) {
     throw new Error('Checkout or branch verification changed; remote deletion was cancelled.');
@@ -1016,7 +1051,7 @@ async function deletePublishedBranch(repository, {
  * ref here: published branches take the separate SHA-leased deletion path.
  */
 async function deleteUnverifiedLocalBranch(repository, {
-  branch, defaultBranch, remote = 'origin', expectedTip
+  branch, defaultBranch, remote = 'origin', expectedTip, detachedTip
 }) {
   if (!branch || !defaultBranch || branch === defaultBranch) {
     throw new Error('Select a non-default branch to delete.');
@@ -1033,7 +1068,8 @@ async function deleteUnverifiedLocalBranch(repository, {
   const ref = 'refs/heads/' + branch;
   const verifyState = async () => {
     await repository.status();
-    if (repository.state.HEAD?.name !== defaultBranch) {
+    if (repository.state.HEAD?.name !== defaultBranch && !(detachedTip
+        && !await git('branch', '--show-current') && await git('rev-parse', 'HEAD') === detachedTip)) {
       throw new Error('The active branch changed; the local branch was preserved.');
     }
     if (commitInProgress(repository)) throw new Error('Finish the current commit before deleting a branch.');
@@ -1056,7 +1092,7 @@ async function deleteUnverifiedLocalBranch(repository, {
 }
 
 async function confirmUnverifiedLocalDeletion(vscode, repository, {
-  branch, defaultBranch, remote = 'origin'
+  branch, defaultBranch, remote = 'origin', detachedTip
 }) {
   if (!branch || branch === defaultBranch) throw new Error('Select a non-default branch to delete.');
   if (!repository.rootUri?.fsPath) throw new Error('A local Git repository is required.');
@@ -1076,7 +1112,7 @@ async function confirmUnverifiedLocalDeletion(vscode, repository, {
   );
   if (choice !== 'Delete Local Branch Anyway') return false;
   return deleteUnverifiedLocalBranch(repository, {
-    branch, defaultBranch, remote, expectedTip
+    branch, defaultBranch, remote, expectedTip, detachedTip
   });
 }
 
@@ -1317,9 +1353,11 @@ function registerBranchCommands(vscode, context) {
                 'Delete Local and Remote'
               );
               if (choice !== 'Delete Local and Remote') return false;
-              return deletePublishedBranch(repository, {
+              const result = await deletePublishedBranch(repository, {
                 branch: options.branch, defaultBranch, remote, expectedRemoteTip: tip
               });
+              if (defaultBranch === 'main') await routeBranch(vscode, repository, { branch: defaultBranch });
+              return result;
             }
           }
           const result = await action(repository, {
@@ -1331,11 +1369,13 @@ function registerBranchCommands(vscode, context) {
               reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details)
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
-              confirmUnverified: () => confirmUnverifiedLocalDeletion(vscode, repository, {
-                branch: options?.branch, defaultBranch, remote
+              confirmUnverified: detachedTip => confirmUnverifiedLocalDeletion(vscode, repository, {
+                branch: options?.branch, defaultBranch, remote, detachedTip
               })
             } : {})
           });
+          if (command === 'sweetiebot.deleteBranch' && result && defaultBranch === 'main')
+            await routeBranch(vscode, repository, { branch: defaultBranch });
           if (command === 'sweetiebot.createBranch' && commitDraftValue && !repository.inputBox.value)
             repository.inputBox.value = commitDraftValue;
           return result;
@@ -1397,9 +1437,13 @@ function registerBranchCommands(vscode, context) {
       );
       if (choice !== 'Delete Empty Branch') return false;
       await requireFinalizedCommit(repository, { refs: [branch] });
-      return await queueRepositoryOperation(repository, () => deleteEmptyBranch(repository, {
+      return await queueRepositoryOperation(repository, async () => {
+        const result = await deleteEmptyBranch(repository, {
         branch, defaultBranch, remote: options.remote || 'origin'
-      }));
+        });
+        if (defaultBranch === 'main') await routeBranch(vscode, repository, { branch: defaultBranch });
+        return result;
+      });
     } catch (error) {
       throw explainGitError(error);
     }

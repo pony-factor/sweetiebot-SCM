@@ -65,6 +65,28 @@ function orphanedTopic(name) {
 
 async function run() {
   const opts = { branch: 'topic', defaultBranch: 'main', remote: 'origin' };
+  for (const mode of ['empty', 'published', 'merged']) {
+    const f = fixture('held-main-' + mode, mode === 'published');
+    const held = path.join(f.base, 'held main');
+    git(f.local, 'worktree', 'add', held, 'main');
+    // Neither the ref nor files/index in the occupied main may be touched.
+    fs.writeFileSync(path.join(held, 'draft.txt'), 'Main workspace draft\n');
+    const originalMain = git(held, 'rev-parse', 'HEAD');
+    const expectedRemoteTip = git(f.local, 'rev-parse', 'HEAD');
+    if (mode === 'published') {
+      await deletePublishedBranch(f.repository, { ...opts, expectedRemoteTip });
+    } else if (mode === 'merged') {
+      await deleteBranch(f.repository, opts);
+    } else {
+      await deleteEmptyBranch(f.repository, opts);
+    }
+    assert.equal(f.localBranch(), '');
+    assert.equal(f.remoteBranch(), '');
+    assert.equal(git(f.local, 'branch', '--show-current'), '');
+    assert.equal(git(held, 'branch', '--show-current'), 'main');
+    assert.equal(git(held, 'rev-parse', 'HEAD'), originalMain);
+    assert.equal(fs.readFileSync(path.join(held, 'draft.txt'), 'utf8'), 'Main workspace draft\n');
+  }
   {
     const f = fixture('local-only');
     assert.deepEqual(await deleteEmptyBranch(f.repository, opts), { branch: 'topic', remoteDeleted: false });
