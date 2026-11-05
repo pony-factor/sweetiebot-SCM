@@ -70,7 +70,9 @@ function editor(root) {
     assert.equal(saved.plan.wasActive, true);
     assert(saved.plan.continuationText.includes(first.branch));
     assert(saved.plan.continuationText.includes('relevant tests and builds'));
-    assert.equal(vscode.calls[2][2].forceReuseWindow, true);
+    assert.equal(vscode.calls[2][1].fsPath, first.target);
+    assert.deepEqual(vscode.calls[2][2], { forceNewWindow: true },
+      'The experiment opens in a new window and leaves the original window open');
     assert.equal(JSON.parse(await fs.readFile(first.target, 'utf8')).folders[0].path, first.destination);
     assert(first.directory.startsWith(await fs.realpath(copies) + path.sep));
     assert.equal((await fs.stat(copies)).mode & 0o077, 0, 'Trusted parent stays private');
@@ -123,7 +125,7 @@ function editor(root) {
     invalid.workspace.workspaceFolders.push({ uri: { scheme: 'file', fsPath: original } });
     await assert.rejects(openExperimentWorkspace(invalid, { baseDirectory: copies }), /exactly one/);
 
-    console.log('Experimental clone, branch, remote, snapshot, safe reset and same-window Codex handoff passed.');
+    console.log('Experimental clone, branch, remote, snapshot, safe reset and new-window Codex handoff passed.');
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
