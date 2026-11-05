@@ -52,6 +52,7 @@ from local_setup import (
 )
 from message_bar import MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout, serialize_message_bar_layout
 from message_bar_configurator import MESSAGE_BAR_SCRIPT, MESSAGE_BAR_STYLE, render_message_bar_control
+from welcome_tour import WELCOME_MARKUP, WELCOME_STYLE, WELCOME_SCRIPT
 from codex_composer_layout import CONFIG_SCRIPT as CODEX_LAYOUT_SCRIPT, CONFIG_STYLE as CODEX_LAYOUT_STYLE, render_control as render_codex_layout_control, serialize_layout as serialize_codex_layout
 from window_title_configurator import WINDOW_TITLE_SCRIPT, WINDOW_TITLE_STYLE, render_heading
 from github_apps_ui import APP_PANEL, APP_SCRIPT
@@ -1215,10 +1216,12 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 {WINDOW_TITLE_STYLE}
 {COMMIT_HOTKEY_STYLE}
 {DIAGNOSTICS_STYLE}
+{WELCOME_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
 @media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;overflow:visible}}.settings-tab-group+.settings-tab-group{{padding-top:0;border-top:0}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
 </style></head><body><main><header class="settings-header"><div><h1 class="settings-brand"><img src="{logo_url}" alt="" width="48" height="48">Sweetiebot</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></div><div class="rebuild-actions"><button type="button" id="rebuild-app" title="Manually update and restore Sweetiebot app customizations">Rebuild app</button><output id="rebuild-status" role="status" aria-live="polite"></output></div></header>
+{WELCOME_MARKUP}
 {error_html}<form method="post" action="{action}"><div class="settings-layout">
 <nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings categories">{''.join(tabs)}</nav>
 <div class="settings-panels">{''.join(sections)}</div>
@@ -1701,6 +1704,7 @@ if (askOllamaToggle && askOllamaModel) {{
   askOllamaToggle.addEventListener('change', updateAskOllamaRequirement);
   updateAskOllamaRequirement();
 }}
+{WELCOME_SCRIPT}
 const settingsServerInstance = {instance_json};
 if (settingsServerInstance) {{
   setInterval(async () => {{

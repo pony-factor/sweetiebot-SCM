@@ -52,6 +52,7 @@
     "onCommand:sweetiebot.syncBranch",
     "onView:sweetiebot.workspaceSearch",
     "onCommand:sweetiebot.openSettings",
+    "onCommand:sweetiebot.openWelcome",
     "onStartupFinished",
     "onCommand:sweetiebot.workspaceSearch.clearIndex",
     "onCommand:sweetiebot.chatgpt.searchRepositories",
@@ -141,6 +142,10 @@
         "title": "Open Sweetiebot SCM Settings",
         "icon": "$(gear)"
       },
+    {
+      "command": "sweetiebot.openWelcome",
+      "title": "Show Sweetiebot Welcome Tour"
+    },
       {
         "command": "sweetiebot.workspaceSearch.clearIndex",
         "title": "Clear Workspace Search Index",
