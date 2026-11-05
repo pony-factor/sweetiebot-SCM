@@ -10,7 +10,7 @@
     access: "Access permissions", location: "Computer / location / usage",
     clipboard: "Clipboard Send / Queue", send: "Send / Stop"
   };
-  const hidden = new Set((layout.hidden || []).filter(id => id !== "input" && id !== "access"));
+  const hidden = new Set((layout.hidden || []).filter(id => id !== "input"));
   const style = document.createElement("style");
   style.textContent = [
     ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
@@ -67,8 +67,7 @@
     const found = locate();
     if (!found) return;
     const { footer, controls } = found;
-    // Custom layouts own access visibility; an older hide-icon preference must
-    // not suppress Codex's native permissions chooser.
+    // Custom layouts own access visibility, overriding the older hide-icon preference.
     if (!document.documentElement.hasAttribute("data-sweetiebot-composer-access-visible"))
       document.documentElement.setAttribute("data-sweetiebot-composer-access-visible", "");
     const left = layout.left || (layout.visible || []).filter(id => id !== "send");
