@@ -991,9 +991,22 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   const stalePoll = dashboard.refresh({ force: true });
   await started;
   pausePRRead = undefined;
+  const laggingWorkerState = { repository: selection.repository, deferred: [],
+    workers: [{ id: 1, label: 'Oldest first', phase: 'Reviewing',
+      numbers: [12], merged: 0, total: 1 }] };
+  dashboard.recordBatchState(laggingWorkerState);
+  assert.equal(events.at(-1).workers[0].merged, 0);
   dashboard.recordLocalResult({ repository: selection.repository,
     results: [{ number: 12, status: 'merged', merged: true, sha: 'c'.repeat(40) }] });
   assert.equal(events.at(-1).prs[0].state, 'merged', 'Verified merge results update the badge before polling');
+  assert.equal(events.at(-1).workers[0].merged, 1,
+    'Lane count uses verified PR state, not the lagging runner snapshot');
+  assert.equal(events.at(-1).workers[0].merged,
+    events.at(-1).prs.filter(pr => pr.state === 'merged').length,
+    'The lane subtotal reconciles with the dashboard total');
+  dashboard.recordBatchState(laggingWorkerState);
+  assert.equal(events.at(-1).workers[0].merged, 1,
+    'Replaying a stale worker snapshot cannot regress the displayed lane subtotal');
   assert.equal(events.at(-1).prs[0].statusMessage, 'GitHub confirms the pull request was merged');
   assert.equal(events.at(-1).prs[0].mergeCommit, 'c'.repeat(40));
   assert(!events.at(-1).prs[0].mergedAt, 'A result without a GitHub timestamp must not invent one');
