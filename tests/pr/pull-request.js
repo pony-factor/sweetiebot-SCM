@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const extensionManifest = require('../../extension/package.json');
 const {
   codexConversationUrl,
   conversationSourceLinks,
@@ -168,7 +169,7 @@ async function run() {
   assert(!decorated.includes('**Privacy:**'));
   assert(decorated.includes('- **Local:** [Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
-    'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid);
+    `vscode://${extensionManifest.publisher}.${extensionManifest.name}/codex/${codexSource.uuid}`);
   assert(decorated.includes('- **Desktop:** [Desktop](codex://threads/' + codexSource.uuid + ')'));
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);

@@ -132,7 +132,7 @@ function renderMarkdown(target, markdown) {
     const valid = entry[1] === 'Online'
       ? /^https:\/\/chatgpt\.com\/(?:s\/cx_[A-Za-z0-9_-]{16,128}|c\/[0-9a-f-]{36})$/i.test(value)
       : entry[1] === 'Local'
-        ? /^(?:vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2Fjfwooten4\.scm-toolkit-workspace-search%2Fcodex%2F[0-9a-f-]{36})$/i.test(value)
+        ? /^(?:vscode:\/\/(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)\/codex\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2F(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)%2Fcodex%2F[0-9a-f-]{36})$/i.test(value)
         : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
     const node = document.createElement(valid ? 'a' : 'span');
     node.textContent = valid ? entry[1] : value;
