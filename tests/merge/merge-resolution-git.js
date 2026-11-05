@@ -242,17 +242,18 @@ const run = promisify(execFile);
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
-    // A conflict decision explicitly credits Codex Web; a clean human squash
-    // must retain the original plain Codex credit without inventing Web work.
-    const creditedCodex = 'Co-authored-by: ' + (resolving ? 'Codex (Web)' : 'Codex') +
-      ' <noreply@openai.com>';
+    // Preserve historical Codex authorship, and attribute new decisions to ChatGPT 6.
+    const creditedCodex = 'Co-authored-by: Codex <noreply@openai.com>';
+    const creditedChatGPT = 'Co-authored-by: ChatGPT 6 <noreply@openai.com>';
     assert(message.includes(creditedCodex),
       'Expected source-accurate Codex attribution in merged commit: ' + JSON.stringify(message));
     assert.equal(message.split('\n').filter(line => line === creditedCodex).length,
       1, 'Consolidate the credited Codex identity exactly once');
     assert(message.includes('\n\n__________\n\n'));
-    assert(!message.includes('Co-authored-by: ' + (resolving ? 'Codex <' : 'Codex (Web) <')),
-      'Do not invent an additional Codex identity or Web qualification');
+    assert(!message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
+      'Never invent an obsolete Web-qualified credit');
+    assert.equal(message.split('\n').filter(line => line === creditedChatGPT).length,
+      resolving ? 1 : 0, 'Credit new resolution work exactly once without changing historical credits');
     assert(!message.includes('Co-authored-by: John Wooten'));
     assert(message.includes('Co-authored-by: codex-pony[bot] <326443430+codex-pony[bot]@users.noreply.github.com>'));
     assert(message.indexOf(creditedCodex) < message.indexOf('Co-authored-by: codex-pony[bot] <'));
@@ -382,7 +383,15 @@ async function successiveMerges(checkState) {
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', synced.results[0].sha + '^'), '🛠️ Retain multiplier three while adding tax');
    assert.equal(await git('--git-dir=' + remote, 'diff-tree', '--no-commit-id', '--name-only', '-r', synced.results[0].sha + '^'), 'price.js', 'Decision commit changes only its conflicted file');
    assert.equal(await git('--git-dir=' + remote, 'diff', '--name-only', synced.results[0].sha + '^', synced.results[0].sha), 'main-only.txt', 'The following sync includes only remaining incoming files');
-   assert((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha + '^')).includes('do not restore multiplier two'));
+   const decisionMessage = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha + '^');
+   const syncMessage = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha);
+   assert(decisionMessage.includes('do not restore multiplier two'));
+   for (const commitMessage of [decisionMessage, syncMessage]) {
+     assert(commitMessage.includes('Co-authored-by: ChatGPT 6 <noreply@openai.com>'),
+       'Both resolution and sync commits credit the current assistant');
+     assert(!commitMessage.includes('Co-authored-by: Codex Web <noreply@openai.com>'),
+       'Neither newly generated commit introduces the obsolete identity');
+   }
    heads[2] = synced.results[0].sha;
    const final = await submit(synced.continueUrl, 2);
    assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
@@ -395,10 +404,12 @@ async function successiveMerges(checkState) {
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
-   assert(message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
-     'The recorded AI-assisted conflict decision retains its explicit Web credit');
-   assert.equal(message.split('\n').filter(line => line === 'Co-authored-by: Codex (Web) <noreply@openai.com>').length,
-     1, 'Only one credited Codex Web trailer');
+   const newCredit = 'Co-authored-by: ChatGPT 6 <noreply@openai.com>';
+   assert(message.includes(newCredit), 'Conflict resolution credits ChatGPT 6');
+   assert.equal(message.split('\n').filter(line => line === newCredit).length,
+     1, 'Only one current assistant trailer is emitted');
+   assert(!message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
+     'New resolution commits must not introduce obsolete Web credit');
    const beforeThird = await branch('main');
    const third = await submit(final.continueUrl, 3);
    const integratedThird = await branch('feature-3');

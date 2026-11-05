@@ -11,6 +11,7 @@ const { patchPaths, safePatchPath } = require('../../extension/merge/patch');
 const { validateResolutionHunks, applyResolutionHunks } = require('../../extension/merge/conflict-hunks');
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const { reviewPublicationInstructions } = require('../../extension/merge/review-policy');
+const { blockerPrompt } = require('../../extension/merge/blocker-actions');
 assert(reviewPublicationInstructions().includes('Never create a per-file inline comment'));
 assert(reviewPublicationInstructions().includes('Only tag truly actionable findings'));
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12,
@@ -20,6 +21,10 @@ const input = { version: 1, repository: 'owner/repo', results: [{
   number: 12, headSha: head, baseSha: base, patch: null, explanation: 'Preserve the human Git author.'
 }] };
 
+const webPrompt = blockerPrompt(selection.repository, selection.pullRequests[0],
+  { id: 'resolve-conflicts', label: 'Resolve conflicts', prompt: 'Preserve both.', manual: true }, 'web');
+assert(webPrompt.includes('Include exactly one Co-authored-by: ChatGPT 6 <noreply@openai.com>'));
+assert(!webPrompt.includes('Co-authored-by: Codex Web <noreply@openai.com>'));
 const handoffPolicy = resolutionInstructions(selection, 'http://127.0.0.1:12345/return');
 assert(handoffPolicy.includes('GITHUB REVIEW PUBLICATION POLICY'));
 assert(handoffPolicy.includes('publish zero inline comments'));
@@ -66,6 +71,10 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       assert.equal(created.length, 2, 'Sign both file decisions and the final synchronization');
       assert(created.every(args => args.includes('-S') === enabled));
       assert(created.every(args => !args.includes('commit.gpgsign=false')));
+      const syncMessage = await fs.readFile(path.join(directory, '.git', 'sweetiebot-resolution-message'), 'utf8');
+      assert(syncMessage.includes('Co-authored-by: ChatGPT 6 <noreply@openai.com>'));
+      assert(!syncMessage.includes('Co-authored-by: Codex Web <noreply@openai.com>'));
+
       if (enabled) {
         await assert.rejects(require('../../extension/merge/resolution-commits').createResolutionCommits({ ...options,
           git: async (...args) => {

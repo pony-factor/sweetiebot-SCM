@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { safePatchPath } = require('./patch');
+const RESOLUTION_COAUTHOR = 'Co-authored-by: ChatGPT 6 <noreply@openai.com>';
 
 function validateDecisions(value = []) {
   if (!Array.isArray(value) || value.length > 512) throw Error('Invalid per-file resolution decisions.');
@@ -50,7 +51,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     } else await git('update-index', '--force-remove', '--', decision.path);
     const tree = await git('write-tree');
     const message = decision.title + '\n\n' + decision.description + '\n\nFile: ' + decision.path +
-      '\nIncoming ' + base + ': ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+      '\nIncoming ' + base + ': ' + baseSha + '\n\n' + RESOLUTION_COAUTHOR;
     tip = await commit(tree, tip, message);
     commits.push({ ...decision, sha: tip });
     try { onCommit({ ...decision, sha: tip }); } catch { /* Reporting cannot alter the prepared tree. */ }
@@ -59,7 +60,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
   // Keep an empty sync marker if all incoming changes were resolved above.
   tip = await commit(finalTree, tip, '🔄 Sync branch to ' + base +
     '\n\nIncorporate the remaining incoming changes after the per-file conflict decisions.' +
-    '\nSource: ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>', baseSha);
+    '\nSource: ' + baseSha + '\n\n' + RESOLUTION_COAUTHOR, baseSha);
   return { sha: tip, commits };
 }
 
