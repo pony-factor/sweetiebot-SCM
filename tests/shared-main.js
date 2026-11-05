@@ -91,8 +91,8 @@ async function openedRoot(result) {
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
 
     // End-to-end integration using the real session publisher rather than a
-    // handcrafted marker: routing to an occupied branch focuses its existing
-    // live workspace and only then closes the initiating window.
+    // handcrafted marker: an occupied branch still opens in the initiating
+    // window instead of focusing another window and closing this one.
     const ownerWindow = editor(topic);
     ownerWindow.workspace.workspaceFile = { scheme: 'file', fsPath: topicWorkspace };
     const activityContext = { subscriptions: [] };
@@ -108,13 +108,12 @@ async function openedRoot(result) {
       const switchingWindow = editor(root);
       assert.equal(await routeBranch(switchingWindow, { rootUri: { fsPath: root } },
         { ...options, sourcePid: process.pid + 1, branch: 'topic' }), true);
-      assert.deepEqual(switchingWindow.commands.calls.map(call => call[0]),
-        ['vscode.openFolder', 'workbench.action.closeWindow'],
-        'Live owner receives focus before the initiating window closes');
-      assert.equal(switchingWindow.commands.calls[0][1].fsPath, topicWorkspace);
-      assert.deepEqual(switchingWindow.commands.calls[0][2], { forceNewWindow: true });
-      assert.equal(switchingWindow.workspace.workspaceFolders[0].uri.fsPath, root,
-        'Do not mutate source workspace folders while a destination window owns the branch');
+      const opened = switchingWindow.commands.calls.find(call => call[0] === 'vscode.openFolder');
+      assert.equal(await openedRoot({ target: opened[1].fsPath }), topic);
+      assert.notEqual(opened[1].fsPath, topicWorkspace, 'Retain separate workspace identities');
+      assert.deepEqual(opened[2], { forceReuseWindow: true });
+      assert(!switchingWindow.commands.calls.some(call => call[0] === 'workbench.action.closeWindow'),
+        'A live owner must not close the initiating window');
       assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
       assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
     } finally {

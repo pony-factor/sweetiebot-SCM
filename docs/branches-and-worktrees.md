@@ -6,7 +6,7 @@ Sweetiebot's topic workspaces are **linked Git worktrees** sharing one repositor
 ~/Library/Application Support/Sweetiebot/Workspaces/
 ```
 
-The branch selector can be a horizontal popup or native picker. **Branch names** settings manage built-in packs, imported/custom names and disabled lists. Each worktree owns its own working directory/index and ordinarily can check out a branch only once. If a target branch is already active elsewhere, inspect/focus its existing window instead of using forced checkout; preserve staged/unstaged changes.
+The branch selector can be a horizontal popup or native picker. **Branch names** settings manage built-in packs, imported/custom names and disabled lists. Each worktree owns its own working directory/index and ordinarily can check out a branch only once. Home and the branch selector reuse the current VS Code window, including when the destination worktree is open in another window. Saved workspaces replace their repository folder in place, preserving the workspace identity and Codex chat handoff. Each worktree keeps its staged and unstaged changes.
 
 **Open a Window on Shared Main** provides a managed main window. The ordinary new-branch action starts at the resolved default branch where possible; the **stacked branch** action starts at the current topic branch. Optional `gh-stack` manages native stacks. Creating a stacked branch is not publishing a PR; verify parent/base relationships before merging.
 
