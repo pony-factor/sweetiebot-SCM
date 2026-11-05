@@ -135,7 +135,7 @@ jobs:
           - group: codex
             label: Codex
           - group: kefania
-            label: Kefania
+            label: Kefania GitHub App auth, PR workflows, and chat UI
           - group: lindsey
             label: Lindsey bulk merge
           - group: browser-ui

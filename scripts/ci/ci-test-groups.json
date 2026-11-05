@@ -209,7 +209,7 @@
       ]
     },
     "kefania": {
-      "label": "Kefania",
+      "label": "Kefania GitHub App auth, PR workflows, and chat UI",
       "tests": [
         "kefania/github-app-identity.js",
         "kefania/github-app-settings.js",
