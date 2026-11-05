@@ -32,14 +32,15 @@ def inventory(verbose=False):
     groups = data["groups"]
     owners = {}
     problems = []
-    actual = {path.name for suffix in ("py", "js")
-              for path in (ROOT / "tests").glob(f"*.{suffix}")
-              if path.name != "__init__.py"}
+    actual = {path.relative_to(ROOT / "tests").as_posix()
+              for suffix in ("py", "js")
+              for path in (ROOT / "tests").rglob(f"*.{suffix}")
+              if path.name != "__init__.py" and "fixtures" not in path.relative_to(ROOT / "tests").parts}
     for group, spec in groups.items():
         if not spec.get("tests"):
             problems.append(f"{group} has no tests")
         for name in spec["tests"]:
-            if not re.fullmatch(r"[A-Za-z0-9_-]+\.(?:py|js)", name):
+            if not re.fullmatch(r"[a-z][a-z0-9-]*/[A-Za-z0-9_-]+\.(?:py|js)", name):
                 problems.append(f"Invalid test name: {name}")
             if name in owners:
                 problems.append(f"{name} assigned to {owners[name]} and {group}")
@@ -115,7 +116,7 @@ def run_group(name, spec):
         env["PYTHONPATH"] = os.pathsep.join(
             [str(ROOT / "scripts"), str(ROOT / "tests"), env.get("PYTHONPATH", "")]
         )
-        modules = [f"tests.{Path(item).stem}" for item in python_tests]
+        modules = [f"tests.{Path(item).with_suffix('').as_posix().replace('/', '.')}" for item in python_tests]
         if execute([sys.executable, "-m", "unittest", "-v", *modules], env):
             print(f"::error::{name} Python regressions failed", file=sys.stderr)
             failures += 1
