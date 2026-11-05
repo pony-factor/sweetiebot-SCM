@@ -1439,7 +1439,7 @@ function registerBranchCommands(vscode, context) {
       await requireFinalizedCommit(repository, { refs: [branch] });
       return await queueRepositoryOperation(repository, async () => {
         const result = await deleteEmptyBranch(repository, {
-        branch, defaultBranch, remote: options.remote || 'origin'
+          branch, defaultBranch, remote: options.remote || 'origin'
         });
         if (defaultBranch === 'main') await routeBranch(vscode, repository, { branch: defaultBranch });
         return result;
