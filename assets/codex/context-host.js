@@ -6,7 +6,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const originalHandleMessage = provider.handleMessage;
     const crypto = require('crypto');
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const extensionId = 'jfwooten4.scm-toolkit-workspace-search';
+    // The external URI belongs to Codex, not Sweetiebot. The receiving user
+    // only needs the official Codex extension with its onUri handler.
+    const CODEX_URI_EXTENSION = 'openai.chatgpt';
     const resumeEnabled = () => vscode.workspace?.getConfiguration('sweetiebot')
         ?.get('codexContinueAtReset', false) === true;
     const sendResumeSetting = webview => webview?.postMessage?.({
@@ -37,7 +39,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const sourceFor = conversationId => {
         const value = String(conversationId ?? '').trim();
         if (!uuid.test(value)) return undefined;
-        const deepLink = `vscode://${extensionId}/codex/${value}`;
+        const deepLink = `vscode://${CODEX_URI_EXTENSION}/local/${value}`;
         return {
             kind: 'codex',
             uuid: value,
