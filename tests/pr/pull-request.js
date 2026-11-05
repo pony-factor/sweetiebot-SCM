@@ -153,8 +153,8 @@ async function run() {
     conversationContext: 'Full Codex transcript context',
     conversationModel: { name: 'GPT-6 Codex', effort: 'Extra High' }
   });
-  assert(withOrigin.includes('Originating conversation browser link (primary and ONLY supplied conversation text source): ' + share));
-  assert(!withOrigin.includes('Full Codex transcript context'), 'Shared online URL replaces transcript text');
+  assert(withOrigin.includes('Originating conversation browser link: ' + share));
+  assert(withOrigin.includes('Full Codex transcript context'), 'Sharing must preserve the actual drafting context');
   assert(withOrigin.includes('GPT-6 Codex'));
   assert(withOrigin.includes('Extra High'));
   assert.match(withOrigin, /snapshot, not a live transcript/);
@@ -241,8 +241,8 @@ async function run() {
   assert(prompt.includes(chatSource.url));
   assert.match(prompt, /intentSummary/);
   assert.match(prompt, /provenance summary may differ from the final diff/);
-  assert(!prompt.includes('The conversation wanted to preserve provenance.'),
-    'Online ChatGPT URLs suppress pasted transcript in all drafting modes');
+  assert(prompt.includes('The conversation wanted to preserve provenance.'),
+    'Online links supplement the captured transcript in every drafting mode');
   assert.match(prompt, /Local Sweetiebot pony profile/);
   assert(prompt.includes('berry-punch'));
   assert.match(prompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
@@ -654,7 +654,7 @@ async function run() {
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));
   assert(codexPrompt.includes(share), 'Attached online link is forwarded unchanged');
-  assert(!codexPrompt.includes(codexSnapshot.text), 'Online link suppresses the transcript');
+  assert(codexPrompt.includes(codexSnapshot.text), 'The browser launch receives the actual chat text alongside its share link');
   autoShareCodexChat = false;
 
   calls.length = 0;
