@@ -7,7 +7,14 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 
 const runFile = promisify(execFile);
-const PR_LIMIT = 500;
+const PR_QUERY = `query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 100, after: $endCursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { headRefName isCrossRepository number url state updatedAt }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
 const prCache = new Map();
 
 async function git(root, args) {
@@ -68,7 +75,7 @@ function ghExecutable() {
     .find(candidate => existsSync(candidate)) || 'gh';
 }
 
-async function pullRequestNames(root, remoteUrl) {
+async function pullRequestNames(root, remoteUrl, execute = runFile) {
   const repository = parseGitHubRemote(remoteUrl);
   if (!repository) return null;
   const cacheKey = `${root}\n${repository}`;
@@ -76,16 +83,20 @@ async function pullRequestNames(root, remoteUrl) {
   if (cached && Date.now() < cached.expires) return cached.value;
   let value = null;
   try {
-    const { stdout } = await runFile(ghExecutable(), [
-      'pr', 'list', '--repo', repository, '--state', 'all', '--limit', String(PR_LIMIT),
-      '--json', 'headRefName,isCrossRepository,number,url,state,updatedAt'
+    const [host, owner, name] = repository.split('/');
+    const { stdout } = await execute(ghExecutable(), [
+      'api', 'graphql', '--hostname', host, '--paginate', '--slurp',
+      '-F', `owner=${owner}`, '-F', `name=${name}`, '-f', `query=${PR_QUERY}`
     ], {
-      cwd: root, timeout: 12000, maxBuffer: 2 * 1024 * 1024,
+      cwd: root, timeout: 30000, maxBuffer: 2 * 1024 * 1024,
       env: { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' }
     });
-    const prs = JSON.parse(stdout);
-    // An exactly capped result is incomplete: never infer that a branch has no PR.
-    if (Array.isArray(prs) && prs.length < PR_LIMIT) {
+    const pages = JSON.parse(stdout);
+    // Require a complete scan before inferring that any branch has no PR.
+    if (Array.isArray(pages) && pages.length && pages.every((page, index) =>
+      !page.errors?.length && Array.isArray(page.data?.repository?.pullRequests?.nodes)
+      && page.data.repository.pullRequests.pageInfo?.hasNextPage === (index < pages.length - 1))) {
+      const prs = pages.flatMap(page => page.data.repository.pullRequests.nodes);
       value = new Map();
       // Prefer the most recently updated PR when a branch has several.
       prs.filter(pr => pr && pr.isCrossRepository === false && pr.headRefName)
@@ -175,4 +186,4 @@ async function checkoutBranchStrip(repository, { branch, remote = 'origin', onOc
   return branch;
 }
 
-module.exports = { groupBranchRefs, parseGitHubRemote, listBranchStrip, checkoutBranchStrip };
+module.exports = { groupBranchRefs, parseGitHubRemote, listBranchStrip, checkoutBranchStrip, pullRequestNames };

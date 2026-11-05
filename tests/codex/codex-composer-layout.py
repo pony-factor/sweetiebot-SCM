@@ -58,11 +58,11 @@ class ComposerLayoutTests(unittest.TestCase):
 
     def test_optional_composer_patch_is_idempotent_and_reversible(self):
         native = '/* composer.placeholder.localFollowUp.locally */\nbase;'
-        custom = json.dumps({"left": ["input", "clipboard", "access"], "right": ["send"],
-                             "hidden": ["attachments", "location"]})
+        custom = json.dumps({"left": ["input", "clipboard"], "right": ["send"],
+                             "hidden": ["attachments", "location", "access"]})
         patched = codex_composer.transform_layout(native, inline=False, composer_layout=custom)
         self.assertIn(codex_composer.CUSTOM_START, patched)
-        self.assertIn('"hidden": ["attachments", "location"]', patched)
+        self.assertIn('"hidden": ["attachments", "location", "access"]', patched)
         self.assertNotIn("__SCM_TOOLKIT_COMPOSER_LAYOUT__", patched)
         self.assertEqual(codex_composer.transform_layout(patched, inline=False, composer_layout=custom), patched)
         self.assertEqual(codex_composer.transform_layout(patched, inline=False), native)
@@ -74,8 +74,8 @@ class ComposerLayoutTests(unittest.TestCase):
         old = {"visible": ["clipboard", "input", "attachments", "send"],
                "hidden": ["location", "access"]}
         self.assertEqual(layout.parse_layout(old), {
-            "left": ["input", "access", "clipboard", "attachments"],
-            "right": ["send"], "hidden": ["location"]})
+            "left": ["input", "clipboard", "attachments"],
+            "right": ["send"], "hidden": ["location", "access"]})
 
     def test_compact_icons_have_tooltips_and_no_text_labels(self):
         page = layout.render_control(layout.DEFAULT_LAYOUT_JSON)
@@ -87,12 +87,10 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertIn('class="codex-layout-icon"', page)
         self.assertIn('aria-label="Message input (required)"', page)
 
-    def test_hidden_access_is_restored_and_right_alignment_is_allowed(self):
+    def test_hidden_access_is_preserved_and_right_alignment_is_allowed(self):
         old = {"left": ["input", "attachments"], "right": ["send"],
                "hidden": ["access", "location", "clipboard"]}
-        self.assertEqual(layout.parse_layout(old), {
-            "left": ["input", "access", "attachments"], "right": ["send"],
-            "hidden": ["location", "clipboard"]})
+        self.assertEqual(layout.parse_layout(layout.serialize_layout(old)), old)
         right = {"left": ["input", "attachments"], "right": ["access", "send"],
                  "hidden": ["location", "clipboard"]}
         self.assertEqual(layout.parse_layout(right), right)
@@ -103,7 +101,7 @@ class ComposerLayoutTests(unittest.TestCase):
                    "assets/codex/composer-layout.js").read_text()
         self.assertNotIn("scm-toolkit-composer-more", runtime)
         self.assertNotIn("mountMenu", runtime)
-        self.assertIn('id !== "access"', runtime)
+        self.assertNotIn('id !== "access"', runtime)
         self.assertIn('id !== "input"', runtime)
 
     def test_input_always_remains_in_composer_preview(self):
@@ -120,7 +118,8 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertIn("updateActions", layout.CONFIG_SCRIPT)
         self.assertIn("updatePicker", layout.CONFIG_SCRIPT)
         self.assertIn("positionPicker.addEventListener", layout.CONFIG_SCRIPT)
-        self.assertIn('item.dataset.codexLayoutId === "access"', layout.CONFIG_SCRIPT)
+        self.assertNotIn('item.dataset.codexLayoutId === "access"', layout.CONFIG_SCRIPT)
+        self.assertIn('draggable="true" data-codex-layout-id="access"', page)
 
 
 if __name__ == "__main__":
