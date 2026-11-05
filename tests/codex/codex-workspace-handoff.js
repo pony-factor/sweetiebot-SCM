@@ -237,6 +237,14 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     assert.deepEqual(attachmentWrites.at(-1),moved,'Draft-only navigation restores the full attachment record');
     assert.equal(resumed.length,2,'A new-chat attachment draft must not open or submit an existing conversation');
     assert.equal(state.get(keyFor(workspace)),undefined);
+    const draftsBeforeLegacy = drafts.length, resumesBeforeLegacy = resumed.length;
+    state.set(keyFor(workspace), {...plan, destination, draft: 'Original draft',
+      continuationText: 'The user moved this same chat into a disposable experiment on branch trial-old. Continue here.'});
+    foldersChanged();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    assert.equal(state.get(keyFor(workspace)), undefined, 'Retire failed legacy trial migrations on reload');
+    assert.equal(resumed.length, resumesBeforeLegacy, 'Do not retry the rejected trial thread/resume');
+    assert.equal(drafts.length, draftsBeforeLegacy, 'Do not copy the original draft into a separate trial window');
     assert.equal(errors.length, 0);
     console.log('Same-chat interruption, verified cwd resume, stale frontend guard and draft handoff passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }
