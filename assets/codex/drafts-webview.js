@@ -2,6 +2,22 @@
 // by webviews, so prevent an unsent new-chat draft in localStorage from seeding
 // another repository before the scoped host sync finishes. Preserve raw data.
 (() => {
+    // Tag queued IPC writes with the scope that rendered their composer.
+    // A delayed write from the previous branch must never populate the next one.
+    let scope;
+    window.addEventListener?.('message', event => {
+        if (event.data?.type === 'persisted-atom-sync' && event.data.scmToolkitDraftScope) scope = event.data.scmToolkitDraftScope;
+    });
+    if (typeof window.acquireVsCodeApi === 'function') {
+        const acquire = window.acquireVsCodeApi;
+        window.acquireVsCodeApi = function() {
+            const api = acquire();
+            return Object.freeze({ getState: () => api.getState(), setState: value => api.setState(value),
+                postMessage: message => api.postMessage(message?.type === 'persisted-atom-update'
+                    && ['composer-prompt-drafts-v1', 'composer-prompt-drafts-v2', 'sweetiebot-composer-attachments-v1'].includes(message.key)
+                    ? { ...message, scmToolkitDraftScope: scope } : message) });
+        };
+    }
     const storageKeys = new Set(['codex:persisted-atom:composer-prompt-drafts-v1',
         'codex:persisted-atom:composer-prompt-drafts-v2']);
     let storage;

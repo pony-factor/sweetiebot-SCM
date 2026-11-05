@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { codexDraftStorageKey, registerCodexDraftCommands } = require('../../extension/codex/drafts');
+const { codexDraftStorageKey, registerCodexDraftCommands, branchScopes } = require('../../extension/codex/drafts');
 
-function scope(root, saved = new Map()) {
+function scope(root, saved = new Map(), configuration = {}) {
   const commands = new Map();
   const vscode = {
     workspace: { workspaceFolders: root ? [{uri:{toString:()=>root,fsPath:root.replace('file://','')}}] : [] },
@@ -17,7 +17,10 @@ function scope(root, saved = new Map()) {
   const context = {globalState:{get:key=>saved.get(key), async update(key,value){
     if(value===undefined) saved.delete(key); else saved.set(key,value);
   }},subscriptions:[]};
-  registerCodexDraftCommands(vscode,context);
+  if (configuration.workspace) vscode.workspace.workspaceFile={fsPath:configuration.workspace,toString:()=>configuration.workspace};
+  registerCodexDraftCommands(vscode,context, configuration.branch ? {
+    resolveBranches:async()=>[[root,configuration.branch]]
+  } : {});
   return {vscode,context,saved};
 }
 function providerFor(scoped) {
@@ -160,7 +163,7 @@ async function run() {
   const failingProvider=providerFor(failing);
   await assert.rejects(failingProvider.provider.handleMessage(failingProvider.webview,
     {type:'persisted-atom-update',key:attachmentAtom,value:attachmentDrafts}),/Storage unavailable/);
-  assert.throws(()=>failing.vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments'),/Storage unavailable/);
+  await assert.rejects(failing.vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments'),/Storage unavailable/);
   store.setItem('codex:persisted-atom:'+attachmentAtom,JSON.stringify(attachmentDrafts));
   assert.equal(store.getItem('codex:persisted-atom:'+attachmentAtom),'{}','Global browser fallback cannot leak attachments');
   const attachmentHost=vm.createContext({});
@@ -173,6 +176,81 @@ async function run() {
   assert.equal(JSON.stringify(restored.attachmentOrder),JSON.stringify(attachmentDrafts['new-conversation'].attachmentOrder));
   attachmentHost.scmToolkitSaveComposerAttachments(composer,{imageAttachments:[],fileAttachments:[],attachmentOrder:[]},signal,value=>value.id);
   assert.equal(Object.keys(records).length,0,'Sending/removing attachments must not resurrect a stale draft');
+  const configA={workspace:'/windows/a.code-workspace',branch:'main'};
+  const configB={workspace:'/windows/b.code-workspace',branch:'main'};
+  const windowA=scope('file:///shared/main',shared,configA);
+  const windowB=scope('file:///shared/main',shared,configB);
+  const command=(window,name,...args)=>window.vscode.commands.executeCommand('sweetiebot.codexDraft.'+name,...args);
+  await command(windowA,'write','Window A main draft');
+  await command(windowA,'writeAttachments',attachmentDrafts);
+  const scopeMain=(await command(windowA,'read')).scope;
+  assert.equal((await command(windowB,'read')).draft,null,'A second window on the same checkout starts empty');
+  assert.deepEqual((await command(windowB,'readAttachments')).drafts,{});
+  await command(windowB,'write','Window B main draft');
+  const reloadedA=scope('file:///shared/main',shared,configA);
+  assert.equal((await command(reloadedA,'read')).draft,'Window A main draft','Reload retains window identity');
+  configA.branch='topic';
+  assert.equal((await command(windowA,'read')).draft,null,'Changing branch selects an independent slot');
+  assert.deepEqual((await command(windowA,'readAttachments')).drafts,{});
+  assert.equal(await command(windowA,'write','Late main text',{scope:scopeMain}),false);
+  assert.equal(await command(windowA,'writeAttachments',attachmentDrafts,{scope:scopeMain}),false);
+  assert.equal((await command(windowA,'read')).draft,null,'Delayed old-branch IPC cannot seed the new branch');
+  await command(windowA,'write','Topic draft');
+  configA.branch='main';
+  assert.equal((await command(windowA,'read')).draft,'Window A main draft');
+  assert.deepEqual((await command(windowA,'readAttachments')).drafts,attachmentDrafts);
+  assert.equal((await command(windowB,'read')).draft,'Window B main draft');
+
+  const transfer={draftScope:scopeMain,draftTransferId:require('node:crypto').randomUUID(),
+    source:'/workspace/a',destination:'/shared/destination',draft:'Window A main draft',attachmentDrafts};
+  const configC={workspace:'/windows/c.code-workspace',branch:'topic'};
+  const windowC=scope('file:///shared/destination',shared,configC);
+  // Hydration can happen before the handoff-resume command starts.
+  const transferKey=require('../../extension/codex/workspace-handoff').keyFor(configC.workspace);
+  shared.set(transferKey,transfer);
+  assert.equal((await command(windowC,'read')).draft,transfer.draft);
+  assert.equal((await command(windowA,'read')).draft,null,'A successful transfer retires the source copy');
+  assert.deepEqual((await command(windowA,'readAttachments')).drafts,{});
+  assert.deepEqual((await command(windowC,'readAttachments')).drafts,
+    require('../../extension/codex/workspace-handoff').handoffAttachments(transfer));
+  await command(windowC,'write',null);
+  await command(windowC,'writeAttachments',{});
+  assert.equal((await command(windowC,'read')).draft,null,'A pending or retried handoff cannot restore sent text');
+  await command(windowC,'adopt',transfer);
+  assert.equal((await command(windowC,'read')).draft,null);
+  assert.deepEqual((await command(windowC,'readAttachments')).drafts,{});
+  configC.branch='another';
+  await assert.rejects(command(windowC,'adopt',transfer),/already moved/,'A consumed transfer cannot be replayed on another branch');
+  shared.delete(transferKey);
+  // A collision keeps the existing destination draft and the source unchanged.
+  const collision={...transfer,draftTransferId:require('node:crypto').randomUUID()};
+  await command(windowA,'write',collision.draft);
+  const windowD=scope('file:///shared/destination',shared,{workspace:'/windows/d.code-workspace',branch:'topic'});
+  await command(windowD,'write','Independent destination work');
+  await assert.rejects(command(windowD,'adopt',collision),/already have an unsent draft/);
+  assert.equal((await command(windowA,'read')).draft,collision.draft);
+
+  const listeners={},ipc=[];
+  const native=Object.freeze({getState:()=>({keep:true}),setState:value=>value,postMessage:message=>ipc.push(message)});
+  const bridgeWindow={localStorage:store,acquireVsCodeApi:()=>native,addEventListener:(name,listener)=>{listeners[name]=listener;}};
+  vm.runInNewContext(webJs,{Storage,window:bridgeWindow});
+  const bridge=bridgeWindow.acquireVsCodeApi();
+  listeners.message({data:{type:'persisted-atom-sync',scmToolkitDraftScope:scopeMain}});
+  bridge.postMessage({type:'persisted-atom-update',key:atomV2,value:{}});
+  assert.equal(ipc.at(-1).scmToolkitDraftScope,scopeMain,'Queued writes carry their original rendered scope');
+  bridge.postMessage({type:'unrelated',value:'keep'});
+  assert.equal(ipc.at(-1).scmToolkitDraftScope,undefined);
+  assert.equal(bridge.getState().keep,true);
+
+  const gitRoot=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'codex-draft-branch-'));
+  try {
+    const git=(...args)=>require('node:child_process').execFileSync('git',args,{cwd:gitRoot,stdio:'pipe'});
+    git('init','-b','main');
+    const gitVscode={workspace:{workspaceFolders:[{uri:{scheme:'file',fsPath:gitRoot,toString:()=>gitRoot}}]}};
+    assert.equal((await branchScopes(gitVscode))[0][1],'refs/heads/main');
+    git('symbolic-ref','HEAD','refs/heads/topic');
+    assert.equal((await branchScopes(gitVscode))[0][1],'refs/heads/topic','Scope follows actual Git HEAD');
+  } finally {fs.rmSync(gitRoot,{recursive:true,force:true});}
   console.log('Codex repository-scoped draft IPC and fallback tests passed.');
 }
 run().catch(e=>{console.error(e);process.exitCode=1});

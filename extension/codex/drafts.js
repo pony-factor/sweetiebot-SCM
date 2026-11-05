@@ -51,13 +51,14 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
     if (storageError) throw storageError;
     const scope = await keyForScope();
     if (!scope) return { enabled: false };
-    const saved = record(scope);
     const plan = pending();
+    if (plan?.draftScope) await vscode.commands.executeCommand('sweetiebot.codexDraft.adopt', plan);
+    const saved = record(scope);
     // Never seed a fresh window from the old checkout-wide cache. Keep those
     // legacy entries intact, but only an explicit handoff may move a draft.
     return { enabled: true, scope,
-      draft: plan ? plan.draft ?? null : saved.draft ?? null,
-      drafts: plan?.attachmentDrafts ? require('./workspace-handoff').handoffAttachments(plan) : saved.attachments || {} };
+      draft: plan && !plan.draftScope ? plan.draft ?? null : saved.draft ?? null,
+      drafts: plan?.attachmentDrafts && !plan.draftScope ? require('./workspace-handoff').handoffAttachments(plan) : saved.attachments || {} };
   };
   const enqueue = operation => {
     const next = writing.catch(() => {}).then(operation);
@@ -105,17 +106,21 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
     if (!scope) throw Error('A workspace is required to transfer a Codex draft.');
     const saved = record(scope);
     const id = plan.draftTransferId;
-    if (!id || !plan.draftScope || !/^sweetiebot\.codexDraft\.v2\.[a-f0-9]{64}$/.test(plan.draftScope)) {
+    if (!/^[a-f0-9-]{36}$/.test(id || '') || !/^sweetiebot\.codexDraft\.v2\.[a-f0-9]{64}$/.test(plan.draftScope || '')) {
       throw Error('The Codex draft handoff has no verified source scope.');
     }
     const incoming = { draft: plan.draft ?? undefined,
       attachments: plan.attachmentDrafts ? require('./workspace-handoff').handoffAttachments(plan) : {} };
     const adopted = saved.transfers?.includes(id);
+    const transferKey = 'sweetiebot.codexDraft.transfer.' + id;
+    const owner = context.globalState.get(transferKey);
+    if (owner && owner !== scope) throw Error('This Codex draft has already moved to another window and branch.');
     if (!adopted) {
       if ((saved.draft != null && !isDeepStrictEqual(saved.draft, incoming.draft))
           || (Object.keys(saved.attachments || {}).length && !isDeepStrictEqual(saved.attachments, incoming.attachments))) {
         throw Error('This window and branch already have an unsent draft. Its contents were preserved.');
       }
+      await context.globalState.update(transferKey, scope);
       await context.globalState.update(scope, { ...saved, ...incoming, transfers: [...(saved.transfers || []), id] });
     }
     if (scope !== plan.draftScope) {

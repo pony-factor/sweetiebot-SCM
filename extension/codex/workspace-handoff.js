@@ -1,6 +1,6 @@
 'use strict';
 
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const path = require('node:path');
 const keyFor = workspace => 'sweetiebot.codexHandoff.' + createHash('sha256').update(path.resolve(workspace)).digest('hex');
 
@@ -39,8 +39,12 @@ async function prepareCodexHandoff(vscode, from) {
   const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
   const draft = saved?.draft ?? null;
   const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
+  if (saved?.scope && attachments?.scope && saved.scope !== attachments.scope) {
+    throw Error('The branch changed while capturing the Codex draft. Retry the checkout switch.');
+  }
   if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
-  return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts };
+  return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts,
+    ...(saved?.scope || attachments?.scope ? { draftScope: saved?.scope || attachments.scope, draftTransferId: randomUUID() } : {}) };
 }
 
 function registerCodexWorkspaceHandoff(vscode, context) {
@@ -75,8 +79,14 @@ function registerCodexWorkspaceHandoff(vscode, context) {
       // Consume automatic continuation before sending it. A window crash or
       // failed response must never submit the same continuation a second time.
       await context.globalState.update(key, { ...plan, wasActive: false });
-      if (plan.draft !== null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
-      if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
+      if (!plan.draftsConsumed) {
+        if (plan.draftScope) await vscode.commands.executeCommand('sweetiebot.codexDraft.adopt', plan);
+        else {
+          if (plan.draft != null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
+          if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
+        }
+        await context.globalState.update(key, { ...plan, wasActive: false, draftsConsumed: true });
+      }
       if (plan.draftOnly) {
         await context.globalState.update(key, undefined);
         return;
