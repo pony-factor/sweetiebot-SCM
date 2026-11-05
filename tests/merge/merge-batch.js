@@ -89,8 +89,9 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert(prompt.includes('publish zero inline comments'));
     assert(prompt.includes('decision commit titles/bodies'));
     assert(prompt.includes('sweetiebot-merge-options'), 'Automatic rounds reuse the existing selectable recommendation format');
-    assert(prompt.includes('Before deferring a PR for human review'));
-    assert(prompt.includes('multiple plausible resolutions have materially different behavior'));
+    assert(prompt.includes('Automatic reviews belong to the Lindsey GitHub App'));
+    assert(prompt.includes('no personal-account fallback'));
+    assert(prompt.includes('Only defer genuinely different behavioral outcomes'));
     assert(prompt.includes('"baseAdvancedByEarlierWork":true'));
     assert(prompt.includes('"initiallyMergeable":true'));
     const conflict = await submit(first.value.continueUrl, [item(2, d)]);

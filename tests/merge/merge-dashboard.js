@@ -165,11 +165,14 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'),
     'The legacy edit-in-place instruction must not return');
   const decisionInstructions = reportOptionsInstructions();
-  assert(decisionInstructions.includes('connected user-authenticated GitHub app'),
-    'New unresolved decisions also use the connected user identity');
-  assert(decisionInstructions.includes('new current-head root inline review comment'),
+  assert(decisionInstructions.includes('Automatic reviews belong to the Lindsey GitHub App'),
+    'Automatic unresolved decisions use Lindsey, never the personal account');
+  const selectedDecisionInstructions = reportOptionsInstructions({ userSelected: true });
+  assert(selectedPrompt.includes('add_review_to_pr or reply_to_review_comment'));
+  assert(selectedDecisionInstructions.includes('connected user-authenticated GitHub app'));
+  assert(selectedDecisionInstructions.includes('new current-head root inline review comment'),
     'New emoji decisions need independent, current-head inline comments');
-  assert(decisionInstructions.includes('publish a new review comment'),
+  assert(selectedDecisionInstructions.includes('publish a new review comment'),
     'Revised decisions cannot overwrite old reaction instructions');
   assert(!decisionInstructions.includes('update the existing tagged comment'),
     'The original Lindsey review is kept as authored');

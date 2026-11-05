@@ -24,8 +24,8 @@ const handoffPolicy = resolutionInstructions(selection, 'http://127.0.0.1:12345/
 assert(handoffPolicy.includes('GITHUB REVIEW PUBLICATION POLICY'));
 assert(handoffPolicy.includes('publish zero inline comments'));
 assert(handoffPolicy.includes('local handoff record'));
-assert(handoffPolicy.includes('ACTIONABLE BLOCKER OPTIONS'));
-assert(handoffPolicy.includes('Proactively analyze conflicts'));
+assert(handoffPolicy.includes('AUTOMATIC LINDSEY REVIEW'));
+assert(handoffPolicy.includes('Resolve clear behavior-preserving integrations automatically'));
 assert(handoffPolicy.includes('sweetiebot-merge-options'), 'Genuine choices are published during the initial Lindsey conflict review');
 assert(handoffPolicy.includes('NO-OP SYNCHRONIZATION'));
 assert(!handoffPolicy.includes('If gzip output still exceeds the URL budget, stop'),'Oversized results use a safe alternate transport');

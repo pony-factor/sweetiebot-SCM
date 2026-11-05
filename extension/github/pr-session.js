@@ -131,6 +131,7 @@ async function publishOptionalMergeSummaries({ enabled, postStatusUpdates = fals
 let mergeDashboardStarted = false;
 let mergeDashboardController;
 let activeMergeBatch;
+let mergePublications;
 const mergeWorkerTabs = new Map();
 
 async function resumeMergeDashboard(vscode, directory, context) {
@@ -141,6 +142,16 @@ async function resumeMergeDashboard(vscode, directory, context) {
   let savedState;
   try { savedState = JSON.parse(await fs.readFile(path.join(directory, 'merge-batch-state.json'), 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
+  mergePublications = require('../merge/publication-queue').createPublicationQueue(vscode, selection, {
+    history: savedState?.history || [], publish: publishOptionalMergeSummaries,
+    onErrors: errors => { if (errors.length) vscode.window.showWarningMessage(
+      'Lindsey could not publish GitHub updates: ' + errors.map(item => '#' + item.number + ': ' + item.error).join('; ')); }
+  });
+  context.subscriptions?.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (['mergePostSummaries', 'mergePostStatusUpdates'].some(key => event.affectsConfiguration('sweetiebot.' + key))) {
+      void mergePublications.replay().catch(() => vscode.window.showWarningMessage('Lindsey could not publish GitHub updates.'));
+    }
+  }));
   const auth = await require('./session').githubSession(vscode);
   const dashboard = require('../merge/dashboard');
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
@@ -257,11 +268,7 @@ async function resumePRSession(vscode, context) {
         const controller = await resumeMergeDashboard(vscode, directory, context);
         const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
           event => { report(event); controller?.recordLocalProgress?.(event); });
-        const summaryErrors = await publishOptionalMergeSummaries({
-          enabled: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostSummaries', false) === true,
-          postStatusUpdates: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
-          selection: snapshot, input: result, result: executed, token: auth.accessToken
-        });
+        const summaryErrors = await mergePublications.record(snapshot, result, executed);
         return { ...executed, summaryErrors };
       });
       if (input.options?.syncOnly) {
@@ -329,17 +336,26 @@ async function resumePRSession(vscode, context) {
             if (blockerReports[deferred.number]) continue;
             const pr = (state.pullRequests || selection.pullRequests).find(pr => pr.number === deferred.number);
             const history = state.history.filter(item => item.number === deferred.number);
-            const paths = history.flatMap(item => item.conflictPaths || []);
-            const decisions = [...new Map(history.flatMap(item => item.decisions || []).map(note => [note.path, note])).values()];
+            const paths = [...(deferred.paths || []), ...history.flatMap(item => item.conflictPaths || [])];
+            const decisions = require('../merge/resolution-commits').validateDecisions(deferred.decisions);
             if (!pr) continue;
             if (!paths.length) {
               blockerReports[pr.number] = { ...require('../merge/blocker-report').blockerReport(pr, deferred.reason, []),
                 posted: false, error: 'No conflict location was supplied, so an inline comment could not be anchored. The executor details remain available locally.' };
               continue;
             }
-            blockerReports[pr.number] = await require('../merge/blocker-report').publishBlockerReport({
-              repository: selection.repository, pr, reason: deferred.reason, kind: deferred.kind, paths, decisions, api: require('./user-api').githubUserAPI(auth.accessToken)
-            });
+            try {
+              // Per-file commit rationale is not a product decision. Only use
+              // choices explicitly returned with this human-review deferral.
+              if (deferred.kind !== 'human_review' || !decisions.length) continue;
+              const actor = await require('./lindsey-api').lindseyAPI(selection.repository);
+              blockerReports[pr.number] = await require('../merge/blocker-report').publishBlockerReport({
+                repository: selection.repository, pr, reason: deferred.reason, kind: deferred.kind,
+                paths, decisions, actorLogin: actor.login, api: actor.api
+              });
+            } catch (error) {
+              blockerReports[pr.number] = { posted: false, error: error.message };
+            }
           }
           state.blockerReports = blockerReports;
           await fs.writeFile(path.join(directory, 'merge-batch-state.json'), JSON.stringify(state), { mode: 0o600 });
