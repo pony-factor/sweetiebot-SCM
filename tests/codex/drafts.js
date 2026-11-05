@@ -74,6 +74,40 @@ async function run() {
   await a.provider.handleMessage(a.webview,{type:'persisted-atom-update',key:atom,value:'broken-json'});
   assert.equal(a.forwarded.at(-1).value,'broken-json');
 
+  // Current Codex persists rich draft objects and sends incremental record updates.
+  const atomV2='composer-prompt-drafts-v2';
+  const rich={prompt:{document:{type:'doc',content:[{type:'text',text:'Unsent rich prompt'}]},plainTextMode:false},
+    pullRequestChecks:[],usedDictation:true};
+  const record=(entries,value={})=>a.provider.handleMessage(a.webview,{
+    type:'persisted-atom-update',key:atomV2,value,recordUpdate:{entries,legacyStorageKey:atom}
+  });
+  await record({'new-conversation':{value:rich}},{'new-conversation':rich});
+  assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,rich);
+  assert(!('new-conversation' in a.forwarded.at(-1).value));
+  assert.equal(a.forwarded.at(-1).recordUpdate.entries['new-conversation'].delete,true);
+  await record({'local:thread-id':{value:{prompt:'Thread follow-up',pullRequestChecks:[]}}});
+  assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,rich,
+    'A thread-only record update must not clear an unsent new-chat draft');
+  const reopenedRich=providerFor(scope('file:///workspace/a',shared));
+  await reopenedRich.webview.postMessage({type:'persisted-atom-sync',state:{[atomV2]:{'new-conversation':'Global stale text'}}});
+  assert.deepEqual(reopenedRich.seen.at(-1).state[atomV2]['new-conversation'],rich);
+  await b.webview.postMessage({type:'persisted-atom-sync',state:{[atomV2]:{'new-conversation':rich}}});
+  assert.equal(b.seen.at(-1).state[atomV2]['new-conversation'],'Draft for B');
+  await record({'new-conversation':{delete:true,expectedValue:rich}});
+  const afterSend=providerFor(scope('file:///workspace/a',shared));
+  await afterSend.webview.postMessage({type:'persisted-atom-sync',state:{[atomV2]:{'new-conversation':rich}}});
+  assert(!('new-conversation' in afterSend.seen.at(-1).state[atomV2]),
+    'Sending clears the scoped cache before a new workspace hydrates');
+  await record({'new-conversation':{value:rich}});
+  const newer={prompt:'New unsent draft',pullRequestChecks:[]};
+  await record({'new-conversation':{value:newer}});
+  await record({'new-conversation':{delete:true,expectedValue:rich}});
+  assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,newer,
+    'A late send/delete cannot erase a newer draft');
+  await record({'new-conversation':{delete:true,expectedValue:newer}});
+  await afterSend.webview.postMessage({type:'persisted-atom-updated',key:atomV2,value:{'new-conversation':rich}});
+  assert(!('new-conversation' in afterSend.seen.at(-1).value),'A global broadcast cannot resurrect sent text');
+
   let memory = new Map([['codex:persisted-atom:composer-prompt-drafts-v1', JSON.stringify(originalState[atom])],
     ['other', 'keep']]);
   class Storage {
@@ -88,6 +122,11 @@ async function run() {
   store.setItem('codex:persisted-atom:composer-prompt-drafts-v1',JSON.stringify({'new-conversation':'Draft C','local:thread-id':'Thread C'}));
   assert.equal(JSON.parse(memory.get('codex:persisted-atom:composer-prompt-drafts-v1'))['new-conversation'],undefined);
   assert.equal(JSON.parse(store.getItem('codex:persisted-atom:composer-prompt-drafts-v1'))['local:thread-id'],'Thread C');
+  memory.set('codex:persisted-atom:'+atomV2,JSON.stringify({'new-conversation':rich,'local:thread-id':newer}));
+  assert(!('new-conversation' in JSON.parse(store.getItem('codex:persisted-atom:'+atomV2))));
+  store.setItem('codex:persisted-atom:'+atomV2,JSON.stringify({'new-conversation':rich,'local:thread-id':newer}));
+  assert(!('new-conversation' in JSON.parse(memory.get('codex:persisted-atom:'+atomV2))));
+  assert.deepEqual(JSON.parse(store.getItem('codex:persisted-atom:'+atomV2))['local:thread-id'],newer);
   assert.equal(store.getItem('other'),'keep');
 
   const attachmentAtom = 'sweetiebot-composer-attachments-v1';
