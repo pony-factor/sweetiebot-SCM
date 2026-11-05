@@ -74,6 +74,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     let generation = 0, refreshedAt = 0, refreshedRepository = '';
     let refreshTimer, pending = false, knownBranches = [], lastFeaturedCount = 0;
     let lastPrStatus = 'unavailable', lastRemoteStatus = 'available', lastScrolledBranch, showingLoading = false;
+    let renderedLocalPreview = false;
     let recentKey = '', recentBranches = Object.create(null), lastRecordedBranch = '';
     const rememberBranch = repositoryId => {
         if (!repositoryId) return;
@@ -103,6 +104,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     const close = (restoreFocus = false) => {
         opened = false;
         showingLoading = false;
+        renderedLocalPreview = false;
         filterInput.value = '';
         generation++; // Reject refresh results arriving after close.
         bar.remove();
@@ -286,13 +288,23 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
             lastFeaturedCount = result?.featuredCount ?? 0;
             lastPrStatus = result?.prStatus ?? 'unavailable';
             lastRemoteStatus = result?.remoteStatus ?? 'unavailable';
-            if (!unchanged) render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
+            // A reopened popup first shows a local-only preview for safety;
+            // repaint the verified snapshot even if its data is unchanged.
+            if (!unchanged || renderedLocalPreview) {
+                render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
+            }
+            renderedLocalPreview = false;
         } catch (error) {
             if (!active()) return;
             refreshedAt = 0;
             lastPrStatus = 'unavailable';
             lastRemoteStatus = 'unavailable';
-            // Keep the already loaded local branches instead of blanking the selector.
+            // A failed verification must not leave unverified remote refs or
+            // PR pills visible from a previous successful refresh.
+            knownBranches = knownBranches.filter(item => item.local)
+                .map(item => ({ ...item, origin: false, hasPr: null, pr: undefined, featured: false }));
+            lastFeaturedCount = 0;
+            renderedLocalPreview = false;
             render(knownBranches, lastFeaturedCount, lastPrStatus, lastRemoteStatus);
             console.warn('Sweetiebot remote branch refresh failed:', error);
         }
@@ -408,6 +420,7 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
                     const cachedLocal = knownBranches.filter(item => item.local)
                         .map(item => ({ ...item, origin: false }));
                     render(cachedLocal, 0, 'loading', 'loading');
+                    renderedLocalPreview = true;
                 } else scroll.textContent = 'Loading local branches…';
                 position();
                 void refresh(true);
