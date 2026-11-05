@@ -434,7 +434,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
   assert(panel.webview.html.includes('id="review-merges"'), 'Keep PR details and timeline available');
   assert(panel.webview.html.includes('id="show-celebration"'), 'Allow return to finish page');
-  assert(panel.webview.html.includes("url('vscode-webview://test/celebration-cannon.jpeg')"),
+  assert(panel.webview.html.includes("url('vscode-webview://test/bulk-merge-cannon.jpeg')"),
      'The supplied full-size artwork is loaded through the approved bundled-asset URI');
    assert(panel.webview.html.includes('background-size:cover'), 'Artwork fills the complete confirmation window');
    assert(panel.webview.html.includes('body.celebrating{'), 'The background is limited to verified bulk-merge completion');
@@ -442,7 +442,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
    assert(panel.webview.html.includes('href="https://x.com/fcolumnare/status/1952740544443998252"'),
      'Artist attribution is linked directly on the confirmation screen');
   assert(!panel.webview.html.includes('__MERGE_CELEBRATION_PREDICATE__'));
-  assert(!panel.webview.html.includes('__CELEBRATION_PONY__'));
+  assert(!panel.webview.html.includes('__CELEBRATION_BACKGROUND__'));
   assert(panel.webview.html.includes('if (!complete) celebrationDismissed = false'));
   assert(panel.webview.html.includes('complete && !celebrationDismissed'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');

@@ -302,12 +302,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     { enableScripts: true, retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.file(path.join(__dirname, '../../assets/imgs'))] });
   const nonce = randomBytes(16).toString('hex');
-  const celebrationArt = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/celebration-cannon.jpeg'))).toString();
+  const celebrationBackgroundUri = panel.webview.asWebviewUri(
+    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/bulk-merge-cannon.jpeg'))).toString();
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
-    .replace('__CELEBRATION_PONY__', celebrationArt)
+    .replace('__CELEBRATION_BACKGROUND__', celebrationBackgroundUri)
     .replace('__MERGE_CELEBRATION_PREDICATE__', require('./celebration').allPullRequestsMerged.toString())
     .replace('__MERGE_HEADER_CSS__', fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8'))
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard-markdown.js'), 'utf8'))

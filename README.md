@@ -8,7 +8,7 @@ VS Code settings now use the `sweetiebot.*` prefix instead of `scmToolkit.*`. At
 
 ## Artwork
 
-The bulk-merge completion page displays the full cannon illustration by [Cerberus (@fcolumnare)](https://x.com/fcolumnare/status/1952740544443998252) as its window background. The bundled image is `assets/imgs/celebration-cannon.jpeg`; other source credits are documented in [assets/imgs/README.md](assets/imgs/README.md). Third-party artwork is excluded from this repository's AGPL-3.0 license, and inclusion does not imply the artist granted a license.
+The bulk-merge completion page displays the full cannon illustration by [Cerberus (@fcolumnare)](https://x.com/fcolumnare/status/1952740544443998252) as its window background. The bundled image is `assets/imgs/bulk-merge-cannon.jpeg`; other source credits are documented in [assets/imgs/README.md](assets/imgs/README.md). Third-party artwork is excluded from this repository's AGPL-3.0 license, and inclusion does not imply the artist granted a license.
 
 ## Docs
 > [!IMPORTANT]
