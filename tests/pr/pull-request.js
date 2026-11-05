@@ -165,7 +165,7 @@ async function run() {
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
   assert.match(decorated, /<summary>Source details<\/summary>/);
-  assert.match(decorated, /public snapshot that can expose user prompts and assistant replies/i);
+  assert(!decorated.includes('**Privacy:**'));
   assert(decorated.includes('- **Local:** [Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
     'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid);
