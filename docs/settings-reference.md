@@ -16,7 +16,7 @@ Magic Settings → Message bar → **Codex co-author button icon** uses `assets/
 
 ## Sidebar navigation
 
-Magic Settings organizes its existing pages under **Source Control & Commits**, **Branches & Workspaces**, **AI & Spellcheck**, **GitHub & Pull Requests**, **Interface & Customization**, and **System & Diagnostics**. Group headings do not change settings or saved preferences. Individual pages remain keyboard navigable, with scrolling and a responsive layout for smaller windows.
+Magic Settings organizes its existing pages under **Source Control & Commits**, **Branches & Workspaces**, **AI & Spellcheck**, **GitHub & Pull Requests**, **Interface & Customization**, and **System & Diagnostics**. Group headings are centered, softly accented pills; page links use centered pill buttons with a distinct selected state. Longer labels wrap naturally rather than being cut off. These visual changes do not alter settings or saved preferences, and individual pages remain keyboard navigable with scrolling and a responsive layout for smaller windows.
 
 ## Key manifest defaults (not current saved user values)
 

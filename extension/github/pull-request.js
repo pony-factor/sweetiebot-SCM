@@ -25,7 +25,8 @@ const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
 const PONY_CATALOG_FILE = 'branch-name-packs.json';
 const DEFAULT_MCP_SERVER = 'codex-drafter';
 const DEFAULT_MCP_TOOL = 'github_create_pull_request';
-const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
+// VS Code sends this external URI directly to the official Codex extension.
+const CODEX_URI_EXTENSION = 'openai.chatgpt';
 const CONVERSATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODEX_SHARED_LINKS_KEY = 'scmToolkit.codexSharedConversationUrls';
 const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item (starting with `- `). Keep each reference as a complete raw HTTPS URL, embedded in the sentence explaining its relationship to the change. Do not turn URLs into Markdown links, label them only by number, put them in normal paragraphs, or leave them as standalone URL-only bullets. When a bullet ends immediately after a GitHub URL, omit any punctuation that would follow the URL, including after a Markdown link wrapping that URL. Keep normal punctuation in other prose. This bullet placement takes precedence over conflicting placement guidance in the canonical rules; continue verifying and citing sources as required.';
@@ -147,7 +148,7 @@ async function readSweetiebotPony(branch, readFile = fs.readFile) {
 }
 
 function codexConversationUrl(uuid) {
-  const deepLink = `vscode://${CODEX_URI_EXTENSION}/codex/${uuid}`;
+  const deepLink = `vscode://${CODEX_URI_EXTENSION}/local/${uuid}`;
   return `https://vscode.dev/redirect?url=${encodeURIComponent(deepLink)}`;
 }
 
