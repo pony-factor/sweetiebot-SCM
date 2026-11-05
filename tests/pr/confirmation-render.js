@@ -496,5 +496,45 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   context.fetch=async(_url,options)=>{assert.equal(options.signal.aborted,false);return {ok:true};};
   await originalClose();
   assert.equal(nativeCloses,2,'Successful host closure does not also close another tab');
+  // Reproduce the cached Happy Trails profile's dead image, then load the
+  // production capture returned by the independent recovery source.
+  let recoveryRequests=0;
+  context.fetch=async(url,options)=>{
+    recoveryRequests++;
+    assert.equal(new URL(url).searchParams.get('q'),'safe, screencap, happy trails');
+    assert.equal(options.credentials,'omit');
+    return {ok:true,json:async()=>({images:[
+      {id:851096,tags:['safe','screencap','happy trails'],representations:{large:'https://derpicdn.net/img/2015/3/16/851096/full.png'}},
+      {id:2,tags:['safe','screencap','wrong pony'],representations:{large:'https://derpicdn.net/wrong.png'}},
+      {id:3,tags:['safe','screencap','happy trails'],representations:{large:'https://untrusted.example/image.png'}}
+    ]})};
+  };
+  const drain=async()=>{for(let step=0;step<10;step++)await Promise.resolve()};
+  context.imageIndex('![Happy Trails](https://img3.wikia.nocookie.net/__cb20121231055640/mlp/images/a/ad/UES1_S02E12.png)',{slug:'happy-trails'});
+  assert.equal(recoveryRequests,0,'Working originals are attempted before fallback');
+  pendingImages.at(-1).onerror();
+  await drain();
+  assert.equal(recoveryRequests,1,'All failed originals trigger one recovery search');
+  assert.equal(images.children.length,0,'Recovery candidates must load before display');
+  const recovered=pendingImages.at(-1);
+  assert.equal(recovered.src,'https://derpicdn.net/img/2015/3/16/851096/full.png');
+  Object.assign(recovered,{naturalWidth:800,naturalHeight:600});
+  recovered.onload();
+  assert.equal(images.children.length,1,'A dead cached URL recovers actual artwork');
+  images.children[0].children[0].fire('click');
+  assert.equal(getElementById('lightbox-source').href,'https://derpibooru.org/images/851096');
+  recovered.onerror();
+  await drain();
+  assert.equal(recoveryRequests,1,'Failed recovered artwork cannot loop requests');
+  let finishRecovery;
+  context.fetch=async()=>new Promise(resolve=>{finishRecovery=resolve});
+  context.imageIndex('No embedded image.',{slug:'happy-trails'});
+  const before=pendingImages.length;
+  context.imageIndex('Different profile.');
+  finishRecovery({ok:true,json:async()=>({images:[{id:851096,tags:['safe','screencap','happy trails'],representations:{large:'https://derpicdn.net/old.png'}}]})});
+  await drain();
+  assert.equal(pendingImages.length,before,'Stale recovery cannot populate a newer profile');
+  assert.equal((await context.recoverPonyImages({slug:'unsafe, query'})).length,0,'Identity cannot inject search operators');
+  console.log('Automatic failed-image recovery and stale result checks passed.');
   console.log('Ludicrous mode and offline close fallback checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

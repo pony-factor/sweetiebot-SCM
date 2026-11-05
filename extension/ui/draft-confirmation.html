@@ -263,7 +263,10 @@ function imageIndex(profile,pony){
     img.referrerPolicy='no-referrer';
     img.decoding='async';
     caption.textContent=captionText;
+    const timeout=typeof setTimeout==='function'?setTimeout(()=>img.onerror?.(),12000):null;
+    const stopWaiting=()=>{if(timeout!==null)clearTimeout(timeout)};
     img.onload=()=>{
+      stopWaiting();
       if(generation!==imageGeneration||!img.naturalWidth||candidate.loaded)return;
       candidate.loaded=true;
       source.width=img.naturalWidth;
@@ -271,6 +274,7 @@ function imageIndex(profile,pony){
       displayLoaded();
     };
     img.onerror=()=>{
+      stopWaiting();
       if(generation!==imageGeneration)return;
       candidate.failed=true;
       candidate.loaded=false;
