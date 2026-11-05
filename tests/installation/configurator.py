@@ -51,8 +51,8 @@ class SubmissionTests(unittest.TestCase):
     def test_sidebar_centers_pill_headings_and_tabs(self):
         page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
         styles = page.split("<style>", 1)[1].split("</style>", 1)[0]
-        category = re.search(r"\\.settings-tab-category\\{([^}]*)\\}", styles).group(1)
-        tab = re.search(r"\\.settings-tab\\{([^}]*)\\}", styles).group(1)
+        category = re.search(r"\.settings-tab-category\{([^}]*)\}", styles).group(1)
+        tab = re.search(r"\.settings-tab\{([^}]*)\}", styles).group(1)
         for rule in (category, tab):
             self.assertIn("border-radius:999px", rule)
             self.assertIn("text-align:center", rule)
