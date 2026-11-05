@@ -120,12 +120,19 @@ function renderMarkdown(target, markdown) {
   disclosure.append(summary);
   const list = document.createElement('ul');
   for (const line of footer[1].split('\n')) {
-    const entry = /^- \*\*(Online|Local|Desktop):\*\* (.*)$/.exec(line);
+    const entry = /^- \*\*(Online|Privacy|Local|Desktop):\*\* (.*)$/.exec(line);
     if (!entry) continue;
     const row = document.createElement('li');
     const label = document.createElement('strong');
     label.textContent = entry[1] + ': ';
     row.append(label);
+    if (entry[1] === 'Privacy') {
+      const text = document.createElement('span');
+      text.textContent = entry[2];
+      row.append(text);
+      list.append(row);
+      continue;
+    }
     const markdownLink = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(entry[2]);
     const desktopCode = entry[1] === 'Desktop' && /^`(codex:\/\/threads\/[0-9a-f-]{36})`(.*)$/i.exec(entry[2]);
     const value = markdownLink?.[2] || desktopCode?.[1] || entry[2];
@@ -134,9 +141,9 @@ function renderMarkdown(target, markdown) {
       : entry[1] === 'Local'
         ? /^(?:vscode:\/\/jfwooten4\.scm-toolkit-workspace-search\/codex\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2Fjfwooten4\.scm-toolkit-workspace-search%2Fcodex%2F[0-9a-f-]{36})$/i.test(value)
         : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
-    const node = document.createElement(desktopCode ? 'code' : valid ? 'a' : 'span');
-    node.textContent = value;
-    if (valid && !desktopCode) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
+    const node = document.createElement(valid ? 'a' : 'span');
+    node.textContent = valid ? entry[1] : value;
+    if (valid) { node.href = value; node.rel = 'noopener noreferrer'; node.target = '_blank'; }
     row.append(node);
     if (desktopCode) {
       const hint = document.createElement('span');
