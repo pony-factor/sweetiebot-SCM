@@ -8,8 +8,13 @@ function createPublicationQueue(vscode, selection, { history = [], publish, onEr
   function remember(snapshot, input, result) {
     for (const item of result.results || []) {
       const prepared = input.results.find(entry => entry.number === item.number);
-      if (prepared && ['merged', 'synced', 'waiting', 'checks_failed'].includes(item.status) && item.sha) records.set(item.number,
-        { selection: snapshot, input: { results: [prepared] }, result: { results: [item] } });
+      if (prepared && ['merged', 'synced', 'waiting', 'checks_failed'].includes(item.status) && item.sha) {
+        const summary = { number: prepared.number, explanation: prepared.explanation,
+          decisions: prepared.decisions?.length ? [true] : [], repairChecks: prepared.repairChecks === true,
+          patch: !!prepared.patch, resolutionHunks: prepared.resolutionHunks?.length ? [true] : [] };
+        records.set(item.number,
+          { selection: snapshot, input: { results: [summary] }, result: { results: [item] } });
+      }
     }
   }
   for (const item of history) {
@@ -25,8 +30,11 @@ function createPublicationQueue(vscode, selection, { history = [], publish, onEr
       const postStatusUpdates = config.get('mergePostStatusUpdates', false) === true;
       if (!enabled && !postStatusUpdates) return [];
       const errors = [];
-      for (const record of records.values()) errors.push(...await publish({ ...record, enabled, postStatusUpdates }));
-      onErrors(errors);
+      for (const record of records.values()) {
+        try { errors.push(...await publish({ ...record, enabled, postStatusUpdates })); }
+        catch { errors.push({ number: record.result.results[0].number, error: 'Lindsey publication failed; the verified Git result is unchanged.' }); }
+      }
+      try { onErrors(errors); } catch { /* Notification failures cannot invalidate a merge. */ }
       return errors;
     });
     pending = next.catch(() => {});

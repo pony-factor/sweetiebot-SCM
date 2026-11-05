@@ -128,6 +128,24 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(second.value.continueUrl,undefined,'Successful synchronization finishes the repair loop');
   } finally {repair.dispose();}
 
+  // Choices travel through the local handoff rather than a personal connector.
+  {
+    const decision = { number: 1, headSha: a, kind: 'human_review', reason: 'Two incompatible storage scopes.',
+      paths: ['settings.js'], decisions: [{ path: 'settings.js', title: '❓ Choose the storage scope',
+        description: 'Shared and isolated storage have different behavior.' }] };
+    const review = await createMergeBatch({ ...selection, pullRequests: [selection.pullRequests[0]] }, {
+      api, destination: 'https://chatgpt.com/', execute: async () => ({ results: [] })
+    });
+    try {
+      const invalid = await submit(review.url, [], [{ ...decision, paths: ['../outside.js'] }]);
+      assert.equal(invalid.status, 400, 'Unsafe decision paths cannot reach publication');
+      const returned = await submit(review.url, [], [decision]);
+      assert.equal(returned.status, 200);
+      assert.deepEqual(returned.value.batch.deferred[0].decisions, decision.decisions);
+      assert.deepEqual(returned.value.batch.deferred[0].paths, ['settings.js']);
+    } finally { review.dispose(); }
+  }
+
   // GitHub retargets children to the merged parent's destination when its
   // branch is deleted. Unrelated base changes still require a fresh selection.
   for (const [retarget, headChanged] of [['main', false], ['unrelated', false], ['main', true]]) {
