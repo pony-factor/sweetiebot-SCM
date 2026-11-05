@@ -1600,7 +1600,10 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(opened.wait(5))
             with urllib.request.urlopen(captured["url"], timeout=5) as response:
                 page = response.read().decode()
-            self.assertIn("Sweetiebot SCM Setup", page)
+                self.assertIn("img-src data:", response.headers["Content-Security-Policy"])
+            self.assertIn("<title>Sweetiebot</title>", page)
+            self.assertIn('<h1 class="settings-brand"><img src="data:image/png;base64,', page)
+            self.assertIn('height="48">Sweetiebot</h1>', page)
             setup_url = urllib.parse.urlsplit(captured["url"])
             def endpoint(path):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
@@ -1746,7 +1749,7 @@ class ServerTests(unittest.TestCase):
                 self.assertTrue(captured["flushed"])
                 with urllib.request.urlopen(captured["url"], timeout=5) as response:
                     page = response.read().decode()
-                    self.assertIn("Sweetiebot SCM Setup", page)
+                    self.assertIn("<title>Sweetiebot</title>", page)
                     self.assertIn('value="save" hidden>Done', page)
                     self.assertNotIn("Import signing key", page)
                 for path in ("/autosave", "/save", "/autosave"):
