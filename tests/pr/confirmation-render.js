@@ -535,6 +535,32 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await drain();
   assert.equal(pendingImages.length,before,'Stale recovery cannot populate a newer profile');
   assert.equal((await context.recoverPonyImages({slug:'unsafe, query'})).length,0,'Identity cannot inject search operators');
+  // A decoded Fandom placeholder is not a successful image, even though
+  // browsers may fire load for its 404 image response.
+  context.fetch=async url=>url.includes('wikia.nocookie.net')
+    ? {ok:false,headers:{get:()=>null},body:{cancel:()=>Promise.resolve()}}
+    : {ok:true,json:async()=>({images:[{id:851096,tags:['safe','screencap','happy trails'],representations:{large:'https://derpicdn.net/recovered.png'}}]})};
+  context.imageIndex('![Happy Trails](https://static.wikia.nocookie.net/mlp/missing.png)',{slug:'happy-trails'});
+  const placeholder=pendingImages.at(-1);
+  Object.assign(placeholder,{naturalWidth:300,naturalHeight:171});
+  await placeholder.onload();
+  await drain();
+  assert.equal(images.children.length,0,'Decoded 404 placeholders cannot become artwork cards');
+  assert.equal(pendingImages.at(-1).src,'https://derpicdn.net/recovered.png');
+  context.imageIndex('![Happy Trails in a *Friendship Is Magic* show still](https://example.com/still.png)');
+  const captionImage=pendingImages.at(-1);
+  Object.assign(captionImage,{naturalWidth:800,naturalHeight:600});
+  await captionImage.onload();
+  const formatted=images.children[0].children[1];
+  assert.equal(formatted.children.find(node=>node.tag==='em').textContent,'Friendship Is Magic');
+  assert.equal(captionImage.alt,'Happy Trails in a Friendship Is Magic show still');
+  images.children[0].children[0].fire('click');
+  assert.equal(getElementById('lightbox-caption').children.find(node=>node.tag==='em').textContent,'Friendship Is Magic');
+  assert(getElementById('lightbox-caption').textContent.endsWith(' · 1 of 1'));
+  const inertCaption=new Element('span');
+  context.renderImageCaption(inertCaption,'**Credit** <script>alert(1)</script> [link](javascript:alert(1))');
+  assert.equal(inertCaption.children[0].tag,'strong');
+  assert(!inertCaption.children.some(node=>node.tag==='a'||node.tag==='script'),'Caption formatting cannot activate links or HTML');
   console.log('Automatic failed-image recovery and stale result checks passed.');
   console.log('Ludicrous mode and offline close fallback checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
