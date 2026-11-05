@@ -458,8 +458,8 @@ const { allPullRequestsMerged } = require('../extension/merge/celebration');
     'Checks-not-passing timeline entries use blue');
   assert(panel.webview.html.includes("checks: 'Checks failing'"),
     'Failed CI has an explicit qualifier');
-  assert(panel.webview.html.includes("'checks-pending': 'Checks in progress'"),
-    'Unfinished CI is not labeled as a failure');
+  assert(panel.webview.html.includes("'checks-pending': 'Running checks'"),
+    'Unfinished CI is labeled Running checks rather than a failure');
   assert(panel.webview.html.includes('.flag.checks-pending{color:var(--vscode-progressBar-background,'),
     'In-progress CI has its own progress-colored badge');
   assert(panel.webview.html.includes('.event.checks-pending{border-color:var(--vscode-progressBar-background,'),
