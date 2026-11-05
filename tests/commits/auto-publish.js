@@ -27,6 +27,7 @@ async function run() {
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], 'sweetiebot.publishBranch');
   assert.equal(calls[0][2].remote, 'origin');
+  assert.equal(calls[0][2].automatic, true, 'Picker publishing enforces the experiment policy');
   assert.equal(await context.publish('develop'), false, 'The repository default branch is skipped');
   assert.equal(await context.publish('main'), true, 'A non-default main branch remains publishable');
   enabled = false;

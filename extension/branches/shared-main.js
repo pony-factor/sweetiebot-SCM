@@ -7,6 +7,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace-trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { worktreeLocations } = require('./worktree-registry');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
 
@@ -26,10 +27,9 @@ async function originalRepository(root, {
   baseDirectory = independentWorkspaceParent()
 } = {}) {
   root = await fs.realpath(root);
-  const worktrees = (await run(['-C', root, 'worktree', 'list', '--porcelain', '-z'])).split('\0\0');
-  const shared = worktrees.find(block => block.split('\0').includes('branch refs/heads/main') &&
-    block.split('\0').some(line => line.startsWith('worktree ') && inside(githubDirectory, line.slice(9))));
-  if (shared) return shared.split('\0').find(line => line.startsWith('worktree ')).slice(9);
+  const registered = worktreeLocations(await run(['-C', root, 'worktree', 'list', '--porcelain', '-z']));
+  const sharedMain = registered.get('main');
+  if (sharedMain && inside(githubDirectory, sharedMain)) return sharedMain;
   // Linked topic worktrees already identify the original repository exactly.
   const common = await run(['-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
   const commonRoot = path.basename(common) === '.git' ? await fs.realpath(path.dirname(common)) : null;
@@ -52,14 +52,7 @@ async function originalRepository(root, {
 }
 
 function checkedOutMain(listing) {
-  const blocks = listing.split('\0\0');
-  for (const block of blocks) {
-    const lines = block.split('\0');
-    if (!lines.includes('branch refs/heads/main')) continue;
-    const worktree = lines.find(line => line.startsWith('worktree '));
-    if (worktree) return worktree.slice('worktree '.length);
-  }
-  return null;
+  return worktreeLocations(listing).get('main') || null;
 }
 
 async function mainRoot(root, options = {}) {
@@ -314,6 +307,17 @@ async function routeExistingBranchWorktree(vscode, repository, destination, opti
   const root = await fs.realpath(repository.rootUri.fsPath);
   const existing = await fs.realpath(destination).catch(() => null);
   if (!existing) return false;
+  if (options.branch) {
+    // Another window may have changed the registry after the first lookup.
+    // Never route to a path without revalidating the selected branch in Git.
+    const run = options.run || git;
+    const registered = worktreeLocations(await run(['-C', root, 'worktree', 'list', '--porcelain', '-z']))
+      .get(options.branch);
+    if (!registered || await fs.realpath(registered).catch(() => null) !== existing
+        || await run(['-C', existing, 'branch', '--show-current']).catch(() => '') !== options.branch) {
+      return false;
+    }
+  }
   if (root === existing) return true;
   if (!vscode.workspace?.workspaceFolders?.length) return false;
   await switchRepository(vscode, root, existing, options);
@@ -354,14 +358,13 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   }
   await run(['-C', original, 'check-ref-format', '--branch', branch]);
   // Reopening an existing topic must use its existing files, including edits.
-  const worktrees = (await run(['-C', original, 'worktree', 'list', '--porcelain'])).split('\n\n');
-  const existing = worktrees.find(block => block.split('\n').includes('branch refs/heads/' + branch));
-  if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
-  if (existing && !create) {
-    const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
+  const worktrees = worktreeLocations(await run(['-C', original, 'worktree', 'list', '--porcelain', '-z']));
+  const registeredDestination = worktrees.get(branch);
+  if (registeredDestination && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
+  if (registeredDestination && !create) {
     // Repoint the current window even when another live VS Code window
     // already owns the registered worktree.
-    return routeExistingBranchWorktree(vscode, repository, destination, { ...options, branch });
+    return routeExistingBranchWorktree(vscode, repository, registeredDestination, { ...options, branch });
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();
   const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original), fs, { branch });

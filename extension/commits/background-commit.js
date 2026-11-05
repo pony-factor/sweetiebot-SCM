@@ -233,6 +233,9 @@ function registerBackgroundCommit(vscode, context) {
     if (!repository) throw new Error('The selected repository is unavailable.');
     // Commit preflight uses local state; the worker guards remote publication.
     await repository.status();
+    if (options.expectedBranch && repository.state.HEAD?.name !== options.expectedBranch) {
+      throw new Error('The branch changed before automatic commit preparation.');
+    }
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
     if (!repository.state.indexChanges.length || options.all) {
       // Preparation reuses the fresh status and refreshes once after staging.
@@ -273,6 +276,12 @@ function registerBackgroundCommit(vscode, context) {
           throw new Error('Resolve conflicts before queuing a commit.');
         }
         continue;
+      }
+      if (options.expectedBranch) {
+        await repository.status();
+        if (repository.state.HEAD?.name !== options.expectedBranch) {
+          throw new Error('The branch changed before automatic commit enqueue.');
+        }
       }
       try {
         result = await enqueue(script, root.fsPath, {

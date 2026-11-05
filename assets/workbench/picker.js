@@ -1940,26 +1940,57 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         }
     };
 
+    let autoCommitIdentity;
+    let autoCommitEnabled = false;
+    let autoCommitRequest = 0;
     const refreshAutoCommit = () => {
-        const enabled = configuration.getValue('sweetiebot.autoCommitWithCodex') === true;
-        autoCommitButton.classList.toggle('scm-toolkit-auto-commit-active', enabled);
-        autoCommitButton.setAttribute('aria-pressed', String(enabled));
-        const description = enabled
-            ? 'Turn off automatic local Codex co-author commits every 30 seconds'
-            : 'Turn on automatic local Codex co-author commits every 30 seconds (no push)';
+        const identity = currentRepositoryUri && currentBranch
+            ? currentRepositoryUri.toString() + '\\0' + currentBranch : undefined;
+        if (identity !== autoCommitIdentity) {
+            autoCommitIdentity = identity;
+            autoCommitEnabled = false;
+            const request = ++autoCommitRequest;
+            if (identity) {
+                const root = currentRepositoryUri;
+                const branch = currentBranch;
+                void commands.executeCommand('sweetiebot.autoCommitForBranch', 'get', root, branch)
+                    .then(enabled => {
+                        if (request !== autoCommitRequest) return;
+                        autoCommitEnabled = enabled === true;
+                        refreshAutoCommit();
+                    })
+                    .catch(error => {
+                        if (request === autoCommitRequest) notifications.error(error);
+                    });
+            }
+        }
+        autoCommitButton.classList.toggle('scm-toolkit-auto-commit-active', autoCommitEnabled);
+        autoCommitButton.setAttribute('aria-pressed', String(autoCommitEnabled));
+        const description = !identity
+            ? 'Select a local branch to configure automatic commits'
+            : autoCommitEnabled
+                ? `Turn off 30-second local auto-commits for ${currentBranch} in this window`
+                : `Turn on 30-second local auto-commits for ${currentBranch} in this window (no push)`;
         autoCommitButton.title = description;
         autoCommitButton.setAttribute('aria-label', description);
-        autoCommitButton.disabled = updatingAutoCommit;
+        autoCommitButton.disabled = updatingAutoCommit || !identity;
     };
 
     const toggleAutoCommit = async event => {
         event.stopPropagation();
-        if (updatingAutoCommit) return;
+        if (updatingAutoCommit || !currentRepositoryUri || !currentBranch) return;
+        const identity = autoCommitIdentity;
+        const root = currentRepositoryUri;
+        const branch = currentBranch;
         updatingAutoCommit = true;
+        // Invalidate an in-flight read so it cannot overwrite the toggle.
+        ++autoCommitRequest;
         refreshAutoCommit();
-        const enabled = configuration.getValue('sweetiebot.autoCommitWithCodex') === true;
         try {
-            await configuration.updateValue('sweetiebot.autoCommitWithCodex', !enabled);
+            const enabled = await commands.executeCommand(
+                'sweetiebot.autoCommitForBranch', 'toggle', root, branch
+            );
+            if (identity === autoCommitIdentity) autoCommitEnabled = enabled === true;
         } catch (error) {
             notifications.error(error);
         } finally {
@@ -1969,9 +2000,6 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
 
     autoCommitButton.addEventListener('click', toggleAutoCommit);
-    widget.disposables.add(configuration.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('sweetiebot.autoCommitWithCodex')) refreshAutoCommit();
-    }));
 
     const refreshAutoPublish = () => {
         const enabled = configuration.getValue('sweetiebot.autoPublishNewBranches') === true;
@@ -2021,7 +2049,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const published = await commands.executeCommand(
                 'sweetiebot.publishBranch',
                 currentRepositoryUri,
-                { branch, remote: settings.remote }
+                { branch, remote: settings.remote, automatic: true }
             );
             return Boolean(published);
         } catch (error) {
@@ -2420,6 +2448,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         refreshSyncBranch();
         refreshAutoPublish();
+        refreshAutoCommit();
         refreshSpellcheck();
         refreshPostSpellcheck();
         refreshCodexCommit();
@@ -2703,6 +2732,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             currentBranch = undefined;
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
+            refreshAutoCommit();
             currentDefaultBranch = undefined;
             branchStrip.update(undefined, undefined, undefined, false);
             clearTimeout(defaultBranchRetry);
@@ -2975,6 +3005,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             /^Codex Pony opened PR #[1-9]\d*$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',
             text === 'Sweetiebot update ready');
+        row.classList.toggle('scm-toolkit-lindsey-notice',
+            /^(?:(?:Applying (?:merge batch round|PR fix)|Verifying and squash-merging selected PRs)(?::| ·|$)|Bulk merge: \d+ merged,)/.test(text));
         row.classList.toggle('scm-toolkit-pr-merged',
             /^PR #[1-9]\d* merged into main\.$/.test(text));
         row.classList.toggle('scm-toolkit-pr-queued',
