@@ -37,7 +37,7 @@ async function prepareCodexHandoff(vscode, from) {
   const attachments = commands.includes('sweetiebot.codexDraft.readAttachments')
     ? await vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments') : null;
   const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
-  const draft = typeof saved?.draft === 'string' ? saved.draft : null;
+  const draft = saved?.draft ?? null;
   const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
   if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
   return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts };

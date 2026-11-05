@@ -2,7 +2,8 @@
 // by webviews, so prevent an unsent new-chat draft in localStorage from seeding
 // another repository before the scoped host sync finishes. Preserve raw data.
 (() => {
-    const storageKey = 'codex:persisted-atom:composer-prompt-drafts-v1';
+    const storageKeys = new Set(['codex:persisted-atom:composer-prompt-drafts-v1',
+        'codex:persisted-atom:composer-prompt-drafts-v2']);
     let storage;
     try { storage = window.localStorage; } catch { return; }
     if (!storage || typeof Storage === 'undefined') return;
@@ -23,13 +24,13 @@
     Storage.prototype.getItem = function(key) {
         const value = originalGet.call(this, key);
         if (this === storage && key === 'codex:persisted-atom:sweetiebot-composer-attachments-v1') return '{}';
-        return this === storage && key === storageKey ? cleaned(value) : value;
+        return this === storage && storageKeys.has(key) ? cleaned(value) : value;
     };
     Storage.prototype.setItem = function(key, value) {
         if (this === storage && key === 'codex:persisted-atom:sweetiebot-composer-attachments-v1') {
             return originalSet.call(this, key, '{}');
         }
         return originalSet.call(this, key,
-            this === storage && key === storageKey ? cleaned(String(value)) : value);
+            this === storage && storageKeys.has(key) ? cleaned(String(value)) : value);
     };
 })();

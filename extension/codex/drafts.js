@@ -16,6 +16,7 @@ function codexDraftStorageKey(vscode) {
 function registerCodexDraftCommands(vscode, context) {
   const key = codexDraftStorageKey(vscode);
   const attachmentKey = key && `${key}.attachments`;
+  let draftWriting = Promise.resolve();
   let attachmentError;
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.readAttachments', () => {
     if (!attachmentKey) return { enabled: false };
@@ -41,18 +42,25 @@ function registerCodexDraftCommands(vscode, context) {
     } catch (error) { attachmentError = error; throw error; }
     return true;
   }));
-  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.read', () => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.read', async () => {
+    await draftWriting;
     if (!key) return { enabled: false };
     const saved = context.globalState.get(key);
-    return { enabled: true, draft: typeof saved === 'string' ? saved : null };
+    return { enabled: true, draft: saved ?? null };
   }));
-  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.write', async draft => {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexDraft.write', (draft, options = {}) => {
     if (!key) return false;
-    if (draft !== null && (typeof draft !== 'string' || draft.length > 2000000)) {
+    if (draft !== null && (typeof draft !== 'string' && (!draft || typeof draft !== 'object' || Array.isArray(draft))
+        || JSON.stringify(draft).length > 2000000)) {
       throw new Error('Invalid Codex composer draft.');
     }
-    await context.globalState.update(key, draft === null || draft === '' ? undefined : draft);
-    return true;
+    draftWriting = draftWriting.catch(() => {}).then(async () => {
+      if (Object.prototype.hasOwnProperty.call(options, 'expectedValue') && options.expectedValue !== undefined
+          && JSON.stringify(context.globalState.get(key)) !== JSON.stringify(options.expectedValue)) return false;
+      await context.globalState.update(key, draft === null || draft === '' ? undefined : draft);
+      return true;
+    });
+    return draftWriting;
   }));
 }
 
