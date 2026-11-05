@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 async function run() {
   let nextSubject = '🐜 Fix commit title';
   let expectedInput = '';
-  let expectedArgs = ['/extension/ai-commit.py', '--spellcheck-subject'];
+  let expectedArgs = ['/extension/ai-commit.py', '--manual-spellcheck-subject'];
   let choice = 'Apply correction';
   let spawnCount = 0;
   const children = [];
@@ -118,6 +118,7 @@ async function run() {
   );
 
   // Automatic draft checks produce a correction without interrupting the user.
+  expectedArgs = ['/extension/ai-commit.py', '--spellcheck-subject'];
   nextSubject = '🐜 Fix commit title';
   notices.length = 0;
   assert.equal(
