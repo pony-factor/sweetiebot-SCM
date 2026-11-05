@@ -18,9 +18,16 @@ async function refreshMain(repository, { defaultBranch, remote, checkBranch }) {
     cwd, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
   })).stdout.trim();
   if (await git(['status', '--porcelain'])) throw Error('Commit or stash your changes before syncing the default branch.');
-  await repository.fetch({ remote, ref: defaultBranch });
+  const config = async key => git(['config', '--get', key]).catch(error => {
+    if (error.code === 1) return ''; throw error;
+  });
+  const trackedRemote = await config(`branch.${defaultBranch}.remote`);
+  const trackedRef = await config(`branch.${defaultBranch}.merge`);
+  const sourceBranch = trackedRemote === remote && trackedRef.startsWith('refs/heads/')
+    ? trackedRef.slice('refs/heads/'.length) : defaultBranch;
+  await repository.fetch({ remote, ref: sourceBranch });
   await checkBranch();
-  const incoming = `refs/remotes/${remote}/${defaultBranch}`;
+  const incoming = `refs/remotes/${remote}/${sourceBranch}`;
   const tip = await git(['rev-parse', '--verify', incoming]);
   const local = `refs/heads/${defaultBranch}`;
   const before = await git(['rev-parse', '--verify', local]).catch(() => null);
