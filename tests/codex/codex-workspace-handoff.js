@@ -52,10 +52,12 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
       async executeCommand(id, ...args) {
         if (id === 'sweetiebot.readCodexIdentity') return identity;
         if (id === 'chatgpt.openSidebar') return;
+        if (id === 'sweetiebot.codex.restoreComposerFocus') { focused.push(args[0]); return true; }
         if (id === 'vscode.openFolder') { opened.push(args); return; }
         return commands.get(id)(...args);
       }
     } };
+    const focused = [];
     const provider = { codexMcpConnection: connection, navigateToRoute: route => routes.push(route) };
     const context = vm.createContext({ require, setTimeout, clearTimeout, Date });
     vm.runInContext(await fs.readFile(path.join(__dirname, '../../assets/codex/workspace-handoff-host.js'), 'utf8'), context);
@@ -100,10 +102,13 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
       'Stop the historical worker before taking over the destination');
     assert.equal(active, false);
     active = true;
+    identity.composerFocus = { anchor: {path:[0],offset:3}, focus: {path:[0],offset:3} };
     const plan = await prepare({ from });
+    assert.deepEqual(plan.composerFocus, identity.composerFocus);
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));
     assert(!requests.some(request => request.method === 'turn/start'), 'Do not continue in the old host');
+    delete identity.composerFocus;
     const sandbox = path.join(temporary, 'experiment');
     await fs.mkdir(sandbox);
     const notifyExperiment = commands.get('sweetiebot.codex.sendExperimentDirection');
@@ -169,6 +174,8 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     assert.equal(requests.filter(request => request.method === 'turn/start').length, continuationsBefore + 1);
     turnStatus = 'completed';
     assert.equal(await continueAtReset({ threadId, resetAt: resetAt - 1 }), false, 'Answered requests do not need continuation');
+    assert(focused.some(value => value.threadId === threadId && value.state.anchor.offset === 3),
+      'Verified branch resume restores the original composer selection');
     disposable.dispose();
 
     const workspace = path.join(temporary, 'workspace.code-workspace');

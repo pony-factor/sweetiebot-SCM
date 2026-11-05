@@ -375,6 +375,14 @@ async function run() {
   assert.equal(messages.at(-1).allowHidden, true);
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId, hasConversation: true });
   assert.equal((await identityPending).threadId, conversationId);
+  const focusState = { anchor: { path: [0], offset: 2 }, focus: { path: [0], offset: 4 } };
+  const focusedIdentity = registered.get('sweetiebot.readCodexIdentity')();
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId, composerFocus: focusState });
+  assert.deepEqual((await focusedIdentity).composerFocus, focusState, 'Focus metadata travels with identity without reading the draft');
+  const restoredFocus = registered.get('sweetiebot.codex.restoreComposerFocus')({ threadId: conversationId, state: focusState });
+  assert.equal(messages.at(-1).composerFocus.threadId, conversationId);
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, focused: true });
+  assert.equal(await restoredFocus, true);
   const ambiguous = registered.get('sweetiebot.readCodexIdentity')();
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, hasConversation: true });
   await assert.rejects(ambiguous, /identify/);
@@ -407,7 +415,62 @@ async function run() {
     /Open a Codex conversation/
   );
   disposable.dispose();
+  await checkComposerFocus();
   console.log('Read-only Codex snapshot and provenance bridge checks passed.');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });
+
+async function checkComposerFocus() {
+  const listeners = new Map(), observers = [], timers = new Map();
+  let timerId = 0, present = true, activeChat = 'same-chat', focused = 0, restored;
+  const text = { nodeType: 3, length: 12 };
+  const editor = { childNodes: [text], contains: node => node === text || node === editor,
+    closest: () => editor, getClientRects: () => [1], focus() { focused++; document.activeElement = editor; } };
+  text.parentNode = editor;
+  const selection = { anchorNode: text, anchorOffset: 4, focusNode: text, focusOffset: 7,
+    setBaseAndExtent(...args) { restored = args; } };
+  const document = { activeElement: editor, documentElement: {},
+    querySelectorAll: () => present ? [editor] : [],
+    addEventListener(name, callback) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(callback); },
+    removeEventListener(name, callback) { listeners.get(name)?.delete(callback); } };
+  const fire = (name, event = {}) => { for (const listener of [...listeners.get(name) || []]) listener(event); };
+  const context = vm.createContext({ document, window: { getSelection: () => selection },
+    setTimeout(callback) { timers.set(++timerId, callback); return timerId; }, clearTimeout(id) { timers.delete(id); },
+    MutationObserver: class { constructor(callback) { this.callback = callback; observers.push(this); } observe() {} disconnect() { this.disconnected = true; } } });
+  load('composer-focus.js', context);
+  const helper = context.scmToolkitComposerFocus();
+  const saved = helper.capture();
+  assert.equal(saved.anchor.offset, 4);
+  assert.equal(saved.focus.offset, 7);
+  fire('focusin', { target: editor });
+  fire('focusout', { target: editor, relatedTarget: null });
+  document.activeElement = {};
+  assert.equal(helper.capture().anchor.offset, 4, 'Workbench branch controls retain the last editing intent');
+  present = false;
+  const pending = helper.restore(saved, () => activeChat, 'same-chat');
+  assert.equal(focused, 0, 'Wait for the destination composer');
+  present = true;
+  observers.at(-1).callback();
+  assert.equal(await pending, true);
+  assert.equal(focused, 1);
+  assert.deepEqual(restored, [text, 4, text, 7], 'Restore the exact selected range without changing text');
+  assert.equal(text.length, 12);
+  assert.equal(timers.size, 0);
+  fire('focusout', { target: editor, relatedTarget: {} });
+  document.activeElement = {};
+  assert.equal(helper.capture(), undefined, 'Other Codex controls must not request composer focus');
+  present = false;
+  const cancelled = helper.restore(saved, () => activeChat, 'same-chat');
+  fire('pointerdown');
+  present = true;
+  observers.at(-1).callback();
+  assert.equal(await cancelled, false);
+  assert.equal(focused, 1, 'A new user click prevents delayed focus stealing');
+  activeChat = 'another-chat';
+  const stale = helper.restore(saved, () => activeChat, 'same-chat');
+  for (const callback of [...timers.values()]) callback();
+  assert.equal(await stale, false);
+  assert.equal(focused, 1, 'Never restore into a different conversation');
+  console.log('Branch handoff composer focus, selection, hydration and cancellation checks passed.');
+}

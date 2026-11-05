@@ -1,4 +1,4 @@
-// Read-only snapshot requests; never submit, steer, focus, or stop a Codex turn.
+// Snapshots are read-only; explicit checkout handoffs can restore composer focus.
 function scmToolkitRegisterCodexSnapshot(api) {
     const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
     const composerFocus = typeof scmToolkitComposerFocus === 'function' ? scmToolkitComposerFocus() : null;
