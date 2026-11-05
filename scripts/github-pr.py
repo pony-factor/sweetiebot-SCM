@@ -117,7 +117,8 @@ def transform_refresh(source, remove=False):
                       + notice.group() + '})(' + notice.group(1) + ')'))
     for original, replacement in edits:
         source = source.replace(original, replacement, 1)
-    return source + REFRESH_START + '/* edits:' + json.dumps(edits) + ' */' + REFRESH_END
+        # Keep nested dependency block comments from closing the reversible JSON metadata.
+    return source + REFRESH_START + '/* edits:' + json.dumps(edits).replace('*/', '*\\/') + ' */' + REFRESH_END
 
 
 def transform_description(source, remove=False):
