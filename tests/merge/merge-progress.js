@@ -38,6 +38,14 @@ const {updateMergeSessionCompletion}=require('../../extension/merge/session-comp
   assert.equal(polls[0].nextPollAt,5000,'Initial check polling uses the fast 5-second retry interval');
   assert.equal(pollClock,5000,'The initial retry actually waited 5 seconds');
   assert.equal(polls[1].nextPollAt,0);
+  let slowClock = 0;
+  const slowChecks = await waitForMergeChecks(async endpoint =>
+    endpoint.includes('/check-runs?') ? {check_runs:[{id:1,name:'Build and test',
+      status:slowClock < 11 * 60 * 1000 ? 'in_progress' : 'completed',conclusion:'success'}]}
+      : endpoint.includes('/check-suites?') ? {check_suites:[]} : {statuses:[]},
+  'owner/repo','a'.repeat(40),{now:()=>slowClock,sleep:async ms=>{slowClock+=ms;}});
+  assert.equal(slowChecks.state,'passed','Keep watching a normal build that exceeds eight minutes');
+  assert(slowClock >= 11 * 60 * 1000);
   assert.equal((await waitForMergeChecks(api,'owner/repo','a'.repeat(40),{onPoll(){throw Error('UI unavailable');}})).state,'passed',
     'Activity display failures cannot change check enforcement');
   console.log('Persistent local-operation notification, elapsed progress and visible failure checks passed.');

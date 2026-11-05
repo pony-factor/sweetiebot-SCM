@@ -13,7 +13,7 @@ function reviewPublicationInstructions() {
 
 function statusUpdateInstructions(enabled = false) {
   return enabled
-    ? 'OPTIONAL GITHUB STATUS UPDATES ENABLED: After verified substantive conflict resolution or repair, you may post one concise PR Conversation status update describing the completed work, actual verification and remaining checks or limitations. This is a status report, not an actionable code-review finding; do not tag it as a blocker or turn it into per-file inline notes. Deduplicate against existing comments. Never post for a no-op, every commit, an unverified outcome, or a merge already covered by the optional AI summary. This permission is independent of the AI-summary setting and does not replace required actionable review findings.'
+    ? 'OPTIONAL GITHUB STATUS UPDATES ENABLED: The local Lindsey handoff publishes one concise PR Conversation status update as the Lindsey GitHub App after verified substantive integration or repair. Return the explanation in the handoff; do not post this status update through GPT Web or the user GitHub connection. Lindsey deduplicates its own comments and never posts for a no-op, every commit, an unverified outcome, or a merge already covered by the optional AI summary. This setting is independent of AI summaries and does not replace actionable code-review findings.'
     : 'OPTIONAL GITHUB STATUS UPDATES DISABLED: Do not post PR Conversation progress reports, repair-completion comments or conflict-resolution status updates. Report those details locally in the chat and Lindsey dashboard. This setting is independent of optional post-merge AI summaries and does not suppress substantive code-review findings or genuine human-decision requests.';
 }
 

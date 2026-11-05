@@ -25,6 +25,10 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   // Give this action's new tab a blank draft without deleting or replacing the
   // user's shared draft. ChatGPT reads storage in its page world, not preload.
   if (collectOnly && !callback) return;
+  if (mergeLaunch && callback) {
+    if (globalThis.__sweetiebotMergeCollectorCallback === callback.href) return;
+    globalThis.__sweetiebotMergeCollectorCallback = callback.href;
+  }
   let inserting = false;
   let composerIsolated = false;
   if (!collectOnly && fragmentLaunch && (callback || mergeLaunch)) {
@@ -183,9 +187,15 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       if (Date.now() > expires || window.location.origin !== launch.origin) return finishRecovery();
       const generating = [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop"]')]
         .some(button => {
-          const style = window.getComputedStyle?.(button);
+          // ChatGPT retains hidden Stop controls after completing a response.
+          // Minimized merge windows still need to respect a genuinely active
+          // Stop button, so inspect CSS/ancestors rather than viewport geometry.
+          if (button.closest?.('[hidden], [inert], [aria-hidden="true"]')) return false;
+          for (let node = button; node; node = node.parentElement) {
+            const style = window.getComputedStyle?.(node);
+            if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return false;
+          }
           return !button.hidden && !button.disabled && button.getAttribute?.('aria-disabled') !== 'true'
-            && style?.display !== 'none' && style?.visibility !== 'hidden'
             && (mergeLaunch || button.getClientRects().length > 0);
         });
       // The nonce-bearing callback validates ownership without depending on
@@ -499,6 +509,23 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   attempt();
 }
 scmToolkitStartPullRequestWorkflow();
+
+// Resume the existing collector after a reload or full conversation navigation.
+// The main process retains the callback and binds it to this exact chat; no
+// draft is changed and no prompt is sent by collector-only recovery.
+(() => {
+  if (window.top !== window) return;
+  const address = new URL(window.location.href);
+  if (address.origin !== 'https://chatgpt.com' || address.hash
+      || !/^\/(?:g\/g-p-[A-Za-z0-9-]+\/)?c\/[A-Za-z0-9-]+\/?$/.test(address.pathname)) return;
+  try {
+    require('electron').ipcRenderer.invoke('sweetiebot:merge-collector').then(callback => {
+      if (window.location.origin !== address.origin || window.location.pathname !== address.pathname) return;
+      address.hash = new URLSearchParams({ sweetiebot_merge: '1', sweetiebot_collect: '1', return_to: callback }).toString();
+      scmToolkitStartPullRequestWorkflow(address.href);
+    }).catch(() => {}); // Ordinary conversations have no merge capability.
+  } catch { /* Older hosts cannot recover a collector automatically. */ }
+})();
 
 // Keep prompt bodies out of navigation URLs and browser-generated metadata.
 (() => {

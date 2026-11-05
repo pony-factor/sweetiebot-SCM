@@ -4,6 +4,18 @@
   let callbackOrigin;
   let active = false;
   let mergeCallback;
+  let mergeConversation;
+  const conversationPath = url => /^\/(?:g\/g-p-[A-Za-z0-9-]+\/)?c\/[A-Za-z0-9-]+\/?$/.test(url.pathname)
+    ? url.pathname.replace(/\/$/, '') : undefined;
+  // A full document navigation destroys preload timers. Recover collection
+  // only for this WebContents' already-bound merge conversation.
+  contents.ipc?.handle('sweetiebot:merge-collector', async event => {
+    const url = new URL(event.senderFrame.url);
+    if (event.senderFrame !== contents.mainFrame || !mergeCallback || !mergeConversation
+        || url.origin !== 'https://chatgpt.com' || conversationPath(url) !== mergeConversation)
+      throw Error('Invalid merge collector sender.');
+    return mergeCallback;
+  });
   // This handler belongs to one WebContents and is never exposed to page JS.
   contents.ipc?.handle('sweetiebot:merge-prompt', async event => {
     if (event.senderFrame !== contents.mainFrame || !mergeCallback
@@ -93,12 +105,25 @@
       if (payload.get('sweetiebot_merge') === '1') {
         active = true;
         mergeCallback = undefined;
+        mergeConversation = undefined;
         try {
           const candidate = new URL(payload.get('return_to'));
           if (candidate.protocol === 'http:' && candidate.hostname === '127.0.0.1'
               && candidate.port && !candidate.username && !candidate.password && !candidate.search && !candidate.hash
               && /^\/lindsey-merge\/[0-9a-f-]{36}$/.test(candidate.pathname)) mergeCallback = candidate.href;
         } catch { /* No prompt capability for malformed launches. */ }
+      }
+      if (mergeCallback) {
+        const conversation = conversationPath(url);
+        if (conversation && (!mergeConversation || conversation === mergeConversation)) {
+          mergeConversation = conversation;
+        } else if (mergeConversation) {
+          // Leaving the bound chat revokes recovery, including navigation to
+          // another conversation in the same ChatGPT origin.
+          mergeCallback = undefined;
+          mergeConversation = undefined;
+          active = false;
+        }
       }
       if (payload.get('sweetiebot_pr') === '1') {
         try {
@@ -117,6 +142,7 @@
     } else {
       active = false;
       mergeCallback = undefined;
+      mergeConversation = undefined;
       callbackOrigin = undefined;
     }
     contents.setBackgroundThrottling(active ? false : original);
