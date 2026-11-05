@@ -576,11 +576,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     if (autoShareCodexChat) source = sourceWithSharedConversationUrl(context, source);
     // Capture a fresh native Share snapshot in the originating window before
     // opening the independent Kefania session. Do not share a different chat.
-    if (autoShareCodexChat && source?.kind === 'codex' && !options.source) {
+    if (autoShareCodexChat && options.explicitNewPullRequest === true
+        && source?.kind === 'codex' && !options.source) {
       try {
       const shared = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,
-      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid));
+      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid,
+        { explicitNewPullRequest: true }));
       if (!validSharedConversationUrl(shared?.sharedUrl) || shared.uuid !== source.uuid) {
         throw new Error('Kefania could not verify publication of the active Codex chat.');
       }

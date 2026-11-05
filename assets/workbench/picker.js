@@ -2233,6 +2233,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         try {
             const source = scmToolkitChatgptConversationSource(doc);
             const options = {
+                explicitNewPullRequest: true,
                 branch,
                 base: currentDefaultBranch,
                 remote: settings.remote,

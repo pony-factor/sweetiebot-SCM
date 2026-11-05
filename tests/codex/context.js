@@ -386,8 +386,11 @@ async function run() {
   assert.deepEqual(JSON.parse(JSON.stringify(await modelPending)),
     {name:'GPT-6.1 Codex',effort:'Medium'});
 
+  const beforeUnrequestedShare = messages.length;
+  await assert.rejects(registered.get('sweetiebot.shareCodexConversation')(conversationId), /explicit New PR/);
+  assert.equal(messages.length, beforeUnrequestedShare, 'Background requests cannot open Share');
   const sharedUrl = 'https://chatgpt.com/s/cx_1234567890abcdefghijklmnop';
-  const sharing = registered.get('sweetiebot.shareCodexConversation')(conversationId);
+  const sharing = registered.get('sweetiebot.shareCodexConversation')(conversationId, { explicitNewPullRequest: true });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(messages.at(-1).shareOnly, conversationId);
   clipboard = sharedUrl;
@@ -396,10 +399,17 @@ async function run() {
   assert.equal(shared.uuid, conversationId);
   assert.equal(shared.sharedUrl, sharedUrl);
   assert.equal(clipboard, 'previous clipboard', 'Native copy must preserve the previous clipboard');
-  const changedChat = registered.get('sweetiebot.shareCodexConversation')(conversationId);
+  const changedChat = registered.get('sweetiebot.shareCodexConversation')(conversationId, { explicitNewPullRequest: true });
   await new Promise(resolve => setImmediate(resolve));
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId: nextChat });
   await assert.rejects(changedChat, /active chat changed/);
+
+  const cancelledShare = registered.get('sweetiebot.shareCodexConversation')(conversationId, { explicitNewPullRequest: true });
+  const cancellation = assert.rejects(cancelledShare, /checkout is changing/);
+  await new Promise(resolve => setImmediate(resolve));
+  registered.get('sweetiebot.cancelCodexShare')();
+  await cancellation;
+  assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-share');
 
   provider.sidebarViews.clear();
   assert.throws(
