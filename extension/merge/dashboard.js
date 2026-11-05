@@ -303,7 +303,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       localResourceRoots: [vscode.Uri.file(path.join(__dirname, '../../assets/imgs'))] });
   const nonce = randomBytes(16).toString('hex');
   const celebrationArt = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/activity-cannon.png'))).toString();
+    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/celebration-cannon.jpeg'))).toString();
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')

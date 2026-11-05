@@ -6,11 +6,9 @@ Sweetiebot extends **Visual Studio Code on macOS** with Source Control controls,
 
 VS Code settings now use the `sweetiebot.*` prefix instead of `scmToolkit.*`. At extension startup, explicitly saved legacy user, workspace, and resource-scoped preferences are copied only where the corresponding new setting is not already configured. Original values are retained for older installations. Legacy `scmToolkit.*` command aliases remain available for existing keybindings. Settings are organized by feature and save automatically. The old list of dozens of `git config --global` commands is no longer the recommended configuration path.
 
-# Artiwork
+## Artwork
 
-CRetins deehere 
-
-
+The bulk-merge completion page displays the full cannon illustration by [Cerberus (@fcolumnare)](https://x.com/fcolumnare/status/1952740544443998252) as its window background. The bundled image is `assets/imgs/celebration-cannon.jpeg`; other source credits are documented in [assets/imgs/README.md](assets/imgs/README.md). Third-party artwork is excluded from this repository's AGPL-3.0 license, and inclusion does not imply the artist granted a license.
 
 ## Docs
 > [!IMPORTANT]
