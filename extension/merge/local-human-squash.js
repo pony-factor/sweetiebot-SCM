@@ -33,11 +33,12 @@ async function humanSquashMerge(repository, number, {
   }
   api ||= require('../github/user-api').legacyAPI(require('./pull-request').githubApi);
   git ||= async (...args) => {
+    const credential = typeof gitToken === 'function' ? await gitToken() : gitToken;
     try { return (await exec('git', ['-c', 'core.hooksPath=/dev/null',
     '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
     '-c', 'credential.helper=!' + gh + ' auth git-credential', ...args],
   { timeout: 120000, maxBuffer: 4 * 1024 * 1024,
-    env: { ...process.env, ...(gitToken ? { GH_TOKEN: gitToken } : {}), GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
+    env: { ...process.env, ...(credential ? { GH_TOKEN: credential } : {}), GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
     } catch (error) { throw require('../commits/git-failure').gitFailure(error, args); }
   };
   const endpoint = 'repos/' + repository;

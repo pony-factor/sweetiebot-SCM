@@ -209,7 +209,7 @@
       ]
     },
     "kefania": {
-      "label": "Kefania",
+      "label": "Kefania GitHub App auth, PR workflows, and chat UI",
       "tests": [
         "kefania/github-app-identity.js",
         "kefania/github-app-settings.js",
@@ -234,6 +234,7 @@
         "lindsey/parallel-merge-batch.js",
         "lindsey/parallel-pr-session.js",
         "lindsey/lindsey-bulk-merge.js",
+        "lindsey/lindsey-transport.js",
         "lindsey/lindsey-conflicts.js",
         "merge/merge-keep-awake.js",
         "merge/merge-order.js",
@@ -260,6 +261,7 @@
       ],
       "syntax": [
         "extension/merge/lindsey-bulk-merge.js",
+        "extension/merge/lindsey-transport.js",
         "extension/commits/git-failure.js",
         "extension/merge/parallel-merge-batch.js",
         "extension/merge/local-human-squash.js",

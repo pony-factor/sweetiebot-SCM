@@ -148,7 +148,7 @@ async function openExperimentWorkspace(vscode, {
       workspace, plan: { ...handoff, destination: folder, relative: '',
         wasActive: !handoff.draftOnly, continuationText }
     });
-    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(workspace), { forceReuseWindow: true });
+    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(workspace), { forceNewWindow: true });
     opened = true;
     return { directory, destination, target: workspace, branch, handoffSaved: Boolean(handoff) };
   } catch (error) {

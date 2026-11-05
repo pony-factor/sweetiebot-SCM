@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { openExperimentWorkspace, privateParent } = require('../../extension/branches/experiment-workspace');
+const { isExperimentWorkspace, deferExperimentPublish } = require('../../extension/branches/experiment-policy');
 
 function git(...args) {
   return execFileSync('git', args, {
@@ -59,6 +60,12 @@ function editor(root) {
     const vscode = editor(original);
     const first = await openExperimentWorkspace(vscode, { baseDirectory: copies });
     assert.match(first.branch, /^trial-[a-f0-9]{8}$/);
+    assert.equal(await isExperimentWorkspace(first.destination), true);
+    assert.equal(await deferExperimentPublish(first.destination), true, 'The copied staged and unstaged changes do not publish the trial');
+    assert.equal(await isExperimentWorkspace(original), false);
+    const alias = path.join(tmp, 'trial-alias');
+    await fs.symlink(first.destination, alias);
+    assert.equal(await isExperimentWorkspace(alias), true, 'A folder alias preserves the trial publishing policy');
     assert.equal(first.handoffSaved, true);
     assert.deepEqual(vscode.calls.map(call => call[0]), [
       'sweetiebot.codex.prepareWorkspaceHandoff', 'sweetiebot.codexHandoff.save', 'vscode.openFolder'
@@ -70,7 +77,9 @@ function editor(root) {
     assert.equal(saved.plan.wasActive, true);
     assert(saved.plan.continuationText.includes(first.branch));
     assert(saved.plan.continuationText.includes('relevant tests and builds'));
-    assert.equal(vscode.calls[2][2].forceReuseWindow, true);
+    assert.equal(vscode.calls[2][1].fsPath, first.target);
+    assert.deepEqual(vscode.calls[2][2], { forceNewWindow: true },
+      'The experiment opens in a new window and leaves the original window open');
     assert.equal(JSON.parse(await fs.readFile(first.target, 'utf8')).folders[0].path, first.destination);
     assert(first.directory.startsWith(await fs.realpath(copies) + path.sep));
     assert.equal((await fs.stat(copies)).mode & 0o077, 0, 'Trusted parent stays private');
@@ -84,6 +93,12 @@ function editor(root) {
     assert.equal(git('-C', first.destination, 'show-ref', '--verify', 'refs/heads/main').length > 0, true,
       'Other local branches survive removal of temporary clone origin');
     git('-C', first.destination, 'reset', '--hard', 'HEAD');
+    const trialBase = git('-C', first.destination, 'rev-parse', 'HEAD');
+    git('-C', first.destination, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Trial commit fixture');
+    assert.equal(await deferExperimentPublish(alias), false, 'The first new commit allows automatic publishing through an alias');
+    git('-C', first.destination, 'reset', '--hard', trialBase);
+    assert.equal(await deferExperimentPublish(first.destination), true, 'Returning to the original snapshot keeps an unpublished trial local');
     assert.equal(git('-C', original, 'status', '--short'), before.status,
       'Resetting the experiment never changes the source');
 
@@ -123,7 +138,7 @@ function editor(root) {
     invalid.workspace.workspaceFolders.push({ uri: { scheme: 'file', fsPath: original } });
     await assert.rejects(openExperimentWorkspace(invalid, { baseDirectory: copies }), /exactly one/);
 
-    console.log('Experimental clone, branch, remote, snapshot, safe reset and same-window Codex handoff passed.');
+    console.log('Experimental clone, branch, remote, snapshot, safe reset and new-window Codex handoff passed.');
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
