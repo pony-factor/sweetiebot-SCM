@@ -26,6 +26,8 @@ After the trial window opens, Sweetiebot sends the original chat a notice contai
 
 Branch cleanup (`sweetiebot.automaticBranchCleanup=true`) and managed workspace cleanup (`sweetiebot.automaticWorkspaceCleanup=true`) require **eligibility**. Active windows, dirty/unknown files, unpushed work and missing verified merge evidence prevent **branch deletion**. Unavailable GitHub evidence is not permission to prune. After a managed window closes, a detached check runs following a two-minute grace period: it detaches only inactive, fully clean linked worktrees **without deleting their local branches**, including unmerged or unpublished commits. Reloads, other active windows, edited or saved workspace references, stashes, and pending or ignored files prevent automatic detachment. The existing one-hour merged-workspace pruning remains separate; a preserved checkout is reopened in place by the branch picker.
 
+Manual deletion keeps the topic selected while origin removes its remote branch. When shared main occupies another worktree, detachment happens after remote deletion and immediately before returning home. Other windows on that same clean worktree follow the completed deletion to shared main. An explicit later checkout, a surviving local branch, or new working-tree edits prevents that automatic return.
+
 Check **Output → Sweetiebot Workspace Cleanup** and:
 
 ```sh

@@ -481,7 +481,9 @@ async function reconnectDeletedBranch(vscode, options = {}) {
   const run = options.run || git;
   for (const folder of vscode.workspace.workspaceFolders || []) {
     if (folder.uri.scheme !== 'file') continue;
-    const root = await fs.realpath(await run(['-C', folder.uri.fsPath, 'rev-parse', '--show-toplevel']));
+    const location = await run(['-C', folder.uri.fsPath, 'rev-parse', '--show-toplevel']).catch(() => null);
+    if (!location) continue;
+    const root = await fs.realpath(location);
     const directory = await run(['-C', root, 'rev-parse', '--absolute-git-dir']);
     const receipt = await fs.readFile(path.join(directory, DELETION_RETURN), 'utf8')
       .then(text => { try { return JSON.parse(text); } catch { return null; } }, () => null);
