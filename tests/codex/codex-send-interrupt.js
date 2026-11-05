@@ -46,5 +46,54 @@ async function check() {
     assert.equal(submitted, 1);
     hooks.onClick({isTrusted:false, defaultPrevented:false, button:0, target:{closest:()=>send}});
     assert.equal(submitted, 1, 'programmatic clipboard submissions are not intercepted');
+
+    // Current Codex morphs one primary button from Stop to Queue/Steer.
+    // There is no separate Stop DOM node once a draft has been typed.
+    const queue = button('Queue');
+    queue.parentElement = root;
+    let nativeStops = 0, queued = 0;
+    const props = {
+        isResponseInProgress: true,
+        onStop() { nativeStops++; props.isResponseInProgress = false; },
+        handleSubmit() {},
+    };
+    queue.__reactFiber$fixture = {memoizedProps: props};
+    queue.click = () => {queued++;};
+    buttons = [queue];
+    editor.value = 'interrupt with this draft';
+    assert.equal(hooks.controls(queue).nativeButton, queue);
+    assert.equal(hooks.isSend(button('Steer')), true);
+    assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), true);
+    assert.equal(nativeStops, 1);
+    assert.equal(queued, 1);
+    assert.equal(hooks.controls(queue), null, 'idle Send keeps native behavior');
+
+    // Use committed React props, not a stale alternate that reports idle.
+    const stale = {memoizedProps: {...props}, stateNode: {}};
+    const current = {memoizedProps: props};
+    stale.alternate = current;
+    stale.stateNode.current = current;
+    queue.__reactFiber$fixture = stale;
+    props.isResponseInProgress = true;
+    assert.equal(hooks.nativeRun(queue), props);
+
+    props.onStop = () => { editor.value = 'new user edit'; props.isResponseInProgress = false; };
+    assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
+    assert.equal(queued, 1, 'never submit a draft edited during interruption');
+    assert.equal(editor.value, 'new user edit');
+
+    props.isResponseInProgress = true;
+    props.onStop = () => {};
+    assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
+    assert.equal(queued, 1, 'never queue when interruption does not finish');
+
+    props.onStop = async () => { throw new Error('stop unavailable'); };
+    assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
+    assert.equal(editor.value, 'new user edit', 'preserve the draft if stop fails');
+
+    // Enter dispatches a keyboard-generated click (detail 0), not a pointer click.
+    // Its native queue submission must not be intercepted.
+    hooks.onClick({isTrusted:true, defaultPrevented:false, button:0, detail:0,
+        target:{closest:()=>queue}, preventDefault(){assert.fail('Enter must queue');}});
 }
 check().then(()=>console.log('Codex Send click interruption checks passed.')).catch(error=>{console.error(error);process.exitCode=1;});

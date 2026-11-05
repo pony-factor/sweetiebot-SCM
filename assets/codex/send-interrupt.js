@@ -58,7 +58,7 @@
         if (!draft.trim() || (nativeButton ? !run?.isResponseInProgress : !enabled(stop))) return false;
         sending = true;
         try {
-            if (nativeButton) run.onStop();
+            if (nativeButton) await run.onStop();
             else stop.click();
             for (let attempt = 0; attempt < 60; attempt++) {
                 await new Promise(resolve => setTimeout(resolve, 80));
@@ -76,13 +76,15 @@
                 return true;
             }
             return false; // Preserve draft when native controls do not settle.
+        } catch {
+            return false; // Keep the draft if native interruption fails.
         } finally {
             sending = false;
         }
     }
     function onClick(event) {
         // Synthetic clipboard button submissions and Enter cannot interrupt.
-        if (sending || !event.isTrusted || event.defaultPrevented || event.button !== 0) return;
+        if (sending || !event.isTrusted || event.defaultPrevented || event.button !== 0 || event.detail === 0) return;
         const button = event.target?.closest?.('button');
         if (!button || !isSend(button)) return;
         const surface = controls(button);
