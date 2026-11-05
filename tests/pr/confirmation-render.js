@@ -123,10 +123,9 @@ const sharedSource = require('../../extension/github/pull-request').sourceDetail
 });
 context.renderMarkdown(output, 'Body.\n\n' + sharedSource);
 const sharedRows = output.children.at(-1).children[1].children;
-assert.deepEqual(sharedRows.map(row=>row.children[0].textContent), ['Online: ', 'Privacy: ', 'Local: ', 'Desktop: ']);
-assert.deepEqual([sharedRows[0],sharedRows[2],sharedRows[3]].map(row=>row.children[1].textContent), ['Online','Local','Desktop']);
-assert(sharedRows[1].textContent.includes('Sweetiebot cannot unpublish or revoke shared chat links.'),
-  'Preview includes the same Privacy text as the published source block');
+assert.deepEqual(sharedRows.map(row=>row.children[0].textContent), ['Online: ', 'Local: ', 'Desktop: ']);
+assert.deepEqual(sharedRows.map(row=>row.children[1].textContent), ['Online','Local','Desktop']);
+assert(!sharedSource.includes('**Privacy:**'), 'Source details contains only the three conversation links');
 
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
 assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',

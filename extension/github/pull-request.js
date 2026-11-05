@@ -194,9 +194,6 @@ function sourceDetailsMarkdown(source) {
     '<summary>Source details</summary>',
     '',
     '- **Online:** ' + (links.online ? '[Online](' + links.online + ')' : 'Not shared'),
-    ...(source?.kind === 'codex' && validSharedConversationUrl(source.sharedUrl)
-      ? ['- **Privacy:** Online is a public snapshot that can expose user prompts and assistant replies. Sweetiebot cannot unpublish or revoke shared chat links.']
-      : []),
     ...(links.local ? ['- **Local:** [Local](' + links.local + ')'] : []),
     ...(links.desktop ? ['- **Desktop:** [Desktop](' + links.desktop + ')'] : []),
     '',
