@@ -202,6 +202,8 @@
         margin-bottom:8px !important; padding-bottom:0 !important;
         border:1px solid color-mix(in srgb,var(--vscode-foreground,#888) 22%,transparent);
         border-radius:8px !important; corner-shape:round !important;
+        /* Rail items can be framed independently; clip their square corners. */
+        overflow:clip !important;
         background:var(--vscode-input-background,var(--color-surface-primary));
         color:var(--vscode-input-foreground,var(--vscode-foreground));
       }
