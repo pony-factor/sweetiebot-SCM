@@ -50,7 +50,7 @@ vm.runInContext(script.slice(0,script.lastIndexOf('(async()=>')),context);
 context.showMergeStarting();
 assert.equal(getElementById('merge-progress').hidden,false,'Clicking merge immediately reveals progress');
 assert.equal(getElementById('merge-progress-text').textContent,'Starting merge…');
-assert.equal(context.mergeStageLabels['waiting-checks'],'Waiting for CI checks…');
+assert.equal(vm.runInContext("mergeStageLabels['waiting-checks']",context),'Waiting for CI checks…');
 // The clip follows the fitted image edges rather than the letterboxed element.
 const artwork={clientWidth:1000,clientHeight:600,naturalWidth:400,naturalHeight:600,style:{}};
 context.roundArtwork(artwork);
