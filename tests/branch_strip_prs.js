@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { pullRequestNames } = require('../extension/branches/strip');
+const { pullRequestNames, cachedPullRequestLookup } = require('../extension/branches/strip');
 
 const pr = number => ({ number, headRefName: `topic-${number}`, isCrossRepository: false,
   url: `https://github.com/example/repo/pull/${number}`, state: 'MERGED',
@@ -44,5 +44,43 @@ const page = (nodes, hasNextPage) => ({ data: { repository: { pullRequests: {
   }
   assert.equal(await pullRequestNames('offline', 'https://github.com/example/repo',
     async () => { throw new Error('offline'); }), null);
-  console.log('branch strip paginated PR lookup tests passed');
+  // A cache key shared by two linked worktrees must also coalesce in-flight
+  // requests, without making stale or failed metadata persist indefinitely.
+  let hits = 0;
+  let resume;
+  let clock = 1000;
+  const key = 'branch-strip-cache-test-repository';
+  const gate = new Promise(resolve => { resume = resolve; });
+  const lookup = () => cachedPullRequestLookup(key, async () => {
+    hits++;
+    return gate;
+  }, () => clock);
+  const first = lookup();
+  const second = lookup();
+  assert.equal(hits, 1, 'Coalesce concurrent worktree PR lookups');
+  resume(new Map([['topic', { number: 650 }]]));
+  const [cachedA, cachedB] = await Promise.all([first, second]);
+  assert.equal(cachedA, cachedB);
+  assert.equal((await lookup()).get('topic').number, 650);
+  assert.equal(hits, 1, 'Retain cached PRs until expiration');
+  clock += 30001;
+  assert.equal((await cachedPullRequestLookup(key, async () => {
+    hits++;
+    return new Map([['topic', { number: 651 }]]);
+  }, () => clock)).get('topic').number, 651);
+  assert.equal(hits, 2, 'Refresh expired PR association');
+  let unknownCount = 0;
+  const unknown = () => cachedPullRequestLookup(key + '-unknown', async () => {
+    unknownCount++;
+    return null;
+  }, () => clock);
+  assert.equal(await unknown(), null);
+  assert.equal(await unknown(), null);
+  assert.equal(unknownCount, 1, 'Cache unavailable PR data briefly, not as no PR');
+  await assert.rejects(cachedPullRequestLookup(key + '-failed', async () => {
+    throw Error('failed request');
+  }, () => clock), /failed request/);
+  assert.equal(await cachedPullRequestLookup(key + '-failed', async () => 42, () => clock), 42,
+    'Do not retain failed in-flight requests');
+  console.log('branch strip paginated PR lookup and shared-cache tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

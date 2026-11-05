@@ -5,13 +5,21 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip } = require('../extension/branches/strip');
+const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip, pullRequestCacheKey } = require('../extension/branches/strip');
+const { worktreeLocations } = require('../extension/branches/worktree-registry');
 
 assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');
 assert.equal(parseGitHubRemote('https://github.com/pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');
 assert.equal(parseGitHubRemote('file:///tmp/repository'), null);
+const fixtures = 'worktree /tmp/main repo\\0HEAD a\\0branch refs/heads/main\\0\\0'
+  + 'worktree /tmp/topic\\0HEAD b\\0branch refs/heads/topic/name\\0\\0'
+  + 'worktree /tmp/detached\\0HEAD c\\0detached\\0\\0';
+const decoded = fixtures.replaceAll('\\0', '\\0');
+assert.deepEqual([...worktreeLocations(decoded)], [['main', '/tmp/main repo'], ['topic/name', '/tmp/topic']]);
+assert.deepEqual([...worktreeLocations(decoded.replaceAll('\\0\\0', '\\n\\n').replaceAll('\\0', '\\n'))],
+  [['main', '/tmp/main repo'], ['topic/name', '/tmp/topic']]);
 
 const refs = [
   'refs/heads/main\t3',
@@ -66,6 +74,19 @@ assert(unknown.branches.every(item => item.hasPr === null));
     git('-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
       'commit', '--allow-empty', '-m', 'Initial commit');
     git('-C', root, 'worktree', 'add', '-b', 'occupied', topic);
+    const registry = worktreeLocations(git('-C', root, 'worktree', 'list', '--porcelain'));
+    assert.equal(registry.get('occupied'), topic, 'Map branch to its real checkout');
+    assert.equal(registry.get('main'), root, 'Map base to its own checkout');
+    const repositoryGitDir = git('-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+    const topicGitDir = git('-C', topic, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+    assert.equal(repositoryGitDir, topicGitDir, 'Linked worktrees use one common Git database');
+    const remoteUrl = 'https://github.com/pony-factor/sweetiebot-SCM.git';
+    assert.equal(pullRequestCacheKey(repositoryGitDir, remoteUrl),
+      pullRequestCacheKey(topicGitDir, 'git@github.com:pony-factor/sweetiebot-SCM.git'),
+      'PR cache keys must be shared by linked worktrees');
+    assert.notEqual(pullRequestCacheKey(repositoryGitDir, remoteUrl),
+      pullRequestCacheKey(repositoryGitDir, 'https://github.com/other/repo.git'),
+      'PR cache keys must separate different remotes');
     await fs.writeFile(path.join(topic, 'untracked.txt'), 'keep me\n');
     const repository = {
       rootUri: { fsPath: root },
