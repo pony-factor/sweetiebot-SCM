@@ -180,19 +180,20 @@ async function openedRoot(result) {
         'Save the same-chat handoff before an extension-host restart');
       return true;
     };
-    // A live topic owner should be focused, preserving its editors and chat.
+    // Even with a live topic owner, the saved workspace repoints in place.
     const topicSession = path.join(path.dirname(topic), '.sweetiebot-session-2345-test.json');
     await fs.writeFile(topicSession,
       JSON.stringify({ pid: process.pid + 1, roots: [topic], workspaceFile: topicWorkspace }));
     await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
-    assert.deepEqual(moving.commands.calls.map(call => call[0]),
-      ['vscode.openFolder', 'workbench.action.closeWindow'],
-      'Focus the live worktree owner before closing this window');
-    assert.equal(moving.commands.calls[0][1].fsPath, topicWorkspace);
-    assert.deepEqual(moving.commands.calls[0][2], { forceNewWindow: true });
-    assert.equal(folderUpdate, undefined, 'Do not repoint a window while its target is already open');
+    assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: topic }, name: 'Repo' }],
+      'Reuse this saved workspace even while another VS Code window owns the target');
+    assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.save'),
+      'Preserve the Codex handoff in the initiating window');
+    assert(!moving.commands.calls.some(call => ['vscode.openFolder', 'workbench.action.closeWindow'].includes(call[0])),
+      'Do not open a second window or close the initiating one');
 
-    // A failed focus must not close the source window or change its workspace.
+    // A failed window reuse must not close the source window or change its workspace.
+    folderUpdate = undefined;
     const failedFocus = editor(root);
     failedFocus.commands.executeCommand = async function (...args) {
       this.calls.push(args);
