@@ -135,7 +135,7 @@ async function fixture(check) {
   // The packaged worker lives at the installed extension root, not in the
   // parent ~/.vscode/extensions/scripts directory from the old bad path.
   const installedCommits = '/fixture/.vscode/extensions/pony-factor.sweetiebot-scm-0.3.2/commits';
-  const installedWorker = path.resolve(installedCommits, '../../background-commit.py');
+  const installedWorker = path.resolve(installedCommits, '../background-commit.py');
   const wrongWorker = path.resolve(installedCommits, '../../../scripts/background-commit.py');
   assert.notEqual(installedWorker, wrongWorker);
   assert.equal(resolvePonyWorkerScript(installedCommits, candidate => candidate === installedWorker),
@@ -144,7 +144,7 @@ async function fixture(check) {
     /worker is missing/, 'Never execute a worker outside the installed extension root');
 
   const sourceCommits = path.resolve(__dirname, '../../extension/commits');
-  const sourceWorker = path.resolve(sourceCommits, '../../../scripts/background-commit.py');
+  const sourceWorker = path.resolve(sourceCommits, '../../scripts/background-commit.py');
   assert.equal(resolvePonyWorkerScript(sourceCommits, candidate => candidate === sourceWorker),
     sourceWorker, 'Running the extension from a source checkout remains supported');
   assert.throws(() => resolvePonyWorkerScript(installedCommits, () => false),

@@ -58,14 +58,14 @@ async function run() {
       return setTimeout(callback, delay);
     },
     require: name => {
-      if (name === '../../ui/python-runtime') {
+      if (name === '../ui/python-runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
           pythonLaunchError: error => error
         };
       }
       if (name === 'node:path') return path;
-      if (name === '../../codex/attribution') return require('../../extension/codex/attribution');
+      if (name === '../codex/attribution') return require('../../extension/codex/attribution');
       assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
         assert.equal(exe, '/resolved/python3');
         assert.deepEqual(Array.from(args), ['/extension/local-codex-commit.py', '--normalize-staged-whitespace']);
