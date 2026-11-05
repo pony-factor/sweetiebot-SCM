@@ -56,10 +56,6 @@ def parse_layout(value):
     if "input" not in obj["left"]:
         raise ValueError("The Codex input must remain left aligned and available.")
     result = {name: obj[name][:] for name in ("left", "right", "hidden")}
-    # Recover saved hidden permissions to restore the native dropdown.
-    if "access" in result["hidden"]:
-        result["hidden"].remove("access")
-        result["left"].insert(result["left"].index("input") + 1, "access")
     return result
 
 
@@ -80,9 +76,9 @@ def render_control(current):
                   '<button type="button" data-codex-layout-toggle title="Change alignment of ' +
                   label + '" aria-label="Change alignment of ' + label + '">↔</button>')
         return ('<div class="codex-layout-item" tabindex="0" role="listitem" '
-                'data-codex-layout-id="' + key + '" title="' + title +
+                'draggable="true" data-codex-layout-id="' + key + '" title="' + title +
                 '" aria-label="' + title + '">'
-                '<span class="codex-layout-grip" draggable="true" title="Drag ' + label + '" aria-hidden="true">⋮⋮</span>'
+                '<span class="codex-layout-grip" title="Drag ' + label + '" aria-hidden="true">⋮⋮</span>'
                 '<span class="codex-layout-icon" aria-hidden="true">' + ICONS[key] + '</span>' +
                 toggle + '</div>')
 
@@ -92,7 +88,7 @@ def render_control(current):
             '<div class="codex-layout-head"><strong>Codex composer layout</strong>'
             '<button type="button" id="codex-layout-reset">Reset</button></div>'
             '<small>Drag icons to reorder or choose a control and placement below. '
-            'Access permissions remains visible; the message input stays left.</small>'
+            'Drop controls below to hide them; the message input stays left.</small>'
             '<div class="codex-layout-pickers"><label for="codex-layout-control-picker">Control'
             '<select id="codex-layout-control-picker" aria-label="Choose a composer control">' +
             "".join('<option value="' + key + '">' + html.escape(label) + '</option>'
@@ -169,8 +165,7 @@ CONFIG_SCRIPT = """
     const id = item.dataset.codexLayoutId;
     positionPicker.value = item.parentElement.dataset.codexLayoutZone;
     for (const option of positionPicker.options) {
-      option.disabled = (id === "input" && option.value !== "left")
-        || (id === "access" && option.value === "hidden");
+      option.disabled = id === "input" && option.value !== "left";
     }
     items.forEach(el => el.classList.toggle("is-selected", el === item));
   }
@@ -190,8 +185,7 @@ CONFIG_SCRIPT = """
       const button = item.querySelector("[data-codex-layout-toggle]");
       if (!button) continue;
       const location = item.parentElement.dataset.codexLayoutZone;
-      const next = item.dataset.codexLayoutId === "access" && location === "right"
-        ? "left" : names[(names.indexOf(location) + 1) % names.length];
+      const next = names[(names.indexOf(location) + 1) % names.length];
       const label = item.getAttribute("aria-label");
       const action = next === "hidden" ? "Hide" : "Move to " + next + " aligned:";
       button.title = action + " " + label;
@@ -199,8 +193,7 @@ CONFIG_SCRIPT = """
     }
   }
   function move(item, target, before = null) {
-    if (!target || (item.dataset.codexLayoutId === "input" && target !== zone("left"))
-      || (item.dataset.codexLayoutId === "access" && target === zone("hidden"))) return;
+    if (!target || (item.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
     target.insertBefore(item, before);
     updateActions();
     sync();
@@ -250,8 +243,7 @@ CONFIG_SCRIPT = """
     const button = item.querySelector("[data-codex-layout-toggle]");
     button?.addEventListener("click", () => {
       const current = item.parentElement.dataset.codexLayoutZone;
-      const next = item.dataset.codexLayoutId === "access" && current === "right"
-        ? "left" : names[(names.indexOf(current) + 1) % names.length];
+      const next = names[(names.indexOf(current) + 1) % names.length];
       move(item, zone(next));
     });
     item.addEventListener("keydown", event => {
@@ -271,8 +263,7 @@ CONFIG_SCRIPT = """
   }
   for (const target of zones) {
     target.addEventListener("dragover", event => {
-      if (!dragging || (dragging.dataset.codexLayoutId === "input" && target !== zone("left"))
-          || (dragging.dataset.codexLayoutId === "access" && target === zone("hidden"))) return;
+      if (!dragging || (dragging.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       zones.forEach(el => el.classList.toggle("is-over", el === target));
