@@ -136,7 +136,7 @@ async function fixture(check) {
   // parent ~/.vscode/extensions/scripts directory from the old bad path.
   const installedCommits = '/fixture/.vscode/extensions/pony-factor.sweetiebot-scm-0.3.2/commits';
   const installedWorker = path.resolve(installedCommits, '../background-commit.py');
-  const wrongWorker = path.resolve(installedCommits, '../../../scripts/background-commit.py');
+  const wrongWorker = path.resolve(installedCommits, '../../scripts/background-commit.py');
   assert.notEqual(installedWorker, wrongWorker);
   assert.equal(resolvePonyWorkerScript(installedCommits, candidate => candidate === installedWorker),
     installedWorker, 'Installed extensions use their own packaged worker');
