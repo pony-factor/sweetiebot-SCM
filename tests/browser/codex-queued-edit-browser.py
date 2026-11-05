@@ -76,7 +76,7 @@ def run():
           rail.id = 'corner-fixture';
           rail.setAttribute('data-composer-rail', '');
           rail.setAttribute('data-composer-rail-placement', 'above');
-          rail.style.cssText = 'position:fixed;left:16px;top:16px;width:244px;z-index:100';
+          rail.style.cssText = 'position:fixed;left:16px;top:16px;width:244px;z-index:100;--vscode-input-background:#000;--vscode-foreground:#888;color:#888;font:12px system-ui';
           rail.innerHTML = '<div data-composer-rail-item style="border:1px solid gray;height:32px">Changes</div><div data-composer-rail-item style="border:1px solid gray;height:96px">Queued messages</div>';
           document.body.append(rail);
         }''')
@@ -89,7 +89,6 @@ def run():
             .every(([x,y]) => !rail.contains(document.elementFromPoint(box.x+x,box.y+y)))
             && rail.contains(document.elementFromPoint(box.x+box.width/2,box.y+10));
         }'''), 'framed children must be clipped at all four rounded corners'
-        page.locator('#corner-fixture').screenshot(path='/tmp/sweetiebot-queue-corners.png')
         page.locator('#corner-fixture').evaluate('el => el.remove()')
         page.add_script_tag(content=FIXTURE)
         page.locator('[data-scm-toolkit-queue-id="b"] [data-scm-toolkit-queue-preview]').click()
