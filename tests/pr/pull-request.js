@@ -168,7 +168,7 @@ async function run() {
   assert(!decorated.includes('**Privacy:**'));
   assert(decorated.includes('[Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
-    'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid);
+    `vscode://openai.chatgpt/local/${codexSource.uuid}`);
   assert(decorated.includes('[Desktop](codex://threads/' + codexSource.uuid + ')'));
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert(!appendSourceDetails('Local only.', codexSource).includes('[Online]('),
