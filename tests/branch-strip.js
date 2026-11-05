@@ -13,12 +13,16 @@ assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
 assert.equal(parseGitHubRemote('https://github.com/pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');
 assert.equal(parseGitHubRemote('file:///tmp/repository'), null);
-const fixtures = 'worktree /tmp/main repo\\0HEAD a\\0branch refs/heads/main\\0\\0'
-  + 'worktree /tmp/topic\\0HEAD b\\0branch refs/heads/topic/name\\0\\0'
-  + 'worktree /tmp/detached\\0HEAD c\\0detached\\0\\0';
-const decoded = fixtures.replaceAll('\\0', '\\0');
-assert.deepEqual([...worktreeLocations(decoded)], [['main', '/tmp/main repo'], ['topic/name', '/tmp/topic']]);
-assert.deepEqual([...worktreeLocations(decoded.replaceAll('\\0\\0', '\\n\\n').replaceAll('\\0', '\\n'))],
+const nul = String.fromCharCode(0);
+const blocks = [
+  ['worktree /tmp/main repo', 'HEAD a', 'branch refs/heads/main'].join(nul),
+  ['worktree /tmp/topic', 'HEAD b', 'branch refs/heads/topic/name'].join(nul),
+  ['worktree /tmp/detached', 'HEAD c', 'detached'].join(nul)
+].join(nul + nul);
+assert.deepEqual([...worktreeLocations(blocks)],
+  [['main', '/tmp/main repo'], ['topic/name', '/tmp/topic']]);
+const lineForm = blocks.split(nul + nul).map(block => block.split(nul).join('\n')).join('\n\n');
+assert.deepEqual([...worktreeLocations(lineForm)],
   [['main', '/tmp/main repo'], ['topic/name', '/tmp/topic']]);
 
 const refs = [
