@@ -105,7 +105,7 @@ assert.match(dashboardController, /engine === 'web' \? 'ChatGPT' : 'Codex branch
 const progressScript = dashboardHtml.slice(dashboardHtml.indexOf('    const merged = model.prs.filter'),
   dashboardHtml.indexOf("    byId('bar-fill')"));
 const deferred = { state: 'waiting', localReview: { text: 'Local execution stopped.' } };
-assert.match(dashboardHtml, /id="merge-workers"[^>]*><\\/nav><span id="conflicts-cleared"/,
+assert.match(dashboardHtml, /id="merge-workers"[^>]*><\/nav><span id="conflicts-cleared"/,
   'Show the cleared-conflicts counter after the oldest/newest review lanes');
 for (const [state, expected] of [['waiting', '1/3 merged · 1 need attention'],
   ['closed', '1/3 merged · 0 need attention'],
