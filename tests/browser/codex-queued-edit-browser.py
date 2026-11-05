@@ -68,6 +68,28 @@ def run():
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.add_script_tag(content=(ASSETS / 'queued-edit-bridge.js').read_text())
         page.add_script_tag(content=(ASSETS / 'queued-edit.js').read_text())
+        # Independently framed native panels must stay inside the rail corners,
+        # including rails without the native attached class's overflow clipping.
+        page.evaluate('''() => {
+          document.documentElement.dataset.codexWindowType = 'extension';
+          const rail = document.createElement('div');
+          rail.id = 'corner-fixture';
+          rail.setAttribute('data-composer-rail', '');
+          rail.setAttribute('data-composer-rail-placement', 'above');
+          rail.style.cssText = 'position:fixed;left:16px;top:16px;width:244px;z-index:100;--vscode-input-background:#000;--vscode-foreground:#888;color:#888;font:12px system-ui';
+          rail.innerHTML = '<div data-composer-rail-item style="border:1px solid gray;height:32px">Changes</div><div data-composer-rail-item style="border:1px solid gray;height:96px">Queued messages</div>';
+          document.body.append(rail);
+        }''')
+        assert page.eval_on_selector('#corner-fixture', 'el => getComputedStyle(el).borderRadius') == '8px'
+        assert page.eval_on_selector('#corner-fixture', 'el => getComputedStyle(el).overflow') == 'clip'
+        assert page.evaluate('''() => {
+          const rail = document.getElementById('corner-fixture');
+          const box = rail.getBoundingClientRect();
+          return [[1,1],[box.width-1,1],[1,box.height-1],[box.width-1,box.height-1]]
+            .every(([x,y]) => !rail.contains(document.elementFromPoint(box.x+x,box.y+y)))
+            && rail.contains(document.elementFromPoint(box.x+box.width/2,box.y+10));
+        }'''), 'framed children must be clipped at all four rounded corners'
+        page.locator('#corner-fixture').evaluate('el => el.remove()')
         page.add_script_tag(content=FIXTURE)
         page.locator('[data-scm-toolkit-queue-id="b"] [data-scm-toolkit-queue-preview]').click()
         field = page.get_by_role('textbox', name='Queued message text', exact=True)
