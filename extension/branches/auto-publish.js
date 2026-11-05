@@ -1,6 +1,6 @@
 'use strict';
 
-const { isExperimentWorkspace } = require('./experiment-policy');
+const { deferExperimentPublish } = require('./experiment-policy');
 
 // Git events survive SCM widget replacement and opening a branch in a new window.
 async function registerAutoPublish(vscode, context) {
@@ -27,10 +27,10 @@ async function registerAutoPublish(vscode, context) {
       if ((repository.state.HEAD.upstream?.remote === remote
           && repository.state.HEAD.upstream.name === branch)) return;
       if (lastBranch === branch && Date.now() - lastAttempt < 15000) return;
-      lastBranch = branch; lastAttempt = Date.now();
       busy = true;
       try {
-        if (await isExperimentWorkspace(root.fsPath)) return;
+        if (await deferExperimentPublish(root.fsPath)) return;
+        lastBranch = branch; lastAttempt = Date.now();
         const { resolveDefaultBranch } = require('./actions');
         if (branch === await resolveDefaultBranch(repository, remote)) return;
         // A merged PR head is retired even if its remote tracking ref was pruned.

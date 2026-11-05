@@ -1314,7 +1314,7 @@ function registerBranchCommands(vscode, context) {
       try {
         const repository = await resolveRepository(uri);
         if (command === 'sweetiebot.publishBranch' && options.automatic === true
-            && await require('./experiment-policy').isExperimentWorkspace(repository.rootUri?.fsPath)) return false;
+            && await require('./experiment-policy').deferExperimentPublish(repository.rootUri?.fsPath)) return false;
         const commitDraftValue = repository.inputBox?.value;
         if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
           await require('./commit-drafts').preserveCommitDraft(vscode, repository.rootUri.fsPath, undefined, commitDraftValue);

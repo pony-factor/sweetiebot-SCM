@@ -504,8 +504,8 @@ async function run() {
       branch: 'topic', remote: 'origin'
     }), true);
     const experimentPolicy = require('../../extension/branches/experiment-policy');
-    const originalPolicy = experimentPolicy.isExperimentWorkspace;
-    experimentPolicy.isExperimentWorkspace = async () => true;
+    const originalPolicy = experimentPolicy.deferExperimentPublish;
+    experimentPolicy.deferExperimentPublish = async () => true;
     try {
       const beforePublish = calls.length;
       assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
@@ -515,7 +515,11 @@ async function run() {
       assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
         branch: 'topic', remote: 'origin'
       }), true, 'Explicit manual publishing remains available in a trial workspace');
-    } finally { experimentPolicy.isExperimentWorkspace = originalPolicy; }
+      experimentPolicy.deferExperimentPublish = async () => false;
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'topic', remote: 'origin', automatic: true
+      }), true, 'A trial with a new commit can publish automatically');
+    } finally { experimentPolicy.deferExperimentPublish = originalPolicy; }
     repository.state.HEAD = { name: 'topic' };
     assert.equal(await commands.get('sweetiebot.syncBranch')({ rootUri: uri }, {
       ...options, branch: 'topic', strategy: 'merge'

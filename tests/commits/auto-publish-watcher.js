@@ -3,13 +3,23 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const { registerAutoPublish } = require('../../extension/branches/auto-publish');
 const tick = () => new Promise(resolve => setTimeout(resolve,650));
 (async () => {
   const trial = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-publish-trial-'));
   const trialRoot = path.join(trial, 'repository');
   await fs.mkdir(trialRoot);
-  await fs.writeFile(path.join(trial, '.sweetiebot-experiment.json'), '{}');
+  const git = (...args) => execFileSync('git', ['-C', trialRoot, ...args], {
+    encoding: 'utf8', stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  }).trim();
+  const commit = () => git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+    '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Trial fixture');
+  git('init', '-b', 'trial-12345678');
+  commit();
+  const baseline = git('rev-parse', 'HEAD');
+  await fs.writeFile(path.join(trial, '.sweetiebot-experiment.json'), JSON.stringify({ head: baseline }));
   const {resolveDefaultBranch} = require('../../extension/branches/actions');
   const module = require('../../extension/branches/actions');
   module.resolveDefaultBranch = async () => 'main';
@@ -41,13 +51,22 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
     change();await tick();assert.equal(calls.length,3,'Adding the publish remote enables publishing');
     repository.rootUri = { fsPath: trialRoot };
     repository.state.HEAD = { name: 'trial-12345678', commit: 'a'.repeat(40) };
-    change();await tick();assert.equal(calls.length,3,'Existing trial workspaces never auto-publish with the preference enabled');
+    change();await tick();assert.equal(calls.length,3,'A trial stays local at its initial commit');
     repository.state.HEAD = { name: 'renamed-experiment', commit: 'a'.repeat(40) };
     change();await tick();assert.equal(calls.length,3,'Renaming a trial branch does not enable automatic publishing');
+    await fs.writeFile(path.join(trialRoot, 'draft.txt'), 'Uncommitted trial edit');
+    change();await tick();assert.equal(calls.length,3,'Editing trial files does not publish');
+    commit();
+    repository.state.HEAD.commit = git('rev-parse', 'HEAD');
+    enabled = false;
+    change();await tick();assert.equal(calls.length,3,'A new commit still respects disabled automatic publishing');
+    enabled = true;
+    change();await tick();assert.equal(calls.length,4,'The first new trial commit enables publishing without changing branches');
+    change();await tick();assert.equal(calls.length,4,'The published trial is not published again');
     await fs.unlink(path.join(trial, '.sweetiebot-experiment.json'));
     repository.state.HEAD = { name: 'trial-87654321', commit: 'a'.repeat(40) };
-    change();await tick();assert.equal(calls.length,4,'A normal workspace is not excluded merely by its branch name');
-    enabled=false;repository.state.HEAD={name:'local',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,4);
+    change();await tick();assert.equal(calls.length,5,'A normal workspace is not excluded merely by its branch name');
+    enabled=false;repository.state.HEAD={name:'local',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,5);
     console.log('Repository automatic publishing watcher checks passed.');
   } finally {context.subscriptions.forEach(item=>item.dispose()); module.resolveDefaultBranch=resolveDefaultBranch;await fs.rm(trial,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
