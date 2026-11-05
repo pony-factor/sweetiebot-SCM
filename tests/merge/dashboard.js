@@ -473,6 +473,14 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
   assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
+  assert(panel.webview.html.includes('class="ci-repair-controls"'),
+    'Keep the CI auto-fix checkbox and method picker grouped');
+  assert(panel.webview.html.includes('.overview .ci-repair-controls{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 6px}'),
+    'Use a six-pixel horizontal gap between auto-fix and the using selector');
+  assert(panel.webview.html.includes('for="auto-fix-ci-method">using</label>'),
+    'Keep the inline method label lowercase');
+  assert(!panel.webview.html.includes('for="auto-fix-ci-method">Using</label>'),
+    'Avoid regressing to capitalized Using');
   assert(panel.webview.html.includes('id="github-post-menu"'),
     'Group the two GitHub posting preferences in one compact disclosure');
   assert(panel.webview.html.includes('<summary class="github-post-trigger">Post to GitHub'),
