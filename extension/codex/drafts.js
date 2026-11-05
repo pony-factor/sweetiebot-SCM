@@ -63,7 +63,7 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
     const saved = record(scope);
     // Never seed a fresh window from the old checkout-wide cache. Keep those
     // legacy entries intact, but only an explicit handoff may move a draft.
-    return { enabled: true, scope,
+    return { enabled: true, scope, generation: saved.generation || 0,
       draft: plan && !plan.draftScope ? plan.draft ?? null : saved.draft ?? null,
       drafts: plan?.attachmentDrafts && !plan.draftScope ? require('./workspace-handoff').handoffAttachments(plan) : saved.attachments || {} };
   };
@@ -74,11 +74,11 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
   const register = (name, handler) => context.subscriptions.push(vscode.commands.registerCommand(name, handler));
   register('sweetiebot.codexDraft.read', async () => {
     const result = await read();
-    return result.enabled ? { enabled: true, scope: result.scope, draft: result.draft } : result;
+    return result.enabled ? { enabled: true, scope: result.scope, generation: result.generation, draft: result.draft } : result;
   });
   register('sweetiebot.codexDraft.readAttachments', async () => {
     const result = await read();
-    return result.enabled ? { enabled: true, scope: result.scope, drafts: result.drafts } : result;
+    return result.enabled ? { enabled: true, scope: result.scope, generation: result.generation, drafts: result.drafts } : result;
   });
   const write = (field, value, options = {}) => {
     // Start resolving the receiving scope when the IPC message arrives, rather
@@ -89,6 +89,7 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
       if (!scope || options.scope && options.scope !== scope) return false;
       if (await keyForScope() !== scope) return false;
       const saved = record(scope);
+      if (options.generation !== undefined && options.generation !== (saved.generation || 0)) return false;
       if (Object.prototype.hasOwnProperty.call(options, 'expectedValue') && options.expectedValue !== undefined
           && !isDeepStrictEqual(saved[field], options.expectedValue)) return false;
       await persist(scope, { ...saved, [field]: value });
@@ -132,9 +133,10 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
     if (scope !== plan.draftScope) {
       const source = record(plan.draftScope);
       // Retire the captured copy only. A newer source draft belongs to its user.
-      if (isDeepStrictEqual(source.draft ?? null, plan.draft ?? null)
+      if ((source.generation || 0) === (plan.draftGeneration || 0)
+          && isDeepStrictEqual(source.draft ?? null, plan.draft ?? null)
           && isDeepStrictEqual(source.attachments || {}, plan.attachmentDrafts || {})) {
-        await persist(plan.draftScope, { transfers: source.transfers || [] });
+        await persist(plan.draftScope, { transfers: source.transfers || [], generation: (source.generation || 0) + 1 });
       }
     }
     return true;

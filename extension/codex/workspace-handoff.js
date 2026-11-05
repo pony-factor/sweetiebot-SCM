@@ -39,12 +39,13 @@ async function prepareCodexHandoff(vscode, from) {
   const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
   const draft = saved?.draft ?? null;
   const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
-  if (saved?.scope && attachments?.scope && saved.scope !== attachments.scope) {
+  if (saved?.scope && attachments?.scope && (saved.scope !== attachments.scope || saved.generation !== attachments.generation)) {
     throw Error('The branch changed while capturing the Codex draft. Retry the checkout switch.');
   }
   if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
   return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts,
-    ...(saved?.scope || attachments?.scope ? { draftScope: saved?.scope || attachments.scope, draftTransferId: randomUUID() } : {}) };
+    ...(saved?.scope || attachments?.scope ? { draftScope: saved?.scope || attachments.scope,
+      draftGeneration: saved?.generation ?? attachments?.generation ?? 0, draftTransferId: randomUUID() } : {}) };
 }
 
 function registerCodexWorkspaceHandoff(vscode, context) {

@@ -4,6 +4,7 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
     if (provider.scmToolkitCodexDraftsProtected) return provider;
     provider.scmToolkitCodexDraftsProtected = true;
     const scopes = provider.scmToolkitDraftScopes = new WeakMap();
+    const generations = provider.scmToolkitDraftGenerations = new WeakMap();
     const views = new Set();
     scmToolkitProtectCodexAttachments(provider, vscode);
     const atoms = ['composer-prompt-drafts-v1', 'composer-prompt-drafts-v2'];
@@ -45,6 +46,7 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
         const draft = message.deleted || (entries ? entry == null || own(entry, 'delete') : !own(drafts, slot))
             ? null : entries ? entry.value : drafts[slot];
         const options = { scope: message.scmToolkitDraftScope || scopes.get(webview),
+            generation: message.scmToolkitDraftGeneration ?? generations.get(webview),
             ...(entry && own(entry, 'expectedValue') ? { expectedValue: entry.expectedValue } : {}) };
         if (changed) writing = writing.catch(() => {}).then(() =>
             vscode.commands.executeCommand('sweetiebot.codexDraft.write', draft, options));
@@ -70,8 +72,9 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
             };
             return Promise.resolve().then(read).then(result => {
                 if (result?.scope) scopes.set(webview, result.scope);
+                if (result?.generation !== undefined) generations.set(webview, result.generation);
                 return originalPost.call(this, { ...scoped(result?.enabled ? result.draft : null),
-                    scmToolkitDraftScope: result?.scope }, ...rest);
+                    scmToolkitDraftScope: result?.scope, scmToolkitDraftGeneration: result?.generation }, ...rest);
             },
                 () => originalPost.call(this, scoped(null), ...rest));
         };
@@ -99,7 +102,8 @@ function scmToolkitProtectCodexAttachments(provider, vscode) {
         let value = message.value;
         try { if (typeof value === 'string') value = JSON.parse(value); }
         catch { return Promise.reject(new Error('Invalid Codex attachment draft.')); }
-        const options = { scope: message.scmToolkitDraftScope || provider.scmToolkitDraftScopes?.get(webview) };
+        const options = { scope: message.scmToolkitDraftScope || provider.scmToolkitDraftScopes?.get(webview),
+            generation: message.scmToolkitDraftGeneration ?? provider.scmToolkitDraftGenerations?.get(webview) };
         writing = writing.catch(() => {}).then(() =>
             vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', value, options));
         // The native account-wide atom must never receive workspace attachments.

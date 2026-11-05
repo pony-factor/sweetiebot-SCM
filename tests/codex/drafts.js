@@ -219,6 +219,9 @@ async function run() {
   shared.set(transferKey,transfer);
   assert.equal((await command(windowC,'read')).draft,transfer.draft);
   assert.equal((await command(windowA,'read')).draft,null,'A successful transfer retires the source copy');
+  assert.equal(await command(windowA,'write',transfer.draft,{scope:scopeMain,generation:0}),false,
+    'A late IPC write from the old composer cannot recreate the retired source');
+  assert.equal(await command(windowA,'writeAttachments',attachmentDrafts,{scope:scopeMain,generation:0}),false);
   assert.deepEqual((await command(windowA,'readAttachments')).drafts,{});
   assert.deepEqual((await command(windowC,'readAttachments')).drafts,
     require('../../extension/codex/workspace-handoff').handoffAttachments(transfer));

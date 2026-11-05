@@ -4,9 +4,12 @@
 (() => {
     // Tag queued IPC writes with the scope that rendered their composer.
     // A delayed write from the previous branch must never populate the next one.
-    let scope;
+    let scope, generation;
     window.addEventListener?.('message', event => {
-        if (event.data?.type === 'persisted-atom-sync' && event.data.scmToolkitDraftScope) scope = event.data.scmToolkitDraftScope;
+        if (event.data?.type === 'persisted-atom-sync' && event.data.scmToolkitDraftScope) {
+            scope = event.data.scmToolkitDraftScope;
+            generation = event.data.scmToolkitDraftGeneration;
+        }
     });
     if (typeof window.acquireVsCodeApi === 'function') {
         const acquire = window.acquireVsCodeApi;
@@ -15,7 +18,7 @@
             return Object.freeze({ getState: () => api.getState(), setState: value => api.setState(value),
                 postMessage: message => api.postMessage(message?.type === 'persisted-atom-update'
                     && ['composer-prompt-drafts-v1', 'composer-prompt-drafts-v2', 'sweetiebot-composer-attachments-v1'].includes(message.key)
-                    ? { ...message, scmToolkitDraftScope: scope } : message) });
+                    ? { ...message, scmToolkitDraftScope: scope, scmToolkitDraftGeneration: generation } : message) });
         };
     }
     const storageKeys = new Set(['codex:persisted-atom:composer-prompt-drafts-v1',
