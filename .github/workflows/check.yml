@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Verify independent repairs with incompatible optional extensions
-        run: python -m unittest tests.install.WorkbenchRepairTests tests.install.IndependentRepairTests -v
+        run: python -m unittest tests.installation.install.WorkbenchRepairTests tests.installation.install.IndependentRepairTests -v
 
   published-web-commit-titles:
     name: Published web-commit title safety (Python ${{ matrix.python }})
@@ -51,16 +51,16 @@ jobs:
       - name: Check published follow-ups and safe local replay
         run: |
           python -m unittest -v \
-            tests.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
-            tests.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
-            tests.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
-            tests.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
-            tests.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
-            tests.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
-            tests.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
-            tests.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
-            tests.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
-            tests.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+            tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
+            tests.commits.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
+            tests.commits.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
+            tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
 
   inventory:
     name: Test inventory
@@ -164,15 +164,15 @@ jobs:
           node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branch-window.js
-          node --check tests/branch-strip.js
-          node --check tests/shared-main.js
+          node --check tests/branches/branch-window.js
+          node --check tests/branches/branch-strip.js
+          node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
-        run: node tests/branch-window.js
+        run: node tests/branches/branch-window.js
       - name: Test Git's occupied-branch checkout guard
-        run: node tests/branch-strip.js
+        run: node tests/branches/branch-strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
-        run: node tests/shared-main.js
+        run: node tests/branches/shared-main.js
 
   worktree-shutdown-safety:
     name: Closed worktree safety (ubuntu-latest)
@@ -187,12 +187,12 @@ jobs:
           node --check extension/branches/workspace-activity.js
           node --check extension/branches/workspace-prune.js
           node --check extension/branches/closed-worktree.js
-          node --check tests/workspace-activity.js
-          node --check tests/workspace-prune.js
+          node --check tests/search/workspace-activity.js
+          node --check tests/search/workspace-prune.js
       - name: Test window shutdown scheduling and heartbeat cleanup
-        run: node tests/workspace-activity.js
+        run: node tests/search/workspace-activity.js
       - name: Test real Git worktree detachment and data-preservation gates
-        run: node tests/workspace-prune.js
+        run: node tests/search/workspace-prune.js
 
   codex-webview-browser:
     name: Chromium CSS and DOM regression
@@ -224,25 +224,25 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser-backed Codex webview simulation
         run: |
-          python tests/codex-queued-edit-browser.py
-          python tests/codex-webview-browser.py
-          python tests/codex-webview-iframe.py
+          python tests/browser/codex-queued-edit-browser.py
+          python tests/browser/codex-webview-browser.py
+          python tests/browser/codex-webview-iframe.py
       - name: Commit wand placement, shared outline and workflow recovery
-        run: python tests/workflow-recovery-browser.py
+        run: python tests/browser/workflow-recovery-browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
-          node tests/codex-hide-chat-timestamps.js
-          node tests/codex-window-label.js
-          node tests/codex-usage.js
-          node tests/codex-countdown.js
+          node tests/codex/codex-hide-chat-timestamps.js
+          node tests/codex/codex-window-label.js
+          node tests/codex/codex-usage.js
+          node tests/codex/codex-countdown.js
       - name: Current Codex usage-banner compatibility
         env:
           PYTHONPATH: scripts
-        run: python -m unittest tests.install.ResolvedCountdownTests -v
+        run: python -m unittest tests.installation.install.ResolvedCountdownTests -v
       - name: Codex manifest label tests
         env:
           PYTHONPATH: scripts
-        run: python -m unittest tests.codex_label -v
+        run: python -m unittest tests.codex.codex_label -v
 
   bot-app-identities:
     name: Separate GitHub App identity regressions
@@ -260,10 +260,10 @@ jobs:
           node --check extension/github/local-pull-request.js
           node --check extension/merge/lindsey-bulk-merge.js
           node --check extension/github/pull-request.js
-          node tests/github-app-identity.js
-          node tests/github-app-settings.js
-          node tests/kefania-app-environment.js
-          node tests/lindsey-bulk-merge.js
+          node tests/kefania/github-app-identity.js
+          node tests/kefania/github-app-settings.js
+          node tests/kefania/kefania-app-environment.js
+          node tests/lindsey/lindsey-bulk-merge.js
 
   packaged-runtime:
     name: Installed extension imports (ubuntu-latest)
@@ -280,7 +280,7 @@ jobs:
         with:
           node-version: '22'
       - name: Resolve every installed relative JavaScript dependency
-        run: python -m unittest tests.packaged_runtime -v
+        run: python -m unittest tests.installation.packaged_runtime -v
 
 
   macos-functionality:
@@ -304,38 +304,38 @@ jobs:
           node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branch-window.js
-          node --check tests/branch-strip.js
-          node --check tests/shared-main.js
+          node --check tests/branches/branch-window.js
+          node --check tests/branches/branch-strip.js
+          node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
         if: ${{ !cancelled() }}
-        run: node tests/branch-window.js
+        run: node tests/branches/branch-window.js
       - name: Test Git's occupied-branch checkout guard
         if: ${{ !cancelled() }}
-        run: node tests/branch-strip.js
+        run: node tests/branches/branch-strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
         if: ${{ !cancelled() }}
-        run: node tests/shared-main.js
+        run: node tests/branches/shared-main.js
       - name: Check shutdown and pruning source and test syntax
         if: ${{ !cancelled() }}
         run: |
           node --check extension/branches/workspace-activity.js
           node --check extension/branches/workspace-prune.js
           node --check extension/branches/closed-worktree.js
-          node --check tests/workspace-activity.js
-          node --check tests/workspace-prune.js
+          node --check tests/search/workspace-activity.js
+          node --check tests/search/workspace-prune.js
       - name: Test window shutdown scheduling and heartbeat cleanup
         if: ${{ !cancelled() }}
-        run: node tests/workspace-activity.js
+        run: node tests/search/workspace-activity.js
       - name: Test real Git worktree detachment and data-preservation gates
         if: ${{ !cancelled() }}
-        run: node tests/workspace-prune.js
+        run: node tests/search/workspace-prune.js
       - name: Resolve every installed relative JavaScript dependency
         if: ${{ !cancelled() }}
-        run: python -m unittest tests.packaged_runtime -v
+        run: python -m unittest tests.installation.packaged_runtime -v
       - name: Detect and stage filename capitalization renames on macOS
         if: ${{ !cancelled() }}
-        run: node --test tests/case-only-renames.js
+        run: node --test tests/search/case-only-renames.js
 
 
   macos-native-prompt-transport:
