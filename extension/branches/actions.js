@@ -1151,6 +1151,19 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   };
   await checkBranch();
   if (branch === defaultBranch) {
+    const root = repository.rootUri?.fsPath;
+    if (root && existsSync(path.join(root, '.git'))) {
+      const pull = await automaticPullTarget(repository, repository.state.HEAD);
+      await requireFinalizedCommit(repository, { refs: [`refs/heads/${defaultBranch}`] });
+      const { refreshMain, syncPublisher } = require('./sync-main');
+      const publish = await syncPublisher(root, remote);
+      await refreshMain(repository, { defaultBranch, remote: pull.remote, checkBranch });
+      await checkBranch();
+      const sha = (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
+      if (publish) await publish(branch, sha);
+      else await repository.push(remote, `${branch}:${defaultBranch}`);
+      return branch;
+    }
     const upstream = repository.state.HEAD.upstream;
     if (!upstream?.remote || !upstream.name) {
       throw new Error(`${branch} must track an upstream branch before syncing.`);
@@ -1158,7 +1171,13 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     await syncDefaultBranch(repository, branch, upstream.remote, false);
     return branch;
   }
-  await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
+  const pull = await automaticPullTarget(repository, { name: defaultBranch, upstream: { remote } });
+  const publishingRemote = remote;
+  remote = pull.remote;
+  const { refreshMain, syncPublisher } = require('./sync-main');
+  await requireFinalizedCommit(repository, { refs: [`refs/heads/${defaultBranch}`] });
+  const mainRef = await refreshMain(repository, { defaultBranch, remote, checkBranch });
+  if (!mainRef) await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
   await checkBranch();
   const previousMessage = repository.inputBox.value;
   const message = defaultBranch === 'main'
@@ -1179,7 +1198,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     if (git && await git(['status', '--porcelain'])) {
       throw new Error('Commit or stash your changes before syncing the default branch. Unrelated edits must be reviewed and committed separately.');
     }
-    const target = `refs/remotes/${remote}/${defaultBranch}`;
+    const target = mainRef || `refs/remotes/${remote}/${defaultBranch}`;
+    const publish = git ? await syncPublisher(root, publishingRemote) : null;
     const isAncestor = async () => promisify(execFile)('git',
       ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
       .then(() => true, error => {
@@ -1210,7 +1230,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       if (expectedTree !== null || typeof reviewConflicts !== 'function') return true;
       const targetSha = await git(['rev-parse', target]);
       const approved = await reviewConflicts(repository, {
-        branch, defaultBranch, remote, strategy, head: headBefore, target: targetSha
+        branch, defaultBranch, remote, strategy, targetRef: target, head: headBefore, target: targetSha
       });
       if (!approved) return false;
       // A reviewer might switch branches, edit files, or move the target while
@@ -1228,7 +1248,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       const targetSha = await git(['rev-parse', target]);
       try {
         await queueSyncReport(root, {
-          branch, defaultBranch, remote, strategy, before, target: targetSha, sha
+          branch, defaultBranch, remote: publishingRemote, strategy, before, target: targetSha, sha
         });
       } catch (error) {
         // The Git commit already succeeded. A comment outage must not cause
@@ -1282,6 +1302,10 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           await recordSync(headBefore);
         }
       }
+    }
+    if (publish) {
+      await checkBranch();
+      await publish(branch, await git(['rev-parse', 'HEAD']));
     }
   } finally {
     await repository.status();
