@@ -90,7 +90,7 @@ async function runBulkMergeWithLindsey(vscode, script, repo, pulls, token,
   const result = typeof vscode.window.withProgress === 'function'
     ? await vscode.window.withProgress({
       location: vscode.ProgressLocation?.Notification || 15,
-      title: 'Lindsey: verifying and squash-merging selected PRs',
+      title: 'Verifying and squash-merging selected PRs',
       cancellable: false
     }, execute)
     : await execute();
@@ -107,7 +107,7 @@ async function runBulkMergeWithLindsey(vscode, script, repo, pulls, token,
   const merged = result.results.filter(pr => pr.status === 'merged').length;
   const queued = result.results.filter(pr => pr.status === 'queued').length;
   const blocked = result.results.length - merged - queued;
-  const message = 'Lindsey bulk merge: ' + merged + ' merged, ' + queued +
+  const message = 'Bulk merge: ' + merged + ' merged, ' + queued +
     ' queued, ' + blocked + ' blocked or unverified. See Lindsey Bulk Merge output.';
   if (blocked) vscode.window.showWarningMessage(message);
   else vscode.window.showInformationMessage(message);

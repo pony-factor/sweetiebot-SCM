@@ -13,11 +13,20 @@ const {updateMergeSessionCompletion}=require('../../extension/merge/session-comp
   const run=withMergeProgress(vscode,{numbers:[494],branchOnly:true},async report=>{
     report({number:494,stage:'integrating'});await gate;return 'done';
   },{schedule:callback=>{tick=callback;return 1;},cancel:()=>{cancelled=true;},now:()=>clock});
-  assert(options.title.includes('Applying PR fix #494'));
+  assert.equal(options.title,'Applying PR fix');
+  assert.equal((`${options.title}: ${messages.at(-1)}`.match(/#494/g)||[]).length,1,
+    'PR number must appear once across the title and progress message');
   assert(!finished,'Notification stays open until local execution finishes');
   assert(messages.at(-1).includes('Integrating with the current base'));
   clock=20000;tick();assert(messages.at(-1).includes('20s elapsed'));
   release();assert.equal(await run,'done');assert(finished&&cancelled);
+  await withMergeProgress(vscode,{numbers:[653],branchOnly:false},async report=>{
+    report({number:653,stage:'checks-polled'});
+  },{schedule:()=>1,cancel:()=>{}});
+  assert.equal(options.title,'Applying merge batch round');
+  assert.equal(messages.at(-1),'#653 · GitHub checks refreshed');
+  assert.equal((`${options.title}: ${messages.at(-1)}`.match(/#653/g)||[]).length,1,
+    'Merge progress must not duplicate the PR number');
   const selection={repository:'o/r',pullRequests:[{number:494}]};
   let closeCount=0,completion;
   const host={window:{tabGroups:{all:[{tabs:[{label:'Lindsey · Local merge'}]}],close:()=>{closeCount++;}}}};
