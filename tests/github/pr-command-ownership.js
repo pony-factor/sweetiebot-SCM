@@ -6,6 +6,10 @@ const { registerGitHubPullRequestActions } = require('../../extension/github/pr-
 const { installPullRequestRefresh } = require('../../extension/github/pr-refresh');
 
 async function main() {
+  const manifest = require('../../extension/package.json');
+  assert(manifest.activationEvents.includes('onCommand:sweetiebot.squashMergeTreePullRequest'),
+    'A first sidebar click must activate Sweetiebot before dispatching');
+  assert(manifest.contributes.commands.some(item => item.command === 'sweetiebot.squashMergeTreePullRequest'));
   for (const githubFirst of [true, false]) {
     const handlers = new Map();
     const subscriptions = [];
@@ -127,6 +131,23 @@ async function main() {
     sweetiebot();
     await vscode.commands.executeCommand('sweetiebot.squashMergeSelectedPullRequest', { url });
     assert.equal(merged.at(-1), url);
+    assert(handlers.has('sweetiebot.squashMergeTreePullRequest'),
+      'The contributed sidebar action must exist without any GitHub patch');
+    const withoutBridge = merged.length;
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', {url});
+    assert.equal(merged.length, withoutBridge + 1, 'Exact URL rows work after an unpatched GitHub update');
+    vscode.window.showErrorMessage = message => errors.push(message);
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', {number: 652});
+    assert.equal(merged.length, withoutBridge + 1, 'An unknown row cannot fall back to another selected PR');
+    assert.match(errors.at(-1), /Could not identify the pull request/);
+    let activations = 0;
+    vscode.extensions = {getExtension(id) {
+      assert.equal(id, 'github.vscode-pull-request-github');
+      return {async activate() { activations++; github(); }};
+    }};
+    await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', clicked);
+    assert.equal(activations, 1, 'The first sidebar click activates its GitHub tree owner');
+    assert.equal(merged.length, withoutBridge + 2, 'Resolve the same clicked row after lazy GitHub activation');
     for (const subscription of subscriptions) subscription.dispose();
   }
 }
