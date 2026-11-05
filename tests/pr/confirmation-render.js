@@ -90,7 +90,7 @@ assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains ine
 assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
 const sourceId='019c56c3-06fc-7db3-a928-9c3607e17129';
 const sourceShared='https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
-const localLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+const localLink=`vscode://openai.chatgpt/local/${sourceId}`;
 const desktopLink='codex://threads/'+sourceId;
 const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
   +'- **Online:** '+sourceShared+'\n'
@@ -115,6 +115,18 @@ assert(generatedRows[1].children[1].href.startsWith('https://vscode.dev/redirect
 assert.equal(generatedRows[2].children[1].tag, 'a');
 assert.equal(generatedRows[2].children[1].href, desktopLink);
 assert.equal(generatedRows[2].children[1].textContent, 'Desktop');
+const legacyLocalLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+context.renderMarkdown(output,sourceBlock.replaceAll(localLink,legacyLocalLink));
+assert.equal(output.children.at(-1).children[1].children[1].children[1].href,legacyLocalLink,
+  'Historical source links remain renderable in existing PR descriptions');
+const previousSweetiebotLink='vscode://pony-factor.sweetiebot-scm/codex/'+sourceId;
+context.renderMarkdown(output,sourceBlock.replaceAll(localLink,previousSweetiebotLink));
+assert.equal(output.children.at(-1).children[1].children[1].children[1].href,previousSweetiebotLink,
+  'The prior Sweetiebot URI remains renderable in existing PR descriptions');
+const untrustedLocalLink='vscode://other.extension/codex/'+sourceId;
+context.renderMarkdown(output,sourceBlock.replaceAll(localLink,untrustedLocalLink));
+assert.equal(output.children.at(-1).children[1].children[1].children[1].tag,'span',
+  'Unknown extension handlers cannot be activated from source metadata');
 assert(!generatedRows[2].textContent.includes('copy into your browser'));
 
 const sharedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
