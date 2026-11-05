@@ -5,7 +5,9 @@ const path = require('node:path');
 const { constants } = require('node:fs');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { createWorkspaceDirectory } = require('./workspace-layout');
+const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { randomBytes } = require('node:crypto');
+const { prepareCodexHandoff } = require('../codex/workspace-handoff');
 const { copyRemotes } = require('./new-workspace');
 
 const OPEN_EXPERIMENT_COMMAND = 'sweetiebot.openExperimentWorkspace';
@@ -104,14 +106,16 @@ async function openExperimentWorkspace(vscode, {
   const location = await io.realpath(folders[0].uri.fsPath);
   const root = await io.realpath((await git(['-C', location, 'rev-parse', '--show-toplevel'])).trim());
   const relative = path.relative(root, location);
-  const snapshot = await captureSnapshot(root, git, io);
   const parent = await privateParent(baseDirectory, io);
   const label = path.basename(root);
-  const directory = await createWorkspaceDirectory(parent, label, io, {
-    branch: snapshot.branch || 'detached'
-  });
+  // Stop the worker before capturing files, just as New Branch does.
+  const handoff = await prepareCodexHandoff(vscode, root);
+  let directory, workspace;
   let opened = false;
   try {
+    const snapshot = await captureSnapshot(root, git, io);
+    const branch = 'trial-' + randomBytes(4).toString('hex');
+    directory = await createWorkspaceDirectory(parent, label, io, { branch });
     const destination = path.join(directory, label);
     const clone = ['clone', '--local', '--no-hardlinks'];
     if (snapshot.branch) clone.push('--branch', snapshot.branch);
@@ -126,29 +130,34 @@ async function openExperimentWorkspace(vscode, {
         !snapshotEqual(snapshot, await captureSnapshot(destination, git, io))) {
       throw new Error('The experimental checkout differs from the source snapshot. The source was not modified.');
     }
-    const target = path.join(destination, relative);
+    await git(['-C', destination, 'switch', '--no-track', '-c', branch]);
+    const folder = path.join(destination, relative);
+    workspace = path.join(directory, workspaceFileName(directory));
+    await io.writeFile(workspace, JSON.stringify({ folders: [{ path: folder }] }, null, 2) + '\n');
     await io.writeFile(path.join(directory, '.sweetiebot-experiment.json'), JSON.stringify({
       version: 1, kind: 'experiment', source: root, repository: destination,
-      branch: snapshot.branch || null, head: snapshot.head
+      branch, sourceBranch: snapshot.branch || null, head: snapshot.head
     }, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(target), { forceNewWindow: true });
+    const continuationText = 'The user moved this same chat into a disposable experiment on branch ' + branch + '. ' +
+      'Continue the current task by trying the experiment and running the relevant tests and builds here. ' +
+      'Working directory: ' + folder + '. Original checkout: ' + root + '. ' +
+      'Use only the experimental checkout for trial edits, resets, and other experiment commands. ' +
+      'The snapshot preserves committed, staged, unstaged, and non-ignored untracked files. ' +
+      'Keep the original checkout unchanged. Do not commit, push, or copy experimental edits back without explicit permission.';
+    if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', {
+      workspace, plan: { ...handoff, destination: folder, relative: '',
+        wasActive: !handoff.draftOnly, continuationText }
+    });
+    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(workspace), { forceReuseWindow: true });
     opened = true;
-
-    // The original Codex thread stays in the original VS Code window. It
-    // receives a direction, not a thread handoff or an interruption.
-    let directionSent = false;
-    try {
-      directionSent = await vscode.commands.executeCommand(
-        'sweetiebot.codex.sendExperimentDirection',
-        { source: root, destination, branch: snapshot.branch || '(detached HEAD)' }
-      ) === true;
-    } catch (error) {
-      vscode.window?.showWarningMessage('Experiment ready at ' + destination +
-        ', but the original Codex chat was not notified: ' + error.message);
-    }
-    return { directory, destination, target, branch: snapshot.branch, directionSent };
+    return { directory, destination, target: workspace, branch, handoffSaved: Boolean(handoff) };
   } catch (error) {
-    if (!opened) await io.rm(directory, { recursive: true, force: true }).catch(() => {});
+    if (!opened) {
+      if (workspace && handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.clear', workspace).catch(() => {});
+      if (directory) await io.rm(directory, { recursive: true, force: true }).catch(() => {});
+      if (handoff && !handoff.draftOnly) await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
+        { ...handoff, destination: root }).catch(() => {});
+    }
     throw error;
   }
 }
