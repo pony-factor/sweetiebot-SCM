@@ -52,7 +52,8 @@ function formatChangeSummary(pr) {
 }
 
 async function gh(args) {
-  const { stdout } = await run('gh', args, { timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+  const executable = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(fs.existsSync) || 'gh';
+  const { stdout } = await run(executable, args, { timeout: 30000, maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, GH_PROMPT_DISABLED: '1' } });
   return stdout.trim();
 }
@@ -102,7 +103,12 @@ async function publishChangeSummary({ url, headSha, body }, execute = gh) {
   }
   const posted = await ghJson(['api', '-X', 'POST', endpoint,
     '-f', 'body=' + body.trim() + '\n\n' + marker], execute);
-  if (!posted.html_url || !posted.html_url.startsWith(fresh.url + '#')) {
+  let commentUrl;
+  try { commentUrl = new URL(posted.html_url); } catch { /* Invalid GitHub response. */ }
+  const commentPath = '/' + fresh.repository + '/';
+  if (commentUrl?.protocol !== 'https:' || commentUrl.hostname !== 'github.com' ||
+      ![commentPath + 'pull/' + fresh.number, commentPath + 'issues/' + fresh.number].includes(commentUrl.pathname) ||
+      !/^#issuecomment-[0-9]+$/.test(commentUrl.hash)) {
     throw Error('GitHub did not confirm the created PR conversation comment.');
   }
   return { alreadyPosted: false, url: posted.html_url };

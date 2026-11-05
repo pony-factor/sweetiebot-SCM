@@ -35,6 +35,7 @@ const { parsePullRequestUrl, formatChangeSummary, readPullRequest,
   const calls = [];
   let comments = [];
   let posted = 0;
+  let issueStyleUrl = false;
   const exec = async args => {
     calls.push(args);
     if (args[0] === 'pr') return JSON.stringify(pr);
@@ -46,7 +47,9 @@ const { parsePullRequestUrl, formatChangeSummary, readPullRequest,
       assert.equal(args[3], 'repos/external-org/project/issues/42/comments');
       assert.match(args[5], new RegExp(MARKER_PREFIX + headSha));
       assert.match(args[5], /Reviewed change summary/);
-      return JSON.stringify({ html_url: url + '#issuecomment-50' });
+      return JSON.stringify({ html_url: issueStyleUrl
+        ? 'https://github.com/external-org/project/issues/42#issuecomment-50'
+        : url + '#issuecomment-50' });
     }
     throw Error('Unexpected GitHub request ' + JSON.stringify(args));
   };
@@ -65,8 +68,11 @@ const { parsePullRequestUrl, formatChangeSummary, readPullRequest,
   assert.equal(posted, 1, 'The same author must not post a duplicate summary for the same revision');
   comments = [{ user: { login: 'someone-else' },
     body: MARKER_PREFIX + headSha + ' -->' }];
-  await publishChangeSummary({ url, headSha, body: 'Reviewed change summary' }, exec);
+  issueStyleUrl = true;
+  const issueStylePost = await publishChangeSummary({ url, headSha, body: 'Reviewed change summary' }, exec);
   assert.equal(posted, 2, 'Another author must not suppress this user’s comment');
+  assert.equal(issueStylePost.url, 'https://github.com/external-org/project/issues/42#issuecomment-50',
+    'GitHub may return an issue-style URL for a pull request conversation comment');
   assert(calls.some(args => args[0] === 'api' && args[1] === 'user'),
     'Posting must use the active GitHub CLI author identity');
   assert.match(fs.readFileSync(path.join(__dirname, '../../extension/ui/pr-change-summary.html'), 'utf8'),
