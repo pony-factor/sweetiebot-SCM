@@ -406,7 +406,7 @@ async function main() {
     for (const subscription of rowSubscriptions) subscription.dispose();
     const manifest = require('../../extension/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
-      'sweetiebot.github.squashMergeTreePullRequest');
+      'sweetiebot.squashMergeTreePullRequest');
     await Promise.resolve();
     assert.equal(calls, 0);
     assert.equal(timers.size, 0);

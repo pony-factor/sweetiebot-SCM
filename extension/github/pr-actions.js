@@ -507,10 +507,6 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       cancellable: false
     }, progress => processMerge(node, progress));
   };
-  context.subscriptions.push(
-    vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
-    vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', handler)
-  );
   // The contributed sidebar action must exist even after GitHub PR updates
   // replace its patched bundle. Only the owner-side bridge handles tree nodes.
   try {
@@ -529,6 +525,11 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
     // until reload. Keep that working handler and all canonical merge actions.
     if (!require('../ui/command-aliases').isDuplicateCommandError(error)) throw error;
   }
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
+    vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', handler)
+  );
+
 }
 
 module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, resolveMergeTarget, closeMergedPullRequestTab, registerGitHubPullRequestActions };
