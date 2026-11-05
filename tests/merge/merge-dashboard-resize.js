@@ -33,9 +33,11 @@ function fixture(saved = {}) {
   node('timeline-splitter', 370, 6);
   node('body');
   let state = saved;
+  const messages = [];
   let resize;
   const context = {
-    acquireVsCodeApi: () => ({ getState: () => state, setState: value => { state = value; } }),
+    acquireVsCodeApi: () => ({ getState: () => state, setState: value => { state = value; },
+      postMessage: message => { messages.push(message); } }),
     document: { getElementById: id => nodes[id], body: nodes.body,
       querySelector: selector => nodes[selector === '.layout' ? 'layout' : 'aside'] },
     window: { innerWidth: 1000 },
@@ -45,10 +47,12 @@ function fixture(saved = {}) {
   const script = html.slice(html.indexOf('  const vscode = acquireVsCodeApi();'), html.indexOf('  let model ='));
   vm.runInNewContext(script, context);
   const fire = (id, type, props) => nodes[id].handlers[type]({ preventDefault() {}, ...props });
-  return { nodes, fire, resize: () => resize(), context, state: () => state };
+  return { nodes, fire, resize: () => resize(), context, messages, state: () => state };
 }
 
 const f = fixture({ unrelated: true });
+assert.deepEqual(f.messages,[{type:'dashboard-viewport',width:1000}],
+  'The dashboard reports its initial editor-pane width to the extension host');
 const width = () => f.nodes.aside.clientWidth;
 const height = () => f.nodes.timeline.offsetHeight;
 assert.equal(width(), 994 * 0.37);
@@ -84,6 +88,8 @@ f.context.window.innerWidth = 600;
 f.nodes.aside.clientHeight = 370;
 f.resize();
 assert.equal(height(), 194, 'Clamp timeline when switching to compact layout');
+assert.deepEqual(f.messages.at(-1),{type:'dashboard-viewport',width:600},
+  'A narrow dashboard reports the size change once');
 const invalid = fixture({ sidebarRatio: Infinity, timelineRatio: -3 });
 assert.equal(invalid.nodes.aside.clientWidth, 994 * 0.37);
 assert.equal(invalid.nodes.timeline.offsetHeight, 524 * 0.34);
