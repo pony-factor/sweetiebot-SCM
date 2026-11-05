@@ -2,7 +2,7 @@
 
 import sys as _sb_sys
 from pathlib import Path as _sb_path
-for _sb_parent in _sb_path(__file__).resolve().parent.parents:
+for _sb_parent in _sb_path(__file__).resolve().parents:
     _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
                    else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
@@ -26,7 +26,7 @@ import wrapper_dependencies
 
 class PackagedRuntimeTests(unittest.TestCase):
     def test_all_git_wrapper_python_dependencies_are_packaged(self):
-        runtime = wrapper_dependencies.runtime_sources(Path(__file__).resolve().parent.parents[2] / "scripts")
+        runtime = wrapper_dependencies.runtime_sources(Path(__file__).resolve().parents[2] / "scripts")
         packaged = workspace_search.source_files()
         self.assertIn("toolkit-settings.py", runtime)
         for name, source in runtime.items():
@@ -46,7 +46,7 @@ class PackagedRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for name, source in wrapper_dependencies.runtime_sources(
-                    Path(__file__).resolve().parent.parents[2] / 'scripts').items():
+                    Path(__file__).resolve().parents[2] / 'scripts').items():
                 (root / name).write_bytes(source.read_bytes())
                 if '-' in name and name.endswith('.py'):
                     (root / name.replace('-', '_')).write_text(
@@ -61,7 +61,7 @@ class PackagedRuntimeTests(unittest.TestCase):
             later.mkdir()
             (earlier / 'sample_module.py').write_text('value = "earlier"\n')
             (later / 'sample-module.py').write_text('value = "later"\n')
-            script_dir = Path(__file__).resolve().parent.parents[2] / 'scripts'
+            script_dir = Path(__file__).resolve().parents[2] / 'scripts'
             subprocess.run([sys.executable, '-I', '-B', '-c',
                             'import sys; sys.path[:0] = sys.argv[1:]; '
                             'import importaliases; importaliases.install(); '

@@ -9,7 +9,7 @@ This runs real JS assets in a browser DOM, not the proprietary Codex extension.
 
 import sys as _sb_sys
 from pathlib import Path as _sb_path
-for _sb_parent in _sb_path(__file__).resolve().parent.parents:
+for _sb_parent in _sb_path(__file__).resolve().parents:
     _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
                    else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
@@ -25,7 +25,7 @@ import os
 import base64
 import sys
 
-ROOT = Path(__file__).resolve().parent.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "assets" / "codex"
 
 HTML = """<!doctype html><html><head><style>

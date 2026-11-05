@@ -33,19 +33,19 @@ class BrowserRoutingTests(unittest.TestCase):
     def test_commit_button_browser_regression_has_one_owner(self):
         manifest = json.loads(ci.CONFIG.read_text(encoding="utf-8"))
         owners = [name for name, group in manifest["groups"].items()
-                  if "commit-button-browser.js" in group["tests"]]
+                  if "commits/commit-button-browser.js" in group["tests"]]
         self.assertEqual(owners, ["browser-ui"])
         self.assertFalse(ci.browser_needed(manifest["groups"]["commit"]))
         self.assertTrue(ci.browser_needed(manifest["groups"]["browser-ui"]))
 
     def test_browser_test_is_syntax_checked_and_executed(self):
         spec = {"label": "Browser and UI",
-                "tests": ["commit-button-browser.js"], "syntax": []}
+                "tests": ["commits/commit-button-browser.js"], "syntax": []}
         with patch.object(ci, "execute", return_value=0) as execute:
             ci.run_group("browser-ui", spec)
         commands = [list(call.args[0]) for call in execute.call_args_list]
-        self.assertIn(["node", "--check", "tests/commit-button-browser.js"], commands)
-        self.assertIn(["node", "tests/commit-button-browser.js"], commands)
+        self.assertIn(["node", "--check", "tests/commits/commit-button-browser.js"], commands)
+        self.assertIn(["node", "tests/commits/commit-button-browser.js"], commands)
 
     def test_detects_commonjs_and_es_module_playwright_imports(self):
         samples = (
@@ -98,13 +98,13 @@ class BrowserRoutingTests(unittest.TestCase):
         self.assertIn("if: steps.browser.outputs.required == 'true'\n        run: |", suites)
 
     def test_codex_browser_follows_playwright_managed_revision(self):
-        source = (ROOT / "tests/codex-webview-browser.py").read_text(encoding="utf-8")
+        source = (ROOT / "tests/browser/codex-webview-browser.py").read_text(encoding="utf-8")
         self.assertIn('custom_browser = os.environ.get("CODEX_TEST_CHROMIUM")', source)
         self.assertIn("executable_path=custom_browser or None", source)
         self.assertNotIn("shutil.which", source)
 
     def test_commit_button_scenarios_use_real_chromium(self):
-        source = (ROOT / "tests/commit-button-browser.js").read_text(encoding="utf-8")
+        source = (ROOT / "tests/commits/commit-button-browser.js").read_text(encoding="utf-8")
         self.assertIn("require('playwright')", source)
         self.assertIn("await chromium.launch(", source)
         self.assertIn("await browser.newPage()", source)

@@ -22,7 +22,7 @@ import install
 import repair
 import toolkit_settings
 import workspace_search
-from tests.install import workbench_fixture
+from tests.installation.install import workbench_fixture
 
 
 class RepairTests(unittest.TestCase):

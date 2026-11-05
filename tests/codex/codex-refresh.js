@@ -33,9 +33,9 @@ const sandbox = vm.createContext({
     if (name === 'path') return path;
     if (name === 'os') return { homedir() { return '/test-home'; } };
     if (name === 'fs') return { existsSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); return paused; } };
-    if (name === '../../ui/runtime-revision') return { runtimeRevision() { return revision; } };
-    if (name === '../../ui/extension-cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
-    if (name === '../../ui/reload-guard') return require('../../extension/ui/reload-guard');
+    if (name === '../ui/runtime-revision') return { runtimeRevision() { return revision; } };
+    if (name === '../ui/extension-cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
+    if (name === '../ui/reload-guard') return require('../../extension/ui/reload-guard');
     assert.equal(name, 'child_process');
     return { spawn(executable, args) {
       launches++;

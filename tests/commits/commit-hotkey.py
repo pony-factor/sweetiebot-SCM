@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys as _sb_sys
 from pathlib import Path as _sb_path
-for _sb_parent in _sb_path(__file__).resolve().parent.parents:
+for _sb_parent in _sb_path(__file__).resolve().parents:
     _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
                    else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parents[2] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey, _entries, CODEX_COMMAND
 import configurator
 from toolkit_settings import DEFAULT_SETTINGS

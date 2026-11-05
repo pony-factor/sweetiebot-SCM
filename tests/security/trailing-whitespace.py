@@ -1,7 +1,7 @@
 
 import sys as _sb_sys
 from pathlib import Path as _sb_path
-for _sb_parent in _sb_path(__file__).resolve().parent.parents:
+for _sb_parent in _sb_path(__file__).resolve().parents:
     _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
                    else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location(
-    "git_auto_title_trailing_whitespace", Path(__file__).parent.parents[2] / "scripts/ai-commit.py"
+    "git_auto_title_trailing_whitespace", Path(__file__).parents[2] / "scripts/ai-commit.py"
 )
 wrapper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wrapper)

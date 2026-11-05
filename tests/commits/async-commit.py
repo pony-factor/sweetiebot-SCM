@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys as _sb_sys
 from pathlib import Path as _sb_path
-for _sb_parent in _sb_path(__file__).resolve().parent.parents:
+for _sb_parent in _sb_path(__file__).resolve().parents:
     _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
                    else _sb_parent / 'scripts')
     if (_sb_scripts / 'importaliases.py').is_file():
@@ -28,7 +28,7 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-SCRIPTS = Path(__file__).resolve().parent.parents[2] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 spec = importlib.util.spec_from_file_location("sweetiebot_async_commit", SCRIPTS / "sweetiebot-async-commit.py")
 asynchronous = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(asynchronous)
