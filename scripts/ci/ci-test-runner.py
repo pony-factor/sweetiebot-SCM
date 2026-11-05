@@ -36,6 +36,12 @@ def inventory(verbose=False):
               for suffix in ("py", "js")
               for path in (ROOT / "tests").rglob(f"*.{suffix}")
               if path.name != "__init__.py" and "fixtures" not in path.relative_to(ROOT / "tests").parts}
+    redundant_prefixes = {"branches": "branch-", "codex": "codex-", "commits": "commit-", "github": "github-", "kefania": "kefania-", "lindsey": "lindsey-", "merge": "merge-", "pr": "pr-", "spellcheck": "spellcheck-"}
+    for name in actual:
+        category, filename = name.split("/", 1)
+        prefix = redundant_prefixes.get(category)
+        if prefix and filename.startswith(prefix):
+            problems.append(f"Redundant test filename prefix: {name}")
     for group, spec in groups.items():
         if not spec.get("tests"):
             problems.append(f"{group} has no tests")
