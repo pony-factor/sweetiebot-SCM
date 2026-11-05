@@ -57,6 +57,7 @@
     "onCommand:sweetiebot.chatgpt.searchRepositories",
     "onCommand:sweetiebot.squashMergeSelectedPullRequest",
     "onCommand:sweetiebot.squashMergePullRequest",
+    "onCommand:sweetiebot.squashMergeTreePullRequest",
     "onUri",
     "onCommand:sweetiebot.openFileOnGitHub",
     "onCommand:scmToolkit.returnHome",

@@ -204,7 +204,7 @@ async function main() {
     }, rowOwner);
     const clicked = { pullRequestModel: { url, number: 12 } };
     const another = { pullRequestModel: { url: 'https://github.com/owner/repo/pull/13', number: 13 } };
-    const clickMerge = rowCommands.get('sweetiebot.squashMergeTreePullRequest');
+    const clickMerge = rowCommands.get('sweetiebot.github.squashMergeTreePullRequest');
     const first = clickMerge(clicked);
     assert.equal(rowProgress.length, 1, 'Show progress synchronously, before PR row hydration');
     assert.equal(rowProgress[0].location, 15);
@@ -321,7 +321,7 @@ async function main() {
     installPullRequestRefresh(folderVscode, {
       visible: false, onDidChangeVisibility: () => ({ dispose() {} })
     }, folderOwner, { checkBulkEligibility });
-    const folderMerge = folderCommands.get('sweetiebot.squashMergeTreePullRequest');
+    const folderMerge = folderCommands.get('sweetiebot.github.squashMergeTreePullRequest');
     assert.deepEqual((await pullRequestsInFolder(folderOwner, folder)).map(pr => pr.url),
       [url, secondPr.url, thirdPr.url]);
     const mergingFolder = folderMerge(folder);
@@ -396,7 +396,7 @@ async function main() {
     installPullRequestRefresh(noEligibleVscode, {
       visible: false, onDidChangeVisibility: () => ({ dispose() {} })
     }, noEligibleOwner, { checkBulkEligibility: blockedChecker });
-    const none = await noEligibleCommands.get("sweetiebot.squashMergeTreePullRequest")(folder);
+    const none = await noEligibleCommands.get("sweetiebot.github.squashMergeTreePullRequest")(folder);
     assert.deepEqual(none, { state: "blocked", total: 3, excluded: 3 });
     assert.equal(folderConfirmations.at(-1).action, undefined);
     assert.match(folderConfirmations.at(-1).message, /No pull requests are currently eligible/);
@@ -406,7 +406,7 @@ async function main() {
     for (const subscription of rowSubscriptions) subscription.dispose();
     const manifest = require('../../extension/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
-      'sweetiebot.squashMergeTreePullRequest');
+      'sweetiebot.github.squashMergeTreePullRequest');
     await Promise.resolve();
     assert.equal(calls, 0);
     assert.equal(timers.size, 0);
