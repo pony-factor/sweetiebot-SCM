@@ -79,8 +79,10 @@ assert(unknown.branches.every(item => item.hasPr === null));
       'commit', '--allow-empty', '-m', 'Initial commit');
     git('-C', root, 'worktree', 'add', '-b', 'occupied', topic);
     const registry = worktreeLocations(git('-C', root, 'worktree', 'list', '--porcelain'));
-    assert.equal(registry.get('occupied'), topic, 'Map branch to its real checkout');
-    assert.equal(registry.get('main'), root, 'Map base to its own checkout');
+    assert.equal(await fs.realpath(registry.get('occupied')), await fs.realpath(topic),
+      'Map branch to its real checkout across macOS /var aliases');
+    assert.equal(await fs.realpath(registry.get('main')), await fs.realpath(root),
+      'Map base to its own checkout across macOS /var aliases');
     const repositoryGitDir = git('-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir');
     const topicGitDir = git('-C', topic, 'rev-parse', '--path-format=absolute', '--git-common-dir');
     assert.equal(repositoryGitDir, topicGitDir, 'Linked worktrees use one common Git database');
