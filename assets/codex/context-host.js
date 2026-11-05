@@ -129,7 +129,15 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     pending.delete(message.id);
                     clearTimeout(request.timeout);
                     await vscode.env.clipboard.writeText(request.clipboard);
-                    const text = request.text.trim();
+                    // Native Markdown includes tool activity and inline image data.
+                    // Remove those before transport bounding so actual user turns
+                    // and assistant replies are not displaced by binary payloads.
+                    const text = request.text
+                        .replace(/^<details><summary>\d+ previous messages?<\/summary>[\s\S]*?^<\/details>/gm,
+                            '[Tool activity omitted from drafting context.]')
+                        .replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi,
+                            'attachment:image-data-omitted')
+                        .trim();
                     request.resolve(request.includeSource ? { text,
                         source: { ...sourceFor(request.threadId), desktopUrl: value.trim() }, model: message.model } : text);
                 })().catch(async error => {

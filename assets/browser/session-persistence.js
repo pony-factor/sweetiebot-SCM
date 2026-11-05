@@ -46,6 +46,18 @@ function sweetiebotPersistChatSession(session) {
         if (!removed) retain(cookie, identity, revision);
         else pending = pending.then(() => session.cookies.flushStore()).catch(() => {});
     });
+    // Await the native store at application exit rather than racing its delayed
+    // write. This shared profile has one hook; agent sessions never enter here.
+    void import('electron').then(({ app }) => {
+        let quitting = false;
+        app.on('before-quit', event => {
+            if (quitting) return;
+            quitting = true;
+            event.preventDefault();
+            void pending.then(() => session.cookies.flushStore()).catch(() => {})
+                .finally(() => app.quit());
+        });
+    }).catch(() => {});
     // Flush persistent cookies too; a quick quit must not outrun Chromium's
     // delayed cookie-store write. No cookie names or values are logged.
     session.cookies.on('changed', () => {

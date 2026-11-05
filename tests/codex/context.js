@@ -406,13 +406,13 @@ async function run() {
  provider.initializeWebview(view,'sidebar',()=>{});
  const result=commands.get('sweetiebot.readCodexConversation')();
  await new Promise(setImmediate);
- clipboard='# Entire native export\n\n**User:** distinctive historical message';
+ clipboard='# Entire native export\n\n> Latest user request\n\n<details><summary>2 previous messages</summary>\n\n> tool payload ' + 'x'.repeat(100000) + '\n</details>\n\n**User:** distinctive historical message ![attachment](data:image/png;base64,AAAAAA==)';
  nativeListener({type:'scm-toolkit-context-response',id:messages.at(-1).id,conversationId:id,nativeCopy:'markdown'});
  await new Promise(setImmediate);await new Promise(setImmediate);
  assert.equal(messages.at(-1).copyDeepLink,true);
  clipboard=`codex://threads/${id}?host=remote`;
  nativeListener({type:'scm-toolkit-context-response',id:messages.at(-1).id,conversationId:id,nativeCopy:'deeplink',model:{name:'GPT-6.1'}});
- const snapshot=await result;assert.match(snapshot.text,/historical message/);assert.equal(snapshot.source.desktopUrl,`codex://threads/${id}?host=remote`);assert.equal(clipboard,'user clipboard');
+ const snapshot=await result;assert.match(snapshot.text,/historical message/);assert.match(snapshot.text,/Latest user request/);assert(!snapshot.text.includes('AAAAAA'));assert(snapshot.text.length<500);assert.equal(snapshot.source.desktopUrl,`codex://threads/${id}?host=remote`);assert.equal(clipboard,'user clipboard');
 
   }
   console.log('Read-only Codex snapshot and provenance bridge checks passed.');
