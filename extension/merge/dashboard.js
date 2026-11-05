@@ -770,6 +770,15 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);
     if (!pr) return;
+    if (message.type === 'post-change-summary') {
+      try {
+        await vscode.commands.executeCommand('sweetiebot.postPullRequestChangeSummary', pr.url);
+      } catch (failure) {
+        error = 'Could not open the PR summary form: ' + failure.message;
+        publish();
+      }
+      return;
+    }
     if (message.type === 'blocker-action') {
       if (launchingActions.has(pr.number) || !['web', 'codex', 'kefania'].includes(message.engine || 'web')) return;
       launchingActions.add(pr.number);

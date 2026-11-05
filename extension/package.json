@@ -26,6 +26,7 @@
     "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.setCodexSharedConversationUrl",
     "onCommand:sweetiebot.openPullRequestBatchChat",
+    "onCommand:sweetiebot.postPullRequestChangeSummary",
     "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
     "onCommand:sweetiebot.openExperimentWorkspace",
@@ -168,6 +169,12 @@
           "light": "media/merge-prs-light.svg",
           "dark": "media/merge-prs-dark.svg"
         }
+      },
+      {
+        "command": "sweetiebot.postPullRequestChangeSummary",
+        "title": "Post Change Summary to Existing Pull Request",
+        "category": "Sweetiebot",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "sweetiebot.mergeAllPullRequests",

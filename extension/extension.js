@@ -19,6 +19,7 @@ const { resumePRSession } = require('./github/pr-session');
 const { configureWorkspaceBrowserStorage } = require('./ui/browser-storage');
 const { registerLocalPullRequestCommand } = require('./github/local-pull-request');
 const { registerPullRequestBatchCommand } = require('./github/pull-request-batch');
+const { registerChangeSummaryCommand } = require('./github/pr-change-summary');
 const { registerEditorActions } = require('./ui/editor-actions');
 const { registerNewWorkspaceCommand } = require('./branches/new-workspace');
 const { registerExperimentWorkspaceCommand } = require('./branches/experiment-workspace');
@@ -429,6 +430,7 @@ async function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.repairMergeReview', () =>
     require('./merge/review-repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
   registerPullRequestBatchCommand(vscode, context);
+  registerChangeSummaryCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
   registerNewWorkspaceCommand(vscode, context);
