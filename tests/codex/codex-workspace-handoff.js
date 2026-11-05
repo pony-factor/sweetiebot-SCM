@@ -113,9 +113,16 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     assert(requests.at(-1).params.input[0].text.includes(sandbox));
     assert(requests.at(-1).params.input[0].text.includes('Run tests'));
     active = true;
-    assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic' }), true);
+    const beforeNotice = requests.length;
+    assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic', expectedThreadId: threadId }), true);
     assert.equal(requests.at(-1).method, 'turn/steer', 'In-flight chats receive a steer, not an interruption');
     assert.equal(requests.at(-1).params.expectedTurnId, 'running-turn');
+    assert.deepEqual(requests.slice(beforeNotice).map(request => request.method),
+      ['thread/read', 'thread/turns/list', 'turn/steer'],
+      'A notice does not resume, interrupt or drain the native follow-up queue');
+    const beforeStaleNotice = requests.length;
+    await assert.rejects(notifyExperiment({source: from, destination: sandbox, branch: 'topic', expectedThreadId: 'different-chat'}), /original Codex chat changed/);
+    assert.equal(requests.length, beforeStaleNotice, 'Reject a stale chat before sending any provider request');
     active = false;
     await assert.rejects(notifyExperiment({ source: destination, destination: sandbox, branch: 'topic' }), /another checkout/);
     assert.equal(await notifyExperiment({ source: from, destination: from, branch: 'topic' }).then(() => false, () => true), true,

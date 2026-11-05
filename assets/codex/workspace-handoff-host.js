@@ -110,8 +110,11 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
 
     // Inform the visible chat about the isolated test clone. Unlike branch
     // switching, this deliberately does not migrate its cwd or interrupt work.
-    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, destination, branch }) => {
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, destination, branch, expectedThreadId }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (expectedThreadId && identity?.threadId !== expectedThreadId) {
+            throw new Error('The original Codex chat changed; the trial notice was not sent to another chat.');
+        }
         if (!identity?.threadId) return false;
         const thread = await read(identity.threadId);
         const original = await canonical(source);
