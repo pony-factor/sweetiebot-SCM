@@ -59,7 +59,7 @@ function validateSyncResolution(input, selection) {
   return items;
 }
 
-async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, onProgress, authorHandoff = false } = {}) {
+async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, gitToken, onProgress, authorHandoff = false } = {}) {
   // Validate the entire batch before any PR can be changed.
   const items = validateResolution(input, selection);
   const results = [];
@@ -68,7 +68,7 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
     if (rateLimit) { results.push({number:item.number,status:'waiting',...rateLimit}); continue; }
     try {
       const result = await merge(selection.repository, item.number, {
-        api, git, expected: item, onProgress,
+        api, git, gitToken, expected: item, onProgress,
         resolutionPatch: item.patch, resolutionHunks: item.resolutionHunks, repairChecks: item.repairChecks,
         decisions: item.decisions, operation: item.operation, commitProposal: item.commitProposal,
         localGitMerge: item.operation === 'merge'
@@ -95,7 +95,9 @@ async function invokeResolutionCLI(input, selection, token, runner = promisify(e
     await fs.writeFile(file, JSON.stringify({ input, selection }), { mode: 0o600 });
     const running = runner(process.execPath,
       [path.join(__dirname, 'resolution-cli.js'), '--input', file], {
-        timeout: 15 * 60 * 1000, maxBuffer: 1024 * 1024,
+        // One integration may wait for both source-head and prepared-head CI.
+        // Allow both 30-minute check windows plus bounded Git operations.
+        timeout: 75 * 60 * 1000, maxBuffer: 1024 * 1024,
         env: { ...process.env, GH_TOKEN: token, GIT_TERMINAL_PROMPT: '0',
           GH_PROMPT_DISABLED: '1', ELECTRON_RUN_AS_NODE: '1',
           PATH: [...new Set([...(process.env.PATH || '').split(path.delimiter),

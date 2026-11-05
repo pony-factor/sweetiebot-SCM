@@ -68,5 +68,31 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   confirmed = true; failWrites = true; comments = [];
   assert.match((await run())[0].error, /HTTP 403/);
   assert.equal(result.results[0].merged, true, 'Summary failures do not invalidate a verified merge');
+  const statusWrites = [];
+  let statusComments = [];
+  const statusOptions = { selection, enabled:false, postStatusUpdates:true,
+    input:{results:[{number:12,explanation:'Resolve the overlapping behavior while retaining both features.',
+      decisions:[{path:'feature.js'}]}]},
+    result:{results:[{number:12,status:'waiting',merged:false,sha,previousHeadSha:'b'.repeat(40)}]},
+    identity:async()=>({token:'lindsey-token',login:'lindsey-test[bot]'}),
+    fetchImpl:async(url,request)=>{
+      assert.equal(request.headers.Authorization,'Bearer lindsey-token');
+      if(request.method!=='GET') {
+        const body=JSON.parse(request.body).body;
+        statusWrites.push(body);
+        statusComments=[{id:90,user:{login:'lindsey-test[bot]'},body}];
+        return {ok:true,json:async()=>({id:90})};
+      }
+      return {ok:true,json:async()=>url.endsWith('/pulls/12')
+        ? {state:'open',merged:false,base:{ref:'main'},head:{ref:'feature',sha}} : statusComments};
+    }};
+  assert.deepEqual(await publishMergeSummaries(statusOptions),[]);
+  assert.equal(statusWrites.length,1,'Lindsey publishes prepared-head status independently of summaries');
+  assert(statusWrites[0].includes('Waiting for integrated-head checks; PR remains open.'));
+  assert.deepEqual(await publishMergeSummaries(statusOptions),[]);
+  assert.equal(statusWrites.length,1,'Replay does not duplicate Lindsey status comments');
+  assert.deepEqual(await publishMergeSummaries({...statusOptions,
+    result:{results:[{number:12,status:'synced',sha,previousHeadSha:sha}]},
+    identity:()=>assert.fail('No-op sync must not authenticate or post')}),[]);
   console.log('Opt-in summary gates, verified merge checks, deduplication and publication failures passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -57,7 +57,7 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false, col
 }
 
 async function waitForMergeChecks(api, repository, sha, { expectChecks = false,
-  collectEvidence = false, timeoutMs = 8 * 60 * 1000, intervalMs = 15000,
+  collectEvidence = false, timeoutMs = 30 * 60 * 1000, intervalMs = 15000,
   initialPollIntervalMs = 5000, initialPollWindowMs = 30000, now = Date.now,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), onPoll } = {}) {
   const startedAt = now();
