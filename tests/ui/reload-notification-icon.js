@@ -16,6 +16,7 @@ for (const directory of roots) {
   assert(javascript.includes(`text === '${message}'`), `Reload marker should match only the repair notice in ${directory}`);
   assert.match(css, /\.notification-list-item\.scm-toolkit-reload-ready \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🤖';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-reload-ready \.notification-list-item-icon\.codicon-info::before,/);
+  assert.match(css, /\.notification-list-item\.scm-toolkit-lindsey-notice \.notification-list-item-icon\.codicon-info::before,[\s\S]*?content: '🤖';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-pr-merged \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🎉';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-pr-queued \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '⏳';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-branch-squash-synced \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🔄';/);
@@ -52,6 +53,18 @@ for (const directory of roots) {
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-push-waiting'), 'Early pushes use the robot notification marker');
   assert.match(css, /\.notification-list-item\.scm-toolkit-push-waiting \.notification-list-item-icon\.codicon-info::before,[\s\S]*?content: '🤖';/);
+  currentMessage = 'Applying merge batch round: #653 · GitHub checks refreshed';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-lindsey-notice'), 'Merge progress uses the robot icon');
+  currentMessage = 'Applying PR fix: #654 · Integrating with the current base';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-lindsey-notice'), 'PR repairs use the robot icon');
+  currentMessage = 'Verifying and squash-merging selected PRs';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-lindsey-notice'), 'Bulk merge progress uses the robot icon');
+  currentMessage = 'Bulk merge: 1 merged, 0 queued, 0 blocked or unverified.';
+  observeMutations([{ target: row, addedNodes: [] }]);
+  assert(classes.has('scm-toolkit-lindsey-notice'), 'Bulk merge summary uses the robot icon');
   currentMessage = 'PR #12 merged into main.';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-pr-merged'), `Merge icon class not added in ${directory}`);
@@ -71,6 +84,7 @@ for (const directory of roots) {
   currentMessage = 'Unrelated information notification.';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(!classes.has('scm-toolkit-reload-ready'), `Reused notification retained robot icon in ${directory}`);
+  assert(!classes.has('scm-toolkit-lindsey-notice'), 'Reused notification retained Lindsey icon');
   assert(!classes.has('scm-toolkit-pr-queued'), `Reused notification retained queue icon in ${directory}`);
   assert(!classes.has('scm-toolkit-pr-merged'), `Reused notification retained merge icon in ${directory}`);
   assert(!classes.has('scm-toolkit-branch-squash-synced'), `Reused notification retained squash-sync icon in ${directory}`);

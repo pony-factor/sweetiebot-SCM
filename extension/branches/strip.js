@@ -4,6 +4,7 @@ const { execFile } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { worktreeLocations } = require('./worktree-registry');
 const { promisify } = require('node:util');
 
 const runFile = promisify(execFile);
@@ -16,6 +17,33 @@ const PR_QUERY = `query($owner: String!, $name: String!, $endCursor: String) {
   }
 }`;
 const prCache = new Map();
+const pendingPrLookups = new Map();
+const PR_CACHE_MS = 30000;
+
+// Linked worktrees share a Git common directory. Include the GitHub remote
+// identity so distinct repositories/remotes cannot exchange PR associations.
+function pullRequestCacheKey(commonDirectory, remoteUrl) {
+  const repository = parseGitHubRemote(remoteUrl);
+  return commonDirectory && repository
+    ? `${path.resolve(commonDirectory)}\n${repository.toLowerCase()}` : null;
+}
+
+async function cachedPullRequestLookup(key, load, now = () => Date.now()) {
+  const cached = prCache.get(key);
+  if (cached && now() < cached.expires) return cached.value;
+  if (pendingPrLookups.has(key)) return pendingPrLookups.get(key);
+  // Coalesce simultaneous worktree refreshes, not only completed responses.
+  const request = (async () => {
+    const value = await load();
+    prCache.set(key, { value, expires: now() + PR_CACHE_MS });
+    return value;
+  })();
+  pendingPrLookups.set(key, request);
+  try { return await request; }
+  finally {
+    if (pendingPrLookups.get(key) === request) pendingPrLookups.delete(key);
+  }
+}
 
 async function git(root, args) {
   const { stdout } = await runFile('git', args, {
@@ -75,14 +103,13 @@ function ghExecutable() {
     .find(candidate => existsSync(candidate)) || 'gh';
 }
 
-async function pullRequestNames(root, remoteUrl, execute = runFile) {
+async function pullRequestNames(root, remoteUrl, execute = runFile, commonDirectory = root) {
   const repository = parseGitHubRemote(remoteUrl);
-  if (!repository) return null;
-  const cacheKey = `${root}\n${repository}`;
-  const cached = prCache.get(cacheKey);
-  if (cached && Date.now() < cached.expires) return cached.value;
-  let value = null;
-  try {
+  const cacheKey = pullRequestCacheKey(commonDirectory, remoteUrl);
+  if (!cacheKey) return null;
+  return cachedPullRequestLookup(cacheKey, async () => {
+    let value = null;
+    try {
     const [host, owner, name] = repository.split('/');
     const { stdout } = await execute(ghExecutable(), [
       'api', 'graphql', '--hostname', host, '--paginate', '--slurp',
@@ -107,9 +134,9 @@ async function pullRequestNames(root, remoteUrl, execute = runFile) {
           });
         });
     }
-  } catch { /* Offline or unauthenticated: group conservatively. */ }
-  prCache.set(cacheKey, { value, expires: Date.now() + 30000 });
-  return value;
+    } catch { /* Offline or unauthenticated: group conservatively. */ }
+    return value;
+  });
 }
 
 async function listBranchStrip(repository, { defaultBranch, remote = 'origin', localOnly = false } = {}) {
@@ -120,12 +147,14 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
     '--no-prune-tags', '--no-recurse-submodules', remote,
     `+refs/heads/*:refs/remotes/${remote}/*`]).then(() => true, () => false);
   const refPrefixes = ['refs/heads', ...(remoteAvailable ? [`refs/remotes/${remote}`] : [])];
-  const [refText, remoteUrl, repositoryId] = await Promise.all([
+  const [refText, remoteUrl, gitCommonDir] = await Promise.all([
     git(root, ['for-each-ref', '--sort=-committerdate',
       '--format=%(refname)%09%(committerdate:unix)', ...refPrefixes]),
     localOnly ? Promise.resolve('') : git(root, ['remote', 'get-url', remote]).catch(() => ''),
     git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).catch(() => root)
   ]);
+  // Resolve symlink/case aliases so all worktrees use the same cache identity.
+  const repositoryId = await fs.realpath(gitCommonDir).catch(() => path.resolve(gitCommonDir));
   const baseRefs = [...(remoteAvailable ? [`refs/remotes/${remote}/${defaultBranch}`] : []),
     `refs/heads/${defaultBranch}`];
   let baseRef;
@@ -138,7 +167,7 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
   const [mergedText, prNames] = await Promise.all([
     baseRef ? git(root, ['for-each-ref', `--merged=${baseRef}`,
       '--format=%(refname)', 'refs/heads', `refs/remotes/${remote}`]).catch(() => '') : '',
-    localOnly ? Promise.resolve(null) : pullRequestNames(root, remoteUrl)
+    localOnly ? Promise.resolve(null) : pullRequestNames(root, remoteUrl, runFile, repositoryId)
   ]);
   const prKnown = !localOnly && Boolean(prNames && baseRef);
   const classified = groupBranchRefs(refText, mergedText, prNames || new Set(),
@@ -154,12 +183,8 @@ async function checkoutBranchStrip(repository, { branch, remote = 'origin', onOc
   // Final safety gate: even when the higher-level router cannot run, never
   // attempt a plain checkout of a branch held by another Git worktree.
   const listing = await git(root, ['worktree', 'list', '--porcelain', '-z']);
-  const occupied = listing.split('\0\0').find(block =>
-    block.split('\0').includes('branch refs/heads/' + branch));
-  if (occupied) {
-    const registered = occupied.split('\0').find(line => line.startsWith('worktree '));
-    if (!registered) throw new Error(`Cannot identify the worktree holding "${branch}".`);
-    const destination = registered.slice('worktree '.length);
+  const destination = worktreeLocations(listing).get(branch);
+  if (destination) {
     const [owner, current] = await Promise.all([
       fs.realpath(destination).catch(() => path.resolve(destination)), fs.realpath(root)
     ]);
@@ -186,4 +211,5 @@ async function checkoutBranchStrip(repository, { branch, remote = 'origin', onOc
   return branch;
 }
 
-module.exports = { groupBranchRefs, parseGitHubRemote, listBranchStrip, checkoutBranchStrip, pullRequestNames };
+module.exports = { groupBranchRefs, parseGitHubRemote, pullRequestCacheKey,
+  cachedPullRequestLookup, listBranchStrip, checkoutBranchStrip, pullRequestNames };

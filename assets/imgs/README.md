@@ -4,3 +4,4 @@ All third-party artwork described below is excluded from this repository's AGPL-
 - `twi-stop.png` is [from](https://derpibooru.org/images/1290249) Korefox, [adapted from](https://desuarchive.org/mlp/thread/28772083/#28800004) /d/ Anon.
 - `sweetiebot.png` is from the amazing Twital's ["aptly-named song"](https://youtu.be/fjMyzuv9rUg).
 - `activity-cannon.png` [is from](https://x.com/fcolumnare/status/1952740544443998252) Cerberus, à la Tamers OC.
+- `bulk-merge-cannon.jpeg` is the full image by [Cerberus (@fcolumnare)](https://x.com/fcolumnare/status/1952740544443998252), used behind the completed bulk-merge confirmation page.
