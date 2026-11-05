@@ -15,7 +15,7 @@ const { listBranchStrip, checkoutBranchStrip } = require('./strip');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { recoveryPlan } = require('../commits/finalized-commit-recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
-const { routeBranch, routeExistingBranchWorktree } = require('./shared-main');
+const { routeBranch, routeExistingBranchWorktree, recordDeletedBranchReturn } = require('./shared-main');
 const { createStackedBranch } = require('./stacked-branch');
 
 const repositoryOperations = new WeakMap();
@@ -924,10 +924,14 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
       || await git('status', '--porcelain')) {
     throw new Error('The branch or working tree changed during verification; deletion was cancelled.');
   }
-  await homeCheckout.checkout();
-  await repository.status();
-  if (!await homeCheckout.verify()) {
-    throw new Error('Could not safely switch to the default branch; deletion was cancelled.');
+  // Shared main requires detaching this worktree. Keep the topic selected
+  // through the network operation, then release it immediately before routing.
+  if (!homeCheckout.detachedTip) {
+    await homeCheckout.checkout();
+    await repository.status();
+    if (!await homeCheckout.verify()) {
+      throw new Error('Could not safely switch to the default branch; deletion was cancelled.');
+    }
   }
   if (await git('rev-parse', '--verify', localRef) !== expected) {
     throw new Error('The branch advanced after checkout; deletion was cancelled.');
@@ -938,6 +942,15 @@ async function deleteEmptyBranch(repository, { branch, defaultBranch, remote = '
   if (remoteTip) {
     await git('push', `--force-with-lease=${remoteRef}:${remoteTip}`,
       remote, `:${remoteRef}`);
+  }
+  if (homeCheckout.detachedTip) {
+    await verifyCurrent();
+    if (await git('rev-parse', '--verify', localRef) !== expected) {
+      throw new Error('The local branch advanced during remote deletion and was preserved.');
+    }
+    await homeCheckout.checkout();
+    await repository.status();
+    if (!await homeCheckout.verify()) throw new Error('Could not safely switch to the default branch; the local branch was preserved.');
   }
   if (await git('rev-parse', '--verify', localRef) !== expected) {
     throw new Error('The local branch advanced during remote deletion and was preserved.');
@@ -1026,9 +1039,11 @@ async function deletePublishedBranch(repository, {
       || await git('status', '--porcelain')) {
     throw new Error('The branch or working tree changed during verification; deletion was cancelled.');
   }
-  await homeCheckout.checkout();
-  await repository.status();
-  if (!await homeCheckout.verify()
+  if (!homeCheckout.detachedTip) {
+    await homeCheckout.checkout();
+    await repository.status();
+  }
+  if ((!homeCheckout.detachedTip && !await homeCheckout.verify())
       || await git('rev-parse', '--verify', localRef) !== localTip
       || await git('status', '--porcelain')) {
     throw new Error('Checkout or branch verification changed; remote deletion was cancelled.');
@@ -1037,6 +1052,15 @@ async function deletePublishedBranch(repository, {
   await git('push', `--force-with-lease=${remoteRef}:${expectedRemoteTip}`,
     remote, `:${remoteRef}`);
   try {
+    if (homeCheckout.detachedTip) {
+      await checkActive();
+      if (await git('rev-parse', '--verify', localRef) !== localTip) {
+        throw new Error('The local branch advanced during remote deletion.');
+      }
+      await homeCheckout.checkout();
+      await repository.status();
+      if (!await homeCheckout.verify()) throw new Error('Could not safely switch to the default branch.');
+    }
     await repository.deleteBranch(branch, true);
   } catch (error) {
     throw new Error(`${remote}/${branch} was deleted, but local branch ${branch} was preserved: ${error.message || error}`);
@@ -1356,6 +1380,7 @@ function registerBranchCommands(vscode, context) {
               const result = await deletePublishedBranch(repository, {
                 branch: options.branch, defaultBranch, remote, expectedRemoteTip: tip
               });
+              await recordDeletedBranchReturn(repository, options.branch, defaultBranch);
               if (defaultBranch === 'main') await routeBranch(vscode, repository, { branch: defaultBranch });
               return result;
             }
@@ -1374,8 +1399,10 @@ function registerBranchCommands(vscode, context) {
               })
             } : {})
           });
-          if (command === 'sweetiebot.deleteBranch' && result && defaultBranch === 'main')
+          if (command === 'sweetiebot.deleteBranch' && result && defaultBranch === 'main') {
+            await recordDeletedBranchReturn(repository, options.branch, defaultBranch);
             await routeBranch(vscode, repository, { branch: defaultBranch });
+          }
           if (command === 'sweetiebot.createBranch' && commitDraftValue && !repository.inputBox.value)
             repository.inputBox.value = commitDraftValue;
           return result;
@@ -1441,6 +1468,7 @@ function registerBranchCommands(vscode, context) {
         const result = await deleteEmptyBranch(repository, {
           branch, defaultBranch, remote: options.remote || 'origin'
         });
+        await recordDeletedBranchReturn(repository, branch, defaultBranch);
         if (defaultBranch === 'main') await routeBranch(vscode, repository, { branch: defaultBranch });
         return result;
       });

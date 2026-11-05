@@ -11,6 +11,7 @@ const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
 
 const exec = promisify(execFile);
+const DELETION_RETURN = 'sweetiebot-deleted-branch.json';
 async function git(args) {
   return (await exec('git', args, { timeout: 120000,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout.trim();
@@ -457,21 +458,88 @@ async function reconnectManagedMain(vscode, options = {}) {
   return true;
 }
 
+async function recordDeletedBranchReturn(repository, branch, defaultBranch) {
+  if (defaultBranch !== 'main' || !branch || !repository.rootUri?.fsPath) return;
+  const root = await fs.realpath(repository.rootUri.fsPath);
+  if (await git(['-C', root, 'branch', '--show-current'])) return;
+  if ((await git(['-C', root, 'for-each-ref', '--format=%(refname)', 'refs/heads/' + branch]))
+      .split('\n').includes('refs/heads/' + branch)) return;
+  const directory = await git(['-C', root, 'rev-parse', '--absolute-git-dir']);
+  const head = await git(['-C', root, 'rev-parse', 'HEAD']);
+  const headStamp = (await fs.stat(path.join(directory, 'HEAD'))).mtimeMs;
+  const receipt = path.join(directory, DELETION_RETURN);
+  const temporary = receipt + '.' + require('node:crypto').randomUUID() + '.tmp';
+  try {
+    await fs.writeFile(temporary, JSON.stringify({
+      version: 1, root, branch, head, headStamp, initiatorPid: process.pid
+    }), { mode: 0o600, flag: 'wx' });
+    await fs.rename(temporary, receipt);
+  } finally { await fs.rm(temporary, {force: true}); }
+}
+
+async function reconnectDeletedBranch(vscode, options = {}) {
+  const run = options.run || git;
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    if (folder.uri.scheme !== 'file') continue;
+    const root = await fs.realpath(await run(['-C', folder.uri.fsPath, 'rev-parse', '--show-toplevel']));
+    const directory = await run(['-C', root, 'rev-parse', '--absolute-git-dir']);
+    const receipt = await fs.readFile(path.join(directory, DELETION_RETURN), 'utf8')
+      .then(text => { try { return JSON.parse(text); } catch { return null; } }, () => null);
+    if (receipt?.version !== 1 || receipt.root !== root || typeof receipt.branch !== 'string'
+        || !/^[a-f0-9]{40,64}$/i.test(receipt.head || '')) continue;
+    if (receipt.initiatorPid === options.ignorePid) continue;
+    if (await run(['-C', root, 'branch', '--show-current'])
+        || await run(['-C', root, 'rev-parse', 'HEAD']) !== receipt.head
+        || (await fs.stat(path.join(directory, 'HEAD'))).mtimeMs !== receipt.headStamp
+        || await run(['-C', root, 'status', '--porcelain', '--untracked-files=all'])) continue;
+    if ((await run(['-C', root, 'for-each-ref', '--format=%(refname)', 'refs/heads/' + receipt.branch]))
+        .split('\n').includes('refs/heads/' + receipt.branch)) continue;
+    return routeBranch(vscode, {rootUri: {fsPath: root}}, {...options, branch: 'main'});
+  }
+  return false;
+}
+
 function registerSharedMain(vscode, context) {
-  let running = false;
+  let running = false, again = false;
+  const watchers = new Map();
+  const observe = async () => {
+    const directories = new Set();
+    for (const folder of vscode.workspace.workspaceFolders || []) {
+      if (folder.uri.scheme !== 'file') continue;
+      const directory = await git(['-C', folder.uri.fsPath, 'rev-parse', '--absolute-git-dir']).catch(() => null);
+      if (!directory) continue;
+      directories.add(directory);
+      if (watchers.has(directory)) continue;
+      const watcher = require('node:fs').watch(directory, {persistent: false}, (_, name) => {
+        if (String(name) === DELETION_RETURN) void reconnect();
+      });
+      watcher.on('error', () => { watcher.close(); watchers.delete(directory); });
+      watchers.set(directory, watcher);
+    }
+    for (const [directory, watcher] of watchers) {
+      if (!directories.has(directory)) { watcher.close(); watchers.delete(directory); }
+    }
+  };
   const reconnect = async () => {
-    if (running) return;
+    if (running) { again = true; return; }
     running = true;
-    try { await reconnectManagedMain(vscode); }
+    try {
+      await observe();
+      if (!await reconnectDeletedBranch(vscode, {ignorePid: process.pid})) await reconnectManagedMain(vscode);
+    }
     catch (error) { vscode.window.showWarningMessage('Sweetiebot: ' + error.message); }
-    finally { running = false; }
+    finally {
+      running = false;
+      if (again) { again = false; queueMicrotask(() => void reconnect()); }
+    }
   };
   // Saved shared-main windows may point at a managed main worktree; those
   // checkouts are already the target and must not be reconnected again.
   setImmediate(() => void reconnect());
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => void reconnect()));
+  context.subscriptions.push({dispose() { for (const watcher of watchers.values()) watcher.close(); watchers.clear(); }});
 }
 
 module.exports = { originalRepository, mainRoot, openSharedMainWorkspace, routeBranch,
   routeExistingBranchWorktree,
-  reconnectManagedMain, registerSharedMain };
+  reconnectManagedMain, registerSharedMain, recordDeletedBranchReturn, reconnectDeletedBranch };
