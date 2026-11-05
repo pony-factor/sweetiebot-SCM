@@ -1,3 +1,17 @@
+
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
+import re
 import json
 import io
 import threading
@@ -34,6 +48,40 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_sidebar_categories_keep_every_settings_page(self):
+        page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        sidebar = page.split('<nav class="settings-tabs"', 1)[1].split("</nav>", 1)[0]
+        groups = re.findall(
+            r'<div class="settings-tab-group" role="presentation">'
+            r'<div class="settings-tab-category" aria-hidden="true">([^<]+)</div>'
+            r'(.*?)</div>', sidebar, re.S
+        )
+        self.assertEqual([label for label, _ in groups], [
+            "Source Control &amp; Commits", "Branches &amp; Workspaces",
+            "AI &amp; Spellcheck", "GitHub &amp; Pull Requests",
+            "Interface &amp; Customization", "System &amp; Diagnostics",
+        ])
+        tabs = re.findall(
+            r'<button class="settings-tab"[^>]+aria-controls="(settings-panel-\d+)"'
+            r'[^>]*>([^<]+)</button>', sidebar
+        )
+        expected = {s.section for s in configurator.SETTINGS} | {"GitHub Apps", "Diagnostics"}
+        expected_labels = {"Apps" if name == "GitHub Apps" else name for name in expected}
+        self.assertEqual({name for _, name in tabs}, expected_labels)
+        self.assertEqual(len(tabs), len(expected), "Every page appears exactly once")
+        self.assertEqual(
+            [target for target, _ in tabs],
+            [f"settings-panel-{i}" for i in range(len(expected))],
+        )
+        grouped_tabs = [
+            name for _, group in groups
+            for name in re.findall(r'<button class="settings-tab"[^>]*>([^<]+)</button>', group)
+        ]
+        self.assertEqual(grouped_tabs, [name for _, name in tabs])
+        for i in range(len(expected)):
+            self.assertIn(f'id="settings-panel-{i}"', page)
+        self.assertNotIn('>Other</div>', sidebar)
+
     def test_missing_gpg_does_not_claim_no_keys_exist(self):
         status = {"gpgAvailable": False, "configured": "0123456789ABCDEF", "enabled": True, "keys": []}
         with patch.object(configurator, "signing_status", return_value=status), \
@@ -63,6 +111,18 @@ class SubmissionTests(unittest.TestCase):
                 page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
                 self.assertIn("Backend preference order", page)
                 self.assertIn(f'<option value="{value}" selected>{label}</option>', page)
+
+    def test_default_branch_pull_remote_is_separate_from_publish_remote(self):
+        self.assertEqual(install.DEFAULT_SETTINGS["remote"], "origin")
+        self.assertEqual(install.DEFAULT_SETTINGS["pullRemote"], "auto")
+        values = form_values()
+        values["remote"] = ["origin"]
+        values["pullRemote"] = ["upstream"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["remote"], "origin")
+        self.assertEqual(parsed["pullRemote"], "upstream")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn('name="pullRemote"', page)
 
     def test_window_heading_and_name_preserve_vscode_defaults_and_round_trip(self):
         values = form_values()
@@ -516,6 +576,14 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('Resume at reset', page)
         self.assertNotIn('<strong>Resume work after Codex rate limits reset</strong>', page)
 
+    def test_coauthor_button_custom_icon_controls(self):
+        page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
+        self.assertIn('id="coauthor-icon-upload"', page)
+        self.assertIn('id="coauthor-icon-reset"', page)
+        self.assertIn("Bundled Sweetiebot icon", page)
+        self.assertIn("/coauthor-icon-upload", configurator.COAUTHOR_ICON_SCRIPT)
+        self.assertIn("/coauthor-icon-reset", configurator.COAUTHOR_ICON_SCRIPT)
+
     def test_rate_limit_sticker_toggle_and_local_picker(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["codexRateLimitSticker"])
         values = form_values()
@@ -555,6 +623,7 @@ class SubmissionTests(unittest.TestCase):
             "sweetiebot.caseOnlyRenameDetection",
             "sweetiebot.postCommitSpellcheck",
             "sweetiebot.startCompactPRSession",
+            "sweetiebot.startExpandedMergeSession",
             "sweetiebot.promptForIndependentWorkspaceTrust",
             "sweetiebot.mergePostStatusUpdates",
             "sweetiebot.mergeAutoFixCi",
@@ -1137,6 +1206,9 @@ class SubmissionTests(unittest.TestCase):
         expected_sections = len(dict.fromkeys(setting.section for setting in configurator.SETTINGS)) + 2  # Diagnostics and GitHub Apps manage their own state.
         self.assertEqual(len(tab_markup), expected_sections)
         self.assertEqual(len(panel_markup), expected_sections)
+        self.assertTrue(any(">Apps</button>" in tab for tab in tab_markup))
+        self.assertFalse(any(">GitHub Apps</button>" in tab for tab in tab_markup))
+        self.assertIn("<h2>GitHub Apps</h2>", page)
         self.assertEqual(
             sum('aria-selected="true"' in item.split('>', 1)[0] for item in tab_markup),
             1,
@@ -1528,7 +1600,10 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(opened.wait(5))
             with urllib.request.urlopen(captured["url"], timeout=5) as response:
                 page = response.read().decode()
-            self.assertIn("Sweetiebot SCM Setup", page)
+                self.assertIn("img-src data:", response.headers["Content-Security-Policy"])
+            self.assertIn("<title>Sweetiebot</title>", page)
+            self.assertIn('<h1 class="settings-brand"><img src="data:image/png;base64,', page)
+            self.assertIn('height="48">Sweetiebot</h1>', page)
             setup_url = urllib.parse.urlsplit(captured["url"])
             def endpoint(path):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))
@@ -1674,7 +1749,7 @@ class ServerTests(unittest.TestCase):
                 self.assertTrue(captured["flushed"])
                 with urllib.request.urlopen(captured["url"], timeout=5) as response:
                     page = response.read().decode()
-                    self.assertIn("Sweetiebot SCM Setup", page)
+                    self.assertIn("<title>Sweetiebot</title>", page)
                     self.assertIn('value="save" hidden>Done', page)
                     self.assertNotIn("Import signing key", page)
                 for path in ("/autosave", "/save", "/autosave"):

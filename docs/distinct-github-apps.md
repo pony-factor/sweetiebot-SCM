@@ -44,6 +44,12 @@ token without returning it to the page. After both checks succeed, choose
 **Separate Kefania and Lindsey Apps** and click **Apply mode**. New local actions
 read this configuration immediately. Choose **Legacy** to roll back.
 
+Lindsey's connection check validates both write and read tokens. New PR also
+uses Lindsey to look for an existing PR, so its installation needs **Checks:
+Read** and **Commit statuses: Read** even before a merge. If permissions are
+missing, the check names them; update the App and approve the changed permissions
+on the organization installation before checking again.
+
 Credential imports use a separate save action and never enter normal settings
 autosave. Environment variables take precedence over saved configuration.
 The Keychain import UI currently requires macOS; other platforms can use the
@@ -93,21 +99,23 @@ The old Kefania hosted/MCP flows in `pony-factor/kefania` are **not migrated**
 by this Sweetiebot integration; they must be updated separately to accept the new App slug and
 credentials before using those entry points with the Kefania identity.
 
-When **Separate Kefania and Lindsey Apps** is enabled, Sweetiebot-owned
-merge dashboard and batch refreshes read PR status, changed-file diffs, commit
-history, comments and checks with a repository-scoped Lindsey installation
-token. The token requests only read permissions (contents, pull requests,
-issues, checks and statuses); refresh is cached per repository and shared
-across concurrent reads. App authorization failures do not fall back to the
-VS Code user's quota. Legacy mode keeps the old user-token behavior.
-The native GitHub Pull Requests extension's own tree fetches are not rerouted.
+When **Separate Kefania and Lindsey Apps** is enabled, non-handoff
+Sweetiebot repository readers (including New PR's existing-PR lookup) use
+repository-scoped Lindsey installation tokens. They request only read
+permissions (contents, pull requests, issues, checks and statuses), cache
+credentials per repository, and fail closed on App authorization errors.
+The native GitHub Pull Requests extension's own reads are not rerouted.
 
-Merges, pushes, Git writes, reactions and user identity lookups still use
-the human's existing VS Code or GH CLI login. Inactive-window polling stays
-paused; primary and secondary rate limits still apply.
+**Local merge and branch-sync handoffs do not require a Lindsey GitHub App.**
+Their batch verification, merge dashboard (PR status, diffs, comments and checks),
+and Git and GitHub CLI execution use the signed-in user's existing VS Code or
+GH CLI credentials. This keeps exact-head, branch protection, check, and
+attribution safeguards intact without silently borrowing a user's token for
+bot-only reads. Inactive-window polling stays paused; primary and secondary
+rate limits still apply.
 
 The optional external Lindsey `bulk-merge.js`, discovered by
-Sweetiebot's `extension/lindsey_bulk_merge.js`, receives Lindsey's own
+Sweetiebot's `extension/lindsey-bulk-merge.js`, receives Lindsey's own
 installation token. Its current safety restrictions (including linked/native
 stacks and ambiguous attribution) still apply; authentication does not relax
 merge policy.

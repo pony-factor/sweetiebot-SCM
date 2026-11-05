@@ -3,6 +3,20 @@
 
 from __future__ import annotations
 
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
+
+import base64
 import html
 import json
 import math
@@ -26,6 +40,7 @@ from commit_diagnostics_dashboard import (
 from commit_hotkey import read_commit_hotkey, update_commit_hotkey
 from codex_colors import validate_color
 import codex_sticker
+import codex_button_icon
 from branch_names import load_catalog, merge_catalog, parse_imported_packs, parse_name_list, parse_pack_id_list
 from local_setup import (
     configure_signing_key,
@@ -46,6 +61,7 @@ from github_apps import app_status, save_app, save_mode, check_connection
 OLLAMA_URL = "http://127.0.0.1:11434"
 MAX_FORM_BYTES = 512 * 1024
 STICKER_UPLOAD_LIMIT = codex_sticker.MAX_STICKER_BYTES
+COAUTHOR_ICON_UPLOAD_LIMIT = codex_button_icon.MAX_ICON_BYTES
 
 STICKER_SCRIPT = r"""
 const stickerPicker = document.getElementById('sticker-upload');
@@ -86,6 +102,49 @@ stickerReset?.addEventListener('click', async () => {
   } finally {
     stickerPicker.disabled = false;
     stickerReset.disabled = false;
+  }
+});
+"""
+
+COAUTHOR_ICON_SCRIPT = r"""
+const coauthorIconPicker = document.getElementById('coauthor-icon-upload');
+const coauthorIconReset = document.getElementById('coauthor-icon-reset');
+const coauthorIconStatus = document.getElementById('coauthor-icon-status');
+coauthorIconPicker?.addEventListener('change', async () => {
+  const file = coauthorIconPicker.files?.[0];
+  if (!file) return;
+  coauthorIconPicker.disabled = true;
+  coauthorIconReset.disabled = true;
+  coauthorIconStatus.textContent = 'Saving icon locally…';
+  try {
+    if (file.size > 2 * 1024 * 1024) throw new Error('Choose an image under 2 MB.');
+    const response = await fetch('/coauthor-icon-upload' + location.search, {
+      method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to save the icon.');
+    coauthorIconStatus.textContent = 'Custom icon saved locally. Rebuild the app to apply it.';
+  } catch (error) {
+    coauthorIconStatus.textContent = 'Icon not saved: ' + error.message;
+  } finally {
+    coauthorIconPicker.value = '';
+    coauthorIconPicker.disabled = false;
+    coauthorIconReset.disabled = false;
+  }
+});
+coauthorIconReset?.addEventListener('click', async () => {
+  coauthorIconPicker.disabled = true;
+  coauthorIconReset.disabled = true;
+  try {
+    const response = await fetch('/coauthor-icon-reset' + location.search, {method: 'POST'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to reset the icon.');
+    coauthorIconStatus.textContent = 'Bundled Sweetiebot icon selected. Rebuild the app to apply it.';
+  } catch (error) {
+    coauthorIconStatus.textContent = 'Reset failed: ' + error.message;
+  } finally {
+    coauthorIconPicker.disabled = false;
+    coauthorIconReset.disabled = false;
   }
 });
 """
@@ -320,7 +379,8 @@ SETTINGS = (
     Setting("workspaceSearchMaxFileSizeMB", "scm-toolkit.workspace-search-max-file-size-mb", "Maximum indexed file size (MB)", "Maximum file size indexed directly.", "Search", "number", minimum=0.1, maximum=100),
     Setting("workspaceSearchExclude", "scm-toolkit.workspace-search-exclude", "Search exclusions", "Glob of paths excluded from workspace indexing. Leave blank to use no exclusions.", "Search", "optional_text"),
     Setting("defaultBranch", "scm-toolkit.default-branch", "Default branch", "Protected branch and pull-request base.", "Initialization", "text"),
-    Setting("remote", "scm-toolkit.remote", "Git remote", "Remote used for branch checks and repository discovery.", "Initialization", "text"),
+    Setting("remote", "scm-toolkit.remote", "Publish remote", "Remote used for branch publishing, pushes, and repository discovery. This does not control default-branch auto-pull.", "Initialization", "text"),
+    Setting("pullRemote", "scm-toolkit.pull-remote", "Default-branch auto-pull remote", "Use auto to prefer the upstream remote when one exists, falling back to the publish remote. Set origin or another remote to override. Topic branches still follow their tracking branches.", "Initialization", "text"),
     Setting("branchNameDisabledPacks", "scm-toolkit.branch-name-disabled-packs", "Name packs", "Enable or disable built-in and imported branch-name packs.", "Branch names", "packs"),
     Setting("branchCustomNames", "scm-toolkit.branch-custom-names", "Custom names", "Add your own lowercase branch names, one per line.", "Branch names", "names"),
     Setting("branchNameImports", "scm-toolkit.branch-name-imports", "Imported packs", "Paste third-party packs as JSON using id, label, description, and names.", "Branch names", "imports"),
@@ -910,6 +970,16 @@ def _local_setup_controls() -> str:
         '</div></div>'
     )
 
+SIDEBAR_CATEGORIES = (
+    ("Source Control & Commits", ("Message bar", "Source control", "Commits")),
+    ("Branches & Workspaces", ("Branch names",)),
+    ("AI & Spellcheck", ("Spellchecker", "Search")),
+    ("GitHub & Pull Requests", ("Pull requests", "Kefania", "Lindsey", "GitHub", "GitHub Apps")),
+    ("Interface & Customization", ("Codex", "Window", "Browser")),
+    ("System & Diagnostics", ("Initialization", "Diagnostics")),
+)
+
+
 def render_form(
     current: dict[str, object],
     models: list[str],
@@ -933,6 +1003,21 @@ def render_form(
     section_names.insert(section_names.index("Codex"), "GitHub")
     section_names.insert(section_names.index("GitHub") + 1, "GitHub Apps")
     section_names.append("Diagnostics")
+
+    # Keep all existing pages and future sections reachable without changing settings.
+    groups = []
+    covered = set()
+    for label, members in SIDEBAR_CATEGORIES:
+        matches = [name for name in members if name in section_names]
+        if matches:
+            groups.append((label, matches))
+            covered.update(matches)
+    remaining = [name for name in section_names if name not in covered]
+    if remaining:
+        groups.append(("Other", remaining))
+    section_names = [name for _, members in groups for name in members]
+    group_starts = {members[0]: label for label, members in groups}
+    group_ends = {members[-1] for _, members in groups}
     for index, section in enumerate(section_names):
         controls = "".join(
             _setting_control(setting, current.get(setting.name, ""))
@@ -1000,6 +1085,21 @@ def render_form(
                              "including its configured trailer and commit flow. "
                              "Independently configurable and unbound by default."),
             )
+        if section == "Message bar":
+            icon_status = ("Custom icon stored on this computer" if codex_button_icon.icon_path().is_file()
+                           else "Bundled Sweetiebot icon")
+            controls += (
+                '<div class="setting sticker-setting"><span><strong>Codex co-author button icon</strong>'
+                '<small>Uses sweetiebot.png by default. Upload PNG, JPEG, GIF or WebP up to 2 MB. '
+                'Stored privately on this computer, not in Git or settings sync. '
+                'Rebuild and reload the app after changing.</small></span>'
+                '<div class="sticker-actions"><input type="file" id="coauthor-icon-upload" '
+                'accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" '
+                'aria-label="Choose Codex co-author button artwork">'
+                '<button type="button" id="coauthor-icon-reset">Use Sweetiebot icon</button>'
+                f'<output id="coauthor-icon-status" role="status" aria-live="polite">{html.escape(icon_status)}</output>'
+                '</div></div>'
+            )
         if section == "Branch names":
             controls = _pack_controls(current) + controls
         if section == "Source control":
@@ -1061,11 +1161,19 @@ def render_form(
         selected = "true" if index == 0 else "false"
         tabindex = "0" if index == 0 else "-1"
         hidden = "" if index == 0 else " hidden"
+        if section in group_starts:
+            tabs.append(
+                '<div class="settings-tab-group" role="presentation">'
+                '<div class="settings-tab-category" aria-hidden="true">'
+                f'{html.escape(group_starts[section])}</div>'
+            )
         tabs.append(
             f'<button class="settings-tab" type="button" role="tab" id="{tab_id}" '
             f'aria-controls="{panel_id}" aria-selected="{selected}" tabindex="{tabindex}">'
-            f'{html.escape(section)}</button>'
+            f'{html.escape("Apps" if section == "GitHub Apps" else section)}</button>'
         )
+        if section in group_ends:
+            tabs.append('</div>')
         sections.append(
             f'<section class="settings-panel" id="{panel_id}" role="tabpanel" '
             f'aria-labelledby="{tab_id}"{hidden}><h2>{html.escape(section)}</h2>{status}{controls}</section>'
@@ -1077,43 +1185,52 @@ def render_form(
     instance_json = json.dumps(server_instance).replace("<", "\\u003c")
     submit_label = action_label
     submit_hidden = "" if finish_on_save else " hidden"
+    logo_url = "data:image/png;base64," + base64.b64encode(codex_button_icon.BUNDLED_ICON.read_bytes()).decode("ascii")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sweetiebot SCM Setup</title><style>
+<title>Sweetiebot</title><style>
 :root{{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--danger:#f85149}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}.settings-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}}.settings-header>div:first-child{{min-width:0}}.rebuild-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:160px}}.rebuild-actions output{{font-size:12px;max-width:290px;text-align:right;color:var(--muted)}}.rebuild-actions output.error-state{{color:#ffb3ad}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
+.settings-brand{{display:flex;align-items:center;gap:12px}}.settings-brand img{{width:48px;height:48px;object-fit:contain;flex:none}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .settings-group h3{{font-size:14px;margin:14px 0 4px;color:var(--muted)}}.settings-group+.settings-group{{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}}
 .sticker-actions{{display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:55%}}.sticker-actions input{{max-width:100%;font:inherit}}.sticker-actions output{{font-size:12px;color:var(--muted)}}.sticker-setting{{align-items:flex-start}}
 .setting{{display:flex;align-items:center;gap:20px;min-height:62px;padding:10px 0;border-top:1px solid var(--line)}}.setting:first-of-type{{border-top:0}}.setting>span:first-child{{flex:1;min-width:0}}strong,small{{display:block}}small{{margin-top:2px;color:var(--muted)}}.model-row{{gap:12px;overflow:visible}}.model-row button{{flex:none}}.model-picker{{position:relative;width:min(280px,38%);flex:none}}.model-row .model-picker input{{width:100%;padding-right:36px}}.model-picker-toggle{{position:absolute;top:1px;right:1px;bottom:1px;width:32px;padding:0;border:0;border-left:1px solid var(--line);border-radius:0 5px 5px 0;background:var(--bg);color:var(--muted)}}.model-picker-toggle:hover,.model-picker-toggle[aria-expanded="true"]{{background:color-mix(in srgb,var(--accent) 12%,var(--bg));color:var(--text)}}.model-options{{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;max-height:220px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--panel);box-shadow:0 10px 30px #0008}}.model-options[hidden]{{display:none}}.model-option{{display:block;width:100%;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.model-option:hover,.model-option:focus,.model-option[aria-selected="true"]{{outline:0;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}}.model-option-empty{{padding:8px;color:var(--muted);font-size:12px}}button:disabled{{opacity:.6;cursor:default}}
 .field-row input,.field-row select,.textarea-row textarea{{width:min(440px,52%);padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.signing-actions{{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;width:min(520px,56%)}}.signing-actions select{{flex:1 1 240px;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font:inherit}}.field-row input.compact-number{{width:76px;min-width:76px;flex:none;text-align:right;font-variant-numeric:tabular-nums}}.textarea-row textarea{{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .toggle-row input{{position:absolute;opacity:0;pointer-events:none}}.toggle{{position:relative;width:42px;height:24px;flex:none;border-radius:99px;background:#484f58;transition:.15s}}.toggle:after{{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:white;transition:.15s}}input:checked+.toggle{{background:var(--accent)}}input:checked+.toggle:after{{transform:translateX(18px)}}input:focus-visible+.toggle,.field-row input:focus,.field-row select:focus,.textarea-row textarea:focus{{outline:2px solid var(--accent);outline-offset:2px}}
-.actions{{position:sticky;bottom:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:24px;padding:16px;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(12px)}}.save-status{{margin-right:auto;color:var(--muted)}}.save-status.error-state{{color:#ffb3ad}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
-.settings-layout{{display:grid;grid-template-columns:190px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
+.actions{{position:fixed;bottom:12px;left:16px;right:16px;z-index:1100;display:flex;justify-content:flex-end;align-items:center;gap:10px;pointer-events:none}}.actions>*{{pointer-events:auto}}.save-status{{position:relative;display:grid;place-items:center;flex:none;width:28px;height:28px;margin-right:auto;border:1px solid var(--line);border-radius:50%;background:var(--bg);color:#3fb950;font-size:0}}.save-status::before{{content:"✓";font-size:16px;line-height:1}}.save-status[data-state="pending"]{{color:var(--muted)}}.save-status[data-state="pending"]::before{{content:"•"}}.save-status[data-state="saving"]{{color:var(--muted)}}.save-status[data-state="saving"]::before{{content:"";width:12px;height:12px;border:2px solid var(--line);border-top-color:currentColor;border-radius:50%;animation:save-spin .8s linear infinite}}.save-status.error-state{{color:#ffb3ad}}.save-status.error-state::before{{content:"!";font-weight:700}}.save-status:hover::after,.save-status:focus-visible::after{{content:attr(title);position:absolute;bottom:calc(100% + 8px);left:0;width:max-content;max-width:min(360px,calc(100vw - 32px));padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font-size:12px;overflow-wrap:anywhere}}.save-status:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}@keyframes save-spin{{to{{transform:rotate(360deg)}}}}@media(prefers-reduced-motion:reduce){{.save-status[data-state="saving"]::before{{animation:none}}}}button{{padding:9px 15px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--text);font:inherit;cursor:pointer}}button.primary{{border-color:var(--accent);background:var(--accent);font-weight:600}}.error{{margin-bottom:16px;padding:12px;border:1px solid var(--danger);border-radius:8px;color:#ffb3ad}}
+.settings-layout{{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px;align-items:start}}.settings-panels{{min-width:0}}.settings-tabs{{position:sticky;top:20px;display:flex;flex-direction:column;gap:12px;max-height:calc(100vh - 40px);overflow-y:auto;scrollbar-width:thin;padding:10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}}.settings-tab-group{{display:flex;flex-direction:column;gap:4px;min-width:0}}.settings-tab-group+.settings-tab-group{{padding-top:10px;border-top:1px solid var(--line)}}.settings-tab-category{{padding:0 10px 2px;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em}}.settings-tab{{width:100%;padding:9px 10px;border-color:transparent;text-align:left;color:var(--muted);font-weight:600}}.settings-tab:hover{{background:color-mix(in srgb,var(--accent) 8%,var(--panel));color:var(--text)}}.settings-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel));color:var(--text)}}.settings-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}
 {MESSAGE_BAR_STYLE}
 {CODEX_LAYOUT_STYLE}
 {WINDOW_TITLE_STYLE}
 {COMMIT_HOTKEY_STYLE}
 {DIAGNOSTICS_STYLE}
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
-@media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
+@media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;overflow:visible}}.settings-tab-group+.settings-tab-group{{padding-top:0;border-top:0}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
-</style></head><body><main><header class="settings-header"><div><h1>Sweetiebot SCM Setup</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></div><div class="rebuild-actions"><button type="button" id="rebuild-app" title="Manually update and restore Sweetiebot app customizations">Rebuild app</button><output id="rebuild-status" role="status" aria-live="polite"></output></div></header>
+</style></head><body><main><header class="settings-header"><div><h1 class="settings-brand"><img src="{logo_url}" alt="" width="48" height="48">Sweetiebot</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></div><div class="rebuild-actions"><button type="button" id="rebuild-app" title="Manually update and restore Sweetiebot app customizations">Rebuild app</button><output id="rebuild-status" role="status" aria-live="polite"></output></div></header>
 {error_html}<form method="post" action="{action}"><div class="settings-layout">
 <nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings categories">{''.join(tabs)}</nav>
 <div class="settings-panels">{''.join(sections)}</div>
 </div>
-<div class="actions"><output id="save-status" class="save-status" role="status" aria-live="polite">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
+<div class="actions"><output id="save-status" class="save-status" data-state="saved" title="Saved" tabindex="0" role="status" aria-live="polite" aria-atomic="true">Saved</output><button class="primary" type="submit" name="action" value="save"{submit_hidden}>{html.escape(submit_label)}</button></div></form>
 <script>
 {COMMIT_HOTKEY_SCRIPT}
 {CODEX_LAYOUT_SCRIPT}
 {APP_SCRIPT}
 {STICKER_SCRIPT}
+{COAUTHOR_ICON_SCRIPT}
 {PERMISSIONS_SCRIPT}
 {DIAGNOSTICS_SCRIPT}
 const settingsForm = document.querySelector('form');
 const saveStatus = document.getElementById('save-status');
+function setSaveStatus(message, state) {{
+  saveStatus.textContent = message;
+  saveStatus.title = message;
+  saveStatus.dataset.state = state;
+  saveStatus.classList.toggle('error-state', state === 'error');
+}}
 const commitRequestTimeout = settingsForm.elements.namedItem('aiCommitRequestTimeoutSeconds');
 const commitAttempts = settingsForm.elements.namedItem('aiCommitAttempts');
 function updateCommitGenerationBudget() {{
@@ -1134,8 +1251,7 @@ const finishOnSave = {json.dumps(finish_on_save)};
 
 async function persistSettings() {{
   const version = editVersion;
-  saveStatus.textContent = 'Saving…';
-  saveStatus.classList.remove('error-state');
+  setSaveStatus('Saving…', 'saving');
   const data = new FormData(settingsForm);
   data.delete('action');
   try {{
@@ -1145,11 +1261,10 @@ async function persistSettings() {{
     }});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Unable to save settings.');
-    if (version === editVersion) saveStatus.textContent = 'Saved';
+    if (version === editVersion) setSaveStatus('Saved', 'saved');
     return true;
   }} catch (error) {{
-    saveStatus.textContent = 'Not saved: ' + error.message;
-    saveStatus.classList.add('error-state');
+    setSaveStatus('Not saved: ' + error.message, 'error');
     return false;
   }}
 }}
@@ -1164,8 +1279,7 @@ function scheduleAutosave(event) {{
   if (!target?.name || target.name === 'action') return;
   editVersion++;
   clearTimeout(autosaveTimer);
-  saveStatus.textContent = 'Unsaved changes';
-  saveStatus.classList.remove('error-state');
+  setSaveStatus('Unsaved changes', 'pending');
   autosaveTimer = setTimeout(() => {{
     autosaveTimer = null;
     void queueAutosave();
@@ -1245,8 +1359,7 @@ rebuildButton?.addEventListener('click', async () => {{
 void pollRebuildStatus();
 
 async function runLocalSetupAction(path, values = {{}}) {{
-  saveStatus.textContent = 'Working…';
-  saveStatus.classList.remove('error-state');
+  setSaveStatus('Working…', 'saving');
   try {{
     const response = await fetch(path + location.search, {{
       method: 'POST',
@@ -1254,11 +1367,10 @@ async function runLocalSetupAction(path, values = {{}}) {{
     }});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Unable to complete local setup.');
-    saveStatus.textContent = result.message || 'Done';
+    setSaveStatus(result.message || 'Done', 'saved');
     if (result.reload) location.reload();
   }} catch (error) {{
-    saveStatus.textContent = 'Setup failed: ' + error.message;
-    saveStatus.classList.add('error-state');
+    setSaveStatus('Setup failed: ' + error.message, 'error');
   }}
 }}
 
@@ -1707,7 +1819,7 @@ def run_configurator(
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'")
+            self.send_header("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'")
             self.end_headers()
             self.wfile.write(body)
 
@@ -1791,7 +1903,8 @@ def run_configurator(
                 self._send("<h1>Invalid request</h1>", 400)
                 return
             path = urllib.parse.urlsplit(self.path).path
-            max_length = STICKER_UPLOAD_LIMIT if path == "/sticker-upload" else MAX_FORM_BYTES
+            max_length = (COAUTHOR_ICON_UPLOAD_LIMIT if path == "/coauthor-icon-upload"
+                          else STICKER_UPLOAD_LIMIT if path == "/sticker-upload" else MAX_FORM_BYTES)
             if length < 0 or length > max_length:
                 self._send_json({"error": "Request too large."}, 413)
                 return
@@ -1818,6 +1931,20 @@ def run_configurator(
             if path == "/sticker-reset":
                 try:
                     codex_sticker.clear_sticker()
+                    self._send_json({"saved": True})
+                except (OSError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
+            if path in ("/coauthor-icon-upload", "/coauthor-icon-reset"):
+                origin = self.headers.get("Origin")
+                if origin and origin != f"http://127.0.0.1:{self.server.server_port}":
+                    self._send_json({"error": "Invalid origin."}, 403)
+                    return
+                try:
+                    if path == "/coauthor-icon-upload":
+                        codex_button_icon.save_icon(data)
+                    else:
+                        codex_button_icon.clear_icon()
                     self._send_json({"saved": True})
                 except (OSError, ValueError) as error:
                     self._send_json({"error": str(error)}, 400)

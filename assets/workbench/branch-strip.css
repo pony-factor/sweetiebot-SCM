@@ -1,0 +1,138 @@
+/* Branch picker fills the SCM width and opens into available viewport space. */
+.monaco-workbench .scm-toolkit-branch-strip {
+    position: fixed;
+    z-index: 2600;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+    border-radius: 4px;
+    box-shadow: 0 4px 12px var(--vscode-widget-shadow, #0006);
+    background: var(--vscode-panel-background, var(--vscode-sideBar-background));
+    color: var(--vscode-foreground);
+    font: var(--vscode-font-size) var(--vscode-font-family);
+}
+.scm-toolkit-branch-strip-header {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 5px;
+    padding: 6px;
+    border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
+}
+.scm-toolkit-branch-strip-filter {
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 26px;
+    padding: 0 7px;
+    border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+    border-radius: 4px;
+    outline: none;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font: inherit;
+}
+.scm-toolkit-branch-strip-filter::placeholder { color: var(--vscode-input-placeholderForeground); }
+.scm-toolkit-branch-strip-filter:focus { border-color: var(--vscode-focusBorder); }
+.scm-toolkit-branch-strip-scroll {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: stretch;
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+    gap: 2px;
+    padding: 5px 6px;
+}
+.scm-toolkit-branch-strip-scroll:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+.scm-toolkit-branch-strip-item, .scm-toolkit-branch-strip-native {
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    min-width: 0;
+    width: 100%;
+    min-height: 27px;
+    gap: 8px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--vscode-foreground);
+    cursor: pointer;
+    font: inherit;
+}
+.scm-toolkit-branch-strip-item { justify-content: space-between; text-align: left; }
+.scm-toolkit-branch-strip-item:hover, .scm-toolkit-branch-strip-native:hover {
+    background: var(--vscode-list-hoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+.scm-toolkit-branch-strip-item:focus-visible, .scm-toolkit-branch-strip-native:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+.scm-toolkit-branch-strip-item.current {
+    background: var(--vscode-list-activeSelectionBackground, var(--vscode-button-background));
+    color: var(--vscode-list-activeSelectionForeground, var(--vscode-button-foreground));
+}
+.scm-toolkit-branch-strip-item:disabled { opacity: .6; cursor: default; }
+.scm-toolkit-branch-strip-item .codicon { flex: 0 0 auto; font-size: 13px; opacity: 1; color: inherit; }
+.scm-toolkit-branch-strip-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: nowrap;
+}
+.scm-toolkit-branch-strip-metadata {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 6px;
+    align-items: center;
+    color: inherit;
+}
+.scm-toolkit-branch-strip-pr {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 1px 5px;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    white-space: nowrap;
+}
+.scm-toolkit-branch-strip-section {
+    display: block;
+    flex: 0 0 auto;
+    padding: 7px 8px 3px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground);
+}
+.scm-toolkit-branch-strip-note {
+    flex: 0 0 auto;
+    overflow-wrap: anywhere;
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    padding: 4px 8px;
+}
+.scm-toolkit-branch-strip-native {
+    flex: 0 0 28px;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    min-height: 26px;
+    padding: 0;
+}

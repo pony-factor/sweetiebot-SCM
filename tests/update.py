@@ -1,3 +1,16 @@
+
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
 import io
 from pathlib import Path
 import tarfile
@@ -85,14 +98,14 @@ class UpdateTests(unittest.TestCase):
             scripts = candidate / "scripts"
             scripts.mkdir()
             installer = scripts / "update.py"
-            workspace = scripts / "workspace_search.py"
+            workspace = scripts / "workspace-search.py"
             installer.write_text('FORMATS = {"extension": {".js", ".html"}}')
             workspace.write_text('FORMATS = {"extension": {".js", ".html"}}')
             self.assertTrue(update.release_retains_extension_html(candidate))
             installer.write_text("from extension_assets import include_runtime_relative")
             workspace.write_text("from extension_assets import runtime_files")
             self.assertFalse(update.release_retains_extension_html(candidate))
-            (scripts / "extension_assets.py").write_text("# inventory")
+            (scripts / "extension-assets.py").write_text("# inventory")
             self.assertTrue(update.release_retains_extension_html(candidate))
             workspace.write_text("# missing runtime inventory")
             self.assertFalse(update.release_retains_extension_html(candidate))
@@ -123,8 +136,8 @@ class UpdateTests(unittest.TestCase):
     def test_draft_confirmation_survives_update_and_installer_packaging(self):
         import build_installer_app
         import subprocess
-        asset = Path('extension/ui/draft_confirmation.html')
-        module = Path('extension/codex/draft_handoff.js')
+        asset = Path('extension/ui/draft-confirmation.html')
+        module = Path('extension/codex/draft-handoff.js')
         repo = Path(update.__file__).resolve().parent.parent
         entries = {path.as_posix(): (repo / path).read_text() for path in (asset, module)}
         with tempfile.TemporaryDirectory() as directory:
@@ -139,7 +152,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_github_reaction_asset_survives_update_and_bundled_repair(self):
-        asset = Path('assets/github/pr_reaction_hover.js')
+        asset = Path('assets/github/pr-reaction-hover.js')
         contents = (Path(update.__file__).resolve().parent.parent / asset).read_text()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -153,20 +166,20 @@ class UpdateTests(unittest.TestCase):
             root = Path(directory)
             update.extract_sources(archive({'scripts/update.py': 'ok', '../escape.py': 'bad',
                                            'scripts/config.env': 'excluded', 'README.md': 'excluded',
-                                           'assets/browser/pull_request_submit.js': 'browser'}), root)
+                                           'assets/browser/pull-request-submit.js': 'browser'}), root)
             self.assertEqual([p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()],
-                             ['scripts/update.py', 'assets/browser/pull_request_submit.js'])
+                             ['scripts/update.py', 'assets/browser/pull-request-submit.js'])
             self.assertFalse((root / 'scripts/link.py').exists())
 
     def test_updates_use_sources_without_a_generated_installer_app(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             update.extract_sources(archive({
-                'scripts/branch_name_packs.json': '{"version": 1}',
-                'Sweetiebot Installer.app/Contents/Resources/toolkit/scripts/branch_name_packs.json': 'stale',
+                'scripts/branch-name-packs.json': '{"version": 1}',
+                'Sweetiebot Installer.app/Contents/Resources/toolkit/scripts/branch-name-packs.json': 'stale',
             }), root)
             self.assertEqual(
-                (root / 'scripts/branch_name_packs.json').read_text(),
+                (root / 'scripts/branch-name-packs.json').read_text(),
                 '{"version": 1}',
             )
             self.assertFalse((root / 'Sweetiebot Installer.app').exists())
@@ -186,21 +199,21 @@ class UpdateTests(unittest.TestCase):
                 self.assertEqual(result is not None, supports_updates)
 
     def test_pr_release_cannot_reinstall_a_bootstrap_that_drops_html(self):
-        for broken in ('update.py', 'workspace_search.py', 'asset', None):
+        for broken in ('update.py', 'workspace-search.py', 'asset', None):
             with self.subTest(broken=broken), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / 'upstream.git').mkdir()
                 payload = {
                     'scripts/install.py': 'installer', 'scripts/repair.py': 'repair',
                     'scripts/update.py': 'FORMATS = {"extension": {".js", ".html"}}',
-                    'scripts/workspace_search.py': 'FORMATS = {"extension": {".js", ".html"}}',
-                    'extension/codex/draft_handoff.js': 'handoff',
-                    'extension/ui/draft_confirmation.html': '<html>confirmation</html>',
+                    'scripts/workspace-search.py': 'FORMATS = {"extension": {".js", ".html"}}',
+                    'extension/codex/draft-handoff.js': 'handoff',
+                    'extension/ui/draft-confirmation.html': '<html>confirmation</html>',
                     update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
                     update.THINKING_ASSET.as_posix(): 'thinking guard',
                 }
                 if broken == 'asset':
-                    del payload['extension/ui/draft_confirmation.html']
+                    del payload['extension/ui/draft-confirmation.html']
                 elif broken:
                     payload['scripts/' + broken] = 'FORMATS = {"extension": {".js"}}'
                 with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
@@ -225,10 +238,14 @@ class UpdateTests(unittest.TestCase):
             payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                        'scripts/repair.py': 'repair',
                        update.THINKING_ASSET.as_posix(): 'thinking guard'}
-            for force in (False, True):
-                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
-                    result = update.prepare_update(root, force=force)
-                self.assertEqual(result is not None, force)
+            for profile in (None, 'SHARED_BROWSER_PROFILE = 2', update.SHARED_PROFILE_MARKER):
+                if profile is not None:
+                    payload[update.SHARED_PROFILE_SOURCE.as_posix()] = profile
+                for force in (False, True):
+                    with self.subTest(profile=profile, force=force), patch.object(
+                            update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                        result = update.prepare_update(root, force=force)
+                    self.assertEqual(result is not None, force or profile == update.SHARED_PROFILE_MARKER)
 
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -239,13 +256,13 @@ class UpdateTests(unittest.TestCase):
             (cache / 'installed-revision').write_text('abc\n')
             payload = {
                 'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
-                'scripts/repair.py': 'repair', 'scripts/codex_composer.py': 'new placeholders',
+                'scripts/repair.py': 'repair', 'scripts/codex-composer.py': 'new placeholders',
                 update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
                     update.THINKING_ASSET.as_posix(): 'thinking guard',
-                'scripts/ai_commit.py': 'current Git wrapper',
-                'scripts/sweetiebot_async_commit.py': 'current async helper',
-                'scripts/post_commit_spellcheck.py': 'current spellcheck helper',
-                'extension/commits/post_commit_spellcheck_notice.js': 'current notice handler',
+                'scripts/ai-commit.py': 'current Git wrapper',
+                'scripts/sweetiebot-async-commit.py': 'current async helper',
+                'scripts/post-commit-spellcheck.py': 'current spellcheck helper',
+                'extension/commits/post-commit-spellcheck-notice.js': 'current notice handler',
                 'extension/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
             # Model a complete published runtime, not only the historically
@@ -253,8 +270,8 @@ class UpdateTests(unittest.TestCase):
             script_dir = Path(update.__file__).resolve().parent
             payload.update({f"scripts/{name}": source.read_text()
                             for name, source in wrapper_dependencies.runtime_sources(script_dir).items()})
-            payload["extension/commits/pony_git_publish.js"] = (
-                script_dir.parent / "extension/commits/pony_git_publish.js").read_text()
+            payload["extension/commits/pony-git-publish.js"] = (
+                script_dir.parent / "extension/commits/pony-git-publish.js").read_text()
             destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'
             installed = destination / 'codex-customizations'
             wrapper = root / 'bin/scm-toolkit-git'
@@ -274,13 +291,13 @@ class UpdateTests(unittest.TestCase):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(source.read_bytes())
             wrapper.parent.mkdir()
-            wrapper.write_text(payload['scripts/ai_commit.py'])
-            helper.write_text(payload['scripts/post_commit_spellcheck.py'])
+            wrapper.write_text(payload['scripts/ai-commit.py'])
+            helper.write_text(payload['scripts/post-commit-spellcheck.py'])
             wrapper.chmod(0o755)
             helper.chmod(0o755)
-            async_helper = wrapper.with_name('sweetiebot_async_commit.py')
+            async_helper = wrapper.with_name('sweetiebot-async-commit.py')
             self.assertIsNotNone(prepare())
-            async_helper.write_text(payload['scripts/sweetiebot_async_commit.py'])
+            async_helper.write_text(payload['scripts/sweetiebot-async-commit.py'])
             async_helper.chmod(0o755)
             self.assertIsNotNone(prepare())
             for target, source in wrapper_dependencies.wrapper_files(cache / 'candidate/scripts', wrapper).items():
@@ -297,7 +314,7 @@ class UpdateTests(unittest.TestCase):
             self.assertIsNotNone(prepare())
             legacy.with_name(legacy.name + '-spellcheck.py').symlink_to(helper)
             self.assertIsNone(prepare())
-            for target in [destination / 'commits' / 'post_commit_spellcheck_notice.js', destination / 'ai_commit.py', wrapper, helper, async_helper]:
+            for target in [destination / 'commits' / 'post-commit-spellcheck-notice.js', destination / 'ai-commit.py', wrapper, helper, async_helper]:
                 expected = target.read_bytes()
                 target.write_text('stale runtime')
                 self.assertIsNotNone(prepare())
@@ -308,7 +325,7 @@ class UpdateTests(unittest.TestCase):
             helper.chmod(0o755)
             self.assertIsNone(prepare())
             self.assertIsNotNone(prepare(force=True))
-            (installed / 'scripts/codex_composer.py').write_text('old composer')
+            (installed / 'scripts/codex-composer.py').write_text('old composer')
             self.assertIsNotNone(prepare())
-            (installed / 'scripts/codex_composer.py').unlink()
+            (installed / 'scripts/codex-composer.py').unlink()
             self.assertIsNotNone(prepare())

@@ -12,6 +12,14 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
+## Isolated experiments
+
+Use **Open Experimental Workspace** (the beaker button in Source Control) to create a separate clone of the current branch on a random `trial-<hex>` branch under `/var/tmp/Sweetiebot/<repo>/<branch>-<color>/<repo>`. VS Code reuses the current window and moves the same Codex chat into the experiment. The source repository, staged/index state, worktree, and branch remain unchanged. This clone includes tracked staged/unstaged modifications and non-ignored untracked regular files, but not Git-ignored build outputs. Conflicted indexes, unsafe untracked symlinks and special files fail closed rather than silently creating an incomplete experiment.
+
+Add `/var/tmp/Sweetiebot` (macOS may display `/private/var/tmp/Sweetiebot`) to **Manage Workspace Trust** once; trust is controlled by VS Code, never bypassed by Sweetiebot. The parent directory is created with private owner-only permissions. An existing unsafe or symlinked parent is rejected.
+
+Sweetiebot interrupts an active Codex turn before capturing the snapshot, preserves composer drafts and attachments, and saves the same checkout handoff used by New Branch. After the window reloads, Codex resumes the same chat with the verified experimental working directory and an instruction to continue the experiment and run relevant tests and builds there. An idle chat also receives that instruction. If no Codex chat is open, the experimental workspace still opens. If opening fails, Sweetiebot clears the saved handoff, removes its incomplete clone, and attempts to resume the original chat. Experiments are not registered for automatic managed-worktree pruning; review and remove them manually when no longer needed.
+
 ## Sync and cleanup
 
 **Automatically pull clean branches** uses guarded fast-forward behavior and does not silently merge divergent histories. The distinct `sweetiebot.cloudRepositorySync=false` option schedules eligible clean-main checkouts every 15 minutes via macOS; it skips dirty/divergent work. `sweetiebot.autoPublishNewBranches=false` controls publishing newly created branches, not PR creation.
@@ -26,6 +34,6 @@ git branch -vv
 git worktree list --porcelain
 ```
 
-Never directly remove registered Git metadata. Use Git's worktree operations after establishing safety. Evidence: [branch actions](../extension/branches/actions.js), [shared main](../extension/branches/shared_main.js), [stack logic](../extension/branches/stacked_branch.js), [cleanup](../extension/branches/workspace_prune.js), [sync](../scripts/cloud_repo_sync.py).
+Never directly remove registered Git metadata. Use Git's worktree operations after establishing safety. Evidence: [branch actions](../extension/branches/actions.js), [shared main](../extension/branches/shared-main.js), [stack logic](../extension/branches/stacked-branch.js), [cleanup](../extension/branches/workspace-prune.js), [sync](../scripts/cloud-repo-sync.py).
 
 See [PR workflow](pull-requests-and-merges.md) for stack merging and [troubleshooting](troubleshooting.md) for blocked branch changes.

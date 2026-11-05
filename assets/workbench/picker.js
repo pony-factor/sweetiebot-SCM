@@ -478,15 +478,35 @@ function scmToolkitAttachCommitSettings(widget, button) {
         const rows = inputRow?.parentElement;
         const actionRow = index === null || index === undefined ? undefined
             : rows?.querySelector(`.monaco-list-row[data-index="${Number(index) + 1}"]`);
-        const nativeDropdown = actionRow?.querySelector('.button-container > .monaco-button-dropdown');
-        // Clean repositories still show the disabled native action. Keep the
-        // wand after its dropdown, inside the same custom outline in all states.
-        const dropdown = nativeDropdown?.getClientRects?.().length === 0 ? undefined : nativeDropdown;
-        const destination = dropdown || widget.element;
+        // SCM can insert other rows between the message editor and native
+        // Commit/Sync actions. Do not assume the action is always at index + 1.
+        const visibleAction = container => {
+            if (!container) return undefined;
+            const dropdown = container.querySelector(':scope > .monaco-button-dropdown');
+            const single = container.querySelector(':scope > .monaco-button');
+            const visible = element => element && element.getClientRects?.().length !== 0;
+            if (visible(dropdown)) return { container, dropdown };
+            if (visible(single)) return { container, single: true };
+            return undefined;
+        };
+        let action = visibleAction(actionRow?.querySelector('.button-container'));
+        if (!action && root) {
+            const candidates = [...(root.querySelectorAll?.('.button-container') ?? [])]
+                .map(visibleAction).filter(Boolean);
+            // Attach only when the target is unambiguous. Multiple SCM
+            // providers can share a view; never move Settings to another one.
+            if (candidates.length === 1) action = candidates[0];
+        }
+        const dropdown = action?.dropdown;
+        const singleAction = action?.single ? action.container : undefined;
+        const destination = dropdown || singleAction || widget.element;
         if (button.parentElement === destination) return;
-        button.parentElement?.classList.remove('scm-toolkit-commit-settings');
+        button.parentElement?.classList.remove(
+            'scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings'
+        );
         button.remove();
-        if (dropdown) dropdown.classList.add('scm-toolkit-commit-settings');
+        if (dropdown || singleAction) destination.classList.add('scm-toolkit-commit-settings');
+        if (singleAction) destination.classList.add('scm-toolkit-single-action-settings');
         destination.append(button);
         widget.layout();
     };
@@ -497,7 +517,9 @@ function scmToolkitAttachCommitSettings(widget, button) {
     widget.disposables.add({
         dispose() {
             observer.disconnect();
-            button.parentElement?.classList.remove('scm-toolkit-commit-settings');
+            button.parentElement?.classList.remove(
+                'scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings'
+            );
             button.remove();
         }
     });
@@ -1621,10 +1643,21 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     const codexButton = doc.createElement('button');
     codexButton.type = 'button';
-    codexButton.className = 'scm-toolkit-codex-coauthor codicon codicon-account';
+    codexButton.className = 'scm-toolkit-codex-coauthor';
     codexButton.hidden = true;
     codexButton.title = `Commit with ${settings.codexCoauthorName || 'Codex'} co-author`;
     codexButton.setAttribute('aria-label', codexButton.title);
+    if (typeof settings.codexCoauthorIconDataUrl === 'string'
+        && /^data:image\/(?:png|jpeg|gif|webp);base64,/.test(settings.codexCoauthorIconDataUrl)) {
+        const icon = doc.createElement('img');
+        icon.className = 'scm-toolkit-codex-coauthor-icon';
+        icon.alt = '';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.src = settings.codexCoauthorIconDataUrl;
+        codexButton.append(icon);
+    } else {
+        codexButton.classList.add('codicon', 'codicon-account');
+    }
 
     const autoCommitButton = doc.createElement('button');
     autoCommitButton.type = 'button';
@@ -2748,7 +2781,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 refreshAutocomplete();
             }
 
-            if (settings.spellcheckManualCommit) {
+            if (settings.spellcheckPreviewButton !== false) {
                 spellcheckButton.hidden = false;
                 refreshSpellcheck();
             }
@@ -2911,7 +2944,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                     ? historyItemRef.name
                     : undefined;
                 currentBranchRevision = historyItemRef?.revision;
-                // Repository events in auto_publish.js own automatic publication,
+                // Repository events in auto-publish.js own automatic publication,
                 // including a branch opened in a fresh workspace window.
 
                 const branch = command?.title?.replace(/\$\([^)]+\)/g, '').trim();
@@ -2979,7 +3012,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     if (doc.__sweetiebotCompactWindow) return;
     const win = doc.defaultView;
     if (!win || !nativeHost?.positionWindow) return;
-    const state = { restore: null, busy: false, opening: false, autoCompactStarted: false };
+    const state = { restore: null, busy: false, opening: false, autoLayoutStarted: false };
     doc.__sweetiebotCompactWindow = state;
     const placementKey = 'sweetiebot.compact-window-placements.v1';
     const readPlacements = () => {
@@ -3102,11 +3135,12 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
         action.title = compact ? 'Expand to 75% of this display' : 'Compact window';
         action.setAttribute('aria-label', action.title);
     };
-    const toggle = async action => {
+    const toggle = async (action, expandOnStartup = false) => {
         if (state.busy) return;
+        const expanding = Boolean(state.restore) || expandOnStartup;
         // VS Code enforces a 600px minimum width when its panel is on the side.
         // Do not squeeze or rearrange the user's resizable vertical columns.
-        if (!state.restore && (win.screen.availWidth < 640 || win.screen.availHeight < 640)) {
+        if (!expanding && (win.screen.availWidth < 640 || win.screen.availHeight < 640)) {
             action.title = 'Display too small for a 640px square window';
             action.setAttribute('aria-label', action.title);
             return;
@@ -3122,10 +3156,10 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             const screen = win.screen;
             // Expand on the current display instead of restoring stale bounds
             // from whichever display the window was originally compacted on.
-            const width = state.restore
+            const width = expanding
                 ? Math.min(screen.availWidth, Math.max(600, Math.round(screen.availWidth * 0.75))) : 640;
-            const height = state.restore ? Math.round(screen.availHeight * 0.75) : 640;
-            const bounds = state.restore ? {
+            const height = expanding ? Math.round(screen.availHeight * 0.75) : 640;
+            const bounds = expanding ? {
                 x: (screen.availLeft ?? 0) + Math.round((screen.availWidth - width) / 2),
                 y: (screen.availTop ?? 0) + Math.round((screen.availHeight - height) / 2),
                 width, height
@@ -3134,7 +3168,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
                 await nativeHost.unmaximizeWindow({ targetWindowId: win.vscodeWindowId });
             }
             await nativeHost.positionWindow(bounds, { targetWindowId: win.vscodeWindowId });
-            state.restore = state.restore ? null : previous;
+            state.restore = expanding ? null : previous;
             if (state.restore) watchCompactDisplay();
             else {
                 await releasePlacement();
@@ -3153,12 +3187,14 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             }
         }
     };
-    const startCompactIfRequested = action => {
-        if (state.autoCompactStarted ||
-            configuration?.getValue('sweetiebot.startCompactPRSession') !== true) return;
-        state.autoCompactStarted = true;
-        // Share the button's native square resize and restore behavior.
-        void toggle(action);
+    const startLayoutIfRequested = action => {
+        if (state.autoLayoutStarted) return;
+        const expanded = configuration?.getValue('sweetiebot.startExpandedMergeSession') === true;
+        if (!expanded && configuration?.getValue('sweetiebot.startCompactPRSession') !== true) return;
+        state.autoLayoutStarted = true;
+        // Use the same native resizing path as the title-bar button, without
+        // briefly compacting a bulk-merge session before expanding it.
+        void toggle(action, expanded);
     };
     const mount = () => {
         if (doc.getElementById(actionId)) return;
@@ -3241,7 +3277,7 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
             actions.appendChild(newItem);
         }
         refreshVisibility();
-        startCompactIfRequested(action);
+        startLayoutIfRequested(action);
     };
     mount();
     const observer = new win.MutationObserver(mount);
@@ -3249,9 +3285,10 @@ function scmToolkitMountCompactWindow(doc, nativeHost, commands, configuration, 
     const visibilityListener = configuration?.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('sweetiebot.compactWindowButton')
             || event.affectsConfiguration('sweetiebot.newWorkspaceWindowButton')) refreshVisibility();
-        if (event.affectsConfiguration('sweetiebot.startCompactPRSession')) {
+        if (event.affectsConfiguration('sweetiebot.startCompactPRSession')
+            || event.affectsConfiguration('sweetiebot.startExpandedMergeSession')) {
             const action = doc.getElementById(actionId)?.querySelector('a');
-            if (action) startCompactIfRequested(action);
+            if (action) startLayoutIfRequested(action);
         }
     });
     win.addEventListener('unload', () => {

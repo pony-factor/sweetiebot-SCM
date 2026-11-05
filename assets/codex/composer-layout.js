@@ -1,5 +1,5 @@
 // Reorder and temporarily hide native Codex composer controls without moving React nodes.
-// Hidden controls remain available from More controls; native event handlers and access prompts stay owned by Codex.
+// Hidden controls are restored in Settings; native event handlers and access prompts stay owned by Codex.
 (() => {
   "use strict";
   if (globalThis.scmToolkitCodexComposerLayout) return;
@@ -10,21 +10,14 @@
     access: "Access permissions", location: "Computer / location / usage",
     clipboard: "Clipboard Send / Queue", send: "Send / Stop"
   };
-  const hidden = new Set(layout.hidden);
-  const revealed = new Set();
+  const hidden = new Set((layout.hidden || []).filter(id => id !== "input" && id !== "access"));
   const style = document.createElement("style");
   style.textContent = [
     ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
-    ".scm-toolkit-composer-more{position:relative;order:9999;flex:0 0 auto;align-self:center;}",
-    ".scm-toolkit-composer-more>button{border:1px solid var(--vscode-input-border,#646464);border-radius:6px;background:transparent;color:inherit;padding:4px 8px;cursor:pointer;}",
-    ".scm-toolkit-composer-more-menu{position:absolute;right:0;bottom:calc(100% + 5px);z-index:99;min-width:200px;max-width:min(85vw,300px);padding:5px;background:var(--vscode-menu-background,var(--vscode-editor-background,#222));border:1px solid var(--vscode-menu-border,#646464);border-radius:8px;box-shadow:0 6px 24px #0006;}",
-    ".scm-toolkit-composer-more-menu[hidden]{display:none!important;}",
-    ".scm-toolkit-composer-more-menu button{display:block;width:100%;text-align:left;padding:7px;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer;}",
-    ".scm-toolkit-composer-more-menu button:hover,.scm-toolkit-composer-more-menu button:focus{background:var(--vscode-list-hoverBackground,#444);}",
-    ".scm-toolkit-composer-more-menu button:disabled{opacity:.5;cursor:default;}"
+    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
+    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
   ].join("\n");
   document.head.append(style);
-  const roots = new WeakMap();
 
   function label(button) {
     return [button?.getAttribute?.("aria-label"), button?.getAttribute?.("title"),
@@ -69,45 +62,28 @@
     return candidate;
   }
 
-  function mountMenu(footer) {
-    let menuRoot = roots.get(footer);
-    if (menuRoot && menuRoot.isConnected) return menuRoot;
-    menuRoot = document.createElement("div");
-    menuRoot.className = "scm-toolkit-composer-more";
-    const trigger = document.createElement("button");
-    trigger.type = "button";
-    trigger.textContent = "⋯";
-    trigger.title = "More composer controls";
-    trigger.setAttribute("aria-label", "More composer controls");
-    trigger.setAttribute("aria-expanded", "false");
-    const menu = document.createElement("div");
-    menu.className = "scm-toolkit-composer-more-menu";
-    menu.hidden = true;
-    trigger.addEventListener("click", event => {
-      event.stopPropagation();
-      menu.hidden = !menu.hidden;
-      trigger.setAttribute("aria-expanded", String(!menu.hidden));
-    });
-    document.addEventListener("click", event => {
-      if (!menuRoot.isConnected || menuRoot.contains(event.target)) return;
-      menu.hidden = true;
-      trigger.setAttribute("aria-expanded", "false");
-    });
-    menuRoot.append(trigger, menu);
-    footer.append(menuRoot);
-    roots.set(footer, menuRoot);
-    return menuRoot;
-  }
-
   function scan() {
     if (document.documentElement.getAttribute("data-codex-window-type") !== "extension") return;
     const found = locate();
     if (!found) return;
     const { footer, controls } = found;
+    // Custom layouts own access visibility; an older hide-icon preference must
+    // not suppress Codex's native permissions chooser.
+    if (!document.documentElement.hasAttribute("data-sweetiebot-composer-access-visible"))
+      document.documentElement.setAttribute("data-sweetiebot-composer-access-visible", "");
+    const left = layout.left || (layout.visible || []).filter(id => id !== "send");
+    const right = layout.right || (layout.visible || []).filter(id => id === "send");
+    const ordered = [...left, ...right];
+    const firstRight = right.find(id => {
+      const target = slot(controls[id], footer);
+      return target?.parentElement === footer;
+    });
+    if (!footer.classList.contains("scm-toolkit-custom-layout-controlled"))
+      footer.classList.add("scm-toolkit-custom-layout-controlled");
     const reserved = new Set();
-    // The input is never concealed. Reordering follows native flex/grid order;
-    // mixed-purpose wrapper groups remain in their native position.
-    layout.visible.forEach((id, index) => {
+    // Keep React's native nodes in place and use footer flex order for the
+    // left/right rail. A single auto margin starts the right-aligned group.
+    ordered.forEach((id, index) => {
       const node = controls[id];
       if (!node) return;
       const target = slot(node, footer);
@@ -115,42 +91,20 @@
       reserved.add(target);
       if (target.style.order !== String(index)) target.style.order = String(index);
       if (id === "input" && target.style.flexBasis !== "100%") target.style.flexBasis = "100%";
+      if (target.parentElement === footer) {
+        target.classList.toggle("scm-toolkit-layout-aligned", true);
+        target.classList.toggle("scm-toolkit-layout-right-start", id === firstRight);
+      }
     });
     for (const id of Object.keys(names)) {
       const node = controls[id];
       if (!node) continue;
       const target = slot(node, footer);
-      const shouldHide = id !== "input" && hidden.has(id) && !revealed.has(id);
+      const shouldHide = hidden.has(id);
       if (target.classList.contains("scm-toolkit-layout-concealed") !== shouldHide) {
         target.classList.toggle("scm-toolkit-layout-concealed", shouldHide);
       }
     }
-    if (!hidden.size) return;
-    const more = mountMenu(footer);
-    const menu = more.querySelector(".scm-toolkit-composer-more-menu");
-    const missing = [...hidden].filter(id => !revealed.has(id));
-    // Rebuild only when options change to avoid a mutation-observer loop.
-    const signature = missing.map(id => id + ":" + Boolean(controls[id])).join(",");
-    if (menu.dataset.signature === signature) return;
-    menu.dataset.signature = signature;
-    menu.replaceChildren();
-    for (const id of missing) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "Show " + names[id];
-      button.disabled = !controls[id];
-      button.addEventListener("click", () => {
-        revealed.add(id);
-        menu.hidden = true;
-        more.querySelector("button").setAttribute("aria-expanded", "false");
-        // Reveal the original anchor first, so any native popover can position correctly.
-        scan();
-        controls[id]?.focus?.();
-        controls[id]?.click?.();
-      });
-      menu.append(button);
-    }
-    more.hidden = missing.length === 0;
   }
 
   let pending = false;

@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """Apply, validate, or remove the custom VS Code SCM toolkit patch."""
 
+import sys as _sb_sys
+from pathlib import Path as _sb_path
+for _sb_parent in _sb_path(__file__).resolve().parents:
+    _sb_scripts = (_sb_parent if (_sb_parent / 'importaliases.py').is_file()
+                   else _sb_parent / 'scripts')
+    if (_sb_scripts / 'importaliases.py').is_file():
+        if str(_sb_scripts) not in _sb_sys.path:
+            _sb_sys.path.insert(0, str(_sb_scripts))
+        import importaliases
+        importaliases.install()
+        break
+
+
 import argparse
 import hashlib
 import base64
@@ -25,6 +38,7 @@ import codex_image_drop
 import codex_recent_chats
 import codex_startup
 import codex_sticker
+import codex_button_icon
 import github_pr
 import browser_pr
 from pathlib import Path
@@ -174,7 +188,7 @@ def sync_model_picker(enabled=True, remove=False, check=False, destination=None)
     destination = (
         Path(destination) if destination is not None else ai_model_picker_path()
     )
-    source = HERE / "model_picker.py"
+    source = HERE / "model-picker.py"
     should_remove = remove or not enabled
 
     if should_remove:
@@ -479,7 +493,7 @@ def browser_chatgpt_home_edits(js, home_url="https://chatgpt.com/"):
     destination = home_url or "https://chatgpt.com/"
     saved_url = f'{match.group("options")}?.viewState?.url'
     if match.group("normalize"):
-        saved_url = f'{match.group("normalize")}({match.group("options")}?.viewState).url'
+        saved_url = f'{match.group("normalize")}({match.group("options")}?.viewState)?.url'
     replacement = (
         f'{match.group("prefix")},url:{saved_url}'
         f'||{json.dumps(destination)}{match.group("suffix")}'
@@ -561,6 +575,56 @@ def window_title_push_edits(js):
          'this.registerListeners()'),
         (original, replacement),
     ]
+
+
+def window_title_repository_edits(js):
+    edits = []
+    # A single-root window has a useful name before its workspace label loads.
+    root = re.search(r'rootName:([\w$]+),rootPath:[\w$]+,rootNameShort:[\w$]+', js)
+    workspace = re.search(r'getWindowTitle\(\)\{let [\w$]+=this.editorService.activeEditor,([\w$]+)=this.contextService.getWorkspace\(\)', js)
+    if root and workspace:
+        token = workspace.group(1)
+        edits.append((root.group(), root.group().replace('rootName:' + root.group(1),
+            f'rootName:({root.group(1)}||({token}.folders.length===1?{token}.folders[0].name:""))', 1)))
+    # Native SCM normally chooses an active repository from the active editor.
+    # With no editor, use the sole visible repository for title context only.
+    history = re.search(r'this\._activeRepositoryHistoryItemRefName=[\w$]+\(([\w$]+)=>this\.scmViewService\.activeRepository\.read\(\1\)\?\.repository', js)
+    context = re.search(r'let ([\w$]+)=this\.scmViewService\.activeRepository\.read\(([\w$]+)\),([\w$]+)=this\._activeRepositoryHistoryItemRefName\.read\(\2\)', js)
+    for match, reader in [(history, history.group(1) if history else None),
+                          (context, context.group(2) if context else None)]:
+        if match:
+            active = f'this.scmViewService.activeRepository.read({reader})'
+            fallback = f'(this._visibleRepositories.read({reader}).length===1?{{repository:this._visibleRepositories.read({reader})[0]}}:undefined)'
+            edits.append((match.group(), match.group().replace(active, f'({active}??{fallback})', 1)))
+    return edits
+
+
+def window_title_refresh_edits(js):
+    # Resolve the title service's own window, including secondary windows.
+    window = re.search(r'doUpdateTitle\(\)\{[^}]*?let [\w$]+=([\w$]+\(this\.windowId,!0\)\.window);', js)
+    if not window:
+        return []  # Synthetic fixtures without a native window.
+    listener = 'registerListeners(){this._register(this.configurationService.onDidChangeConfiguration('
+    start = js.rfind(listener, 0, window.start())
+    if start < 0:
+        raise ValueError('Unsupported VS Code build: window title refresh listener does not match.')
+    refresh = (
+        'const sweetiebotTitleWindow=' + window.group(1) + ';'
+        'const sweetiebotRefreshTitle=()=>this.titleUpdater.schedule();'
+        'sweetiebotTitleWindow.addEventListener("focus",sweetiebotRefreshTitle);'
+        # Workspace labels and SCM context can arrive after the first render.
+        # Retry briefly at startup without keeping an ongoing polling timer.
+        'const sweetiebotTitleTimers=[0,250,1000,3000].map(delay=>'
+        'sweetiebotTitleWindow.setTimeout(sweetiebotRefreshTitle,delay));'
+        'this._register({dispose:()=>{'
+        'sweetiebotTitleWindow.removeEventListener("focus",sweetiebotRefreshTitle);'
+        'sweetiebotTitleTimers.forEach(timer=>sweetiebotTitleWindow.clearTimeout(timer));}});'
+    )
+    boundary = re.search(r'}\s*onConfigurationChanged\(', js[start:window.start()])
+    if not boundary:
+        raise ValueError('Unsupported VS Code build: window title refresh listener boundary does not match.')
+    original = js[start:start + boundary.start() + 1]
+    return [(original, original.replace('registerListeners(){', 'registerListeners(){' + refresh, 1))]
 
 
 def window_title_naming_edits(js):
@@ -781,6 +845,8 @@ def edits(js=None, settings=None):
         changes.extend(window_title_status_edits(js))
         changes.extend(window_title_push_edits(js))
         changes.extend(window_title_naming_edits(js))
+        changes.extend(window_title_repository_edits(js))
+        changes.extend(window_title_refresh_edits(js))
         changes.extend(compact_window_edits(js, command, configuration))
         changes.extend(workspace_trust_edits(js))
         changes.extend(pr_workspace_explorer_edits(js))
@@ -1223,6 +1289,28 @@ BACKGROUND_GIT_START = '/* sweetiebot-background-commit:start */'
 BACKGROUND_GIT_END = '/* sweetiebot-background-commit:end */'
 
 
+def transform_git_refresh(source, remove=False):
+    """Shorten native status scheduling without bypassing Git's idle guards."""
+    start = '/* sweetiebot-fast-status:'
+    end = '/* sweetiebot-fast-status:end */'
+    patch = re.compile(re.escape(start) + r'(1e3|1000|5e3|5000)\*/(?:100|250)' + re.escape(end))
+    source = patch.sub(lambda match: match[1], source)
+    if start in source or end in source:
+        raise ValueError('Incomplete fast Git status patch.')
+    if remove:
+        return source
+    ident = r'[A-Za-z_$][\w$]*'
+    patterns = (
+        (rf'({ident}\(\[{ident}\()(1e3|1000)(\)\],{ident}\.prototype,"eventuallyUpdateWhenIdleAndWait",1\))', '100'),
+        (rf'(async updateWhenIdleAndWait\(\)\{{await this.whenIdleAndFocused\(\),await this.status\(\),await {ident}\()(5e3|5000)(\)\}})', '250'),
+    )
+    for pattern, delay in patterns:
+        if len(re.findall(pattern, source)) != 1:
+            raise ValueError('Unsupported native Git status scheduling.')
+        source = re.sub(pattern, lambda match: match[1] + start + match[2] + '*/' + delay + end + match[3], source)
+    return source
+
+
 def transform_git_background(source, remove=False):
     for start, end in ((BACKGROUND_GIT_START, BACKGROUND_GIT_END),
                        ('/* sweetiebot-background-push:start */', '/* sweetiebot-background-push:end */')):
@@ -1308,7 +1396,9 @@ def transform(js, css, remove=False, settings=None):
         previous = json.loads(saved.group(1)) if saved else edits()
         js, css = strip_payload(js), strip_payload(css)
 
-        for edit in previous:
+        # Later patches can modify earlier replacements (for example the
+        # repository-name fallback inside the window-title method).
+        for edit in reversed(previous):
             original, replacement, expected_count = unpack_edit(edit)
             # An earlier Explorer title repair updated the code without its
             # saved metadata. Accept only that exact, known toolkit revision.
@@ -1344,6 +1434,7 @@ def transform(js, css, remove=False, settings=None):
 
     settings = load_settings() if settings is None else settings
     runtime_settings = resolve_runtime_settings(settings)
+    runtime_settings["codexCoauthorIconDataUrl"] = codex_button_icon.icon_data_url()
     changes = edits(js, settings=settings)
     for edit in changes:
         original, replacement, expected_count = unpack_edit(edit)
@@ -1361,21 +1452,21 @@ def transform(js, css, remove=False, settings=None):
         + " */\n"
         + (WORKBENCH_ASSETS / "picker.js").read_text()
         + "\n"
-        + (WORKBENCH_ASSETS / "graph_commit_actions.js").read_text()
+        + (WORKBENCH_ASSETS / "graph-commit-actions.js").read_text()
         + "\n"
-        + (WORKBENCH_ASSETS / "branch_strip.js").read_text()
+        + (WORKBENCH_ASSETS / "branch-strip.js").read_text()
         + "\n"
-        + (WORKBENCH_ASSETS / "message_bar.js").read_text()
+        + (WORKBENCH_ASSETS / "message-bar.js").read_text()
         + "\n"
-        + (WORKBENCH_ASSETS / "live_runtime.js").read_text()
+        + (WORKBENCH_ASSETS / "live-runtime.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
-    toolkit_css += "\n" + (WORKBENCH_ASSETS / "branch_strip.css").read_text()
+    toolkit_css += "\n" + (WORKBENCH_ASSETS / "branch-strip.css").read_text()
     if settings.get("hideSCMProgress", True):
-        toolkit_css += "\n" + (WORKBENCH_ASSETS / "hide_progress.css").read_text()
+        toolkit_css += "\n" + (WORKBENCH_ASSETS / "hide-progress.css").read_text()
     if not settings["filledButtons"]:
-        toolkit_css += "\n" + (WORKBENCH_ASSETS / "outlined_buttons.css").read_text()
+        toolkit_css += "\n" + (WORKBENCH_ASSETS / "outlined-buttons.css").read_text()
     css += START + toolkit_css + END
     return js, css
 
@@ -1386,7 +1477,7 @@ def sync_live_components(workbench_dir, remove=False, check=False):
     if directory.is_symlink():
         raise RuntimeError("Refusing symlinked Sweetiebot component directory.")
     manifest = directory / "manifest.json"
-    modules = [("codex-file-drag", "codex_file_drag.js")]
+    modules = [("codex-file-drag", "codex-file-drag.js")]
     files = []
     entries = []
     for name, filename in modules:
@@ -1609,6 +1700,7 @@ def plan_codex_patches(args, settings):
         if draft_path in paths:
             index = paths.index(draft_path)
             draft_transform = (codex_drafts.transform_host if draft_path.name == 'extension.js'
+                               else codex_drafts.transform_attachments if draft_path.name.startswith('composer-view-state-')
                                else codex_drafts.transform_webview)
             new[index] = draft_transform(new[index], enabled=not args.uninstall)
         else:
@@ -1876,7 +1968,8 @@ def main():
         git_old = git_extension.read_text()
         paths.append(git_extension)
         old.append(git_old)
-        new.append(transform_git_background(git_old, remove=args.uninstall))
+        new.append(transform_git_refresh(
+            transform_git_background(git_old, remove=args.uninstall), remove=args.uninstall))
         for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
             paths.append(browser_path)
             old.append(browser_old)

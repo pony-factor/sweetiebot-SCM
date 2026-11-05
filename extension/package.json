@@ -11,7 +11,7 @@
     "Other",
     "Machine Learning"
   ],
-  "main": "./trust_activation.js",
+  "main": "./trust-activation.js",
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
@@ -28,6 +28,7 @@
     "onCommand:sweetiebot.openPullRequestBatchChat",
     "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
+    "onCommand:sweetiebot.openExperimentWorkspace",
     "onCommand:sweetiebot.configureIndependentWorkspaceTrust",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.copyTerminalContents",
@@ -178,6 +179,12 @@
         "icon": "$(git-branch)"
       },
       {
+        "command": "sweetiebot.openExperimentWorkspace",
+        "title": "Open Experimental Workspace",
+        "category": "Sweetiebot",
+        "icon": "$(beaker)"
+      },
+      {
         "command": "sweetiebot.configureIndependentWorkspaceTrust",
         "title": "Configure Independent Workspace Trust",
         "icon": "$(shield)"
@@ -259,6 +266,11 @@
         }
       ],
       "scm/title": [
+        {
+          "command": "sweetiebot.openExperimentWorkspace",
+          "when": "!isWeb",
+          "group": "navigation@75"
+        },
         {
           "command": "sweetiebot.spellcheckFilenames",
           "group": "navigation@90"
@@ -347,7 +359,13 @@
           "type": "boolean",
           "default": false,
           "scope": "window",
-          "description": "Open a dedicated pull-request session window in the compact 600px square layout."
+          "description": "Open a dedicated pull-request session window in the compact 640px square layout."
+        },
+        "sweetiebot.startExpandedMergeSession": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Open a dedicated bulk-merge session window at 75% of the current display's available size."
         },
         "sweetiebot.squashOmitBulletsForEmojiTitles": {
           "type": "boolean",

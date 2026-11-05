@@ -17,6 +17,11 @@ h2{font-size:16px;margin:0 0 12px}
 h3{margin:16px 0 8px;font-size:13px}
 .subtitle,.muted{color:var(--vscode-descriptionForeground);font-size:12px}
 .overview{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.merge-header .dashboard-brand{flex-wrap:wrap}
+.merge-workers{display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px}
+.merge-workers[hidden]{display:none}
+.merge-worker{border:0;border-radius:3px;background:transparent;color:var(--merge-muted);font-size:11px;line-height:1.5;padding:3px 4px;text-align:left}
+.merge-worker:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
 .refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;border:0;border-radius:4px;background:transparent;color:var(--vscode-descriptionForeground)}
 .refresh-icon:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
@@ -161,6 +166,9 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .pr-commit-tree[hidden]{display:none}
 .commit-tree-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
 .commit-tree-toggle svg{flex:none;width:16px;height:16px;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.pr-commit-tree h3{display:flex;align-items:center;gap:6px}
+.pr-commit-tree .commit-tree-toggle{flex:none;padding:2px;border:0;background:transparent;color:inherit;border-radius:4px}
+.pr-commit-tree .commit-tree-toggle:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15))}
 .commit-tree-toggle:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
 .footer{color:var(--vscode-descriptionForeground);font-size:11px;margin-top:22px}
 @media(max-width:900px){.layout{--sidebar-width:40%}main{padding:14px}}
@@ -181,7 +189,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 }
 .overview .toolbar-option{cursor:pointer}
 .overview .method-control{
-  padding-left:12px;border-left:1px solid var(--merge-border)
+  padding-left:12px
 }
 .method-control .muted{font-size:12px;cursor:pointer}
 .overview input[type="checkbox"]{
@@ -345,7 +353,7 @@ body.celebrating .layout,body.celebrating #merge-progress{display:none}
 </head>
 <body>
 <header class="merge-header">
-<div class="dashboard-brand"><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"><h1>Lindsey · Bulk merge</h1></div>
+<div class="dashboard-brand"><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"><h1>Lindsey · Bulk merge</h1><nav id="merge-workers" class="merge-workers" aria-label="GPT review sessions" hidden></nav></div>
 <div class="overview" role="group" aria-label="Bulk merge preferences"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">Using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span><label class="toolbar-option" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="toolbar-option" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><button id="show-celebration" class="secondary" hidden>🎉 Celebration</button><span id="progress" class="pill" role="status" aria-live="polite">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div id="merge-progress" class="bar" role="progressbar" aria-label="Bulk merge progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar-fill" class="bar-fill"></div></div>
@@ -366,7 +374,6 @@ body.celebrating .layout,body.celebrating #merge-progress{display:none}
 </section>
 <div class="layout">
 <aside aria-label="Merge timeline">
-  <nav id="merge-workers" aria-label="GPT review sessions" hidden></nav>
   <div class="section-heading"><h2>Selected pull requests</h2></div>
   <div id="prs" class="prs"></div>
   <div id="timeline-splitter" class="splitter horizontal" role="separator" tabindex="0" aria-label="Resize activity timeline" aria-orientation="horizontal" aria-controls="prs timeline"></div>
@@ -501,7 +508,7 @@ __RATE_LIMIT_FORMATTER__
   let actionEngine = 'web';
   const labels = {
     waiting: 'Pending', merged: '✓ Merged', resolved: '✓ Conflicts cleared',
-    conflict: 'Conflict', review: 'Needs review', 'checks-pending': 'Checks in progress',
+    conflict: 'Conflict', review: 'Needs review', 'checks-pending': 'Running checks',
     checks: 'Checks failing', blocked: 'Blocked',
     queued: 'Queued', updated: 'Updated', closed: 'Closed'
   };
@@ -566,7 +573,7 @@ __RATE_LIMIT_FORMATTER__
       menuIcon.appendChild(line);
     }
     commitToggle.appendChild(menuIcon);
-    show('span', '', 'Commits (' + (pr.commits || []).length + ')', commitToggle);
+    if (!showCommits) show('span', '', 'Commits (' + (pr.commits || []).length + ')', commitToggle);
     commitToggle.addEventListener('click', () => {
       model.showPrCommits = !showCommits;
       renderDetail();
@@ -713,6 +720,8 @@ __RATE_LIMIT_FORMATTER__
     tree.hidden = !showCommits;
     if (showCommits) {
       disposeCommitTree = renderCommitTree(tree, pr.commits, sha => dispatch('open-commit', pr.number, sha));
+      commitToggle.classList.remove('secondary');
+      tree.querySelector('h3').prepend(commitToggle);
       if (pr.commitError) show('p', 'muted', 'Commit history unavailable: ' + pr.commitError, tree);
     }
     outer.scrollTop = scroll;
@@ -761,7 +770,7 @@ __RATE_LIMIT_FORMATTER__
     workerList.replaceChildren();
     workerList.hidden = !model.workers?.length;
     for (const worker of model.workers || []) {
-      const button = show('button', 'pr', worker.label + ' · ' + worker.phase + ' · ' + worker.merged + '/' + worker.total + ' merged', workerList);
+      const button = show('button', 'merge-worker', worker.label + ' · ' + worker.phase + ' · ' + worker.merged + '/' + worker.total + ' merged', workerList);
       button.title = 'GPT session ' + worker.id + ' · ' + worker.numbers.map(number => '#' + number).join(', ');
       button.addEventListener('click', () => dispatch('focus-worker', worker.id));
     }

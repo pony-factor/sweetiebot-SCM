@@ -149,7 +149,7 @@ Sweetiebot uses **linked Git worktrees** for topic branches, not a separate clon
 
 Creating a topic branch can open it in a separate managed worktree while keeping the same saved VS Code workspace identity. The original checkout and shared main worktree use one Git history; a terminal command still works on the terminal's current checkout. Staged and unstaged changes are not silently discarded during workspace handoffs.
 
-The title-bar **new workspace window** control opens another saved window for the repository. **Compact window** toggles a centered square layout and restores previous bounds if supported by the screen and VS Code's minimum dimensions.
+The title-bar **new workspace window** control opens another saved window for the repository. **Compact window** toggles between a 640 × 640 square layout and a centered window covering 75% of the current display's available width and height. Dedicated PR drafting and repair windows start compact; new Lindsey **Bulk Merge** session windows open directly at the expanded 75% size. The originating repository window is unaffected.
 
 ### Workspace Trust
 
@@ -246,11 +246,11 @@ Most model inference stays on local Ollama. Operational diagnostics are designed
 Useful repository checks:
 
 ```sh
-python3 scripts/ci/ci_test_runner.py verify
+python3 scripts/ci/ci-test-runner.py verify
 PYTHONPATH=scripts python3 -m unittest discover -s tests -t . -p '*.py'
 python3 scripts/install.py --check
 ```
 
 The installer compatibility check needs a suitable macOS VS Code installation; it is not a portable CI test on Linux. Refer to [the scripts guide](scripts/README.md) and current workflows for further test commands.
 
-The settings definitions live in `scripts/configurator.py` with persisted Git settings in `scripts/toolkit_settings.py`. Keep this README focused on installation, navigation, and everyday behavior. Git history retains the old, release-by-release implementation details without presenting them as current user instructions.
+The settings definitions live in `scripts/configurator.py` with persisted Git settings in `scripts/toolkit-settings.py`. Keep this README focused on installation, navigation, and everyday behavior. Git history retains the old, release-by-release implementation details without presenting them as current user instructions.

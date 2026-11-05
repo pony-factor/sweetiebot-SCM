@@ -7,45 +7,46 @@ const path = require('node:path');
 const { SearchIndex } = require('./search/index');
 const { WorkspaceSearchViewProvider } = require('./search/view');
 const { registerBranchCommands } = require('./branches/actions');
-const { registerGraphStartupRefresh } = require('./branches/graph_refresh');
-const { registerCodexCommitCommand } = require('./commits/codex_commit');
+const { registerGraphStartupRefresh } = require('./branches/graph-refresh');
+const { registerCodexCommitCommand } = require('./commits/codex-commit');
 const { registerCommitShortcut } = require('./commits/shortcut');
-const { registerBackgroundCommit } = require('./commits/background_commit');
-const { registerAiReviewReply } = require('./codex/ai_review_reply');
-const { registerAutoPublish } = require('./branches/auto_publish');
-const { registerAutoCodexCommit } = require('./commits/auto_codex_commit');
-const { registerPullRequestCommand } = require('./github/pull_request');
-const { resumePRSession } = require('./github/pr_session');
-const { configureWorkspaceBrowserStorage } = require('./ui/browser_storage');
-const { registerLocalPullRequestCommand } = require('./github/local_pull_request');
-const { registerPullRequestBatchCommand } = require('./github/pull_request_batch');
-const { registerEditorActions } = require('./ui/editor_actions');
-const { registerNewWorkspaceCommand } = require('./branches/new_workspace');
-const { registerSharedMain } = require('./branches/shared_main');
-const { registerCodexWorkspaceHandoff } = require('./codex/workspace_handoff');
-const { registerTerminalActions } = require('./ui/terminal_actions');
-const { registerGitHubPullRequestActions } = require('./github/pr_actions');
+const { registerBackgroundCommit } = require('./commits/background-commit');
+const { registerAiReviewReply } = require('./codex/ai-review-reply');
+const { registerAutoPublish } = require('./branches/auto-publish');
+const { registerAutoCodexCommit } = require('./commits/auto-codex-commit');
+const { registerPullRequestCommand } = require('./github/pull-request');
+const { resumePRSession } = require('./github/pr-session');
+const { configureWorkspaceBrowserStorage } = require('./ui/browser-storage');
+const { registerLocalPullRequestCommand } = require('./github/local-pull-request');
+const { registerPullRequestBatchCommand } = require('./github/pull-request-batch');
+const { registerEditorActions } = require('./ui/editor-actions');
+const { registerNewWorkspaceCommand } = require('./branches/new-workspace');
+const { registerExperimentWorkspaceCommand } = require('./branches/experiment-workspace');
+const { registerSharedMain } = require('./branches/shared-main');
+const { registerCodexWorkspaceHandoff } = require('./codex/workspace-handoff');
+const { registerTerminalActions } = require('./ui/terminal-actions');
+const { registerGitHubPullRequestActions } = require('./github/pr-actions');
 const { registerOpenFileOnGitHub } = require('./github/file');
 const { registerBranchMaintenance } = require('./branches/maintenance');
-const { registerCloudRepoSync } = require('./branches/cloud_repo_sync');
-const { registerWorkspaceCleanup } = require('./branches/workspace_prune');
-const { registerManagedWindowActivity, stopManagedWindowActivity } = require('./branches/workspace_activity');
-const { registerPushRecovery } = require('./commits/push_recovery');
+const { registerCloudRepoSync } = require('./branches/cloud-repo-sync');
+const { registerWorkspaceCleanup } = require('./branches/workspace-prune');
+const { registerManagedWindowActivity, stopManagedWindowActivity } = require('./branches/workspace-activity');
+const { registerPushRecovery } = require('./commits/push-recovery');
 const { registerCodexRefresh } = require('./codex/refresh');
 const { registerCodexDraftCommands } = require('./codex/drafts');
 const { registerCommitLimitCommand } = require('./commits/limits');
-const { registerSpellcheckPreviewCommand } = require('./commits/spellcheck_preview');
-const { registerNativeSpellcheckBridge } = require('./commits/native_spellcheck_bridge');
-const { registerChatgptCommitTitle } = require('./commits/chatgpt_commit_title');
-const { registerPostCommitSpellcheckNotice } = require('./commits/post_commit_spellcheck_notice');
-const { registerFilenameSpellcheck } = require('./commits/filename_spellcheck');
-const { registerCaseOnlyRenames } = require('./commits/case_only_renames');
-const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python_runtime');
-const { registerLegacyCommandAliases } = require('./ui/command_aliases');
-const { migrateLegacySettings } = require('./ui/settings_migration');
-const { registerGitGraphRelativeDates } = require('./ui/git_graph_relative_dates');
-const { kefaniaClosePosition } = require('./codex/kefania_close_position');
-const { invalidateUserExtensionCache } = require('./ui/extension_cache');
+const { registerSpellcheckPreviewCommand } = require('./commits/spellcheck-preview');
+const { registerNativeSpellcheckBridge } = require('./commits/native-spellcheck-bridge');
+const { registerChatgptCommitTitle } = require('./commits/chatgpt-commit-title');
+const { registerPostCommitSpellcheckNotice } = require('./commits/post-commit-spellcheck-notice');
+const { registerFilenameSpellcheck } = require('./commits/filename-spellcheck');
+const { registerCaseOnlyRenames } = require('./commits/case-only-renames');
+const { resolvePythonExecutable, pythonLaunchError } = require('./ui/python-runtime');
+const { registerLegacyCommandAliases } = require('./ui/command-aliases');
+const { migrateLegacySettings } = require('./ui/settings-migration');
+const { registerGitGraphRelativeDates } = require('./ui/git-graph-relative-dates');
+const { kefaniaClosePosition } = require('./codex/kefania-close-position');
+const { invalidateUserExtensionCache } = require('./ui/extension-cache');
 
 const VIEW_ID = 'sweetiebot.workspaceSearch';
 const CONFIG_ROOT = 'sweetiebot.workspaceSearch';
@@ -407,7 +408,7 @@ async function activate(context) {
   }
   registerCodexDraftCommands(vscode, context);
   registerGitGraphRelativeDates(vscode, context);
-  void require('./branches/commit_drafts').registerCommitDrafts(vscode, context)
+  void require('./branches/commit-drafts').registerCommitDrafts(vscode, context)
     .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
@@ -423,15 +424,16 @@ async function activate(context) {
   // Register PR merge commands before compatibility aliases and awaited startup
   // work so a stale legacy command cannot leave contributed actions without handlers.
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.githubRateLimited', message => {
-    const error = require('./github/rate_limit').rateLimitError({ status: 403, message });
-    if (error) return require('./github/rate_limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
+    const error = require('./github/rate-limit').rateLimitError({ status: 403, message });
+    if (error) return require('./github/rate-limit').promptRateLimit(vscode, error, { context, retry: () => vscode.commands.executeCommand('pr.refreshList') });
   }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.repairMergeReview', () =>
-    require('./merge/review_repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
+    require('./merge/review-repair').repairMergeReview(vscode).catch(error => vscode.window.showErrorMessage(error.message))));
   registerPullRequestBatchCommand(vscode, context);
   registerGitHubPullRequestActions(vscode, context);
   registerLegacyCommandAliases(vscode, context);
   registerNewWorkspaceCommand(vscode, context);
+  registerExperimentWorkspaceCommand(vscode, context);
   registerSharedMain(vscode, context);
   // Register an active-window marker before any independent clone is eligible
   // for background pruning. Restricted Mode cannot create the marker.

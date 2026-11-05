@@ -9,7 +9,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! python3 scripts/build_installer_app.py; then
+if ! python3 scripts/build-installer-app.py; then
   echo "Could not build Sweetiebot's signed installer. Check the signing certificate instructions in README.md." >&2
   exit 1
 fi
