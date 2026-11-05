@@ -182,16 +182,46 @@ function scmToolkitRegisterCodexSnapshot(api) {
             api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, model });
             return;
         }
-        const transcripts = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')];
-        const visible = transcripts.find(element => element.getClientRects().length);
-        const text = (visible ?? transcripts.at(-1))?.innerText?.trim() ?? '';
-        api.postMessage({
-            type: 'scm-toolkit-context-response',
-            id: request.id,
-            text,
-            conversationId: conversationId(),
-            model,
-        });
+        // Use Codex's export, which loads history and preserves Markdown.
+        // Never infer an export from the virtualized, rendered transcript.
+        const current = conversationId(request.allowHidden);
+        try {
+            if (!current || (request.expectedThreadId && current !== request.expectedThreadId))
+                throw new Error('The active Codex chat changed during capture.');
+            const visible = element => element.getClientRects().length;
+            const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
+            const waitFor = async find => {
+                const until = Date.now() + 5000;
+                do {
+                    if (conversationId(request.allowHidden) !== current)
+                        throw new Error('The active Codex chat changed during capture.');
+                    const found = find();
+                    if (found) return found;
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                } while (Date.now() < until);
+                throw new Error('Codex Copy menu is unavailable. Open the originating chat and retry.');
+            };
+            const menu = await waitFor(() => [...document.querySelectorAll('button')]
+                .find(element => visible(element) && label(element) === 'Chat actions'));
+            for (const type of ['pointerdown', 'pointerup'])
+                menu.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+                    button: 0, pointerType: 'mouse', isPrimary: true }));
+            menu.click();
+            const items = () => [...document.querySelectorAll('[role="menuitem"]')].filter(visible);
+            const copy = await waitFor(() => items().find(element => /^Copy$/i.test(label(element))));
+            for (const type of ['pointermove', 'pointerdown', 'pointerup'])
+                copy.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+                    button: 0, pointerType: 'mouse', isPrimary: true }));
+            copy.click();
+            const item = await waitFor(() => items().find(element => request.copyDeepLink
+                ? /^(?:Copy )?deeplink$/i.test(label(element))
+                : /^(?:Copy as )?Markdown$/i.test(label(element))));
+            item.click();
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id,
+                conversationId: current, nativeCopy: request.copyDeepLink ? 'deeplink' : 'markdown', model });
+        } catch (error) {
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, error: error.message });
+        }
     });
 
     // Place the action beside the existing chat actions, outside the transcript.

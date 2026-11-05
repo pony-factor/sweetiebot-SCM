@@ -143,7 +143,12 @@ async function run() {
     assert.equal(validSharedConversationUrl(invalid), undefined);
   }
   const codexSource = { kind: 'codex', uuid: '019c56c3-06fc-7db3-a928-9c3607e17129',
-    url: codexConversationUrl('019c56c3-06fc-7db3-a928-9c3607e17129') };
+    url: codexConversationUrl('019c56c3-06fc-7db3-a928-9c3607e17129'),
+    desktopUrl: 'codex://threads/019c56c3-06fc-7db3-a928-9c3607e17129' };
+  assert.equal(conversationSourceLinks({ ...codexSource, desktopUrl: undefined }).desktop, undefined,
+    'Do not invent a Desktop link when Codex did not copy one');
+  assert.equal(conversationSourceLinks({ ...codexSource, desktopUrl: codexSource.desktopUrl + '?host=remote' }).desktop,
+    codexSource.desktopUrl + '?host=remote', 'Preserve the copied native route parameters');
   const stored = { [codexSource.uuid]: share };
   assert.deepEqual(sourceWithSharedConversationUrl({ globalState: { get: () => stored } }, codexSource),
     { ...codexSource, sharedUrl: share });

@@ -170,7 +170,14 @@ function normalizeConversationSource(source) {
     return undefined;
   }
   const sharedUrl = validSharedConversationUrl(source.sharedUrl);
-  return { kind, uuid, url, ...(sharedUrl ? { sharedUrl } : {}) };
+  let desktopUrl;
+  try {
+    const link = new URL(source.desktopUrl);
+    if (link.protocol === 'codex:' && link.hostname === 'threads' &&
+        link.pathname === '/' + uuid && !link.username && !link.password && !link.hash)
+      desktopUrl = link.href;
+  } catch {}
+  return { kind, uuid, url, ...(sharedUrl ? { sharedUrl } : {}), ...(desktopUrl ? { desktopUrl } : {}) };
 }
 
 function conversationSourceLinks(source) {
@@ -182,7 +189,7 @@ function conversationSourceLinks(source) {
   return normalized.kind === 'codex' ? {
     online,
     local: codexConversationUrl(normalized.uuid),
-    desktop: `codex://threads/${normalized.uuid}`,
+    desktop: normalized.desktopUrl,
   } : { online };
 }
 
