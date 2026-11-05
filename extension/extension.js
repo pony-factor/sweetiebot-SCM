@@ -406,6 +406,9 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  // The workbench reads branch preferences while SCM is opening, before the
+  // remaining asynchronous startup work has finished.
+  registerAutoCodexCommit(vscode, context);
   registerGitGraphRelativeDates(vscode, context);
   void require('./branches/commit-drafts').registerCommitDrafts(vscode, context)
     .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
@@ -458,7 +461,6 @@ async function activate(context) {
   registerCommitShortcut(vscode, context);
   registerBackgroundCommit(vscode, context);
   registerAiReviewReply(vscode, context);
-  registerAutoCodexCommit(vscode, context);
   registerPullRequestCommand(vscode, context);
   // Schedule after activation completes so command execution never waits on
   // the activation promise that is currently registering its own handler.
