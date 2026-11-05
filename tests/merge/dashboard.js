@@ -429,7 +429,8 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(apiRequests, hiddenRequests, 'Hidden dashboards do not poll');
   panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
-  assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Omit the redundant bulk merge title card');
+  assert(panel.webview.html.includes('<h1>Lindsey</h1>'), 'Keep the Lindsey identity visible in the header');
+  assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Do not restore the bulk merge subtitle');
   assert(!panel.webview.html.includes('id="repository"'), 'Omit the repository logo from the stripped-down header');
   assert(panel.webview.html.includes('Everypony made it! 🎉'), 'Show pony confirmation on complete merges');
   assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
@@ -478,7 +479,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('.merge-header .dashboard-brand'), 'Shared header CSS is inlined');
   assert(!panel.webview.html.includes('__MERGE_HEADER_CSS__'), 'No unexpanded header placeholder');
   assert(panel.webview.html.includes('class="dashboard-brand"'),
-    'Keep review indicators together in the header without a title card');
+    'Keep the Lindsey name and review indicators grouped in the header');
   assert(panel.webview.html.includes('id="merge-workers"'), 'Retain the oldest/newest review lanes');
   assert(panel.webview.html.includes('id="conflicts-cleared"'), 'Retain the standalone cleared-conflicts counter');
   assert(panel.webview.html.includes('aria-label="Bulk merge preferences"'),
