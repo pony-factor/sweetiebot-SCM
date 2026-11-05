@@ -65,6 +65,32 @@ function orphanedTopic(name) {
 
 async function run() {
   const opts = { branch: 'topic', defaultBranch: 'main', remote: 'origin' };
+  for (const mode of ['empty', 'published']) {
+    for (const outcome of ['success', 'reject', 'dirty']) {
+      const f = fixture('held-remote-' + mode + '-' + outcome, true);
+      git(f.local, 'worktree', 'add', path.join(f.base, 'held-main'), 'main');
+      const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+      const hook = '#!/bin/sh\nunset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE\n' +
+        '[ "$(git -C ' + quote(f.local) + ' branch --show-current)" = topic ] || exit 1\n' +
+        (outcome === 'dirty' ? 'printf changed > ' + quote(path.join(f.local, 'draft.txt')) + '\n' : '') +
+        'exit ' + (outcome === 'reject' ? '1' : '0') + '\n';
+      fs.writeFileSync(path.join(f.remote, 'hooks/pre-receive'), hook, {mode: 0o755});
+      const remove = () => mode === 'published'
+        ? deletePublishedBranch(f.repository, {...opts, expectedRemoteTip: git(f.local, 'rev-parse', 'topic')})
+        : deleteEmptyBranch(f.repository, opts);
+      if (outcome === 'success') {
+        await remove();
+        assert.equal(f.localBranch(), '');
+        assert.equal(f.remoteBranch(), '');
+      } else {
+        await assert.rejects(remove(), outcome === 'reject' ? /rejected|failed to push/i : /working tree changed/i);
+        assert.equal(git(f.local, 'branch', '--show-current'), 'topic', 'Failed remote cleanup must keep the topic selected');
+        assert(f.localBranch(), 'Keep local work after failed cleanup');
+        if (outcome === 'reject') assert(f.remoteBranch());
+        else assert.equal(fs.readFileSync(path.join(f.local, 'draft.txt'), 'utf8'), 'changed');
+      }
+    }
+  }
   for (const mode of ['empty', 'published', 'merged']) {
     const f = fixture('held-main-' + mode, mode === 'published');
     const held = path.join(f.base, 'held main');
