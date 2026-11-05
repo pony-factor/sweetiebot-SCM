@@ -592,10 +592,10 @@ def safe_spellcheck_correction(subject: str, response_text: str, *,
     return corrected
 
 
-def spellcheck_subject(subject: str) -> str:
+def spellcheck_subject(subject: str, *, manual: bool = False) -> str:
     if not subject.strip():
         return subject
-    if not manual_spellcheck_enabled():
+    if not manual and not manual_spellcheck_enabled():
         print(
             "Sweetiebot: manual commit spellcheck skipped (preview is disabled)",
             file=sys.stderr,
@@ -2326,9 +2326,11 @@ def main() -> None:
     global GIT_GLOBAL_ARGS
 
     argv = sys.argv[1:]
-    if argv in (["--spellcheck-subject"], ["--professional-emoji"],
+    if argv in (["--manual-spellcheck-subject"], ["--spellcheck-subject"], ["--professional-emoji"],
                 ["--spellcheck-subject", "--professional-emoji"]):
         subject = sys.stdin.read()
+        if "--manual-spellcheck-subject" in argv:
+            subject = spellcheck_subject(subject, manual=True)
         if "--spellcheck-subject" in argv:
             subject = spellcheck_subject(subject)
         if "--professional-emoji" in argv:

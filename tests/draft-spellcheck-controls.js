@@ -8,6 +8,25 @@ async function main() {
   const first = src.indexOf('function scmToolkitWatchDraftSpellcheck(');
   const last = src.indexOf('\nfunction scmToolkitCreateControls(', first);
   assert(first >= 0 && last > first);
+  // Placing preview in the bar must expose it without enabling idle checks.
+  const layoutSource = fs.readFileSync(require.resolve('../assets/workbench/message-bar.js'), 'utf8');
+  let captured;
+  const layoutContext = vm.createContext({
+    scmToolkitCreateControls(...args) {
+      captured = args[6];
+      return { bind() {} };
+    }
+  });
+  vm.runInContext(layoutSource, layoutContext);
+  vm.runInContext('scmToolkitApplyMessageBarLayout = () => undefined;', layoutContext);
+  for (const visible of [true, false]) {
+    layoutContext.scmToolkitCreateControls({}, null, null, null, null, null, {
+      spellcheckManualCommit: false,
+      messageBarLayout: { before: [], after: visible ? ['spellcheck'] : [] }
+    });
+    assert.equal(captured.spellcheckPreviewButton, visible);
+    assert.equal(captured.spellcheckManualCommit, false);
+  }
   let id = 0;
   const timers = new Map();
   const listeners = new Set();
