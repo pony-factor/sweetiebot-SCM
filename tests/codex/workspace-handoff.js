@@ -213,6 +213,13 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
         executeCommand:async id=>id==='sweetiebot.codexDraft.readAttachments'?{enabled:true,drafts:attachmentDrafts}:null}
     },from);
     assert.equal(attachmentPlan.draftOnly,true,'Image-only new chats need a handoff without a thread ID');
+    const richDraft={prompt:{document:{type:'doc',content:[]},plainTextMode:false},pullRequestChecks:[]};
+    const richPlan=await prepareCodexHandoff({
+      extensions:{getExtension:()=>({activate:async()=>{}})},
+      commands:{getCommands:async()=>['sweetiebot.codex.prepareWorkspaceHandoff','sweetiebot.codexDraft.read'],
+        executeCommand:async id=>id==='sweetiebot.codexDraft.read'?{enabled:true,draft:richDraft}:null}
+    },from);
+    assert.deepEqual(richPlan.draft,richDraft,'Native v2 rich drafts survive checkout handoff intact');
     const moved=handoffAttachments({...attachmentPlan,destination});
     assert.equal(moved['new-conversation'].fileAttachments[0],path.join(destination,'report.pdf'));
     assert.equal(moved['new-conversation'].attachmentOrder[0],JSON.stringify(['file',path.join(destination,'report.pdf')]));

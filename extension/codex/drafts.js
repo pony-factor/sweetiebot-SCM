@@ -1,6 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 
 // Drafts are per checkout/workspace, not per VS Code window or Codex account.
 // A single globalState key per scope avoids whole-map lost updates when several
@@ -56,7 +57,7 @@ function registerCodexDraftCommands(vscode, context) {
     }
     draftWriting = draftWriting.catch(() => {}).then(async () => {
       if (Object.prototype.hasOwnProperty.call(options, 'expectedValue') && options.expectedValue !== undefined
-          && JSON.stringify(context.globalState.get(key)) !== JSON.stringify(options.expectedValue)) return false;
+          && !isDeepStrictEqual(context.globalState.get(key), options.expectedValue)) return false;
       await context.globalState.update(key, draft === null || draft === '' ? undefined : draft);
       return true;
     });

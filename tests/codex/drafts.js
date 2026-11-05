@@ -104,7 +104,7 @@ async function run() {
   await record({'new-conversation':{delete:true,expectedValue:rich}});
   assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,newer,
     'A late send/delete cannot erase a newer draft');
-  await record({'new-conversation':{delete:true,expectedValue:newer}});
+  await record({'new-conversation':{delete:true,expectedValue:{pullRequestChecks:[],prompt:newer.prompt}}});
   await afterSend.webview.postMessage({type:'persisted-atom-updated',key:atomV2,value:{'new-conversation':rich}});
   assert(!('new-conversation' in afterSend.seen.at(-1).value),'A global broadcast cannot resurrect sent text');
 
