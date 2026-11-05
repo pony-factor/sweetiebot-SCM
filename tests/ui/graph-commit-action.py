@@ -17,7 +17,7 @@ import sys
 import install
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tests.install import workbench_fixture
+from tests.installation.install import workbench_fixture
 
 
 class GraphCommitActionTests(unittest.TestCase):
