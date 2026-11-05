@@ -1151,6 +1151,18 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   };
   await checkBranch();
   if (branch === defaultBranch) {
+    const root = repository.rootUri?.fsPath;
+    if (root && existsSync(path.join(root, '.git'))) {
+      const pull = await automaticPullTarget(repository, repository.state.HEAD);
+      const { refreshMain, syncPublisher } = require('./sync-main');
+      const publish = await syncPublisher(root, remote);
+      await refreshMain(repository, { defaultBranch, remote: pull.remote, checkBranch });
+      await checkBranch();
+      const sha = (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
+      if (publish) await publish(branch, sha);
+      else await repository.push(remote, `${branch}:${defaultBranch}`);
+      return branch;
+    }
     const upstream = repository.state.HEAD.upstream;
     if (!upstream?.remote || !upstream.name) {
       throw new Error(`${branch} must track an upstream branch before syncing.`);
@@ -1216,7 +1228,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       if (expectedTree !== null || typeof reviewConflicts !== 'function') return true;
       const targetSha = await git(['rev-parse', target]);
       const approved = await reviewConflicts(repository, {
-        branch, defaultBranch, remote, strategy, head: headBefore, target: targetSha
+        branch, defaultBranch, remote, strategy, targetRef: target, head: headBefore, target: targetSha
       });
       if (!approved) return false;
       // A reviewer might switch branches, edit files, or move the target while
