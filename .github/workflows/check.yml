@@ -17,38 +17,27 @@ permissions:
   contents: read
 
 jobs:
-  workbench-repair:
-    name: SCM and browser repair isolation (Python ${{ matrix.python }})
+  python-compatibility:
+    name: Python repair and web-commit safety (3.12 and 3.14)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.14"]
     env:
       PYTHONPATH: scripts
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        id: setup312
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
-      - name: Verify independent repairs with incompatible optional extensions
+          python-version: "3.12"
+      - name: SCM and browser repair isolation (Python 3.12)
+        id: repair312
+        if: ${{ !cancelled() && steps.setup312.outcome == 'success' }}
+        continue-on-error: true
         run: python -m unittest tests.installation.install.WorkbenchRepairTests tests.installation.install.IndependentRepairTests -v
-
-  published-web-commit-titles:
-    name: Published web-commit title safety (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.14"]
-    env:
-      PYTHONPATH: scripts
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Check published follow-ups and safe local replay
+      - name: Published web-commit title safety (Python 3.12)
+        id: titles312
+        if: ${{ !cancelled() && steps.setup312.outcome == 'success' }}
+        continue-on-error: true
         run: |
           python -m unittest -v \
             tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
@@ -61,6 +50,50 @@ jobs:
             tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
             tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
             tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+      - name: Set up Python 3.14
+        id: setup314
+        if: ${{ !cancelled() }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: SCM and browser repair isolation (Python 3.14)
+        id: repair314
+        if: ${{ !cancelled() && steps.setup314.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m unittest tests.installation.install.WorkbenchRepairTests tests.installation.install.IndependentRepairTests -v
+      - name: Published web-commit title safety (Python 3.14)
+        id: titles314
+        if: ${{ !cancelled() && steps.setup314.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          python -m unittest -v \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
+            tests.commits.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
+            tests.commits.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
+            tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+      - name: Require all four Python compatibility checks to pass
+        if: ${{ !cancelled() }}
+        env:
+          REPAIR_312: ${{ steps.repair312.outcome }}
+          TITLES_312: ${{ steps.titles312.outcome }}
+          REPAIR_314: ${{ steps.repair314.outcome }}
+          TITLES_314: ${{ steps.titles314.outcome }}
+        shell: bash
+        run: |
+          failed=0
+          for test in REPAIR_312 TITLES_312 REPAIR_314 TITLES_314; do
+            if [[ "${!test}" != "success" ]]; then
+              echo "::error::$test did not pass (${!test})"
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   inventory:
     name: Test inventory
