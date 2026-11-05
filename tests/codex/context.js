@@ -221,14 +221,18 @@ async function run() {
   assert.equal(legacyStage, 3, 'Legacy Copy link must still work when its dialog closes');
   assert.equal(legacyResponses[0].conversationId, conversationId);
 
-  let preparingRequest, preparationClock = 0, preparationCopied = false;
+  let preparingRequest, preparationClock = 0, preparationCopied = false, cancelPreparation = false;
   const preparingCopy = control('Copy link', () => { preparationCopied = true; });
   Object.defineProperty(preparingCopy, 'disabled', { get: () => preparationClock < 60000 });
   preparingCopy.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
   const preparationResponses = [];
   const preparingUI = vm.createContext({
     Date: { now: () => preparationClock },
-    setTimeout(callback) { preparationClock += 1000; callback(); },
+    setTimeout(callback) {
+      preparationClock += 1000;
+      if (cancelPreparation) preparingRequest({ data: { type: 'scm-toolkit-cancel-share' } });
+      callback();
+    },
     window: { location: { hash: `#/local/${conversationId}` },
       addEventListener: (_, callback) => { preparingRequest = callback; } },
     document: { querySelectorAll: selector => selector === '[role="dialog"] button' ? [preparingCopy] : [] }
@@ -238,6 +242,10 @@ async function run() {
   await preparingRequest({ data: { type: 'scm-toolkit-context-request', id: 'preparing-share', shareOnly: conversationId } });
   assert.equal(preparationCopied, true, 'Reuse an open Share dialog and wait beyond the old 35-second deadline');
   assert.equal(preparationResponses[0].conversationId, conversationId);
+  preparationClock = 0; preparationCopied = false; cancelPreparation = true;
+  await preparingRequest({ data: { type: 'scm-toolkit-context-request', id: 'cancelled-share', shareOnly: conversationId } });
+  assert.equal(preparationCopied, false, 'Checkout cancellation stops a Share dialog still preparing');
+  assert.match(preparationResponses.at(-1).error, /cancelled/);
 
 
   const registered = new Map();
