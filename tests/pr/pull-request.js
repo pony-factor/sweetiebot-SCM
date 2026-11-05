@@ -184,6 +184,24 @@ async function run() {
     'Reappending sources upgrades an older footer without duplication');
   assert(!appendSourceDetails('Local only.', codexSource).includes('Sweetiebot cannot unpublish'));
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
+  // Unshared ChatGPT metadata must not create an empty Source links section.
+  const unlinkedSource = { kind: 'chatgpt', uuid: codexSource.uuid,
+    url: 'https://example.com/not-a-conversation-link' };
+  assert.equal(sourceDetailsMarkdown(unlinkedSource), '');
+  assert.equal(appendSourceDetails('Body.', unlinkedSource), 'Body.');
+  assert.equal(appendSourceDetails(oldSource, unlinkedSource), 'Body.',
+    'Old source footers disappear entirely when no links are available');
+  assert.equal(appendSourceDetails(decorated, undefined), 'Actual change.',
+    'An absent source strips any stale generated footer');
+  const unlinkedPrompt = pullRequestPrompt({
+    branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
+    instructions: '', source: unlinkedSource
+  });
+  assert.match(unlinkedPrompt, /omit the entire Source links disclosure/);
+  assert(!unlinkedPrompt.includes('<summary>Source links</summary>'));
+  assert(!unlinkedPrompt.includes('End the published PR description with exactly this expandable'));
+  assert.equal(appendSourceDetails('Body.\n\n' + sourceDetailsMarkdown(codexSource), unlinkedSource),
+    'Body.', 'New-style source footers also disappear without links');
   {
     const githubBulletUrl = 'https://github.com/pony-factor/sweetiebot-SCM/pull/495';
     const bulletInput = [

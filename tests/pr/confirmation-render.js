@@ -134,6 +134,9 @@ assert(!sharedSource.includes('**Privacy:**'),'Source links contains only the th
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
 assert(!output.children.some(node=>node.tag==='details'),
   'Untrusted source links must not become clickable or produce empty controls');
+context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source links</summary>\n\n\n</details>');
+assert(!output.children.some(node=>node.tag==='details'),
+  'No input links must suppress the entire Source links feature');
 context.renderMarkdown(output,'Source: <https://example.com/pony>.');
 assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
