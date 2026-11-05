@@ -9,7 +9,6 @@ const { independentWorkspaceParent } = require('./workspace_trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace_layout');
 const { resolvePythonExecutable } = require('../ui/python_runtime');
 const { prepareCodexHandoff } = require('../codex/workspace_handoff');
-const { focusExistingBranchWindow } = require('./window');
 
 const exec = promisify(execFile);
 async function git(args) {
@@ -315,7 +314,6 @@ async function routeExistingBranchWorktree(vscode, repository, destination, opti
   const existing = await fs.realpath(destination).catch(() => null);
   if (!existing) return false;
   if (root === existing) return true;
-  if (await focusExistingBranchWindow(vscode, existing, options)) return true;
   if (!vscode.workspace?.workspaceFolders?.length) return false;
   await switchRepository(vscode, root, existing, options);
   return true;
@@ -334,7 +332,6 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   if (branch === 'main') {
     const main = await mainRoot(root, options);
     if (root === main && current === 'main') return true;
-    if (await focusExistingBranchWindow(vscode, main, options)) return true;
     await switchRepository(vscode, root, main, options);
     return true;
   }

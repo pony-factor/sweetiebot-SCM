@@ -91,8 +91,8 @@ async function openedRoot(result) {
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
 
     // End-to-end integration using the real session publisher rather than a
-    // handcrafted marker: routing to an occupied branch focuses its existing
-    // live workspace and only then closes the initiating window.
+    // handcrafted marker: an occupied branch still opens in the initiating
+    // window instead of focusing another window and closing this one.
     const ownerWindow = editor(topic);
     ownerWindow.workspace.workspaceFile = { scheme: 'file', fsPath: topicWorkspace };
     const activityContext = { subscriptions: [] };
@@ -108,13 +108,12 @@ async function openedRoot(result) {
       const switchingWindow = editor(root);
       assert.equal(await routeBranch(switchingWindow, { rootUri: { fsPath: root } },
         { ...options, sourcePid: process.pid + 1, branch: 'topic' }), true);
-      assert.deepEqual(switchingWindow.commands.calls.map(call => call[0]),
-        ['vscode.openFolder', 'workbench.action.closeWindow'],
-        'Live owner receives focus before the initiating window closes');
-      assert.equal(switchingWindow.commands.calls[0][1].fsPath, topicWorkspace);
-      assert.deepEqual(switchingWindow.commands.calls[0][2], { forceNewWindow: true });
-      assert.equal(switchingWindow.workspace.workspaceFolders[0].uri.fsPath, root,
-        'Do not mutate source workspace folders while a destination window owns the branch');
+      const opened = switchingWindow.commands.calls.find(call => call[0] === 'vscode.openFolder');
+      assert.equal(await openedRoot({ target: opened[1].fsPath }), topic);
+      assert.notEqual(opened[1].fsPath, topicWorkspace, 'Retain separate workspace identities');
+      assert.deepEqual(opened[2], { forceReuseWindow: true });
+      assert(!switchingWindow.commands.calls.some(call => call[0] === 'workbench.action.closeWindow'),
+        'A live owner must not close the initiating window');
       assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
       assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
     } finally {
@@ -181,28 +180,27 @@ async function openedRoot(result) {
         'Save the same-chat handoff before an extension-host restart');
       return true;
     };
-    // A live topic owner should be focused, preserving its editors and chat.
+    // A live topic owner must not intercept this window’s folder replacement.
     const topicSession = path.join(path.dirname(topic), '.sweetiebot-session-2345-test.json');
     await fs.writeFile(topicSession,
       JSON.stringify({ pid: process.pid + 1, roots: [topic], workspaceFile: topicWorkspace }));
     await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
-    assert.deepEqual(moving.commands.calls.map(call => call[0]),
-      ['vscode.openFolder', 'workbench.action.closeWindow'],
-      'Focus the live worktree owner before closing this window');
-    assert.equal(moving.commands.calls[0][1].fsPath, topicWorkspace);
-    assert.deepEqual(moving.commands.calls[0][2], { forceNewWindow: true });
-    assert.equal(folderUpdate, undefined, 'Do not repoint a window while its target is already open');
+    assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: topic }, name: 'Repo' }]);
+    assert(!moving.commands.calls.some(call =>
+      ['vscode.openFolder', 'workbench.action.closeWindow'].includes(call[0])),
+      'A live owner must not reopen or close a saved workspace');
+    assert.equal(moving.commands.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1].plan.destination,
+      topic, 'Keep this window’s chat handoff when the branch is already open elsewhere');
 
-    // A failed focus must not close the source window or change its workspace.
-    const failedFocus = editor(root);
-    failedFocus.commands.executeCommand = async function (...args) {
-      this.calls.push(args);
-      if (args[0] === 'vscode.openFolder') throw new Error('Cannot focus existing window');
-    };
-    await assert.rejects(routeBranch(failedFocus, { rootUri: { fsPath: root } },
-      { ...options, branch: 'topic' }), /Cannot focus existing window/);
-    assert.deepEqual(failedFocus.commands.calls.map(call => call[0]), ['vscode.openFolder']);
-    assert.equal(folderUpdate, undefined);
+    // Failed folder replacement leaves the source workspace intact.
+    const failedSwitch = editor(root);
+    failedSwitch.workspace.workspaceFile = { scheme: 'file', fsPath: first.target };
+    failedSwitch.workspace.updateWorkspaceFolders = () => false;
+    await assert.rejects(routeBranch(failedSwitch, { rootUri: { fsPath: root } },
+      { ...options, branch: 'topic' }), /could not update/);
+    assert.equal(failedSwitch.workspace.workspaceFolders[0].uri.fsPath, root);
+    assert(!failedSwitch.commands.calls.some(call =>
+      ['vscode.openFolder', 'workbench.action.closeWindow'].includes(call[0])));
 
     // When the owner is gone, keep this window and its Codex handoff.
     const expired = new Date(Date.now() - 200000);
@@ -232,17 +230,20 @@ async function openedRoot(result) {
     assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'private topic edit\n');
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
 
-    // Returning home focuses its existing window rather than taking over main.
+    // Returning Home reuses this window even when main is open elsewhere.
     const mainSession = path.join(first.directory, '.sweetiebot-session-2345-test.json');
     await fs.writeFile(mainSession,
       JSON.stringify({ pid: process.pid + 1, roots: [root], workspaceFile: first.target }));
     const mainSwitcher = editor(topic);
+    mainSwitcher.workspace.workspaceFile = { scheme: 'file', fsPath: topicWorkspace };
+    let homeFolderUpdate;
+    mainSwitcher.workspace.updateWorkspaceFolders = (...args) => { homeFolderUpdate = args; return true; };
     assert.equal(await routeBranch(mainSwitcher, { rootUri: { fsPath: topic } },
       { ...options, branch: 'main' }), true);
-    assert.deepEqual(mainSwitcher.commands.calls.map(call => call[0]),
-      ['vscode.openFolder', 'workbench.action.closeWindow']);
-    assert.equal(mainSwitcher.commands.calls[0][1].fsPath, first.target);
-    assert.deepEqual(mainSwitcher.commands.calls[0][2], { forceNewWindow: true });
+    assert.deepEqual(homeFolderUpdate, [0, 1, { uri: { fsPath: root }, name: 'Repo' }]);
+    assert(!mainSwitcher.commands.calls.some(call =>
+      ['vscode.openFolder', 'workbench.action.closeWindow'].includes(call[0])),
+      'Home must reuse this window even while another main window is live');
     await fs.rm(mainSession);
     moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
 
