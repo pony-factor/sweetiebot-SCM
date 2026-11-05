@@ -30,6 +30,7 @@ function providerFor(scoped) {
   };
   const provider = {
     initializeWebview() {},
+    sendPersistedAtomState(webview) { return webview.postMessage({type:'persisted-atom-sync',state:{'composer-prompt-drafts-v2':{}}}); },
     handleMessage(webview,message) { forwarded.push(message); return message; }
   };
   const script = fs.readFileSync(path.join(__dirname,'../../assets/codex/drafts-host.js'),'utf8');
@@ -184,12 +185,20 @@ async function run() {
   await command(windowA,'write','Window A main draft');
   await command(windowA,'writeAttachments',attachmentDrafts);
   const scopeMain=(await command(windowA,'read')).scope;
+  const liveA=providerFor(windowA);
+  await liveA.provider.sendPersistedAtomState(liveA.webview);
+  assert.equal(liveA.seen.at(-1).scmToolkitDraftScope,scopeMain);
   assert.equal((await command(windowB,'read')).draft,null,'A second window on the same checkout starts empty');
   assert.deepEqual((await command(windowB,'readAttachments')).drafts,{});
   await command(windowB,'write','Window B main draft');
   const reloadedA=scope('file:///shared/main',shared,configA);
   assert.equal((await command(reloadedA,'read')).draft,'Window A main draft','Reload retains window identity');
   configA.branch='topic';
+  await command(windowA,'refresh');
+  assert.notEqual(liveA.seen.at(-1).scmToolkitDraftScope,scopeMain);
+  assert(!('new-conversation' in liveA.seen.at(-1).state[atomV2]),'A branch refresh replaces the visible old-branch draft');
+  await liveA.provider.handleMessage(liveA.webview,{type:'persisted-atom-update',key:atomV2,
+    scmToolkitDraftScope:scopeMain,recordUpdate:{entries:{'new-conversation':{value:'Late old text'}}},value:{}});
   assert.equal((await command(windowA,'read')).draft,null,'Changing branch selects an independent slot');
   assert.deepEqual((await command(windowA,'readAttachments')).drafts,{});
   assert.equal(await command(windowA,'write','Late main text',{scope:scopeMain}),false);
@@ -230,6 +239,12 @@ async function run() {
   await assert.rejects(command(windowD,'adopt',collision),/already have an unsent draft/);
   assert.equal((await command(windowD,'read')).draft,'Independent destination work');
   assert.equal((await command(windowA,'read')).draft,collision.draft);
+  const newerSourcePlan={...collision,draftTransferId:require('node:crypto').randomUUID()};
+  await command(windowA,'write','Newer source work');
+  const windowE=scope('file:///shared/destination',shared,{workspace:'/windows/e.code-workspace',branch:'topic'});
+  await command(windowE,'adopt',newerSourcePlan);
+  assert.equal((await command(windowE,'read')).draft,newerSourcePlan.draft);
+  assert.equal((await command(windowA,'read')).draft,'Newer source work','Retiring a transfer cannot erase newer source edits');
 
   const listeners={},ipc=[];
   const native=Object.freeze({getState:()=>({keep:true}),setState:value=>value,postMessage:message=>ipc.push(message)});
