@@ -6,10 +6,15 @@ Sweetiebot extends **Visual Studio Code on macOS** with Source Control controls,
 
 VS Code settings now use the `sweetiebot.*` prefix instead of `scmToolkit.*`. At extension startup, explicitly saved legacy user, workspace, and resource-scoped preferences are copied only where the corresponding new setting is not already configured. Original values are retained for older installations. Legacy `scmToolkit.*` command aliases remain available for existing keybindings. Settings are organized by feature and save automatically. The old list of dozens of `git config --global` commands is no longer the recommended configuration path.
 
+# Artiwork
+
+CRetins deehere 
+
+
+
+## Docs
 > [!IMPORTANT]
 > Sweetiebot patches installed VS Code workbench files and certain supported extensions. VS Code updates may replace patches, unsupported versions may be refused, and VS Code can show an installation-integrity warning. Review changes before installing, and only trust repositories and workspace roots you control.
-
-## Documentation
 
 Browse the [documentation index](docs/index.md) for installation, settings, commits, worktrees, PR workflows, Workspace Search, Codex/UI, troubleshooting, and development. The [functionality audit](docs/functionality-audit.md) links implemented behavior to source and tests and distinguishes code inspection from live macOS verification.
 
