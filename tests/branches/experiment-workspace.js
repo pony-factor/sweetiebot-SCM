@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { openExperimentWorkspace, privateParent } = require('../../extension/branches/experiment-workspace');
+const { isExperimentWorkspace, deferExperimentPublish } = require('../../extension/branches/experiment-policy');
 
 function git(...args) {
   return execFileSync('git', args, {
@@ -61,6 +62,12 @@ function editor(root) {
     const vscode = editor(original);
     const first = await openExperimentWorkspace(vscode, { baseDirectory: copies });
     assert.match(first.branch, /^trial-[a-f0-9]{8}$/);
+    assert.equal(await isExperimentWorkspace(first.destination), true);
+    assert.equal(await deferExperimentPublish(first.destination), true, 'The copied staged and unstaged changes do not publish the trial');
+    assert.equal(await isExperimentWorkspace(original), false);
+    const alias = path.join(tmp, 'trial-alias');
+    await fs.symlink(first.destination, alias);
+    assert.equal(await isExperimentWorkspace(alias), true, 'A folder alias preserves the trial publishing policy');
     assert.equal(first.directionSent, true);
     assert.deepEqual(vscode.calls.map(call => call[0]), [
       'sweetiebot.readCodexIdentity', 'vscode.openFolder', 'sweetiebot.codex.sendExperimentDirection'
@@ -85,6 +92,12 @@ function editor(root) {
     assert.equal(git('-C', first.destination, 'show-ref', '--verify', 'refs/heads/main').length > 0, true,
       'Other local branches survive removal of temporary clone origin');
     git('-C', first.destination, 'reset', '--hard', 'HEAD');
+    const trialBase = git('-C', first.destination, 'rev-parse', 'HEAD');
+    git('-C', first.destination, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Trial commit fixture');
+    assert.equal(await deferExperimentPublish(alias), false, 'The first new commit allows automatic publishing through an alias');
+    git('-C', first.destination, 'reset', '--hard', trialBase);
+    assert.equal(await deferExperimentPublish(first.destination), true, 'Returning to the original snapshot keeps an unpublished trial local');
     assert.equal(git('-C', original, 'status', '--short'), before.status,
       'Resetting the experiment never changes the source');
 
