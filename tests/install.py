@@ -1067,6 +1067,16 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         self.assertIn('"branchPicker":false', second[0])
         self.assertNotIn('"branchPicker":true', second[0])
 
+    def test_overlapping_patches_are_removed_in_reverse_order(self):
+        changes = [('native-title', 'toolkit-title'), ('toolkit-title', 'toolkit-title-with-repository')]
+        with patch.object(install, 'edits', return_value=changes):
+            patched = install.transform('native-title', 'base-css', settings=SETTINGS)
+            self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+            self.assertEqual(install.transform(*patched, remove=True), ('native-title', 'base-css'))
+            modified = patched[0].replace('toolkit-title-with-repository', 'custom-title', 1)
+            with self.assertRaisesRegex(ValueError, 'Installed toolkit patch changed'):
+                install.transform(modified, patched[1], remove=True)
+
     def test_incomplete_installation_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Incomplete toolkit installation"):
             install.transform(workbench_fixture() + install.START, "base-css", settings=SETTINGS)

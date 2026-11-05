@@ -1396,7 +1396,9 @@ def transform(js, css, remove=False, settings=None):
         previous = json.loads(saved.group(1)) if saved else edits()
         js, css = strip_payload(js), strip_payload(css)
 
-        for edit in previous:
+        # Later patches can modify earlier replacements (for example the
+        # repository-name fallback inside the window-title method).
+        for edit in reversed(previous):
             original, replacement, expected_count = unpack_edit(edit)
             # An earlier Explorer title repair updated the code without its
             # saved metadata. Accept only that exact, known toolkit revision.
