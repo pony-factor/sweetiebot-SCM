@@ -90,7 +90,7 @@ assert(output.children[1].textContent.includes('<script>'),'Raw HTML remains ine
 assert(!output.children[1].children.some(node=>node.tag==='a'),'Raw HTML cannot become relative links');
 const sourceId='019c56c3-06fc-7db3-a928-9c3607e17129';
 const sourceShared='https://chatgpt.com/s/cx_6adb2bd8052c8191a37230ab0c89afde';
-const localLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+const localLink=`vscode://openai.chatgpt/local/${sourceId}`;
 const desktopLink='codex://threads/'+sourceId;
 const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
   +'- **Online:** '+sourceShared+'\n'
@@ -116,6 +116,22 @@ assert(generatedLinks[0].href.startsWith('https://vscode.dev/redirect?'));
 assert.equal(generatedLinks[0].textContent,'Local');
 assert.equal(generatedLinks[1].href,desktopLink);
 assert.equal(generatedLinks[1].textContent,'Desktop');
+assert(!generatedLinks[1].textContent.includes('copy into your browser'));
+const legacyLocalLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
+context.renderMarkdown(output,sourceBlock.replaceAll(localLink,legacyLocalLink));
+const legacyLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(legacyLinks[1].href,legacyLocalLink,
+  'Historical Codex links remain renderable inside the compact disclosure');
+const previousSweetiebotLink='vscode://pony-factor.sweetiebot-scm/codex/'+sourceId;
+context.renderMarkdown(output,sourceBlock.replaceAll(localLink,previousSweetiebotLink));
+const previousLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(previousLinks[1].href,previousSweetiebotLink,
+  'Earlier Sweetiebot handlers remain renderable inside the compact disclosure');
+const untrustedLocalLink='vscode://other.extension/codex/'+sourceId;
+context.renderMarkdown(output,sourceBlock.replaceAll(localLink,untrustedLocalLink));
+const validLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(validLinks.map(node=>node.href),[sourceShared,desktopLink],
+  'Unrecognized URI handlers must never be linked in the preview');
 
 const sharedSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
   kind:'codex',uuid:sourceId,
