@@ -270,6 +270,8 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     inputFile = args[2];
     assert(args[0].endsWith('resolution_cli.js'));
     assert.equal(args[1], '--input');
+    assert(options.timeout > 2 * 30 * 60 * 1000,
+      'The CLI must outlive both source-head and integrated-head check windows');
     assert.equal(options.env.GH_TOKEN, 'session-token');
     assert(!args.includes('session-token'), 'Never pass credentials in process arguments');
     assert.deepEqual(JSON.parse(await fs.readFile(inputFile, 'utf8')), { input, selection });

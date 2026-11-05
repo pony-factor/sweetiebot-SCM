@@ -46,7 +46,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
   assert.match(publisherErrors[0].error, /GitHub unavailable/);
   const published = await publishOptionalMergeSummaries({ ...summaryPayload, enabled: true },
     () => async args => {
-      assert.deepEqual(args, { ...summaryPayload, enabled: true });
+      assert.deepEqual(args, { ...summaryPayload, enabled: true, postStatusUpdates: false });
       return [];
     });
   assert.deepEqual(published, []);

@@ -100,11 +100,14 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
 
 // Summary comments are optional. A stale extension install or GitHub failure
 // must never turn an independently completed local merge into a failed handoff.
-async function publishOptionalMergeSummaries({ enabled, selection, input, result, token },
+async function publishOptionalMergeSummaries({ enabled, postStatusUpdates = false, selection, input, result, token },
   loadPublisher = () => require('../merge/summary').publishMergeSummaries) {
-  if (enabled !== true) return [];
+  if (enabled !== true && postStatusUpdates !== true) return [];
   const merged = Array.isArray(result?.results)
-    ? result.results.filter(item => item.status === 'merged' && item.merged === true) : [];
+    ? result.results.filter(item => item.status === 'merged' && item.merged === true ? enabled === true
+      : postStatusUpdates && ['synced', 'waiting', 'checks_failed'].includes(item.status)
+        && /^[a-f0-9]{40}$/i.test(item.sha || '') && /^[a-f0-9]{40}$/i.test(item.previousHeadSha || '')
+        && item.sha !== item.previousHeadSha) : [];
   if (!merged.length) return [];
   try {
     const publish = loadPublisher();
@@ -117,7 +120,7 @@ async function publishOptionalMergeSummaries({ enabled, selection, input, result
       }
       throw Error('The installed Sweetiebot merge summary module is out of date. Reload or reinstall Sweetiebot.');
     }
-    return await publish({ enabled: true, selection, input, result, token });
+    return await publish({ enabled, postStatusUpdates, selection, input, result, token });
   } catch (error) {
     return merged.map(item => ({ number: item.number,
       error: error?.message || String(error) }));
@@ -254,6 +257,7 @@ async function resumePRSession(vscode, context) {
           event => { report(event); controller?.recordLocalProgress?.(event); });
         const summaryErrors = await publishOptionalMergeSummaries({
           enabled: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostSummaries', false) === true,
+          postStatusUpdates: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
           selection: snapshot, input: result, result: executed, token: auth.accessToken
         });
         return { ...executed, summaryErrors };

@@ -541,6 +541,21 @@
     transition-delay: .4s;
 }
 
+/* Center the native Sync caption inside the shared action outline. */
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-text-button {
+    /* Sync shares a taller outline with Settings; fill it instead of retaining
+       the native 28px button at the top of the action row. */
+    box-sizing: border-box;
+    height: 100%;
+    margin-block: 0;
+}
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-text-button > .monaco-button-label,
+.scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-text-button > .monaco-button-label-short {
+    box-sizing: border-box;
+    height: 100%;
+    padding-block: 0;
+}
+
 /* Native codicon display rules override the browser's default [hidden] rule. */
 .scm-view .button-container .monaco-button .monaco-button-label > span[hidden],
 .scm-view .button-container .monaco-button .monaco-button-label-short > span[hidden] {

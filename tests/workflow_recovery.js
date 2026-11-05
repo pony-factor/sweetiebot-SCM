@@ -26,11 +26,12 @@ assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
     const address = 'https://chatgpt.com/#' + new URLSearchParams({sweetiebot_merge:'1',return_to:bridge.url});
     assert(address.length < 250);
     assert.equal((await (await fetch(bridge.url + '/prompt')).json()).prompt, prompt);
-    let promptHandler, transportHandler, navigate;
+    let promptHandler, transportHandler, collectorHandler, navigate;
     const frame={url:'https://chatgpt.com/'};
     const contents={mainFrame:frame, ipc:{handle(channel, handler){
       if (channel === 'sweetiebot:merge-prompt') promptHandler = handler;
       else if (channel === 'sweetiebot:merge-transport') transportHandler = handler;
+      else if (channel === 'sweetiebot:merge-collector') collectorHandler = handler;
       else assert.fail('Unexpected native channel: ' + channel);
     }},
       getBackgroundThrottling:()=>true,setBackgroundThrottling(){},on(_event,listener){navigate=listener;}};
@@ -41,6 +42,20 @@ assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
     await assert.rejects(promptHandler({senderFrame:frame}),/Invalid merge prompt sender/);
     navigate({},address,false,true);
     assert.equal(JSON.parse(await promptHandler({senderFrame:frame})).prompt,prompt);
+    const conversation = 'https://chatgpt.com/g/g-p-example/c/merge-chat';
+    navigate({}, conversation, false, true);
+    frame.url = conversation;
+    assert.equal(await collectorHandler({senderFrame:frame}), bridge.url,
+      'A conversation reload recovers the original callback without a prompt');
+    navigate({}, conversation, false, true);
+    assert.equal(await collectorHandler({senderFrame:frame}), bridge.url);
+    await assert.rejects(collectorHandler({senderFrame:{url:conversation}}), /Invalid merge collector sender/);
+    navigate({}, 'https://chatgpt.com/c/unrelated-chat', false, true);
+    frame.url = 'https://chatgpt.com/c/unrelated-chat';
+    await assert.rejects(collectorHandler({senderFrame:frame}), /Invalid merge collector sender/,
+      'Another chat cannot inherit merge authorization');
+    frame.url = 'https://chatgpt.com/';
+    navigate({},address,false,true);
     await assert.rejects(promptHandler({senderFrame:{url:frame.url}}),/Invalid merge prompt sender/);
     frame.url='https://evil.invalid/';
     await assert.rejects(promptHandler({senderFrame:frame}),/Invalid merge prompt sender/);
@@ -71,6 +86,23 @@ assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
     assert.deepEqual(errors,[]);
     assert.equal(received,prompt);
     assert.equal(window.location.href,'https://chatgpt.com/','The real page URL never receives the prompt');
+    const recovery = fs.readFileSync(path.join(root,'assets/browser/pull_request_submit.js'),'utf8')
+      .split('// Resume the existing collector after a reload or full conversation navigation.')[1]
+      .split('// Keep prompt bodies out of navigation URLs and browser-generated metadata.')[0];
+    const restoredWindow = {location:new URL(conversation)}; restoredWindow.top=restoredWindow;
+    let resumed;
+    vm.runInNewContext(recovery, {window:restoredWindow,URL,URLSearchParams,
+      require(){return {ipcRenderer:{async invoke(channel){
+        assert.equal(channel,'sweetiebot:merge-collector'); return bridge.url;
+      }}};},
+      scmToolkitStartPullRequestWorkflow(url){resumed=new URL(url);}});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(resumed.pathname,new URL(conversation).pathname);
+    const resumedArgs = new URLSearchParams(resumed.hash.slice(1));
+    assert.equal(resumedArgs.get('sweetiebot_collect'),'1');
+    assert.equal(resumedArgs.get('return_to'),bridge.url);
+    assert.equal(resumedArgs.has('q'),false,'Recovery never resubmits the merge prompt');
+    assert.equal(restoredWindow.location.href,conversation,'Recovery keeps transport out of the visible URL');
   } finally {bridge.dispose();}
   console.log('Short prompt transport, authorization boundaries, reset parsing and active cannon regressions passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

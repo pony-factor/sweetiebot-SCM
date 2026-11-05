@@ -6,7 +6,7 @@ const { gzipSync, gunzipSync } = require('node:zlib');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../assets/browser/pull_request_submit.js'), 'utf8');
-function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], assistantText = '', streaming = false, backgroundStreaming = false, hiddenStop = false, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
+function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], assistantText = '', streaming = false, backgroundStreaming = false, hiddenStop = false, hiddenStopAncestor = false, recoveredCallback, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   let currentAssistantText = assistantText;
   const timers = new Map();
@@ -53,7 +53,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
         request.destroy=()=>request.emit('error', Error('Aborted'));
         return request;
       } };
-      assert.equal(name,'electron');return {contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}};
+      assert.equal(name,'electron');return {ipcRenderer:{async invoke(channel){assert.equal(channel,'sweetiebot:merge-collector'); if(!recoveredCallback) throw Error('No active merge'); return recoveredCallback;}},contextBridge:{executeInMainWorld({func}){vm.runInNewContext('('+func.toString()+')()', {window});}}};
     },
     clearTimeout: id => timers.delete(id), setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
     document: { createElement() { return { style: {}, setAttribute() {}, remove() { this.removed = true; } }; }, execCommand(command, ui, value) { if (command === 'selectAll') return true; if (command === 'delete') composer.innerText = ''; else { assert.equal(command, 'insertText'); composer.innerText = formatInserted(value); } listeners.get('input')?.forEach(callback => callback({ type: 'input', isTrusted: true })); return true; }, querySelector: selector => selector === '#prompt-textarea' ? (projectComposer ? null : composer) :
@@ -61,7 +61,7 @@ function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', te
       selector.includes('Hide sidebar') ? (sidebar ? sidebarButton : null) :
       selector.includes('Stop streaming') ? (streaming ? button : null) : button,
       querySelectorAll: selector => {
-        if (selector.includes('Stop streaming')) return streaming ? [{ ...button, getClientRects: () => backgroundStreaming ? [] : [1] }] : hiddenStop ? [{getClientRects:()=>[]}] : [];
+        if (selector.includes('Stop streaming')) return streaming ? [{ ...button, getClientRects: () => backgroundStreaming ? [] : [1] }] : hiddenStopAncestor ? [{closest:()=>({hidden:true}),getClientRects:()=>[]}] : hiddenStop ? [{getClientRects:()=>[]}] : [];
         const message = values => ({ textContent: currentAssistantText || values.join(' '), querySelectorAll(selector) {
           assert.equal(selector, 'pre code, pre, [data-testid="code-block"]');
           return values.map(textContent => ({ textContent }));
@@ -368,3 +368,26 @@ console.log('Bounded workflow response-stream recovery checks passed.');
   console.log('One-time nonce-scoped large-payload handoff and compact-link checks passed.');
 })().catch(error => { console.error(error); process.exitCode=1; });
 
+
+(async () => {
+  const completed = fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),
+    text:'',resultLinks:[compactUrl],hiddenStopAncestor:true});
+  completed.tick(2500);
+  assert.deepEqual(completed.navigations,[compactUrl],
+    'A hidden Stop control must not block automatic Lindsey application');
+  const restored = fixture({url:'https://chatgpt.com/g/g-p-test123/c/reloaded-merge',
+    text:'Keep my unsent draft',recoveredCallback:mergeCallback,resultLinks:[compactUrl]});
+  await new Promise(resolve=>setImmediate(resolve));
+  restored.tick(2500);
+  assert.deepEqual(restored.navigations,[compactUrl],
+    'Reloaded merge chats automatically follow a complete handoff without an Apply click');
+  assert.equal(restored.clicks(),0,'Recovery never clicks Send or resubmits the prompt');
+  assert.equal(restored.composer.innerText,'Keep my unsent draft');
+  const alreadyCollecting = fixture({url:resumeUrl,text:'Keep another draft',
+    recoveredCallback:mergeCallback,resultLinks:[compactUrl]});
+  await new Promise(resolve=>setImmediate(resolve));
+  alreadyCollecting.tick(2500);
+  assert.deepEqual(alreadyCollecting.navigations,[compactUrl],
+    'A recovered collector must not duplicate an explicitly resumed collector');
+  console.log('Automatic Apply after chat reload and hidden Stop control checks passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

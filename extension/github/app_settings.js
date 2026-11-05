@@ -28,17 +28,24 @@ function savedEnvironment(env) {
   return resolved;
 }
 
+function decodeKeychainPassword(stdout) {
+  const password = stdout.trim();
+  // security -w encodes multiline Keychain passwords as complete hex bytes.
+  return /^(?:[0-9a-fA-F]{2})+$/.test(password)
+    ? Buffer.from(password, 'hex').toString('utf8').trim() : password;
+}
+
 async function readKeychainKey(role) {
   if (process.platform !== 'darwin') throw new Error('GitHub App Keychain storage requires macOS.');
   try {
     const { stdout } = await exec('/usr/bin/security',
       ['find-generic-password', '-s', SERVICE, '-a', role, '-w'],
       { encoding: 'utf8', timeout: 30000, maxBuffer: 65536 });
-    return stdout.trim();
+    return decodeKeychainPassword(stdout);
   } catch {
     // exec errors may contain stdout; never expose them to the UI or logs.
     throw new Error('Could not unlock the ' + role + ' App key in macOS Keychain.');
   }
 }
 
-module.exports = { savedEnvironment, readKeychainKey };
+module.exports = { savedEnvironment, readKeychainKey, decodeKeychainPassword };
