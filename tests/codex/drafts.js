@@ -228,6 +228,7 @@ async function run() {
   const windowD=scope('file:///shared/destination',shared,{workspace:'/windows/d.code-workspace',branch:'topic'});
   await command(windowD,'write','Independent destination work');
   await assert.rejects(command(windowD,'adopt',collision),/already have an unsent draft/);
+  assert.equal((await command(windowD,'read')).draft,'Independent destination work');
   assert.equal((await command(windowA,'read')).draft,collision.draft);
 
   const listeners={},ipc=[];

@@ -40,6 +40,10 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
     branches: await resolveBranches(vscode), storageUri: context.storageUri
   });
   const record = key => context.globalState.get(key) || {};
+  const persist = async (key, value) => {
+    try { await context.globalState.update(key, value); storageError = undefined; }
+    catch (error) { storageError = error; throw error; }
+  };
   const pending = () => {
     const workspace = vscode.workspace.workspaceFile?.fsPath;
     const plan = workspace && context.globalState.get(require('./workspace-handoff').keyFor(workspace));
@@ -47,12 +51,15 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
     return plan && !plan.draftsConsumed && roots.includes(plan.destination) ? plan : null;
   };
   const read = async () => {
-    await writing;
+    await writing.catch(() => {});
     if (storageError) throw storageError;
     const scope = await keyForScope();
     if (!scope) return { enabled: false };
     const plan = pending();
-    if (plan?.draftScope) await vscode.commands.executeCommand('sweetiebot.codexDraft.adopt', plan);
+    if (plan?.draftScope) {
+      try { await vscode.commands.executeCommand('sweetiebot.codexDraft.adopt', plan); }
+      catch (error) { if (storageError) throw error; } // Resume reports a conflict; show this window's own draft.
+    }
     const saved = record(scope);
     // Never seed a fresh window from the old checkout-wide cache. Keep those
     // legacy entries intact, but only an explicit handoff may move a draft.
@@ -61,8 +68,7 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
       drafts: plan?.attachmentDrafts && !plan.draftScope ? require('./workspace-handoff').handoffAttachments(plan) : saved.attachments || {} };
   };
   const enqueue = operation => {
-    const next = writing.catch(() => {}).then(operation);
-    writing = next.then(value => { storageError = undefined; return value; }, error => { storageError = error; throw error; });
+    writing = writing.catch(() => {}).then(operation);
     return writing;
   };
   const register = (name, handler) => context.subscriptions.push(vscode.commands.registerCommand(name, handler));
@@ -85,7 +91,7 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
       const saved = record(scope);
       if (Object.prototype.hasOwnProperty.call(options, 'expectedValue') && options.expectedValue !== undefined
           && !isDeepStrictEqual(saved[field], options.expectedValue)) return false;
-      await context.globalState.update(scope, { ...saved, [field]: value });
+      await persist(scope, { ...saved, [field]: value });
       return true;
     });
   };
@@ -120,15 +126,15 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
           || (Object.keys(saved.attachments || {}).length && !isDeepStrictEqual(saved.attachments, incoming.attachments))) {
         throw Error('This window and branch already have an unsent draft. Its contents were preserved.');
       }
-      await context.globalState.update(transferKey, scope);
-      await context.globalState.update(scope, { ...saved, ...incoming, transfers: [...(saved.transfers || []), id] });
+      await persist(transferKey, scope);
+      await persist(scope, { ...saved, ...incoming, transfers: [...(saved.transfers || []), id] });
     }
     if (scope !== plan.draftScope) {
       const source = record(plan.draftScope);
       // Retire the captured copy only. A newer source draft belongs to its user.
       if (isDeepStrictEqual(source.draft ?? null, plan.draft ?? null)
           && isDeepStrictEqual(source.attachments || {}, plan.attachmentDrafts || {})) {
-        await context.globalState.update(plan.draftScope, { transfers: source.transfers || [] });
+        await persist(plan.draftScope, { transfers: source.transfers || [] });
       }
     }
     return true;
