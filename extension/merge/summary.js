@@ -2,7 +2,7 @@
 
 const { separateAppsEnabled, getRoleInstallationToken, workflowBotLogin } = require('../github/app-identity');
 const MARKER = '<!-- sweetiebot-merge-report -->\n<!-- sweetiebot-generated-summary -->';
-const STATUS-MARKER = '<!-- sweetiebot-lindsey-status -->';
+const STATUS_MARKER = '<!-- sweetiebot-lindsey-status -->';
 const SHA = /^[a-f0-9]{40}$/i;
 
 // The opt-in is checked before authentication or network access. Summary
@@ -16,7 +16,7 @@ async function publishMergeSummaries({ enabled, postStatusUpdates = false, selec
   if (enabled !== true && postStatusUpdates !== true) return [];
   const entries = (result.results || []).filter(item =>
     item.merged === true && item.status === 'merged' ? enabled === true
-      : postStatusUpdates === true && ['synced', 'waiting', 'checks-failed'].includes(item.status)
+      : postStatusUpdates === true && ['synced', 'waiting', 'checks_failed'].includes(item.status)
         && SHA.test(item.sha || '') && SHA.test(item.previousHeadSha || '') && item.sha !== item.previousHeadSha);
   if (!entries.length) return [];
   const errors = [];
