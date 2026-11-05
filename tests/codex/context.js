@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const extensionManifest = require('../../extension/package.json');
 
 function load(name, context) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/codex', name), 'utf8'), context);
@@ -261,12 +260,8 @@ async function run() {
   const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
   load('context-host.js', host);
   let liveResume = false, configListener, checkoutFoldersChanged, checkoutNeedsNewWindow = false;
-  const uriExtensionId = `${extensionManifest.publisher}.${extensionManifest.name}`;
   const hostVscode = {
-    extensions: { all: [{
-      id: uriExtensionId,
-      packageJSON: { contributes: { views: { scm: [{ id: 'sweetiebot.workspaceSearch' }] } } }
-    }] },
+    // The snapshot URL must not require Sweetiebot discovery in the recipient's VS Code.
     workspace: {
       getConfiguration: () => ({get(key, fallback) { return key === 'codexContinueAtReset' ? liveResume : fallback; }}),
       onDidChangeConfiguration(callback) { configListener = callback; return {dispose() {}}; },
@@ -343,8 +338,8 @@ async function run() {
   assert.match(snapshot.source.url, /^https:\/\/vscode\.dev\/redirect\?url=/);
   assert(snapshot.source.url.includes(conversationId));
   assert.equal(new URL(snapshot.source.url).searchParams.get('url'),
-    `vscode://${uriExtensionId}/codex/${conversationId}`,
-    'Codex source links must target the installed Sweetiebot extension ID');
+    `vscode://openai.chatgpt/local/${conversationId}`,
+    'Codex source links must target the official Codex URI handler');
 
   provider.handleMessage(webview, { type: 'scm-toolkit-context-response' });
   assert.equal(messages.length, 2, 'no submit or interrupt messages are sent');
