@@ -1,5 +1,5 @@
 // Flawless-style option: Send click interrupts; Enter retains Codex's native queue.
-// Only the genuine Stop and Send controls are activated; React-owned nodes stay intact.
+// Use the native stop callback when Stop and Queue share a single control.
 (() => {
     'use strict';
     if (globalThis.scmToolkitCodexInterruptSend) return;
@@ -17,12 +17,27 @@
         if (!enabled(button) || button.id === 'scm-toolkit-codex-clipboard-submit') return false;
         const name = label(button);
         if (/\b(stop|cancel|interrupt|pause|resume|remove|delete|edit|settings?|clipboard|dictat|voice|retry)\b/i.test(name)) return false;
-        return /\b(send|submit|queue)\b/i.test(name) || (!name && button.type === 'submit');
+        return /\b(send|submit|queue|steer)\b/i.test(name) || (!name && button.type === 'submit');
     }
     function readText(editor) {
         const doc = editor?.__scmToolkitComposer?.view?.state?.doc;
         if (doc && typeof doc.textBetween === 'function') return doc.textBetween(0, doc.content.size, '\n');
         return editor && 'value' in editor ? editor.value : (editor?.innerText ?? editor?.textContent ?? '');
+    }
+    function nativeRun(button) {
+        const key = Object.keys(button || {}).find(key => key.startsWith('__reactFiber$'));
+        let fiber = key && button[key];
+        if (!fiber) return null;
+        // DOM nodes can retain the alternate fiber after a React commit.
+        let top = fiber;
+        while (top.return) top = top.return;
+        if (top.stateNode?.current && top.stateNode.current !== top) fiber = fiber.alternate;
+        for (let depth = 0; fiber && depth < 40; fiber = fiber.return, depth++) {
+            const props = fiber.memoizedProps;
+            if (typeof props?.isResponseInProgress === 'boolean'
+                && typeof props.onStop === 'function' && typeof props.handleSubmit === 'function') return props;
+        }
+        return null;
     }
     function controls(button) {
         for (let root = button?.parentElement, depth = 0; root && root !== document.body && depth < 12;
@@ -31,22 +46,29 @@
             if (!editor) continue;
             const stop = [...root.querySelectorAll('button')].find(candidate => enabled(candidate) && STOP.test(label(candidate)));
             if (stop && stop !== button) return {root, editor, stop};
+            if (nativeRun(button)?.isResponseInProgress) return {root, editor, nativeButton: button};
         }
         return null;
     }
     async function interruptAndSend(surface) {
         if (sending || !surface) return false;
-        const {root, editor, stop} = surface;
+        const {root, editor, stop, nativeButton} = surface;
         const draft = readText(editor);
-        if (!draft.trim() || !enabled(stop)) return false;
+        const run = nativeButton && nativeRun(nativeButton);
+        if (!draft.trim() || (nativeButton ? !run?.isResponseInProgress : !enabled(stop))) return false;
         sending = true;
         try {
-            stop.click();
+            if (nativeButton) run.onStop();
+            else stop.click();
             for (let attempt = 0; attempt < 60; attempt++) {
                 await new Promise(resolve => setTimeout(resolve, 80));
                 // Never send after a window/composer switch or a user draft edit.
                 if (!visible(root) || !visible(editor) || readText(editor) !== draft) return false;
                 const buttons = [...root.querySelectorAll('button')];
+                if (nativeButton) {
+                    const currentRun = buttons.map(nativeRun).find(Boolean);
+                    if (!currentRun || currentRun.isResponseInProgress) continue;
+                }
                 if (buttons.some(candidate => enabled(candidate) && STOP.test(label(candidate)))) continue;
                 const send = buttons.find(isSend);
                 if (!send) continue;
@@ -70,7 +92,7 @@
         void interruptAndSend(surface);
     }
     if (globalThis.__SCM_TOOLKIT_SEND_INTERRUPT_TEST__) {
-        Object.assign(globalThis.__SCM_TOOLKIT_SEND_INTERRUPT_TEST__, {isSend, controls, interruptAndSend, onClick});
+        Object.assign(globalThis.__SCM_TOOLKIT_SEND_INTERRUPT_TEST__, {isSend, nativeRun, controls, interruptAndSend, onClick});
         return;
     }
     document.addEventListener('click', onClick, true);
