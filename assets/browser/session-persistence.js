@@ -1,5 +1,5 @@
 // Electron persists ordinary cookies but drops session cookies at process exit.
-// Keep the explicitly shared ChatGPT browser login across app restarts in the
+// Keep the shared browser login across app restarts in the
 // native encrypted cookie store. Never export cookies to a separate file.
 function sweetiebotPersistChatSession(session) {
     const key = Symbol.for('sweetiebot.chat-session-persistence');
@@ -7,18 +7,36 @@ function sweetiebotPersistChatSession(session) {
     session[key] = true;
     let pending = Promise.resolve();
     const revisions = new Map();
+    let settingsAt = 0, retention = Promise.resolve(180);
+    const retentionDays = () => {
+        if (Date.now() - settingsAt > 30000) {
+            settingsAt = Date.now();
+            retention = import('node:child_process').then(({ execFile }) => new Promise(resolve => {
+                execFile('/usr/bin/git', ['config', '--global', '--get', 'scm-toolkit.browser-session-cookie-days'],
+                    { timeout: 2000 }, (error, stdout) => {
+                        const value = Number(String(stdout || '').trim());
+                        resolve(!error && Number.isInteger(value) && value >= 0 && value <= 4000 ? value : 180);
+                    });
+            })).catch(() => 180);
+        }
+        return retention;
+    };
     const retain = (cookie, identity, revision) => {
-        const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
-        if (!cookie.session || !['chatgpt.com', 'auth.openai.com', 'auth0.openai.com'].includes(domain)) return;
+        if (!cookie.session) return;
         // Preserve domain/path/security/SameSite, and never extend an expiry
         // supplied by the server. Server logout/removal is left intact.
         const host = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
         const details = { url: `${cookie.secure ? 'https' : 'http'}://${host}${cookie.path || '/'}`,
             name: cookie.name, value: cookie.value, path: cookie.path || '/',
             secure: cookie.secure, httpOnly: cookie.httpOnly, sameSite: cookie.sameSite,
-            expirationDate: Date.now() / 1000 + 30 * 24 * 60 * 60 };
+            expirationDate: undefined };
         if (!cookie.hostOnly) details.domain = cookie.domain;
-        pending = pending.then(() => revisions.get(identity) === revision ? session.cookies.set(details) : undefined)
+        pending = pending.then(async () => {
+            const days = await retentionDays();
+            if (!days || revisions.get(identity) !== revision) return;
+            details.expirationDate = Date.now() / 1000 + days * 24 * 60 * 60;
+            await session.cookies.set(details);
+        })
             .then(() => session.cookies.flushStore()).catch(() => {});
     };
     session.cookies.on('changed', (_event, cookie, _cause, removed) => {

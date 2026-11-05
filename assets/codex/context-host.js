@@ -124,7 +124,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     }
                     const link = new URL(value.trim());
                     if (link.protocol !== 'codex:' || link.hostname !== 'threads' ||
-                        link.pathname !== '/' + request.threadId || link.username || link.password || link.hash)
+                        link.pathname !== '/' + request.threadId || link.username || link.password || link.port || link.hash)
                         throw new Error('Codex did not copy a deeplink for the originating chat.');
                     pending.delete(message.id);
                     clearTimeout(request.timeout);

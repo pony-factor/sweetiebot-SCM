@@ -66,6 +66,7 @@ function fixture({ current = 'default', globalValue, workspaceValue, workspaceFo
   listeners[0](null, cookie, 'explicit', false);
   listeners[0](null, cookie, 'explicit', true);
   await new Promise(setImmediate);
-  assert.equal(writes.length, 1, 'Preserve server expiry, isolate other sites, and never resurrect logout removals');
+  assert.equal(writes.length, 2, 'Retain all sites, preserve server expiry, and never resurrect logout removals');
+  assert.equal(writes[1].domain, '.example.com');
   console.log('Workspace-partitioned Integrated Browser configuration checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

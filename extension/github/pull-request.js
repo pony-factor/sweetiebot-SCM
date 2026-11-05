@@ -174,7 +174,7 @@ function normalizeConversationSource(source) {
   try {
     const link = new URL(source.desktopUrl);
     if (link.protocol === 'codex:' && link.hostname === 'threads' &&
-        link.pathname === '/' + uuid && !link.username && !link.password && !link.hash)
+        link.pathname === '/' + uuid && !link.username && !link.password && !link.port && !link.hash)
       desktopUrl = link.href;
   } catch {}
   return { kind, uuid, url, ...(sharedUrl ? { sharedUrl } : {}), ...(desktopUrl ? { desktopUrl } : {}) };
@@ -254,8 +254,8 @@ async function readCodexConversation(vscode) {
       ? value.replace(/\s+/g, ' ').trim() : '';
     const name = label(snapshot.model?.name), effort = label(snapshot.model?.effort);
     return source ? { source, text, ...((name || effort) ? { model: { name, effort } } : {}) } : undefined;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error('Could not copy the originating Codex chat: ' + error.message);
   }
 }
 
