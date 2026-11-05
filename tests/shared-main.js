@@ -232,17 +232,16 @@ async function openedRoot(result) {
     assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'private topic edit\n');
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
 
-    // Returning home focuses its existing window rather than taking over main.
+    // Returning home reuses the initiating window even with a live main owner.
     const mainSession = path.join(first.directory, '.sweetiebot-session-2345-test.json');
     await fs.writeFile(mainSession,
       JSON.stringify({ pid: process.pid + 1, roots: [root], workspaceFile: first.target }));
     const mainSwitcher = editor(topic);
     assert.equal(await routeBranch(mainSwitcher, { rootUri: { fsPath: topic } },
       { ...options, branch: 'main' }), true);
-    assert.deepEqual(mainSwitcher.commands.calls.map(call => call[0]),
-      ['vscode.openFolder', 'workbench.action.closeWindow']);
-    assert.equal(mainSwitcher.commands.calls[0][1].fsPath, first.target);
-    assert.deepEqual(mainSwitcher.commands.calls[0][2], { forceNewWindow: true });
+    assert.deepEqual(mainSwitcher.commands.calls.map(call => call[0]), ['vscode.openFolder']);
+    assert.equal(await openedRoot({ target: mainSwitcher.commands.calls[0][1].fsPath }), root);
+    assert.deepEqual(mainSwitcher.commands.calls[0][2], { forceReuseWindow: true });
     await fs.rm(mainSession);
     moving.workspace.workspaceFolders = [{ uri: { scheme: 'file', fsPath: root }, name: 'Repo' }];
 
