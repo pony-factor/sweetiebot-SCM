@@ -304,27 +304,38 @@ async function successiveMerges(checkState) {
    const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
    const author = { name: 'John Wooten', email: 'human@example.test' };
    const merged = new Set();
-   const staleCheckHead = heads[2];
+   const thirdCheckHead = heads[3];
    const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
-   const snapshot = async number => ({ number, title: title(number), state: merged.has(number) ? 'closed' : 'open',
-     merged: merged.has(number), merge_commit_sha: merged.has(number) ? await branch('main') : null,
-     user: { type: 'User', login: 'human' }, mergeable: number === 1 || !merged.has(1),
-     head: { ref: 'feature-' + number, sha: await branch('feature-' + number), repo: { full_name: 'owner/repo' } },
-     base: { ref: 'main', sha: await branch('main'), repo: { full_name: 'owner/repo' } } });
-   const commit = async sha => ({ sha, author: { type: 'User', login: 'human' }, commit: { author,
+   const snapshot = async number => {
+    const baseTip = await branch('main');
+    const landed = merged.has(number) || await git('--git-dir=' + remote,
+      'merge-base', '--is-ancestor', heads[number], baseTip).then(() => true).catch(() => false);
+    if (landed) merged.add(number);
+    return { number, title: title(number), state: landed ? 'closed' : 'open',
+      merged: landed, merged_at: landed ? '2026-11-05' : null,
+      merge_commit_sha: landed ? baseTip : null,
+      user: { type: 'User', login: 'human' },
+      mergeable: number === 1 || !merged.has(1),
+      mergeable_state: number === 1 || !merged.has(1) ? 'clean' : 'dirty',
+      head: { ref: 'feature-' + number, sha: await branch('feature-' + number), repo: { full_name: 'owner/repo' } },
+      base: { ref: 'main', sha: baseTip, repo: { full_name: 'owner/repo' } } };
+    };
+    const commit = async sha => ({ sha, author: { type: 'User', login: 'human' }, commit: { author,
      message: await git('--git-dir=' + remote, 'show', '-s', '--format=%B', sha) },
-     parents: [{ sha: await git('--git-dir=' + remote, 'rev-parse', sha + '^') }] });
+     parents: (await git('--git-dir=' + remote, 'show', '-s', '--format=%P', sha))
+        .split(' ').filter(Boolean).map(sha => ({ sha })) });
    const api = async (endpoint, method, fields) => {
      if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, allow_squash_merge: true, default_branch: 'main' };
-     if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
+     if (endpoint.includes('/rules/branches/')) return [];
+      if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
      if (endpoint.includes('/check-runs?')) {
-       const old = endpoint.includes(staleCheckHead);
-       const integratedThird = endpoint.includes(await branch('feature-3')) && !endpoint.includes(heads[3]);
-       if (integratedThird && checkState !== 'success') return { check_runs: [{ id: 2, name: 'third feature tests',
-         status: checkState === 'pending' ? 'in_progress' : 'completed', conclusion: checkState === 'pending' ? null : 'failure' }] };
-       return { check_runs: [{ id: 1, name: 'price tests', status: 'completed', conclusion: old ? 'failure' : 'success' }] };
-     }
-     if (endpoint.includes('/check-suites?')) return { check_suites: [] };
+        if (endpoint.includes(thirdCheckHead) && checkState !== 'success')
+          return { check_runs: [{ id: 2, name: 'third feature tests',
+            status: checkState === 'pending' ? 'in_progress' : 'completed',
+            conclusion: checkState === 'pending' ? null : 'failure' }] };
+        return { check_runs: [{ id: 1, name: 'price tests', status: 'completed', conclusion: 'success' }] };
+      }
+      if (endpoint.includes('/check-suites?')) return { check_suites: [] };
      if (endpoint.includes('/status?')) return { statuses: [] };
      if (endpoint.includes('/pulls?')) return [{ number: 3,
        base: { ref: 'feature-1' }, head: { ref: 'stack-child' } }];
@@ -342,7 +353,8 @@ async function successiveMerges(checkState) {
          fields.find(value => value.startsWith('commit_message=')).slice('commit_message='.length);
        const messageFile = path.join(root, 'native-squash-message');
        await fs.writeFile(messageFile, message);
-       const squash = await git('--git-dir=' + remote, 'commit-tree', head + '^{tree}', '-p', base, '-F', messageFile);
+       const mergedTree = await git('--git-dir=' + remote, 'merge-tree', '--write-tree', base, head);
+        const squash = await git('--git-dir=' + remote, 'commit-tree', mergedTree, '-p', base, '-F', messageFile);
        await git('--git-dir=' + remote, 'update-ref', 'refs/heads/main', squash, base);
        merged.add(number);
        return { merged: true, sha: squash };
@@ -379,27 +391,12 @@ async function successiveMerges(checkState) {
    assert.deepEqual(conflict.results[0].conflictPaths, ['price.js']);
    assert.equal(await branch('feature-2'), heads[2], 'A detected conflict does not push a partial tree');
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
-   const synced = await submit(conflict.continueUrl, 2, patch);
-   assert.equal(synced.results[0].status, 'synced');
-   assert.equal(await branch('main'), first.results[0].sha, 'Per-file preparation cannot modify main');
-   assert.equal(await git('--git-dir=' + remote, 'rev-parse', synced.results[0].sha + '^^'), heads[2]);
-   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', synced.results[0].sha + '^'), '🛠️ Retain multiplier three while adding tax');
-   assert.equal(await git('--git-dir=' + remote, 'diff-tree', '--no-commit-id', '--name-only', '-r', synced.results[0].sha + '^'), 'price.js', 'Decision commit changes only its conflicted file');
-   assert.equal(await git('--git-dir=' + remote, 'diff', '--name-only', synced.results[0].sha + '^', synced.results[0].sha), 'main-only.txt', 'The following sync includes only remaining incoming files');
-   const decisionMessage = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha + '^');
-   const syncMessage = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', synced.results[0].sha);
-   assert(decisionMessage.includes('do not restore multiplier two'));
-   for (const commitMessage of [decisionMessage, syncMessage]) {
-     assert(commitMessage.includes('Co-authored-by: ChatGPT 6.1 <noreply@openai.com>'),
-       'Both resolution and sync commits credit the current assistant');
-     assert(!commitMessage.includes('Co-authored-by: Codex Web <noreply@openai.com>'),
-       'Neither newly generated commit introduces the obsolete identity');
-   }
-   heads[2] = synced.results[0].sha;
-   const final = await submit(synced.continueUrl, 2);
-   assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
-   assert.equal(await branch('feature-2'), heads[2], 'Native squash retains the appended conflict decisions');
-   assert.equal(final.batch.merged.length, 2);
+   const final = await submit(conflict.continueUrl, 2, patch);
+    assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
+    assert.equal(await branch('feature-2'), heads[2], 'A conflict repair leaves the PR head unchanged');
+    assert.equal(await git('--git-dir=' + remote, 'rev-parse', final.results[0].sha + '^1'), first.results[0].sha);
+    assert.equal(await git('--git-dir=' + remote, 'rev-parse', final.results[0].sha + '^2'), heads[2]);
+    assert.equal(final.batch.merged.length, 2);
    assert.deepEqual(final.batch.deferred, []);
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
@@ -415,10 +412,9 @@ async function successiveMerges(checkState) {
      'New resolution commits must not introduce obsolete Web credit');
    const beforeThird = await branch('main');
    const third = await submit(final.continueUrl, 3);
-   const integratedThird = await branch('feature-3');
-   assert.notEqual(integratedThird, heads[3], 'The clean third PR must incorporate both earlier merges');
-   await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', heads[3], integratedThird);
-   if (checkState === 'success') {
+   const unchangedThird = await branch('feature-3');
+    assert.equal(unchangedThird, heads[3], 'A clean PR must not be synchronized');
+    if (checkState === 'success') {
      assert.equal(third.results[0].status, 'merged', 'A clean integration and squash complete in one local execution');
      assert.equal(third.batch.merged.length, 3);
      assert.equal(third.continueUrl, undefined, 'No redundant AI round is required');
@@ -427,9 +423,10 @@ async function successiveMerges(checkState) {
      assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
    } else {
      assert.equal(third.results[0].status, checkState === 'pending' ? 'waiting' : 'checks_failed');
-     assert.equal(third.results[0].sha, integratedThird, 'The batch can adopt only the executor-prepared head');
-     assert.equal(await branch('main'), beforeThird, 'Pending or failing integrated-head checks cannot merge');
-     assert.equal(third.batch.merged.length, 2);
+     assert.equal(third.results[0].sha, heads[3], 'Failed checks cannot advance the source head');
+      assert.equal(await branch('main'), beforeThird, 'Pending or failing checks cannot merge');
+      if (checkState === 'failure') assert.equal(third.batch.deferred[0].kind, 'failed_checks');
+      assert.equal(third.batch.merged.length, 2);
    }
    assert.equal(await repo('rev-parse', 'HEAD'), initial);
    assert.equal(await repo('status', '--porcelain'), '');

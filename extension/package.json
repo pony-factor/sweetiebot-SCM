@@ -26,6 +26,7 @@
     "onCommand:sweetiebot.createLocalPullRequest",
     "onCommand:sweetiebot.setCodexSharedConversationUrl",
     "onCommand:sweetiebot.openPullRequestBatchChat",
+    "onCommand:sweetiebot.postPullRequestChangeSummary",
     "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
     "onCommand:sweetiebot.openExperimentWorkspace",
@@ -174,6 +175,12 @@
           "light": "media/merge-prs-light.svg",
           "dark": "media/merge-prs-dark.svg"
         }
+      },
+      {
+        "command": "sweetiebot.postPullRequestChangeSummary",
+        "title": "Post Change Summary to Existing Pull Request",
+        "category": "Sweetiebot",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "sweetiebot.mergeAllPullRequests",
@@ -727,9 +734,9 @@
         },
         "sweetiebot.mergeAutoFixCi": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "scope": "application",
-          "description": "Opt in to opening a separate repair task once per failed PR head after Lindsey's built-in CI retry is exhausted. Never bypasses checks, approvals or merge policies."
+          "description": "Open one dedicated repair task per verified failing PR head after merge-time integration is blocked by CI. Enabled by default; turn off to prevent automatic repair. Never bypasses checks, approvals or merge policies."
         },
         "sweetiebot.mergeAutoFixCiMethod": {
           "type": "string",

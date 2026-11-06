@@ -1099,6 +1099,16 @@ def codex_hidden_limit_banner_edits(js):
         original = match[0]
         edits.append((original, original.replace('}=' + match[3] + ',',
                       '}=scmToolkitCompactHiddenLimitBanner(' + match[3] + '),')))
+        # Carry the exact pre-render compaction decision into the DOM. The
+        # sticker must not rediscover a banner after its copy/CTAs are removed.
+        description = re.search(
+            rf'\(0,{ident}\.jsx\)\(`span`,\{{[^{{}}]*\bchildren:{match[2]}\}}\)',
+            following)
+        if description:
+            span = description[0]
+            edits.append((span, span.replace('`span`,{',
+                '`span`,{"data-scm-toolkit-rate-limited":'
+                f'scmToolkitIsHiddenLimitBanner({match[3]})?"true":void 0,', 1)))
         ctas = re.search(rf'let ({ident})=({ident})\.ctas\.filter\(({ident})\);', following)
         if ctas:
             edits.append((ctas[0], f'let {ctas[1]}=scmToolkitIsHiddenLimitBanner({match[3]})?[]:{ctas[2]}.ctas.filter({ctas[3]});'))

@@ -12,7 +12,7 @@ const SHA = /^[a-f0-9]{40}$/i;
 
 async function localAuthorMerge({ repository, number, original, headSha, baseSha, tree, author, message,
   git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false,
-  privateRepository = false, createCommitTree = attributedCommitTree }) {
+  privateRepository = false, integratedTree = false, createCommitTree = attributedCommitTree }) {
   const root = 'repos/' + repository, prPath = root + '/pulls/' + number;
   const head = original.head.ref, base = original.base.ref;
   const blocked = reason => ({ merged:false,status:'blocked',number,reason,headSha,base,baseSha });
@@ -38,7 +38,11 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
       rules = [];
     }
     if (!Array.isArray(rules) || rules.length) return 'The base has active branch rules; local Git will not bypass them.';
-    if (fresh.mergeable === false || fresh.mergeable_state === 'blocked') return 'GitHub reports a blocked or conflicting PR.';
+    // A dirty PR may have been resolved in the independently verified index.
+    // Other blockers and destination branch rules remain authoritative.
+    if ((fresh.mergeable === false || fresh.mergeable_state === 'blocked') &&
+        !(integratedTree && fresh.mergeable_state === 'dirty'))
+      return 'GitHub reports a blocked PR without a verified local conflict resolution.';
   };
   onProgress('waiting-checks',{sha:headSha});
   const checks = await waitForMergeChecks(api,repository,headSha,{...checkOptions,expectChecks,collectEvidence:true,
@@ -47,7 +51,11 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
     status:checks.state==='pending'?'waiting':'checks_failed',sha:headSha,previousHeadSha:original.head.sha };
   const reason = await checkSnapshot();
   if (reason) return blocked(reason);
-  if (await git('rev-parse',headSha+'^{tree}') !== tree) throw Error('The local merge tree differs from the checked PR head.');
+  // A current-base resolution may differ from the unchanged PR head tree.
+  // Verify the exact staged index, not a model-supplied tree.
+  const verifiedTree = integratedTree ? await git('write-tree') :
+    await git('rev-parse', headSha + '^{tree}');
+  if (verifiedTree !== tree) throw Error('The locally verified integration tree changed.');
   onProgress('preparing-merge',{sha:headSha});
   const identity = await commitIdentity(git, author, requireSignedCommit);
   const signMerge = identity.signed;

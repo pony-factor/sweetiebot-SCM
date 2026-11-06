@@ -387,7 +387,7 @@ body.celebrating .merge-header .pill{border-color:rgba(255,255,255,.5)}
 <body>
 <header class="merge-header">
 <div class="dashboard-brand"><h1>Lindsey</h1><nav id="merge-workers" class="merge-workers" aria-label="GPT review sessions" hidden></nav><span id="conflicts-cleared" class="cleared-counter" role="status" aria-label="Conflicts cleared" title="Conflicts cleared">0 cleared</span></div>
-<div class="overview" role="group" aria-label="Bulk merge preferences"><span class="ci-repair-controls"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span></span><details class="github-post-menu" id="github-post-menu">
+<div class="overview" role="group" aria-label="Bulk merge preferences"><span class="ci-repair-controls"><label class="toolbar-option" title="After a verified CI failure, open one targeted repair task per failing PR head. On by default; turn off to disable automatic repair. Merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span></span><details class="github-post-menu" id="github-post-menu">
   <summary class="github-post-trigger">Post to GitHub <span id="github-post-count" class="github-post-count">Off</span><svg class="github-post-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg></summary>
   <div class="github-post-options" role="group" aria-label="GitHub posting options">
     <label class="toolbar-option" title="Applies immediately to verified completed merges and upcoming handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> AI summaries</label>
@@ -635,6 +635,11 @@ __RATE_LIMIT_FORMATTER__
     for (const item of [['open-pr', 'View PR'], ['open-diff', 'GitHub file diff']]) {
       const button = show('button', 'secondary', item[1], actions);
       button.addEventListener('click', () => dispatch(item[0], pr.number));
+    }
+    if (pr.state !== 'merged') {
+      const summaryButton = show('button', 'secondary', 'Post change summary', actions);
+      summaryButton.title = 'Review and post a new PR conversation comment; never edit the description';
+      summaryButton.addEventListener('click', () => dispatch('post-change-summary', pr.number));
     }
     if (pr.mergedAt) {
       const outcome = showTextPanel(parent, '✓ Verified outcome',

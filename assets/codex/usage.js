@@ -242,7 +242,15 @@ function scmToolkitKeepUsageFresh(refetch) {
                 this.pie = document.createElement('scm-toolkit-usage-pie');
                 this.append(this.pie);
             }
-            const surface = this.closest('[data-composer-surface-variant]');
+            let surface = this.closest('[data-composer-surface-variant]');
+            // Newer composers place the utility rail beside the input surface.
+            // Stay within the nearest composer, rather than selecting another chat.
+            if (!surface) for (let scope = this.parentElement;
+                scope && scope !== document.body; scope = scope.parentElement) {
+                if (!scope.querySelector('[data-composer-body]')) continue;
+                surface = scope.querySelector('[data-composer-surface-variant]');
+                break;
+            }
             if (surface && !this.bar) {
                 this.bar = document.createElement('div');
                 this.bar.className = 'scm-toolkit-usage-bar';
