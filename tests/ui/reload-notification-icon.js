@@ -53,7 +53,7 @@ for (const directory of roots) {
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-push-waiting'), 'Early pushes use the robot notification marker');
   assert.match(css, /\.notification-list-item\.scm-toolkit-push-waiting \.notification-list-item-icon\.codicon-info::before,[\s\S]*?content: '🤖';/);
-  currentMessage = 'Applying merge batch round: #653 · GitHub checks refreshed';
+  currentMessage = 'Merging: #653 · GitHub checks refreshed';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-lindsey-notice'), 'Merge progress uses the robot icon');
   currentMessage = 'Applying PR fix: #654 · Integrating with the current base';
