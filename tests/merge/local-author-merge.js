@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -17,15 +17,19 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const pushes=[];
   const oldGlobalConfig=process.env.GIT_CONFIG_GLOBAL;
   try {
-    if(requireSignedCommit) {
+    if(!missingSigningKey) {
       await run('ssh-keygen',['-q','-t','ed25519','-N','','-C',author.email,'-f',path.join(root,'signing_key')]);
       const publicKey=(await fs.readFile(path.join(root,'signing_key.pub'),'utf8')).trim();
       const allowed=path.join(root,'allowed_signers');
       await fs.writeFile(allowed,author.email+' '+publicKey+'\n');
       const config=path.join(root,'gitconfig');
       await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
-      process.env.GIT_CONFIG_GLOBAL=config;
     }
+    // Isolate the fixture from the developer's global Git settings. Without
+    // a signer, an attempted Lindsey replacement must fail before any push.
+    const config=path.join(root,'gitconfig');
+    if(missingSigningKey)await fs.writeFile(config,'[gpg]\n\tformat = ssh\n');
+    process.env.GIT_CONFIG_GLOBAL=config;
     await git('init','--quiet','--bare','--initial-branch=main',remote);
     await git('init','--quiet','--initial-branch=main',work);
     await inWork('remote','add','origin',remote);
@@ -109,6 +113,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
     if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
+    else if(missingSigningKey){
+      await assert.rejects(action(),/sign|key|gpg/i);
+      assert.equal(pushes.length,0,'Missing signing keys must block publication');
+      assert.equal(await branch('main'),baseSha,'The base must remain untouched without a signer');
+    }
     else if(race){await assert.rejects(action(),/rejected|fetch first|non-fast-forward/);assert.equal(await branch('main'),competing);}
     else {
       if(conflict){
@@ -134,7 +143,13 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),'The published squash carries a real SSH signature');
           await inRemote('verify-commit',result.sha);
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
-        } else if(!humanOpener) assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
+        } else if(!humanOpener) {
+          assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
+          assert.equal(result.signed,true,'Generated merge commits are always signed');
+          assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),
+            'Git must sign the replacement even when commit.gpgsign is disabled');
+          await inRemote('verify-commit',result.sha);
+        }
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
@@ -149,8 +164,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await fs.rm(root,{recursive:true,force:true});
   }
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
- console.log('Local Git merges preserve history and human authors; signed squashes verify signatures, lease only the PR head, fast-forward unprotected bases, and respect checks and branch rules.');
+ console.log('Local Git merges require signatures, verify signed replacements, reject missing keys before pushing, preserve history and human authors, and respect checks and branch rules.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
