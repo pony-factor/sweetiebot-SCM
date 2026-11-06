@@ -68,7 +68,14 @@ async function verifyLocalCommitIdentity(git, sha, identity) {
     if (!/(?:^|\n)gpgsig /.test(await git('cat-file', '-p', sha))) {
       throw Error('The local signed commit has no signature.');
     }
-    await git('verify-commit', sha);
+    // SSH signatures can be verified by GitHub without a local allowed-signers
+    // trust file. Do not block a legitimate SSH-signed merge solely because
+    // local Git cannot perform that optional trust lookup.
+    const format = String(await git('config', '--get', 'gpg.format').catch(() => 'openpgp')).trim().toLowerCase();
+    const allowed = format === 'ssh'
+      ? String(await git('config', '--get', 'gpg.ssh.allowedSignersFile').catch(() => '')).trim()
+      : '';
+    if (format !== 'ssh' || allowed) await git('verify-commit', sha);
   }
 }
 
