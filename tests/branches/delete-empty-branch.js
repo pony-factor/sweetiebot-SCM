@@ -65,6 +65,37 @@ function orphanedTopic(name) {
 
 async function run() {
   const opts = { branch: 'topic', defaultBranch: 'main', remote: 'origin' };
+  for (const command of ['sweetiebot.deleteBranch', 'sweetiebot.deleteEmptyBranch']) {
+    for (const published of [false, true]) {
+      const f = fixture(`no-confirm-${command}-${published}`, published);
+      const commands = new Map();
+      const vscode = {
+        Uri: { from(value) { return value.rootUri || value; } },
+        extensions: { getExtension() { return { async activate() { return {
+          getAPI() { return { getRepository() { return f.repository; } }; }
+        }; } }; } },
+        commands: { registerCommand(id, callback) {
+          commands.set(id, callback);
+          return { dispose() {} };
+        } },
+        window: { async showWarningMessage() {
+          assert.fail('An empty branch must be deleted without confirmation');
+        } }
+      };
+      registerBranchCommands(vscode, { subscriptions: [] });
+      const pending = path.join(f.local, '.git', 'sweetiebot-async-commit.json');
+      fs.writeFileSync(pending, '{}');
+      await assert.rejects(commands.get(command)({ rootUri: f.repository.rootUri }, opts),
+        /still being finalized/);
+      assert(f.localBranch(), 'Pending commits must prevent deletion');
+      if (published) assert(f.remoteBranch(), 'Pending commits must preserve the remote branch');
+      fs.unlinkSync(pending);
+      assert(await commands.get(command)({ rootUri: f.repository.rootUri }, opts));
+      assert.equal(f.localBranch(), '');
+      assert.equal(f.remoteBranch(), '');
+      assert.equal(git(f.local, 'branch', '--show-current'), 'main');
+    }
+  }
   for (const mode of ['empty', 'published']) {
     for (const outcome of ['success', 'reject', 'dirty']) {
       const f = fixture('held-remote-' + mode + '-' + outcome, true);

@@ -188,9 +188,20 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
   color:var(--vscode-foreground);font-size:12px;white-space:nowrap
 }
 .overview .toolbar-option{cursor:pointer}
-.overview .method-control{
-  padding-left:12px
-}
+.overview .ci-repair-controls{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
+.github-post-menu{position:relative;flex:0 0 auto;font-size:12px}
+.github-post-trigger{display:inline-flex;align-items:center;gap:8px;min-height:30px;padding:4px 9px;border:1px solid var(--vscode-dropdown-border,var(--merge-border));border-radius:9px;background:var(--vscode-dropdown-background,var(--vscode-input-background));color:var(--vscode-dropdown-foreground,var(--vscode-foreground));white-space:nowrap;cursor:pointer;user-select:none}
+.github-post-trigger::-webkit-details-marker{display:none}
+.github-post-trigger::marker{content:""}
+.github-post-trigger:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-dropdown-background))}
+.github-post-trigger:focus-visible{outline:2px solid var(--vscode-focusBorder,#468cdb);outline-offset:2px}
+.github-post-menu[open] .github-post-trigger{border-color:var(--vscode-focusBorder,#468cdb)}
+.github-post-chevron{width:12px;height:12px;flex:none;transition:transform 120ms ease}
+.github-post-menu[open] .github-post-chevron{transform:rotate(180deg)}
+.github-post-count{padding:1px 7px;border-radius:999px;font-size:11px;background:var(--vscode-badge-background,var(--vscode-input-background));color:var(--vscode-badge-foreground,var(--vscode-descriptionForeground))}
+.github-post-options{position:absolute;top:calc(100% + 6px);right:0;z-index:20;display:flex;flex-direction:column;gap:2px;min-width:205px;padding:6px;border:1px solid var(--merge-border);border-radius:10px;background:var(--merge-surface);box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.github-post-options .toolbar-option{display:flex;width:100%;min-height:34px;padding:6px 8px;border-radius:7px}
+.github-post-options .toolbar-option:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.12))}
 .method-control .muted{font-size:12px;cursor:pointer}
 .overview input[type="checkbox"]{
   appearance:none;display:inline-grid;place-items:center;flex:0 0 16px;
@@ -306,7 +317,7 @@ main{padding:20px 24px 32px}
 @media(max-width:650px){
   .dashboard-brand h1{font-size:15px}
   .overview{padding:10px;gap:9px 12px}
-  .overview .method-control{padding-left:0;border-left:0}
+  .github-post-options{right:auto;left:0;max-width:calc(100vw - 28px)}
   #progress{order:2;flex:1 1 auto}
   .overview .refresh-icon{order:3;margin-left:0}
   .pr{padding:11px 12px;min-height:0}
@@ -315,7 +326,7 @@ main{padding:20px 24px 32px}
   .detail-top{padding:12px}
 }
 @media(prefers-reduced-motion:reduce){
-  .pr,.refresh-icon,.overview input[type="checkbox"],.overview input[type="checkbox"]::after{transition:none}
+  .pr,.refresh-icon,.overview input[type="checkbox"],.overview input[type="checkbox"]::after,.github-post-chevron{transition:none}
 }
 
 /* Full-window finish line; preserve the original dashboard for review. */
@@ -375,7 +386,13 @@ body.celebrating .merge-header .pill{border-color:rgba(255,255,255,.5)}
 <body>
 <header class="merge-header">
 <div class="dashboard-brand"><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"><h1>Lindsey · Bulk merge</h1><nav id="merge-workers" class="merge-workers" aria-label="GPT review sessions" hidden></nav></div>
-<div class="overview" role="group" aria-label="Bulk merge preferences"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">Using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span><label class="toolbar-option" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> Post AI summaries to GitHub</label><label class="toolbar-option" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Post status updates to GitHub</label><button id="show-celebration" class="secondary" hidden>🎉 Celebration</button><span id="progress" class="pill" role="status" aria-live="polite">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
+<div class="overview" role="group" aria-label="Bulk merge preferences"><span class="ci-repair-controls"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span></span><details class="github-post-menu" id="github-post-menu">
+  <summary class="github-post-trigger">Post to GitHub <span id="github-post-count" class="github-post-count">Off</span><svg class="github-post-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg></summary>
+  <div class="github-post-options" role="group" aria-label="GitHub posting options">
+    <label class="toolbar-option" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> AI summaries</label>
+    <label class="toolbar-option" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Status updates</label>
+  </div>
+</details><button id="show-celebration" class="secondary" hidden>🎉 Celebration</button><span id="progress" class="pill" role="status" aria-live="polite">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
 <div id="merge-progress" class="bar" role="progressbar" aria-label="Bulk merge progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar-fill" class="bar-fill"></div></div>
 <div id="blocker-notice" class="blocker-notice" hidden></div>
@@ -863,6 +880,7 @@ __RATE_LIMIT_FORMATTER__
     byId('timeline-time-mode').value = timestampMode;
     byId('post-status-updates').checked = model.postStatusUpdates === true;
     byId('post-summaries').checked = model.postSummaries === true;
+    updateGitHubPostingCount();
     byId('auto-fix-ci').checked = model.autoFixCi === true;
     byId('auto-fix-ci-method').value = model.autoFixCiMethod === 'codex' ? 'codex' : 'web';
     const eventScroll = events.scrollTop;
@@ -951,10 +969,32 @@ __RATE_LIMIT_FORMATTER__
     render();
     vscode.postMessage({ type: 'timestamp-mode', mode });
   });
-  byId('post-status-updates').addEventListener('change', event => vscode.postMessage({ type: 'post-status-updates', enabled: event.target.checked }));
+  function updateGitHubPostingCount() {
+    const enabled = Number(byId('post-summaries').checked) + Number(byId('post-status-updates').checked);
+    byId('github-post-count').textContent = enabled === 0 ? 'Off' : enabled + ' enabled';
+  }
+  byId('post-status-updates').addEventListener('change', event => {
+    updateGitHubPostingCount();
+    vscode.postMessage({ type: 'post-status-updates', enabled: event.target.checked });
+  });
   byId('auto-fix-ci').addEventListener('change', event => vscode.postMessage({ type: 'auto-fix-ci', enabled: event.target.checked }));
   byId('auto-fix-ci-method').addEventListener('change', event => vscode.postMessage({ type: 'auto-fix-ci-method', method: event.target.value }));
-  byId('post-summaries').addEventListener('change', event => vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked }));
+  byId('post-summaries').addEventListener('change', event => {
+    updateGitHubPostingCount();
+    vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked });
+  });
+  document.addEventListener('pointerdown', event => {
+    const menu = byId('github-post-menu');
+    if (menu.open && !menu.contains(event.target)) menu.open = false;
+  });
+  document.addEventListener('keydown', event => {
+    const menu = byId('github-post-menu');
+    if (event.key === 'Escape' && menu.open) {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+      event.preventDefault();
+    }
+  });
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   byId('review-merges').addEventListener('click', () => { celebrationDismissed = true; render(); });
   byId('show-celebration').addEventListener('click', () => { celebrationDismissed = false; render(); });

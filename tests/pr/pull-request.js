@@ -681,6 +681,9 @@ async function run() {
   autoShareCodexChat = true;
   const shareCallsBeforeOptIn = nativeShareCalls;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(nativeShareCalls, shareCallsBeforeOptIn, 'Automatic launches must never publish a chat');
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', explicitNewPullRequest: true });
   assert.equal(nativeShareCalls, shareCallsBeforeOptIn + 1, 'Opted-in Kefania shares the originating Codex chat once');
   const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open' && call.args[0].url.startsWith('https://chatgpt.com')).args[0].url);
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');

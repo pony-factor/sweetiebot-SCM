@@ -207,14 +207,18 @@ async function run() {
   assert.equal(legacyStage, 3, 'Legacy Copy link must still work when its dialog closes');
   assert.equal(legacyResponses[0].conversationId, conversationId);
 
-  let preparingRequest, preparationClock = 0, preparationCopied = false;
+  let preparingRequest, preparationClock = 0, preparationCopied = false, cancelPreparation = false;
   const preparingCopy = control('Copy link', () => { preparationCopied = true; });
   Object.defineProperty(preparingCopy, 'disabled', { get: () => preparationClock < 60000 });
   preparingCopy.closest = () => ({ textContent: 'Anyone with the link can view this chat' });
   const preparationResponses = [];
   const preparingUI = vm.createContext({
     Date: { now: () => preparationClock },
-    setTimeout(callback) { preparationClock += 1000; callback(); },
+    setTimeout(callback) {
+      preparationClock += 1000;
+      if (cancelPreparation) preparingRequest({ data: { type: 'scm-toolkit-cancel-share' } });
+      callback();
+    },
     window: { location: { hash: `#/local/${conversationId}` },
       addEventListener: (_, callback) => { preparingRequest = callback; } },
     document: { querySelectorAll: selector => selector === '[role="dialog"] button' ? [preparingCopy] : [] }
@@ -224,6 +228,10 @@ async function run() {
   await preparingRequest({ data: { type: 'scm-toolkit-context-request', id: 'preparing-share', shareOnly: conversationId } });
   assert.equal(preparationCopied, true, 'Reuse an open Share dialog and wait beyond the old 35-second deadline');
   assert.equal(preparationResponses[0].conversationId, conversationId);
+  preparationClock = 0; preparationCopied = false; cancelPreparation = true;
+  await preparingRequest({ data: { type: 'scm-toolkit-context-request', id: 'cancelled-share', shareOnly: conversationId } });
+  assert.equal(preparationCopied, false, 'Checkout cancellation stops a Share dialog still preparing');
+  assert.match(preparationResponses.at(-1).error, /cancelled/);
 
 
   const registered = new Map();
@@ -379,8 +387,11 @@ async function run() {
   assert.deepEqual(JSON.parse(JSON.stringify(await modelPending)),
     {name:'GPT-6.1 Codex',effort:'Medium'});
 
+  const beforeUnrequestedShare = messages.length;
+  await assert.rejects(registered.get('sweetiebot.shareCodexConversation')(conversationId), /explicit New PR/);
+  assert.equal(messages.length, beforeUnrequestedShare, 'Background requests cannot open Share');
   const sharedUrl = 'https://chatgpt.com/s/cx_1234567890abcdefghijklmnop';
-  const sharing = registered.get('sweetiebot.shareCodexConversation')(conversationId);
+  const sharing = registered.get('sweetiebot.shareCodexConversation')(conversationId, { explicitNewPullRequest: true });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(messages.at(-1).shareOnly, conversationId);
   clipboard = sharedUrl;
@@ -389,10 +400,17 @@ async function run() {
   assert.equal(shared.uuid, conversationId);
   assert.equal(shared.sharedUrl, sharedUrl);
   assert.equal(clipboard, 'previous clipboard', 'Native copy must preserve the previous clipboard');
-  const changedChat = registered.get('sweetiebot.shareCodexConversation')(conversationId);
+  const changedChat = registered.get('sweetiebot.shareCodexConversation')(conversationId, { explicitNewPullRequest: true });
   await new Promise(resolve => setImmediate(resolve));
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId: nextChat });
   await assert.rejects(changedChat, /active chat changed/);
+
+  const cancelledShare = registered.get('sweetiebot.shareCodexConversation')(conversationId, { explicitNewPullRequest: true });
+  const cancellation = assert.rejects(cancelledShare, /checkout is changing/);
+  await new Promise(resolve => setImmediate(resolve));
+  registered.get('sweetiebot.cancelCodexShare')();
+  await cancellation;
+  assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-share');
 
   provider.sidebarViews.clear();
   await assert.rejects(

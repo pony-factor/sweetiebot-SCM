@@ -780,6 +780,7 @@
 .notification-list-item.scm-toolkit-push-waiting .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before,
+.notification-list-item.scm-toolkit-sharing-chat .notification-list-item-icon::before,
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
@@ -796,6 +797,9 @@
 }
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before {
     content: '✨';
+}
+.notification-list-item.scm-toolkit-sharing-chat .notification-list-item-icon::before {
+    content: '💬';
 }
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before {
     content: '🫧';

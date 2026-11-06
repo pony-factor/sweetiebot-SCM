@@ -308,7 +308,19 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         'sweetiebot.preserveCodexConversation',
         () => capture(false, false, false, false, undefined, true)
     );
-    const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async threadId => {
+    const cancelShareCommand = vscode.commands.registerCommand('sweetiebot.cancelCodexShare', () => {
+        for (const [id, request] of pending) {
+            if (!request.shareOnly) continue;
+            clearTimeout(request.timeout);
+            pending.delete(id);
+            void request.webview.postMessage({ type: 'scm-toolkit-cancel-share' });
+            request.reject(new Error('Codex sharing stopped because the checkout is changing.'));
+        }
+    });
+    const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async (threadId, options) => {
+        if (options?.explicitNewPullRequest !== true) {
+            throw new Error('Codex sharing requires an explicit New PR action.');
+        }
         if (!uuid.test(threadId || '')) throw new Error('A verified active Codex chat is required.');
         return capture(false, false, false, threadId, await vscode.env.clipboard.readText());
     });
@@ -330,6 +342,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         identityCommand.dispose();
         focusCommand.dispose();
         shareCommand.dispose();
+        cancelShareCommand.dispose();
         modelCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();
