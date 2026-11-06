@@ -182,6 +182,11 @@ function fitLightboxToGallery(){
   lightbox.style.height=Math.min(maxDialogHeight,Math.ceil((fittedHeight||Math.min(220,maxHeight))+verticalPadding+48))+'px';
 }
 window.addEventListener('resize',()=>{if(lightbox.open)fitLightboxToGallery()});
+function renderImageCaption(target,label,suffix=''){
+  target.replaceChildren();
+  renderMergeMarkdown(target,label,{inlineOnly:true});
+  if(suffix)target.append(document.createTextNode(suffix));
+}
 function showImage(index){
   const image=imageSources[index];
   if(!image)return;
@@ -190,10 +195,10 @@ function showImage(index){
   const displayed=el('lightbox-image');
   displayed.hidden=false;
   el('lightbox-error').hidden=true;
-  displayed.alt=image.label;
+  displayed.alt=image.plainLabel||image.label;
   displayed.src=image.url;
-  el('lightbox-caption').textContent=image.label+' · '+(index+1)+' of '+imageSources.length;
-  el('lightbox-caption').title=image.label;
+  renderImageCaption(el('lightbox-caption'),image.label,' · '+(index+1)+' of '+imageSources.length);
+  el('lightbox-caption').title=image.plainLabel||image.label;
   el('lightbox-source').href=image.source;
   el('lightbox-prev').hidden=imageSources.length<2;
   el('lightbox-next').hidden=imageSources.length<2;
@@ -202,12 +207,41 @@ function showImage(index){
 function stepImage(delta){
   if(currentImage>=0&&imageSources.length>1)showImage((currentImage+delta+imageSources.length)%imageSources.length);
 }
-function imageIndex(profile){
+async function recoverPonyImages(pony){
+  // Use exact catalog identity and production captures, never a guessed image
+  // from an unrelated source page or an uncredited uploader's artwork.
+  const tag=String(pony?.canonicalSlug||pony?.slug||'').replace(/-/g,' ').toLowerCase();
+  if(!/^[a-z0-9][a-z0-9 '\u2019]{1,99}$/.test(tag))return [];
+  const query=new URLSearchParams({q:'safe, screencap, '+tag,per_page:'3',sf:'score',sd:'desc'});
+  const response=await fetch('https://derpibooru.org/api/v1/json/search/images?'+query,{
+    credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(12000)
+  });
+  if(!response.ok)return [];
+  const result=await response.json();
+  return (Array.isArray(result.images)?result.images:[]).slice(0,3).flatMap(image=>{
+    const url=safeLink(image.representations?.large||'');
+    if(!Number.isSafeInteger(image.id)||image.id<=0||!url||new URL(url).hostname!=='derpicdn.net'
+      ||!['safe','screencap',tag].every(value=>image.tags?.includes(value)))return [];
+    return [{url,source:'https://derpibooru.org/images/'+image.id,label:'Show capture · Hasbro (via Derpibooru)'}];
+  });
+}
+function imageIndex(profile,pony){
   if(lightbox.open)lightbox.close();
   const generation=++imageGeneration;
   el('images').replaceChildren();
   imageSources=[];
   const seen=new Set(),candidates=[];
+  let parsing=true,recovering=false;
+  const recoverMissing=async()=>{
+    if(parsing||recovering||!pony||generation!==imageGeneration
+      ||candidates.some(item=>item.loaded||!item.failed))return;
+    recovering=true;
+    try{
+      const recovered=await recoverPonyImages(pony);
+      if(generation!==imageGeneration)return;
+      for(const image of recovered)addImage(image.label,image.url,image.source);
+    }catch{ /* External source failures cannot block the draft or merge controls. */ }
+  };
   const displayLoaded=()=>{
     if(generation!==imageGeneration)return;
     const selected=imageSources[currentImage];
@@ -219,34 +253,46 @@ function imageIndex(profile){
       currentImage=imageSources.indexOf(selected);
       if(currentImage<0)lightbox.close();
       else{
-        el('lightbox-caption').textContent=selected.label+' · '+(currentImage+1)+' of '+imageSources.length;
+        renderImageCaption(el('lightbox-caption'),selected.label,' · '+(currentImage+1)+' of '+imageSources.length);
         el('lightbox-prev').hidden=imageSources.length<2;
         el('lightbox-next').hidden=imageSources.length<2;
       }
     }
   };
-  return profile.replace(/\[!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)|!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,(whole,linkedLabel,linkedUrl,page,label,url)=>{
-    label=linkedLabel??label;
-    url=linkedUrl||url;
+  const addImage=(label,url,page)=>{
     const safe=safeLink(url);
-    if(!safe||seen.has(safe))return '';
+    if(!safe||seen.has(safe))return;
     seen.add(safe);
     const captionText=label||'Character image';
     const sourceUrl=safeLink(page||'')||imageSourcePage(safe);
     const source={url:safe,source:sourceUrl,label:captionText};
     const figure=document.createElement('figure'),stage=document.createElement('div'),trigger=document.createElement('button'),img=document.createElement('img'),caption=document.createElement('figcaption');
-    const candidate={source,figure,loaded:false};
+    const candidate={source,figure,loaded:false,failed:false};
     candidates.push(candidate);
     stage.className='image-stage';
     trigger.type='button';
     trigger.className='image-trigger';
-    trigger.setAttribute('aria-label','Enlarge '+captionText);
+    renderImageCaption(caption,captionText);
+    source.plainLabel=caption.textContent;
+    trigger.setAttribute('aria-label','Enlarge '+source.plainLabel);
     trigger.addEventListener('click',()=>showImage(imageSources.indexOf(source)));
-    img.alt=captionText;
+    img.alt=source.plainLabel;
     img.referrerPolicy='no-referrer';
     img.decoding='async';
-    caption.textContent=captionText;
-    img.onload=()=>{
+    const timeout=typeof setTimeout==='function'?setTimeout(()=>img.onerror?.(),12000):null;
+    const stopWaiting=()=>{if(timeout!==null)clearTimeout(timeout)};
+    img.onload=async()=>{
+      stopWaiting();
+      // Fandom serves a decodable missing-file graphic even for a 404.
+      // Image.onload alone therefore cannot establish that artwork exists.
+      if(new URL(safe).hostname.endsWith('.wikia.nocookie.net')){
+        try{
+          const response=await fetch(safe,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(8000)});
+          const unavailable=!response.ok||/filename=["']?placeholder\./i.test(response.headers.get('content-disposition')||'');
+          void response.body?.cancel();
+          if(unavailable){img.onerror();return}
+        }catch{ /* Keep genuinely decoded artwork when verification is unavailable. */ }
+      }
       if(generation!==imageGeneration||!img.naturalWidth||candidate.loaded)return;
       candidate.loaded=true;
       source.width=img.naturalWidth;
@@ -254,17 +300,29 @@ function imageIndex(profile){
       displayLoaded();
     };
     img.onerror=()=>{
-      if(generation!==imageGeneration||!candidate.loaded)return;
+      stopWaiting();
+      if(generation!==imageGeneration)return;
+      candidate.failed=true;
       candidate.loaded=false;
       displayLoaded();
+      void recoverMissing();
     };
     stage.append(img);
     trigger.append(stage);
     figure.append(trigger,caption);
     // An artwork card becomes visible only after the browser loads real image data.
     img.src=safe;
+
+  };
+  const remaining=profile.replace(/\[!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)|!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,(whole,linkedLabel,linkedUrl,page,label,url)=>{
+    label=linkedLabel??label;
+    url=linkedUrl||url;
+    addImage(label,url,page);
     return '';
   });
+  parsing=false;
+  void recoverMissing();
+  return remaining;
 }
 el('lightbox-image').addEventListener('error',()=>{
   el('lightbox-image').hidden=true;
@@ -373,7 +431,7 @@ const packLabel=state.pony?.packLabel||state.pony?.packId||'';
 el('pony-status').textContent=state.errors?.ponyCache?'Cache save failed: '+state.errors.ponyCache:state.ponyCachePending?'Saving pony profile to cache…':state.profile?packLabel:state.errors.pony||'Researching the pony…';
 el('pony-status').hidden=!!state.profile&&!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache;
 el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache);
-if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile)))}
+if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile),state.pony))}
 return state;
 }catch(error){el('title').textContent='Could not update status';el('draft-status').hidden=false;el('draft-status').textContent=error.message}}
 el('merge').onclick=async()=>{
