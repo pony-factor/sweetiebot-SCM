@@ -2233,6 +2233,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         try {
             const source = scmToolkitChatgptConversationSource(doc);
             const options = {
+                explicitNewPullRequest: true,
                 branch,
                 base: currentDefaultBranch,
                 remote: settings.remote,
@@ -3001,6 +3002,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             text === 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
         row.classList.toggle('scm-toolkit-making-pr',
             text === 'Creating new pull request with Kefania instructions');
+        row.classList.toggle('scm-toolkit-sharing-chat',
+            text === 'Sharing the active Codex chat for Kefania');
         row.classList.toggle('scm-toolkit-pr-opened',
             /^Codex Pony opened PR #[1-9]\d*$/.test(text));
         row.classList.toggle('scm-toolkit-reload-ready',

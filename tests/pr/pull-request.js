@@ -164,16 +164,44 @@ async function run() {
     desktop: 'codex://threads/' + codexSource.uuid });
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
-  assert.match(decorated, /<summary>Source details<\/summary>/);
+  assert.match(decorated, /<summary>Source links<\/summary>/);
   assert(!decorated.includes('**Privacy:**'));
-  assert(decorated.includes('- **Local:** [Local](' + codexConversationUrl(codexSource.uuid) + ')'));
+  assert(decorated.includes('[Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
     `vscode://openai.chatgpt/local/${codexSource.uuid}`);
-  assert(decorated.includes('- **Desktop:** [Desktop](codex://threads/' + codexSource.uuid + ')'));
+  assert(decorated.includes('[Desktop](codex://threads/' + codexSource.uuid + ')'));
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
-  assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
+  assert(!appendSourceDetails('Local only.', codexSource).includes('[Online]('),
+    'Unavailable web links must be omitted');
+  assert(decorated.includes('[Online](' + share + ') · [Local]('),
+    'Each source appears once on a dot-separated line');
+  const oldSource = 'Body.\n\n<details>\n<summary>Source details</summary>\n\n'
+    + '- **Online:** [Online](' + share + ')\n'
+    + '- **Local:** [Local](' + codexLinks.local + ')\n'
+    + '- **Desktop:** [Desktop](' + codexLinks.desktop + ')\n\n</details>';
+  assert.equal(appendSourceDetails(oldSource, { ...codexSource, sharedUrl: share }),
+    decorated.replace('Actual change.', 'Body.'),
+    'Reappending sources upgrades an older footer without duplication');
   assert(!appendSourceDetails('Local only.', codexSource).includes('Sweetiebot cannot unpublish'));
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
+  // Unshared ChatGPT metadata must not create an empty Source links section.
+  const unlinkedSource = { kind: 'chatgpt', uuid: codexSource.uuid,
+    url: 'https://example.com/not-a-conversation-link' };
+  assert.equal(sourceDetailsMarkdown(unlinkedSource), '');
+  assert.equal(appendSourceDetails('Body.', unlinkedSource), 'Body.');
+  assert.equal(appendSourceDetails(oldSource, unlinkedSource), 'Body.',
+    'Old source footers disappear entirely when no links are available');
+  assert.equal(appendSourceDetails(decorated, undefined), 'Actual change.',
+    'An absent source strips any stale generated footer');
+  const unlinkedPrompt = pullRequestPrompt({
+    branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
+    instructions: '', source: unlinkedSource
+  });
+  assert.match(unlinkedPrompt, /omit the entire Source links disclosure/);
+  assert(!unlinkedPrompt.includes('<summary>Source links</summary>'));
+  assert(!unlinkedPrompt.includes('End the published PR description with exactly this expandable'));
+  assert.equal(appendSourceDetails('Body.\n\n' + sourceDetailsMarkdown(codexSource), unlinkedSource),
+    'Body.', 'New-style source footers also disappear without links');
   {
     const githubBulletUrl = 'https://github.com/pony-factor/sweetiebot-SCM/pull/495';
     const bulletInput = [
@@ -648,6 +676,9 @@ async function run() {
   autoShareCodexChat = true;
   const shareCallsBeforeOptIn = nativeShareCalls;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(nativeShareCalls, shareCallsBeforeOptIn, 'Automatic launches must never publish a chat');
+  calls.length = 0;
+  await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', explicitNewPullRequest: true });
   assert.equal(nativeShareCalls, shareCallsBeforeOptIn + 1, 'Opted-in Kefania shares the originating Codex chat once');
   const codexLaunchUrl = new URL(calls.find(call => call.id === 'workbench.action.browser.open' && call.args[0].url.startsWith('https://chatgpt.com')).args[0].url);
   assert.equal(new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('sweetiebot_pr'), '1');
