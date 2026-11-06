@@ -181,12 +181,17 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 }).catch(request.reject);
                 return;
             }
+            if (request.composerFocus) {
+                request.resolve(message.focused === true);
+                return;
+            }
             if (request.identityOnly) {
                 if (message.hasConversation && !uuid.test(message.conversationId ?? '')) {
                     request.reject(new Error('Cannot identify the visible Codex chat; its worker was not moved.'));
                     return;
                 }
-                request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null });
+                request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null,
+                    ...(message.composerFocus && typeof message.composerFocus === 'object' ? { composerFocus: message.composerFocus } : {}) });
                 return;
             }
             if (request.modelOnly) {
@@ -229,7 +234,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker) => {
+    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker, composerFocus) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -256,10 +261,10 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     ? 'Codex Share is still preparing. PR creation can continue without its public link.'
                     : 'Codex text capture timed out. Reopen this window after installing the toolkit.'));
                 if (clipboard !== undefined) void vscode.env.clipboard.writeText(clipboard);
-            }, shareOnly ? 155000 : (identityOnly || modelOnly || reloadState) ? 5000 : 45000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, marker: clipboardMarker });
+            }, shareOnly ? 155000 : (identityOnly || modelOnly || reloadState || composerFocus) ? 5000 : 45000);
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, marker: clipboardMarker, composerFocus });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
-            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState }).then(sent => {
+            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState, composerFocus }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -274,8 +279,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     };
 
     let copying = false;
-    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false) => {
-        if (identityOnly || modelOnly || reloadState) return captureRaw(includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState);
+    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, composerFocus) => {
+        if (identityOnly || modelOnly || reloadState || composerFocus) return captureRaw(includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, undefined, composerFocus);
         if (copying) return Promise.reject(new Error('A Codex copy is already in progress. Retry when it finishes.'));
         copying = true;
         return (async () => {
@@ -308,6 +313,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return capture(false, false, false, threadId, await vscode.env.clipboard.readText());
     });
     const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
+    const focusCommand = vscode.commands.registerCommand('sweetiebot.codex.restoreComposerFocus', value =>
+        capture(false, false, false, false, undefined, false, value));
     const modelCommand = vscode.commands.registerCommand('sweetiebot.readCodexModel', () => capture(false, false, true));
     const legacyTextCommand = vscode.commands.registerCommand(
         'scmToolkit.readCodexContext', () => capture(false)
@@ -321,6 +328,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         sourceCommand.dispose();
         reloadCommand.dispose();
         identityCommand.dispose();
+        focusCommand.dispose();
         shareCommand.dispose();
         modelCommand.dispose();
         legacyTextCommand.dispose();

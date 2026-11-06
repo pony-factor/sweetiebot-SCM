@@ -1,6 +1,7 @@
-// Read-only snapshot requests; never submit, steer, focus, or stop a Codex turn.
+// Snapshots are read-only; explicit checkout handoffs can restore composer focus.
 function scmToolkitRegisterCodexSnapshot(api) {
     const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+    const composerFocus = typeof scmToolkitComposerFocus === 'function' ? scmToolkitComposerFocus() : null;
     const reloadKey = 'sweetiebotReloadConversation';
     let restored = false;
     let checkoutVisibility = null;
@@ -152,10 +153,15 @@ function scmToolkitRegisterCodexSnapshot(api) {
             }
             return;
         }
+        if (request.composerFocus) {
+            const focused = await composerFocus?.restore(request.composerFocus.state, conversationId, request.composerFocus.threadId ?? undefined);
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, focused: focused === true });
+            return;
+        }
         if (request.identityOnly) {
             const hasConversation = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')]
                 .some(element => request.allowHidden || element.getClientRects().length);
-            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation });
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation, composerFocus: composerFocus?.capture() });
             return;
         }
         // Capture only visible composer labels at handoff time. Codex does not
