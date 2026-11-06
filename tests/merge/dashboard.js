@@ -429,7 +429,9 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(apiRequests, hiddenRequests, 'Hidden dashboards do not poll');
   panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
-  assert(panel.webview.html.includes('Lindsey · Bulk merge'));
+  assert(panel.webview.html.includes('<h1>Lindsey</h1>'), 'Keep the Lindsey identity visible in the header');
+  assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Do not restore the bulk merge subtitle');
+  assert(!panel.webview.html.includes('id="repository"'), 'Omit the repository logo from the stripped-down header');
   assert(panel.webview.html.includes('Everypony made it! 🎉'), 'Show pony confirmation on complete merges');
   assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
   assert(panel.webview.html.includes('id="review-merges"'), 'Keep PR details and timeline available');
@@ -504,7 +506,9 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('.merge-header .dashboard-brand'), 'Shared header CSS is inlined');
   assert(!panel.webview.html.includes('__MERGE_HEADER_CSS__'), 'No unexpanded header placeholder');
   assert(panel.webview.html.includes('class="dashboard-brand"'),
-    'Keep the repository identity grouped beside the dashboard title');
+    'Keep the Lindsey name and review indicators grouped in the header');
+  assert(panel.webview.html.includes('id="merge-workers"'), 'Retain the oldest/newest review lanes');
+  assert(panel.webview.html.includes('id="conflicts-cleared"'), 'Retain the standalone cleared-conflicts counter');
   assert(panel.webview.html.includes('aria-label="Bulk merge preferences"'),
     'Group merge preferences accessibly');
   assert(panel.webview.html.includes('class="toolbar-option"'),
@@ -1015,9 +1019,22 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   const stalePoll = dashboard.refresh({ force: true });
   await started;
   pausePRRead = undefined;
+  const laggingWorkerState = { repository: selection.repository, deferred: [],
+    workers: [{ id: 1, label: 'Oldest first', phase: 'Reviewing',
+      numbers: [12], merged: 0, total: 1 }] };
+  dashboard.recordBatchState(laggingWorkerState);
+  assert.equal(events.at(-1).workers[0].merged, 0);
   dashboard.recordLocalResult({ repository: selection.repository,
     results: [{ number: 12, status: 'merged', merged: true, sha: 'c'.repeat(40) }] });
   assert.equal(events.at(-1).prs[0].state, 'merged', 'Verified merge results update the badge before polling');
+  assert.equal(events.at(-1).workers[0].merged, 1,
+    'Lane count uses verified PR state, not the lagging runner snapshot');
+  assert.equal(events.at(-1).workers[0].merged,
+    events.at(-1).prs.filter(pr => pr.state === 'merged').length,
+    'The lane subtotal reconciles with the dashboard total');
+  dashboard.recordBatchState(laggingWorkerState);
+  assert.equal(events.at(-1).workers[0].merged, 1,
+    'Replaying a stale worker snapshot cannot regress the displayed lane subtotal');
   assert.equal(events.at(-1).prs[0].statusMessage, 'GitHub confirms the pull request was merged');
   assert.equal(events.at(-1).prs[0].mergeCommit, 'c'.repeat(40));
   assert(!events.at(-1).prs[0].mergedAt, 'A result without a GitHub timestamp must not invent one');

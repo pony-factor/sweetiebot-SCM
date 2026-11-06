@@ -385,7 +385,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
-      type: 'state', repository: selection.repository, workers,
+      type: 'state', repository: selection.repository,
+      // Lane and overall totals must use the same verified PR states. Runner
+      // snapshots can lag after a merge is confirmed by GitHub or local execution.
+      workers: workers.map(worker => ({ ...worker,
+        merged: worker.numbers.filter(number => byNumber.get(number)?.state === 'merged').length })),
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })),
       events: events.filter(event => !routineTimelineEvent(event)), error,
