@@ -23,6 +23,9 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   await publishMergeSummaries({ ...options, enabled: true,
     result: { results: [{ number: 12, status: 'synced', merged: false }] },
     identity: () => assert.fail('Preparation must never publish a merge summary') });
+  const hour = 60 * 60 * 1000;
+  const nowMs = Date.parse('2026-11-05T21:00:00Z');
+  let closedAt = new Date(nowMs - hour).toISOString();
   let comments = [], confirmed = true, failWrites = false;
   const writes = [];
   const fetchImpl = async (url, request) => {
@@ -35,10 +38,11 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
       return { ok: true, json: async () => ({ id: 44 }) };
     }
     return { ok: true, json: async () => url.endsWith('/pulls/12')
-      ? { merged: confirmed, merge_commit_sha: sha, base: { ref: 'main' }, head: { ref: 'feature' } }
+      ? { merged: confirmed, merge_commit_sha: sha, closed_at: closedAt,
+          base: { ref: 'main' }, head: { ref: 'feature' } }
       : comments };
   };
-  const run = () => publishMergeSummaries({ ...options, enabled: true, fetchImpl,
+  const run = () => publishMergeSummaries({ ...options, enabled: true, fetchImpl, now: () => nowMs,
     identity: async () => ({ token: 'test-token', login: 'test-user' }) });
   assert.deepEqual(await run(), []);
   assert.equal(writes.length, 1);
@@ -61,6 +65,19 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   comments = [{ id: 55, user: { login: 'another-user' }, body: MARKER + '\nTheir summary' }];
   assert.deepEqual(await run(), []);
   assert.equal(writes.at(-1).method, 'POST', 'Never overwrite another author’s comment');
+  const beforeExpiry = writes.length;
+  input.results[0].explanation = 'Do not publish this after the window expires.';
+  closedAt = new Date(nowMs - 24 * hour - 1).toISOString();
+  assert.deepEqual(await run(), []);
+  assert.equal(writes.length, beforeExpiry, 'Do not create or edit summaries more than 24 hours after PR closure');
+  closedAt = undefined;
+  assert.deepEqual(await run(), []);
+  assert.equal(writes.length, beforeExpiry, 'Missing closure time must not bypass the cutoff');
+  closedAt = new Date(nowMs - 24 * hour).toISOString();
+  assert.deepEqual(await run(), []);
+  assert.equal(writes.length, beforeExpiry + 1, 'Exactly 24 hours after closure is still eligible');
+  assert.equal(writes.at(-1).method, 'PATCH', 'Eligible summaries may update the bot’s existing comment');
+  closedAt = new Date(nowMs - hour).toISOString();
   confirmed = false;
   const count = writes.length;
   assert.match((await run())[0].error, /not confirmed/);
@@ -94,5 +111,5 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   assert.deepEqual(await publishMergeSummaries({...statusOptions,
     result:{results:[{number:12,status:'synced',sha,previousHeadSha:sha}]},
     identity:()=>assert.fail('No-op sync must not authenticate or post')}),[]);
-  console.log('Opt-in summary gates, verified merge checks, deduplication and publication failures passed.');
+  console.log('Opt-in summary gates, 24-hour expiry, verified merge checks, deduplication and publication failures passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
