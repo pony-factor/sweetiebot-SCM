@@ -36,7 +36,7 @@ function withMergeProgress(vscode, { numbers, branchOnly }, task,
   { schedule = setInterval, cancel = clearInterval, now = Date.now } = {}) {
   if (!numbers.length) return task(() => {});
   const scope = numbers.map(number => '#' + number).join(', ');
-  const title = branchOnly ? 'Applying PR fix' : 'Applying merge batch round';
+  const title = branchOnly ? 'Applying PR fix' : 'Merging';
   return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
     title, cancellable: false }, async progress => {
     let message = 'Starting local execution…';
