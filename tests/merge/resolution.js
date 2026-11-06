@@ -72,13 +72,24 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     for (const enabled of [true, false]) {
       const created = [];
       const git = async (...args) => {
-        if (args[0] === 'config') return String(enabled);
+        if (args[0] === 'config') {
+          if (args.at(-1) === 'user.name') return 'Human';
+          if (args.at(-1) === 'user.email') return 'human@example.test';
+          return String(enabled);
+        }
         if (args[0] === 'ls-tree') return '100644 blob ' + head + '\tfile.txt\0';
-        if (args.includes('commit-tree')) { created.push(args); return head; }
+        if (args[0] === 'show') return ['Human', 'human@example.test', 'Human', 'human@example.test'].join('\0');
+        if (args[0] === 'cat-file') return 'tree ' + base + '\ngpgsig signature\n';
+        if (args[0] === 'verify-commit') return '';
         return base;
       };
+      const createCommitTree = async ({ identity }) => {
+        const args = ['commit-tree', ...(identity.signed ? ['-S'] : [])];
+        created.push(args);
+        return head;
+      };
       const options = { git, directory, headSha: head, baseSha: base, finalTree: base,
-        conflicts: ['file.txt'], decisions: [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: 'Keep both changes.' }],
+        createCommitTree, conflicts: ['file.txt'], decisions: [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: 'Keep both changes.' }],
         author: { name: 'Human', email: 'human@example.test' }, base: 'main', assistantModelNumber: '6.1' };
       await require('../../extension/merge/resolution-commits').createResolutionCommits(options);
       assert.equal(created.length, 2, 'Sign both file decisions and the final synchronization');
@@ -92,10 +103,8 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
 
       if (enabled) {
         await assert.rejects(require('../../extension/merge/resolution-commits').createResolutionCommits({ ...options,
-          git: async (...args) => {
-            if (args.includes('commit-tree')) throw Error('Signing failed');
-            return git(...args);
-          } }), /Signing failed/, 'Signing failures must stop preparation, never retry unsigned');
+          createCommitTree: async () => { throw Error('Signing failed'); } }),
+        /Signing failed/, 'Signing failures must stop preparation, never retry unsigned');
       }
     }
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -144,20 +153,20 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       };
       const git = async (...args) => {
         if (args[0] === 'config') {
+          if (args.at(-1) === 'user.name') return author.name;
+          if (args.at(-1) === 'user.email') return author.email;
           assert.deepEqual(args, ['config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign']);
           return String(configured);
         }
         if (args[0] === 'rev-parse') {
           return { [head + '^{tree}']: tree, [sha + '^1']: base, [sha + '^2']: head }[args[1]];
         }
-        if (args.includes('commit-tree')) {
-          created++;
-          assert.equal(args.includes('-S'), signing, 'Lindsey must explicitly sign commit-tree when configured');
-          assert(!args.includes('commit.gpgsign=false'));
-          if (signerFailure) throw Error('signer unavailable');
-          return sha;
+        if (args[0] === 'show') {
+          if (args.includes('--format=%an%x00%ae%x00%cn%x00%ce'))
+            return [author.name, author.email, author.name, author.email].join('\0');
+          return author.name + '\0' + author.email + '\0' + message + '\n';
         }
-        if (args[0] === 'show') return author.name + '\0' + author.email + '\0' + message + '\n';
+        if (args[0] === 'verify-commit') return '';
         if (args[0] === 'cat-file') {
           return missingSignature ? 'tree ' + tree + '\n' :
             'tree ' + tree + '\ngpgsig -----BEGIN SSH SIGNATURE-----\n signature-data\n';
@@ -170,14 +179,22 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
         }
         throw Error('Unexpected Lindsey signing Git command: ' + args.join(' '));
       };
+      const createCommitTree = async ({ identity }) => {
+        created++;
+        assert.equal(identity.signed, signing, 'Lindsey must explicitly sign commit-tree when configured');
+        assert.deepEqual(identity.author, author);
+        assert.deepEqual(identity.committer, author);
+        if (signerFailure) throw Error('signer unavailable');
+        return sha;
+      };
       const action = () => localAuthorMerge({ repository: 'owner/repo', number: 12,
         original, headSha: head, baseSha: base, tree, author, message,
-        git, api, directory: signingDirectory, requireSignedCommit: required });
+        git, api, directory: signingDirectory, requireSignedCommit: required, createCommitTree });
       if (signerFailure) {
         await assert.rejects(action(), /signer unavailable/);
         assert.equal(pushes, 0, 'Failed signing must not push an unsigned fallback');
       } else if (missingSignature) {
-        await assert.rejects(action(), /missing its configured signature/);
+        await assert.rejects(action(), /no signature|missing its configured signature/);
         assert.equal(pushes, 0, 'A missing signature must prevent publication');
       } else if (githubRejectedSignature) {
         await assert.rejects(action(), /GitHub did not verify its signature/);
