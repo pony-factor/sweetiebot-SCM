@@ -111,12 +111,25 @@ const generatedSource=require('../../extension/github/pull-request').sourceDetai
 });
 context.renderMarkdown(output,'Body.\n\n'+generatedSource);
 const generatedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
-assert.equal(generatedLinks.length,2,'Unavailable Online links are omitted');
+assert.equal(generatedLinks.length,1,'Unavailable Online and unverified Desktop links are omitted');
 assert(generatedLinks[0].href.startsWith('https://vscode.dev/redirect?'));
 assert.equal(generatedLinks[0].textContent,'Local');
-assert.equal(generatedLinks[1].href,desktopLink);
-assert.equal(generatedLinks[1].textContent,'Desktop');
-assert(!generatedLinks[1].textContent.includes('copy into your browser'));
+assert(!generatedSource.includes('[Desktop]('),
+  'Do not fabricate a desktop deeplink when native Codex copy did not provide one');
+const copiedDesktopSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
+  kind:'codex',uuid:sourceId,
+  url:require('../../extension/github/pull-request').codexConversationUrl(sourceId),
+  desktopUrl:desktopLink+'?host=remote'
+});
+context.renderMarkdown(output,'Body.\n\n'+copiedDesktopSource);
+const copiedDesktopLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(copiedDesktopLinks.length,2);
+assert.equal(copiedDesktopLinks[1].href,desktopLink+'?host=remote',
+  'Preserve query parameters on verified copied native Codex routes');
+context.renderMarkdown(output,sourceBlock.replaceAll(desktopLink,desktopLink+'#fragment'));
+const rejectedDesktopLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(rejectedDesktopLinks.map(node=>node.href),[sourceShared,localLink],
+  'Desktop links with URL fragments must remain unclickable');
 const legacyLocalLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,legacyLocalLink));
 const legacyLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
@@ -141,11 +154,11 @@ const sharedSource=require('../../extension/github/pull-request').sourceDetailsM
 context.renderMarkdown(output,'Body.\n\n'+sharedSource);
 const sharedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
 assert.deepEqual(sharedLinks.map(node=>node.href),[
-  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId),desktopLink
+  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId)
 ]);
-assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local','Desktop']);
-assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
-assert(!sharedSource.includes('**Privacy:**'),'Source links contains only the three conversation links');
+assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local']);
+assert.equal(output.children.at(-1).children[1].textContent,'Online · Local');
+assert(!sharedSource.includes('**Privacy:**'),'Source links contains only available verified links');
 
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
 assert(!output.children.some(node=>node.tag==='details'),

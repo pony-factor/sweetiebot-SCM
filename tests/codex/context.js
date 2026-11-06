@@ -13,47 +13,35 @@ async function run() {
   const conversationId = '019c56c3-06fc-7db3-a928-9c3607e17129';
   let receive;
   const responses = [];
-  const transcripts = [
-    { innerText: 'Other hidden chat', getClientRects: () => [] },
-    { innerText: 'Current window conversation', getClientRects: () => [1] }
-  ];
+  let stage = 0;
+  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click,
+    dispatchEvent() {} });
+  const menu = control('Chat actions', () => {});
+  menu.dispatchEvent = event => { if (event.type === 'pointerdown') stage = 1; };
+  const copy = control('Copy', () => { stage = 2; });
+  const markdown = control('Markdown', () => { stage = 3; });
+  const deeplink = control('Deeplink', () => { stage = 4; });
   const context = vm.createContext({
-    window: {
-      location: { hash: `#/local/${conversationId}`, pathname: '/', search: '' },
-      addEventListener(type, listener) { assert.equal(type, 'message'); receive = listener; }
-    },
-    document: {
-      querySelectorAll(selector) {
-        if (selector === '[data-thread-user-message-navigation-content]') return transcripts;
-        if (selector === 'button[data-composer-navigation-target="model"]')
-          return [{ innerText: '6.1 Codex', getAttribute: () => '', getClientRects: () => [1] }];
-        if (selector === 'button[data-composer-navigation-target="reasoning"]')
-          return [{ innerText: 'Uber', getAttribute: () => '', getClientRects: () => [1] }];
-        if (selector.includes('[data-conversation-id]')) return [];
-        throw new Error(`Unexpected selector: ${selector}`);
-      }
-    }
+    PointerEvent: class { constructor(type, options) { Object.assign(this, { type }, options); } },
+    setTimeout,
+    window: { location: { hash: `#/local/${conversationId}` },
+      addEventListener(type, listener) { receive = listener; } },
+    document: { querySelectorAll(selector) {
+      if (selector === 'button') return [menu];
+      if (selector === '[role="menuitem"]') return stage === 1 ? [copy] : [markdown, deeplink];
+      return [];
+    } }
   });
   load('context-webview.js', context);
   context.scmToolkitRegisterCodexSnapshot({ postMessage: message => responses.push(message) });
-  receive({ data: { type: 'unrelated' } });
-  assert.equal(responses.length, 0);
-  receive({ data: { type: 'scm-toolkit-context-request', id: 'request' } });
-  assert.equal(responses[0].text, 'Current window conversation');
-  assert.equal(responses[0].conversationId, conversationId);
-  assert.equal(responses[0].model.name, 'GPT-6.1 Codex');
-  assert.equal(responses[0].model.effort, 'Extra High');
-
-  transcripts.splice(0, transcripts.length, {
-    innerText: 'Retained hidden chat',
-    getClientRects: () => []
-  });
-  receive({ data: { type: 'scm-toolkit-context-request', id: 'hidden' } });
-  assert.equal(responses[1].text, 'Retained hidden chat');
-  receive({ data: { type: 'scm-toolkit-context-request', id: 'model', modelOnly: true } });
-  assert.equal(responses[2].model.name, 'GPT-6.1 Codex');
-  assert.equal(responses[2].model.effort, 'Extra High');
-  assert.equal('text' in responses[2], false, 'No transcript for model-only requests');
+  await receive({ data: { type: 'scm-toolkit-context-request', id: 'request' } });
+  assert.equal(stage, 3, 'Capture must invoke Chat actions > Copy > Markdown');
+  assert.equal(responses[0].nativeCopy, 'markdown');
+  assert.equal('text' in responses[0], false, 'Never scrape a rendered transcript');
+  await receive({ data: { type: 'scm-toolkit-context-request', id: 'link', copyDeepLink: true,
+    expectedThreadId: conversationId } });
+  assert.equal(stage, 4, 'Capture the native deeplink separately');
+  assert.equal(responses[1].nativeCopy, 'deeplink');
 
   // The webview saves only a UUID, retaining the existing VS Code webview state.
   let reloadReceive;
@@ -172,10 +160,8 @@ async function run() {
   changed(); flush();
   assert.equal(mounted, undefined, 'Hide the button when there is no identifiable chat');
 
-  let shareRequest, stage = 0;
+  let shareRequest; stage = 0;
   const sharedResponses = [];
-  const control = (text, click) => ({ textContent: text, getAttribute: () => '', getClientRects: () => [1], click,
-    dispatchEvent() {} });
   const menuButton = control('Chat actions', () => {});
   menuButton.dispatchEvent = event => { if (event.type === 'pointerdown' && event.button === 0) stage = 1; };
   const shareButton = control('Share', () => { stage = 2; });
@@ -265,7 +251,7 @@ async function run() {
     initializeWebview() {},
     handleMessage() { throw new Error('Custom snapshot replies must not reach Codex job handling'); }
   };
-  const host = vm.createContext({ require, setTimeout, clearTimeout, encodeURIComponent });
+  const host = vm.createContext({ require, URL, setTimeout, clearTimeout, encodeURIComponent });
   load('context-host.js', host);
   let liveResume = false, configListener, checkoutFoldersChanged, checkoutNeedsNewWindow = false;
   const hostVscode = {
@@ -320,6 +306,7 @@ async function run() {
   provider.getWebviewForPanel = () => undefined;
 
   const textPending = registered.get('sweetiebot.readCodexContext')();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(messages[0].type, 'scm-toolkit-context-request');
   listener({
     type: 'scm-toolkit-context-response',
@@ -330,6 +317,7 @@ async function run() {
   assert.equal(await textPending, 'Window-local text');
 
   const sourcePending = registered.get('sweetiebot.readCodexConversation')();
+  await new Promise(resolve => setImmediate(resolve));
   listener({
     type: 'scm-toolkit-context-response',
     id: messages[1].id,
@@ -355,6 +343,7 @@ async function run() {
   const sidebar = [...provider.sidebarViews][0];
   sidebar.visible = false;
   const hiddenPending = registered.get('sweetiebot.readCodexContext')();
+  await new Promise(resolve => setImmediate(resolve));
   listener({
     type: 'scm-toolkit-context-response',
     id: messages[2].id,
@@ -424,11 +413,30 @@ async function run() {
   assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-share');
 
   provider.sidebarViews.clear();
-  assert.throws(
-    () => registered.get('sweetiebot.readCodexConversation')(),
+  await assert.rejects(
+    registered.get('sweetiebot.readCodexConversation')(),
     /Open a Codex conversation/
   );
   disposable.dispose();
+  { const id = conversationId;
+ let nativeListener,clipboard='user clipboard';const commands=new Map(), messages=[];
+ const view={onDidReceiveMessage(fn){nativeListener=fn;return{dispose(){}}},async postMessage(m){messages.push(m);return true}};
+ const provider={sidebarViews:new Set([{visible:true,webview:view}]),editorPanels:new Map(),initializeWebview(){},handleMessage(){}};
+ const host=vm.createContext({require,URL,setTimeout,clearTimeout,encodeURIComponent});
+ vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/codex/context-host.js'),'utf8'),host);
+ host.scmToolkitRegisterCodexSnapshotProvider(provider,{commands:{registerCommand(k,f){commands.set(k,f);return{dispose(){}}}},env:{clipboard:{readText:async()=>clipboard,writeText:async s=>clipboard=s}}});
+ provider.initializeWebview(view,'sidebar',()=>{});
+ const result=commands.get('sweetiebot.readCodexConversation')();
+ await new Promise(setImmediate);
+ clipboard='# Entire native export\n\n> Latest user request\n\n<details><summary>2 previous messages</summary>\n\n> tool payload ' + 'x'.repeat(100000) + '\n</details>\n\n**User:** distinctive historical message ![attachment](data:image/png;base64,AAAAAA==)';
+ nativeListener({type:'scm-toolkit-context-response',id:messages.at(-1).id,conversationId:id,nativeCopy:'markdown'});
+ await new Promise(setImmediate);await new Promise(setImmediate);
+ assert.equal(messages.at(-1).copyDeepLink,true);
+ clipboard=`codex://threads/${id}?host=remote`;
+ nativeListener({type:'scm-toolkit-context-response',id:messages.at(-1).id,conversationId:id,nativeCopy:'deeplink',model:{name:'GPT-6.1'}});
+ const snapshot=await result;assert.match(snapshot.text,/historical message/);assert.match(snapshot.text,/Latest user request/);assert(!snapshot.text.includes('AAAAAA'));assert(snapshot.text.length<500);assert.equal(snapshot.source.desktopUrl,`codex://threads/${id}?host=remote`);assert.equal(clipboard,'user clipboard');
+
+  }
   console.log('Read-only Codex snapshot and provenance bridge checks passed.');
 }
 
