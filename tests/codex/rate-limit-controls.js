@@ -621,7 +621,7 @@ let nativeImages = 0;
 nativeBanner.querySelector = selector =>
     selector === '[data-scm-toolkit-native-rate-limit-pony]' ? nativeSticker : null;
 nativeBanner.querySelectorAll = selector =>
-    selector === 'span, p, [role="status"]' ? (showNativeMarker ? [nativeMarker] : []) :
+    selector === 'strong, h1, h2, h3, span, p, [role="status"]' ? (showNativeMarker ? [nativeMarker] : []) :
     selector === '[data-scm-toolkit-sticker-redundant="true"]' && nativeMarker.attrs['data-scm-toolkit-sticker-redundant'] === 'true'
         ? [nativeMarker] : [];
 nativeBanner.append = sticker => {

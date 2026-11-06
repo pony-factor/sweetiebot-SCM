@@ -453,6 +453,24 @@ def run():
         assert sticker_page.locator('textarea').input_value() == 'Retained draft'
         sticker_page.close()
         print('PASS: native rate-limit artwork survives reset-time compaction')
+        compact_page = browser.new_page(viewport={"width": 320, "height": 600})
+        # Actual pre-render compaction has already removed the CTA copy. It
+        # supplies its recognition marker directly, without a composer-root hook.
+        compact_page.set_content('''<main><section>
+          <aside id="compact-card"><div><strong>Rate limited</strong>
+            <span data-scm-toolkit-rate-limited="true"></span></div>
+            <button aria-label="Dismiss usage banner">Dismiss</button></aside>
+          <textarea>Retained draft</textarea>
+        </section></main>''')
+        compact_page.add_script_tag(content=rate_script)
+        compact_page.wait_for_selector('#compact-card img', state='visible')
+        assert not compact_page.locator('#compact-card strong').is_visible()
+        assert compact_page.get_by_role('button', name='Dismiss usage banner').is_visible()
+        assert compact_page.locator('textarea').input_value() == 'Retained draft'
+        compact_page.locator('#compact-card').evaluate('card => card.remove()')
+        assert compact_page.locator('[data-scm-toolkit-native-rate-limit-pony]').count() == 0
+        compact_page.close()
+        print('PASS: pre-render compaction marker mounts Twilight without CTA text or composer-root hooks')
         hidden_page = browser.new_page()
         hidden_page.set_content("""<div data-conversation-role="assistant"><p id="limit-notice"></p></div>
           <div data-conversation-role="user"><p id="user-copy"></p></div>

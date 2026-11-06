@@ -405,12 +405,14 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
 // only for the uniquely identified banner in the live composer.
 function scmToolkitCollapsedNativeRateLimitBanner(root) {
     const banners = new Set();
+    const hasEditor = [...root.querySelectorAll(scmToolkitCodexEditorSelector)].some(editor =>
+        !editor.closest?.('[hidden], [aria-hidden="true"], [inert], ' + scmToolkitRateLimitTranscriptSelector));
+    if (!hasEditor) return null;
     for (const status of root.querySelectorAll?.('[data-scm-toolkit-rate-limited="true"]') || []) {
         const banner = status.closest?.('aside');
-        const composer = banner?.closest?.('[data-codex-composer-root]');
-        if (!composer || status.closest?.(scmToolkitRateLimitTranscriptSelector)
-            || scmToolkitIsQueuedPrompt(status)
-            || !composer.querySelector?.(scmToolkitCodexEditorSelector)) continue;
+        if (!banner || status.closest?.(scmToolkitRateLimitTranscriptSelector)
+            || status.closest?.('[hidden], [aria-hidden="true"], [inert]')
+            || scmToolkitIsQueuedPrompt(status)) continue;
         banners.add(banner);
     }
     return banners.size === 1 ? [...banners][0] : null;
@@ -418,7 +420,7 @@ function scmToolkitCollapsedNativeRateLimitBanner(root) {
 // The native green card is the desired frame. Only suppress a redundant
 // short caption after the illustration loads; do not change native quota data.
 function scmToolkitHideNativeRateLimitCaption(banner) {
-    for (const label of banner.querySelectorAll?.('span, p, [role="status"]') || []) {
+    for (const label of banner.querySelectorAll?.('strong, h1, h2, h3, span, p, [role="status"]') || []) {
         if (!scmToolkitIsShortRateLimit(label.textContent)
             || label.querySelector?.('a, button, input, [role="button"]')) continue;
         if (label.getAttribute?.('data-scm-toolkit-sticker-redundant') !== 'true')

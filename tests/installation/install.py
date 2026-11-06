@@ -1579,10 +1579,11 @@ class CodexCountdownTests(unittest.TestCase):
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
     def test_hiding_times_compacts_backend_banner_before_render(self):
-        original = 'let{title:E,description:D}=T,O;if(changed){let e=n.ctas.filter(xt);render(e)};format({id:`codex.rateLimitUpsellBanner.dismiss`,defaultMessage:`Dismiss usage banner`});'
+        original = 'let{title:E,description:D}=T,O;if(changed){let e=n.ctas.filter(xt);render(e)};M=(0,J.jsx)(`span`,{ref:i,className:`whitespace-pre-wrap`,children:D});format({id:`codex.rateLimitUpsellBanner.dismiss`,defaultMessage:`Dismiss usage banner`});'
         patched = install.transform_codex(original, hide_reset_times=True, sticker_enabled=False)
         self.assertIn('let{title:E,description:D}=scmToolkitCompactHiddenLimitBanner(T),O', patched)
         self.assertIn('let e=scmToolkitIsHiddenLimitBanner(T)?[]:n.ctas.filter(xt);', patched)
+        self.assertIn('`span`,{"data-scm-toolkit-rate-limited":scmToolkitIsHiddenLimitBanner(T)?"true":void 0,ref:i,', patched)
         self.assertEqual(install.transform_codex(patched, hide_reset_times=True, sticker_enabled=False), patched)
         self.assertEqual(install.transform_codex(patched, remove=True), original)
 
