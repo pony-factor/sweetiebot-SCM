@@ -261,7 +261,8 @@
         "pr/session.js",
         "pr/pull-request-batch.js",
         "pr/pushed-pr.js",
-        "merge/local-author-merge.js"
+        "merge/local-author-merge.js",
+        "merge/signing-identity.js"
       ],
       "syntax": [
         "extension/merge/lindsey-bulk-merge.js",
@@ -269,6 +270,7 @@
         "extension/commits/git-failure.js",
         "extension/merge/parallel-merge-batch.js",
         "extension/merge/local-human-squash.js",
+        "extension/merge/commit-signing.js",
         "extension/merge/batch.js",
         "extension/merge/checks.js",
         "extension/merge/commit-tree.js",
