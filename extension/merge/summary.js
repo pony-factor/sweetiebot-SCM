@@ -4,11 +4,19 @@ const { separateAppsEnabled, getRoleInstallationToken, workflowBotLogin } = requ
 const MARKER = '<!-- sweetiebot-merge-report -->\n<!-- sweetiebot-generated-summary -->';
 const STATUS_MARKER = '<!-- sweetiebot-lindsey-status -->';
 const SHA = /^[a-f0-9]{40}$/i;
+const MERGE_SUMMARY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function withinMergeSummaryWindow(pr, now) {
+  // Prefer the actual closure time; merged_at is a fallback for incomplete API responses.
+  const closedAt = Date.parse(pr.closed_at || pr.merged_at || '');
+  return Number.isFinite(closedAt) && closedAt <= now &&
+    now - closedAt <= MERGE_SUMMARY_WINDOW_MS;
+}
 
 // The opt-in is checked before authentication or network access. Summary
 // failures must never turn an independently verified merge into a failure.
 async function publishMergeSummaries({ enabled, postStatusUpdates = false, selection, input, result, token,
-  fetchImpl = globalThis.fetch, identity = async () => {
+  fetchImpl = globalThis.fetch, now = Date.now, identity = async () => {
     if (!separateAppsEnabled()) throw Error('Configure the Lindsey GitHub App to publish merge comments.');
     return { token: (await getRoleInstallationToken('lindsey', selection.repository)).token,
       login: workflowBotLogin('lindsey') };
@@ -49,6 +57,7 @@ async function publishMergeSummaries({ enabled, postStatusUpdates = false, selec
           (merged ? !fresh.merged || fresh.merge_commit_sha !== item.sha
             : fresh.merged || fresh.state !== 'open' || fresh.head?.sha !== item.sha))
         throw Error('GitHub has not confirmed this selected ' + (merged ? 'merge.' : 'prepared head.'));
+      if (merged && !withinMergeSummaryWindow(fresh, now())) continue;
       const marker = merged ? MARKER : STATUS_MARKER;
       let existing;
       for (let page = 1; ; page++) {
@@ -67,6 +76,8 @@ async function publishMergeSummaries({ enabled, postStatusUpdates = false, selec
             : item.status === 'waiting' ? 'Waiting for integrated-head checks; PR remains open.' : 'PR branch prepared; PR remains open.') +
             '\nhttps://github.com/' + selection.repository + '/pull/' + item.number + '/changes/' + item.sha);
       if (existing?.body === body) continue;
+      // A long comment-history lookup must not extend the 24-hour posting window.
+      if (merged && !withinMergeSummaryWindow(fresh, now())) continue;
       await api(prefix + (existing ? '/issues/comments/' + existing.id : '/issues/' + item.number + '/comments'),
         existing ? 'PATCH' : 'POST', { body });
     } catch (error) { errors.push({ number: item.number, error: error.message }); }
