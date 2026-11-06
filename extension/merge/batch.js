@@ -109,6 +109,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           typeof item.reason !== 'string' || !item.reason.trim() || item.reason.length > 4000) {
         throw Error('Deferred decisions must identify a current selected PR and its specific non-routine blocker.');
       }
+      require('./resolution-commits').validateDecisions(item.decisions);
+      if (item.paths !== undefined && (!Array.isArray(item.paths) || item.paths.length > 100 ||
+          item.paths.some(file => !require('./patch').safePatchPath(file)))) throw Error('Invalid deferred conflict paths.');
       seen.add(item.number);
     }
   }
@@ -182,6 +185,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           const detail = { number: item.number, title: pr.title, base: pr.base,
             status: item.status, explanation: input.explanation, decisions: require('./resolution-commits').validateDecisions(input.decisions), reason: item.reason || '',
             sourceHeadSha: input.headSha, destinationSha: item.merged ? item.sha : undefined,
+            sha: item.sha, previousHeadSha: item.previousHeadSha, repairChecks: input.repairChecks === true,
             conflictPaths: item.conflictPaths || [], baseSha: item.baseSha || pr.baseSha };
           history.push(detail);
           if (item.merged === true && item.status === 'merged') merged.push(detail);

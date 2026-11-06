@@ -32,7 +32,7 @@ const { reportOptionsInstructions } = require('../../extension/merge/blocker-act
   assert.equal(reactionDecision({ ...comment, line: null }, pr, votes, actor), null);
   assert.equal(reactionDecision({ ...comment, in_reply_to_id: 12 }, pr, votes, actor), null);
   assert.equal(reactionDecision({ ...comment, body: body(options.map(option => ({ ...option, reaction: '+1' }))) }, pr, votes, actor), null);
-  assert(reportOptionsInstructions().includes('👍 (+1), ❤️ (heart), 🚀 (rocket)'));
+  assert(reportOptionsInstructions({ userSelected: true }).includes('👍 (+1), ❤️ (heart), 🚀 (rocket)'));
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'merge-reactions-'));
   try {
     const launches = [];
