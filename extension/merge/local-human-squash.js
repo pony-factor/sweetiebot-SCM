@@ -21,7 +21,7 @@ const REPO = /^[\w.-]+\/[\w.-]+$/;
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 
 const { verifiedHumanAuthor, verifyCommit } = require('./human-squash-merge');
-const { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
+const { signingEnabled, commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
@@ -134,7 +134,11 @@ async function humanSquashMerge(repository, number, {
   }
   const verifiedAuthor = verifiedHumanAuthor(commits);
   const author = { name: verifiedAuthor.name, email: verifiedAuthor.email };
-  const nativeSquash = !requireSignedCommit && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
+  // An enabled local signer must not be silently bypassed by a GitHub-native
+  // squash/rebase that cannot use the configured key. Both merge controllers
+  // then use the shared local author/committer implementation.
+  const signLocally = requireSignedCommit || await signingEnabled(git);
+  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
   if (offerAuthorChoice && operation === 'merge' && !needsResolution && original.mergeable === true && !nativeSquash &&
@@ -221,7 +225,7 @@ async function humanSquashMerge(repository, number, {
   if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && !needsResolution && !requireSignedCommit) {
+  if (operation === 'merge' && alreadyPrepared && !needsResolution && !signLocally) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
