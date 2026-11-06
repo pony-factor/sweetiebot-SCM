@@ -727,9 +727,9 @@
         },
         "sweetiebot.mergeAutoFixCi": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "scope": "application",
-          "description": "Opt in to opening a separate repair task once per failed PR head after Lindsey's built-in CI retry is exhausted. Never bypasses checks, approvals or merge policies."
+          "description": "Open one dedicated repair task per verified failing PR head after merge-time integration is blocked by CI. Enabled by default; turn off to prevent automatic repair. Never bypasses checks, approvals or merge policies."
         },
         "sweetiebot.mergeAutoFixCiMethod": {
           "type": "string",

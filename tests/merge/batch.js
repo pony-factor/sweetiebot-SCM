@@ -76,6 +76,8 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert(batch.instructions.includes('INTELLIGENT MERGE ORDER'));
     assert.equal(batch.state().activities[1].phase, 'reviewing');
     assert.match(batch.state().activities[1].message, /waiting for GPT/);
+    const unwantedSync = await submit(batch.url, [{ ...item(1, c), operation: 'sync' }]);
+    assert.equal(unwantedSync.status, 400, 'Automatic merge rounds must reject PR synchronization');
     const tooMany = await submit(batch.url, [item(1, c), item(2, c)]);
     assert.equal(tooMany.status, 400);
     assert.equal(calls, 0, 'Do not prepare stale multi-PR patches in one round');
@@ -321,15 +323,12 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   } });
   try {
     const failed = await submit(failing.url, [item(1, c)]);
-    assert.equal(failed.value.batch.deferred.length, 0);
-    assert(failed.value.continueUrl, 'Give AI the actual failure before stopping');
-    const prompt = await readPrompt(failed.value.continueUrl);
-    assert(prompt.includes('inspect the actual failing job logs'));
-    assert(prompt.includes('missing warning preference in test harness'));
-    const exhausted = await submit(failed.value.continueUrl, [item(1, c, 'complete repaired patch\n', e)]);
-    assert.equal(exhausted.value.batch.deferred.length, 1);
-    assert.equal(exhausted.value.batch.merged.length, 0);
-    assert.equal(exhausted.value.continueUrl, undefined, 'Repeated failures stop without bypassing CI');
+    assert.equal(failed.value.batch.deferred.length, 1, 'CI failure stops the merge round');
+    assert.equal(failed.value.batch.deferred[0].kind, 'failed_checks');
+    assert.match(failed.value.batch.deferred[0].reason, /missing warning preference/);
+    assert.equal(failed.value.batch.merged.length, 0);
+    assert.equal(failed.value.continueUrl, undefined, 'Dedicated CI repair must precede another merge');
+    assert.equal(attempts, 1, 'Do not resubmit unchanged failing trees');
   } finally { failing.dispose(); }
 
   // Main may advance during preparation. Retry and adopt only our verified

@@ -16,6 +16,12 @@ An explicit checkout handoff transfers the captured draft once and retires the m
 
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
+## Source Control Graph in worktree windows
+
+VS Code's built-in Source Control Graph can initially appear empty while Git discovers a newly opened linked worktree. Sweetiebot requests a bounded status refresh after discovery and follows up once for linked worktrees or missing HEAD metadata. This does not fetch, check out, or modify any branch.
+
+If the graph is still blank, check the graph's repository selector and select the active worktree rather than an unrelated checkout. VS Code does not always follow the selected worktree automatically; see [the upstream graph selection issue](https://github.com/microsoft/vscode/issues/262880). In windows listing several worktrees, VS Code's single-repository Source Control mode can also make the active checkout clearer. A valid linked worktree shares the main repository's Git history, so an empty graph does not mean its commits have been deleted.
+
 ## Isolated experiments
 
 Use **Open Experimental Workspace** (the beaker button in Source Control) to create a separate clone of the current branch on a random `trial-<hex>` branch under `/var/tmp/Sweetiebot/<repo>/<branch>-<color>/<repo>`. VS Code opens the experiment in a new window. The original Codex chat stays in its window with its drafts, attachments, and queued messages. The source repository, staged/index state, worktree, and branch remain unchanged. This clone includes tracked staged/unstaged modifications and non-ignored untracked regular files, but not Git-ignored build outputs. Conflicted indexes, unsafe untracked symlinks and special files fail closed rather than silently creating an incomplete experiment.

@@ -395,7 +395,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       events: events.filter(event => !routineTimelineEvent(event)), error,
       postStatusUpdates: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
       postSummaries: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostSummaries', false) === true,
-      autoFixCi: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) === true,
+      autoFixCi: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) === true,
       autoFixCiMethod: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web',
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
@@ -647,7 +647,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   // separate runner. A task never grants permission to merge or waive checks.
   function queueAutomaticCiRepair(state) {
     if (disposed || !state || state.repository !== selection.repository || state.rateLimit ||
-        vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) !== true) return;
+        vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) !== true) return;
     for (const pr of prs) {
       const candidate = deferredCiRepairCandidate(state, pr);
       if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
@@ -685,7 +685,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           addEvent(pr, 'blocked', 'Automatic CI repair skipped · a human implementation choice is pending');
           return;
         }
-        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) !== true) {
+        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) !== true) {
           addEvent(pr, 'updated', 'Automatic CI repair canceled · preference disabled');
           return;
         }
