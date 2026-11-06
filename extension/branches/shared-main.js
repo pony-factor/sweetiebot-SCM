@@ -7,10 +7,12 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace-trust');
 const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { worktreeLocations } = require('./worktree-registry');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
 
 const exec = promisify(execFile);
+const DELETION_RETURN = 'sweetiebot-deleted-branch.json';
 async function git(args) {
   return (await exec('git', args, { timeout: 120000,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout.trim();
@@ -25,10 +27,9 @@ async function originalRepository(root, {
   baseDirectory = independentWorkspaceParent()
 } = {}) {
   root = await fs.realpath(root);
-  const worktrees = (await run(['-C', root, 'worktree', 'list', '--porcelain', '-z'])).split('\0\0');
-  const shared = worktrees.find(block => block.split('\0').includes('branch refs/heads/main') &&
-    block.split('\0').some(line => line.startsWith('worktree ') && inside(githubDirectory, line.slice(9))));
-  if (shared) return shared.split('\0').find(line => line.startsWith('worktree ')).slice(9);
+  const registered = worktreeLocations(await run(['-C', root, 'worktree', 'list', '--porcelain', '-z']));
+  const sharedMain = registered.get('main');
+  if (sharedMain && inside(githubDirectory, sharedMain)) return sharedMain;
   // Linked topic worktrees already identify the original repository exactly.
   const common = await run(['-C', root, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
   const commonRoot = path.basename(common) === '.git' ? await fs.realpath(path.dirname(common)) : null;
@@ -51,14 +52,7 @@ async function originalRepository(root, {
 }
 
 function checkedOutMain(listing) {
-  const blocks = listing.split('\0\0');
-  for (const block of blocks) {
-    const lines = block.split('\0');
-    if (!lines.includes('branch refs/heads/main')) continue;
-    const worktree = lines.find(line => line.startsWith('worktree '));
-    if (worktree) return worktree.slice('worktree '.length);
-  }
-  return null;
+  return worktreeLocations(listing).get('main') || null;
 }
 
 async function mainRoot(root, options = {}) {
@@ -313,6 +307,17 @@ async function routeExistingBranchWorktree(vscode, repository, destination, opti
   const root = await fs.realpath(repository.rootUri.fsPath);
   const existing = await fs.realpath(destination).catch(() => null);
   if (!existing) return false;
+  if (options.branch) {
+    // Another window may have changed the registry after the first lookup.
+    // Never route to a path without revalidating the selected branch in Git.
+    const run = options.run || git;
+    const registered = worktreeLocations(await run(['-C', root, 'worktree', 'list', '--porcelain', '-z']))
+      .get(options.branch);
+    if (!registered || await fs.realpath(registered).catch(() => null) !== existing
+        || await run(['-C', existing, 'branch', '--show-current']).catch(() => '') !== options.branch) {
+      return false;
+    }
+  }
   if (root === existing) return true;
   if (!vscode.workspace?.workspaceFolders?.length) return false;
   await switchRepository(vscode, root, existing, options);
@@ -353,14 +358,13 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   }
   await run(['-C', original, 'check-ref-format', '--branch', branch]);
   // Reopening an existing topic must use its existing files, including edits.
-  const worktrees = (await run(['-C', original, 'worktree', 'list', '--porcelain'])).split('\n\n');
-  const existing = worktrees.find(block => block.split('\n').includes('branch refs/heads/' + branch));
-  if (existing && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
-  if (existing && !create) {
-    const destination = existing.split('\n').find(line => line.startsWith('worktree ')).slice(9);
+  const worktrees = worktreeLocations(await run(['-C', original, 'worktree', 'list', '--porcelain', '-z']));
+  const registeredDestination = worktrees.get(branch);
+  if (registeredDestination && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
+  if (registeredDestination && !create) {
     // Repoint the current window even when another live VS Code window
     // already owns the registered worktree.
-    return routeExistingBranchWorktree(vscode, repository, destination, { ...options, branch });
+    return routeExistingBranchWorktree(vscode, repository, registeredDestination, { ...options, branch });
   }
   const baseDirectory = options.baseDirectory || independentWorkspaceParent();
   const directory = await createWorkspaceDirectory(baseDirectory, path.basename(original), fs, { branch });
@@ -457,21 +461,90 @@ async function reconnectManagedMain(vscode, options = {}) {
   return true;
 }
 
+async function recordDeletedBranchReturn(repository, branch, defaultBranch) {
+  if (defaultBranch !== 'main' || !branch || !repository.rootUri?.fsPath) return;
+  const root = await fs.realpath(repository.rootUri.fsPath);
+  if (await git(['-C', root, 'branch', '--show-current'])) return;
+  if ((await git(['-C', root, 'for-each-ref', '--format=%(refname)', 'refs/heads/' + branch]))
+      .split('\n').includes('refs/heads/' + branch)) return;
+  const directory = await git(['-C', root, 'rev-parse', '--absolute-git-dir']);
+  const head = await git(['-C', root, 'rev-parse', 'HEAD']);
+  const headStamp = (await fs.stat(path.join(directory, 'HEAD'))).mtimeMs;
+  const receipt = path.join(directory, DELETION_RETURN);
+  const temporary = receipt + '.' + require('node:crypto').randomUUID() + '.tmp';
+  try {
+    await fs.writeFile(temporary, JSON.stringify({
+      version: 1, root, branch, head, headStamp, initiatorPid: process.pid
+    }), { mode: 0o600, flag: 'wx' });
+    await fs.rename(temporary, receipt);
+  } finally { await fs.rm(temporary, {force: true}); }
+}
+
+async function reconnectDeletedBranch(vscode, options = {}) {
+  const run = options.run || git;
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    if (folder.uri.scheme !== 'file') continue;
+    const location = await run(['-C', folder.uri.fsPath, 'rev-parse', '--show-toplevel']).catch(() => null);
+    if (!location) continue;
+    const root = await fs.realpath(location);
+    const directory = await run(['-C', root, 'rev-parse', '--absolute-git-dir']);
+    const receipt = await fs.readFile(path.join(directory, DELETION_RETURN), 'utf8')
+      .then(text => { try { return JSON.parse(text); } catch { return null; } }, () => null);
+    if (receipt?.version !== 1 || receipt.root !== root || typeof receipt.branch !== 'string'
+        || !/^[a-f0-9]{40,64}$/i.test(receipt.head || '')) continue;
+    if (receipt.initiatorPid === options.ignorePid) continue;
+    if (await run(['-C', root, 'branch', '--show-current'])
+        || await run(['-C', root, 'rev-parse', 'HEAD']) !== receipt.head
+        || (await fs.stat(path.join(directory, 'HEAD'))).mtimeMs !== receipt.headStamp
+        || await run(['-C', root, 'status', '--porcelain', '--untracked-files=all'])) continue;
+    if ((await run(['-C', root, 'for-each-ref', '--format=%(refname)', 'refs/heads/' + receipt.branch]))
+        .split('\n').includes('refs/heads/' + receipt.branch)) continue;
+    return routeBranch(vscode, {rootUri: {fsPath: root}}, {...options, branch: 'main'});
+  }
+  return false;
+}
+
 function registerSharedMain(vscode, context) {
-  let running = false;
+  let running = false, again = false;
+  const watchers = new Map();
+  const observe = async () => {
+    const directories = new Set();
+    for (const folder of vscode.workspace.workspaceFolders || []) {
+      if (folder.uri.scheme !== 'file') continue;
+      const directory = await git(['-C', folder.uri.fsPath, 'rev-parse', '--absolute-git-dir']).catch(() => null);
+      if (!directory) continue;
+      directories.add(directory);
+      if (watchers.has(directory)) continue;
+      const watcher = require('node:fs').watch(directory, {persistent: false}, (_, name) => {
+        if (String(name) === DELETION_RETURN) void reconnect();
+      });
+      watcher.on('error', () => { watcher.close(); watchers.delete(directory); });
+      watchers.set(directory, watcher);
+    }
+    for (const [directory, watcher] of watchers) {
+      if (!directories.has(directory)) { watcher.close(); watchers.delete(directory); }
+    }
+  };
   const reconnect = async () => {
-    if (running) return;
+    if (running) { again = true; return; }
     running = true;
-    try { await reconnectManagedMain(vscode); }
+    try {
+      await observe();
+      if (!await reconnectDeletedBranch(vscode, {ignorePid: process.pid})) await reconnectManagedMain(vscode);
+    }
     catch (error) { vscode.window.showWarningMessage('Sweetiebot: ' + error.message); }
-    finally { running = false; }
+    finally {
+      running = false;
+      if (again) { again = false; queueMicrotask(() => void reconnect()); }
+    }
   };
   // Saved shared-main windows may point at a managed main worktree; those
   // checkouts are already the target and must not be reconnected again.
   setImmediate(() => void reconnect());
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => void reconnect()));
+  context.subscriptions.push({dispose() { for (const watcher of watchers.values()) watcher.close(); watchers.clear(); }});
 }
 
 module.exports = { originalRepository, mainRoot, openSharedMainWorkspace, routeBranch,
   routeExistingBranchWorktree,
-  reconnectManagedMain, registerSharedMain };
+  reconnectManagedMain, registerSharedMain, recordDeletedBranchReturn, reconnectDeletedBranch };

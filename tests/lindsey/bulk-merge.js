@@ -98,10 +98,14 @@ async function run() {
     }
 
     const lines = [], notices = [];
+    let progressTitle;
     const vscode = {
       ProgressLocation: { Notification: 15 },
       window: {
-        withProgress: async (_options, callback) => callback(),
+        withProgress: async (options, callback) => {
+          progressTitle = options.title;
+          return callback();
+        },
         createOutputChannel: () => ({
           appendLine: line => lines.push(line),
           show() {}
@@ -115,6 +119,9 @@ async function run() {
     assert.equal(output.results[0].status, 'merged');
     assert(lines.some(line => line.includes('commit/')));
     assert(notices.some(line => line.includes('1 merged')));
+    assert.equal(progressTitle, 'Verifying and squash-merging selected PRs');
+    assert(notices.every(line => !line.startsWith('Lindsey')),
+      'Bulk merge notifications should not start with Lindsey');
     assert.equal(lines.some(line => line.includes('session-token')), false);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });

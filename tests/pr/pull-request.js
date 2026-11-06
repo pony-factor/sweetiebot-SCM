@@ -153,8 +153,8 @@ async function run() {
     conversationContext: 'Full Codex transcript context',
     conversationModel: { name: 'GPT-6 Codex', effort: 'Extra High' }
   });
-  assert(withOrigin.includes('Originating conversation browser link (primary and ONLY supplied conversation text source): ' + share));
-  assert(!withOrigin.includes('Full Codex transcript context'), 'Shared online URL replaces transcript text');
+  assert(withOrigin.includes('Originating conversation browser link: ' + share));
+  assert(withOrigin.includes('Full Codex transcript context'), 'Sharing must preserve the actual drafting context');
   assert(withOrigin.includes('GPT-6 Codex'));
   assert(withOrigin.includes('Extra High'));
   assert.match(withOrigin, /snapshot, not a live transcript/);
@@ -164,16 +164,44 @@ async function run() {
     desktop: 'codex://threads/' + codexSource.uuid });
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
-  assert.match(decorated, /<summary>Source details<\/summary>/);
-  assert.match(decorated, /public snapshot that can expose user prompts and assistant replies/i);
-  assert(decorated.includes('- **Local:** [Local](' + codexConversationUrl(codexSource.uuid) + ')'));
+  assert.match(decorated, /<summary>Source links<\/summary>/);
+  assert(!decorated.includes('**Privacy:**'));
+  assert(decorated.includes('[Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
-    'vscode://jfwooten4.scm-toolkit-workspace-search/codex/' + codexSource.uuid);
-  assert(decorated.includes('- **Desktop:** [Desktop](codex://threads/' + codexSource.uuid + ')'));
+    `vscode://openai.chatgpt/local/${codexSource.uuid}`);
+  assert(decorated.includes('[Desktop](codex://threads/' + codexSource.uuid + ')'));
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
-  assert.match(appendSourceDetails('Local only.', codexSource), /\*\*Online:\*\* Not shared/);
+  assert(!appendSourceDetails('Local only.', codexSource).includes('[Online]('),
+    'Unavailable web links must be omitted');
+  assert(decorated.includes('[Online](' + share + ') · [Local]('),
+    'Each source appears once on a dot-separated line');
+  const oldSource = 'Body.\n\n<details>\n<summary>Source details</summary>\n\n'
+    + '- **Online:** [Online](' + share + ')\n'
+    + '- **Local:** [Local](' + codexLinks.local + ')\n'
+    + '- **Desktop:** [Desktop](' + codexLinks.desktop + ')\n\n</details>';
+  assert.equal(appendSourceDetails(oldSource, { ...codexSource, sharedUrl: share }),
+    decorated.replace('Actual change.', 'Body.'),
+    'Reappending sources upgrades an older footer without duplication');
   assert(!appendSourceDetails('Local only.', codexSource).includes('Sweetiebot cannot unpublish'));
   assert.equal(appendSourceDetails('Body.', undefined), 'Body.');
+  // Unshared ChatGPT metadata must not create an empty Source links section.
+  const unlinkedSource = { kind: 'chatgpt', uuid: codexSource.uuid,
+    url: 'https://example.com/not-a-conversation-link' };
+  assert.equal(sourceDetailsMarkdown(unlinkedSource), '');
+  assert.equal(appendSourceDetails('Body.', unlinkedSource), 'Body.');
+  assert.equal(appendSourceDetails(oldSource, unlinkedSource), 'Body.',
+    'Old source footers disappear entirely when no links are available');
+  assert.equal(appendSourceDetails(decorated, undefined), 'Actual change.',
+    'An absent source strips any stale generated footer');
+  const unlinkedPrompt = pullRequestPrompt({
+    branch: 'draft', repositoryUrl: 'https://github.com/owner/repo', base: 'main',
+    instructions: '', source: unlinkedSource
+  });
+  assert.match(unlinkedPrompt, /omit the entire Source links disclosure/);
+  assert(!unlinkedPrompt.includes('<summary>Source links</summary>'));
+  assert(!unlinkedPrompt.includes('End the published PR description with exactly this expandable'));
+  assert.equal(appendSourceDetails('Body.\n\n' + sourceDetailsMarkdown(codexSource), unlinkedSource),
+    'Body.', 'New-style source footers also disappear without links');
   {
     const githubBulletUrl = 'https://github.com/pony-factor/sweetiebot-SCM/pull/495';
     const bulletInput = [
@@ -241,8 +269,8 @@ async function run() {
   assert(prompt.includes(chatSource.url));
   assert.match(prompt, /intentSummary/);
   assert.match(prompt, /provenance summary may differ from the final diff/);
-  assert(!prompt.includes('The conversation wanted to preserve provenance.'),
-    'Online ChatGPT URLs suppress pasted transcript in all drafting modes');
+  assert(prompt.includes('The conversation wanted to preserve provenance.'),
+    'Online links supplement the captured transcript in every drafting mode');
   assert.match(prompt, /Local Sweetiebot pony profile/);
   assert(prompt.includes('berry-punch'));
   assert.match(prompt, /Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item/);
@@ -654,7 +682,7 @@ async function run() {
   const codexPrompt = new URLSearchParams(codexLaunchUrl.hash.slice(1)).get('q');
   assert(codexPrompt.includes(codexSnapshot.source.uuid));
   assert(codexPrompt.includes(share), 'Attached online link is forwarded unchanged');
-  assert(!codexPrompt.includes(codexSnapshot.text), 'Online link suppresses the transcript');
+  assert(codexPrompt.includes(codexSnapshot.text), 'The browser launch receives the actual chat text alongside its share link');
   autoShareCodexChat = false;
 
   calls.length = 0;

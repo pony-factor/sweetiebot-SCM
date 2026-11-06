@@ -145,7 +145,6 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
       incomingSyncLabel: scm.get('incomingSyncLabel', ''),
       outgoingSyncLabel: scm.get('outgoingSyncLabel', ''),
       autoPublishNewBranches: scm.get('autoPublishNewBranches', false),
-      autoCommitWithCodex: scm.get('autoCommitWithCodex', false),
       automaticBranchCleanup: scm.get('automaticBranchCleanup', true),
       automaticWorkspaceCleanup: scm.get('automaticWorkspaceCleanup', true),
       gitGraphRelativeDates: scm.get('gitGraphRelativeDates', false),

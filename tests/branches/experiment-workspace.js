@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { openExperimentWorkspace, privateParent } = require('../../extension/branches/experiment-workspace');
+const { isExperimentWorkspace, deferExperimentPublish } = require('../../extension/branches/experiment-policy');
 
 function git(...args) {
   return execFileSync('git', args, {
@@ -21,10 +22,12 @@ function editor(root) {
     workspace: { workspaceFolders: [{ name: 'Original', uri: { scheme: 'file', fsPath: root } }] },
     Uri: { file: fsPath => ({ scheme: 'file', fsPath }) },
     commands: {
-      async getCommands() { return ['sweetiebot.codex.prepareWorkspaceHandoff']; },
+      async getCommands() { return ['sweetiebot.readCodexIdentity', 'sweetiebot.codex.sendExperimentDirection']; },
       async executeCommand(id, ...args) {
       calls.push([id, ...args]);
-      if (id === 'sweetiebot.codex.prepareWorkspaceHandoff') return { threadId: 'visible-chat', wasActive: true, relative: '', id: 'handoff-id' };
+      if (id === 'sweetiebot.readCodexIdentity') return { threadId: 'visible-chat' };
+      if (id === 'sweetiebot.codex.sendExperimentDirection') return true;
+      if (id !== 'vscode.openFolder') assert.fail('Unexpected chat mutation: ' + id);
     } },
     window: {
       showWarningMessage(message) { warnings.push(message); },
@@ -59,19 +62,22 @@ function editor(root) {
     const vscode = editor(original);
     const first = await openExperimentWorkspace(vscode, { baseDirectory: copies });
     assert.match(first.branch, /^trial-[a-f0-9]{8}$/);
-    assert.equal(first.handoffSaved, true);
+    assert.equal(await isExperimentWorkspace(first.destination), true);
+    assert.equal(await deferExperimentPublish(first.destination), true, 'The copied staged and unstaged changes do not publish the trial');
+    assert.equal(await isExperimentWorkspace(original), false);
+    const alias = path.join(tmp, 'trial-alias');
+    await fs.symlink(first.destination, alias);
+    assert.equal(await isExperimentWorkspace(alias), true, 'A folder alias preserves the trial publishing policy');
+    assert.equal(first.directionSent, true);
     assert.deepEqual(vscode.calls.map(call => call[0]), [
-      'sweetiebot.codex.prepareWorkspaceHandoff', 'sweetiebot.codexHandoff.save', 'vscode.openFolder'
+      'sweetiebot.readCodexIdentity', 'vscode.openFolder', 'sweetiebot.codex.sendExperimentDirection'
     ]);
-    const saved = vscode.calls[1][1];
-    assert.equal(saved.workspace, first.target);
-    assert.equal(saved.plan.threadId, 'visible-chat');
-    assert.equal(saved.plan.destination, first.destination);
-    assert.equal(saved.plan.wasActive, true);
-    assert(saved.plan.continuationText.includes(first.branch));
-    assert(saved.plan.continuationText.includes('relevant tests and builds'));
-    assert.equal(vscode.calls[2][1].fsPath, first.target);
-    assert.deepEqual(vscode.calls[2][2], { forceNewWindow: true },
+    assert.deepEqual(vscode.calls[2][1], {
+      source: await fs.realpath(original), destination: first.destination,
+      branch: first.branch, expectedThreadId: 'visible-chat'
+    });
+    assert.equal(vscode.calls[1][1].fsPath, first.target);
+    assert.deepEqual(vscode.calls[1][2], { forceNewWindow: true },
       'The experiment opens in a new window and leaves the original window open');
     assert.equal(JSON.parse(await fs.readFile(first.target, 'utf8')).folders[0].path, first.destination);
     assert(first.directory.startsWith(await fs.realpath(copies) + path.sep));
@@ -86,6 +92,12 @@ function editor(root) {
     assert.equal(git('-C', first.destination, 'show-ref', '--verify', 'refs/heads/main').length > 0, true,
       'Other local branches survive removal of temporary clone origin');
     git('-C', first.destination, 'reset', '--hard', 'HEAD');
+    const trialBase = git('-C', first.destination, 'rev-parse', 'HEAD');
+    git('-C', first.destination, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Trial commit fixture');
+    assert.equal(await deferExperimentPublish(alias), false, 'The first new commit allows automatic publishing through an alias');
+    git('-C', first.destination, 'reset', '--hard', trialBase);
+    assert.equal(await deferExperimentPublish(first.destination), true, 'Returning to the original snapshot keeps an unpublished trial local');
     assert.equal(git('-C', original, 'status', '--short'), before.status,
       'Resetting the experiment never changes the source');
 
@@ -96,16 +108,34 @@ function editor(root) {
 
     const failed = editor(original);
     const execute = failed.commands.executeCommand;
+    let failedWorkspace;
     failed.commands.executeCommand = async (id, ...args) => {
-      if (id === 'vscode.openFolder') throw new Error('Window failed');
+      if (id === 'vscode.openFolder') { failedWorkspace = args[0].fsPath; throw new Error('Window failed'); }
       return execute(id, ...args);
     };
     await assert.rejects(openExperimentWorkspace(failed, { baseDirectory: copies }), /Window failed/);
-    assert.equal(failed.calls.at(-2)[0], 'sweetiebot.codexHandoff.clear');
-    assert.equal(failed.calls.at(-1)[0], 'sweetiebot.codex.resumeWorkspaceHandoff');
-    assert.equal(failed.calls.at(-1)[1].destination, await fs.realpath(original));
-    const failedWorkspace = failed.calls.find(call => call[0] === 'sweetiebot.codexHandoff.save')[1].workspace;
+    assert.deepEqual(failed.calls.map(call => call[0]), ['sweetiebot.readCodexIdentity'],
+      'An open failure does not interrupt, resume or notify the original chat');
     await assert.rejects(fs.stat(path.dirname(failedWorkspace)), { code: 'ENOENT' });
+
+    const noticeFailure = editor(original);
+    const notify = noticeFailure.commands.executeCommand;
+    noticeFailure.commands.executeCommand = async (id, ...args) => {
+      if (id === 'sweetiebot.codex.sendExperimentDirection') throw new Error('Codex unavailable');
+      return notify(id, ...args);
+    };
+    const preserved = await openExperimentWorkspace(noticeFailure, { baseDirectory: copies });
+    assert.equal(preserved.directionSent, false);
+    assert((await fs.stat(preserved.destination)).isDirectory(), 'Notice failure must not delete an opened trial');
+    assert.match(noticeFailure.warnings[0], /queued messages are preserved/);
+    assert(noticeFailure.warnings[0].includes(preserved.destination));
+
+    const noChat = editor(original);
+    const withoutChat = noChat.commands.executeCommand;
+    noChat.commands.executeCommand = async (id, ...args) => id === 'sweetiebot.readCodexIdentity'
+      ? {threadId: null} : withoutChat(id, ...args);
+    assert.equal((await openExperimentWorkspace(noChat, {baseDirectory: copies})).directionSent, false);
+    assert.equal(noChat.warnings.length, 0, 'Opening without an existing chat needs no notice');
 
     const bare = path.join(tmp, 'remote.git');
     git('init', '--bare', bare);
@@ -125,7 +155,7 @@ function editor(root) {
     invalid.workspace.workspaceFolders.push({ uri: { scheme: 'file', fsPath: original } });
     await assert.rejects(openExperimentWorkspace(invalid, { baseDirectory: copies }), /exactly one/);
 
-    console.log('Experimental clone, branch, remote, snapshot, safe reset and new-window Codex handoff passed.');
+    console.log('Experimental clone, snapshot, safe reset and original-chat trial notice passed.');
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

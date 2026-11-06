@@ -57,6 +57,7 @@
     "onCommand:sweetiebot.chatgpt.searchRepositories",
     "onCommand:sweetiebot.squashMergeSelectedPullRequest",
     "onCommand:sweetiebot.squashMergePullRequest",
+    "onCommand:sweetiebot.squashMergeTreePullRequest",
     "onUri",
     "onCommand:sweetiebot.openFileOnGitHub",
     "onCommand:scmToolkit.returnHome",
@@ -326,12 +327,6 @@
           "default": false,
           "scope": "application",
           "description": "Sync existing local main checkouts every 15 minutes when upstream main has commits in the past seven days, even after VS Code closes. Skips local changes and divergence."
-        },
-        "sweetiebot.autoCommitWithCodex": {
-          "type": "boolean",
-          "default": false,
-          "scope": "window",
-          "description": "Opt in to automatically committing saved Git changes every 30 seconds with Codex as co-author. Stages modified, deleted and untracked files, creates local commits only, and never pushes automatically. Skips conflicts, empty changes and active commit drafts."
         },
         "sweetiebot.durableBackgroundCommits": {
           "type": "boolean",
@@ -649,7 +644,7 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "description": "Opt in to publishing a public ChatGPT snapshot of the active Codex chat whenever Kefania starts a pull request. The snapshot can expose your prompts and AI replies to anyone with the link, and Kefania adds the link to public PR Source details. Sweetiebot cannot unpublish or revoke it; treat sharing as permanent. Even with sharing off, Kefania may still send captured chat text to the drafting AI."
+          "description": "Opt in to publishing a public ChatGPT snapshot of the active Codex chat whenever Kefania starts a pull request. The snapshot can expose your prompts and AI replies to anyone with the link, and Kefania adds the link to public PR Source details. Sweetiebot cannot unpublish or revoke it; treat sharing as permanent. Even when sharing is off, captured chat text is still sent to Kefania in your ChatGPT account as context for drafting the PR."
         },
         "sweetiebot.kefaniaUseThemeColors": {
           "type": "boolean",

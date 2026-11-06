@@ -17,38 +17,27 @@ permissions:
   contents: read
 
 jobs:
-  workbench-repair:
-    name: SCM and browser repair isolation (Python ${{ matrix.python }})
+  python-compatibility:
+    name: Python repair and web-commit safety (3.12 and 3.14)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.14"]
     env:
       PYTHONPATH: scripts
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        id: setup312
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
-      - name: Verify independent repairs with incompatible optional extensions
+          python-version: "3.12"
+      - name: SCM and browser repair isolation (Python 3.12)
+        id: repair312
+        if: ${{ !cancelled() && steps.setup312.outcome == 'success' }}
+        continue-on-error: true
         run: python -m unittest tests.installation.install.WorkbenchRepairTests tests.installation.install.IndependentRepairTests -v
-
-  published-web-commit-titles:
-    name: Published web-commit title safety (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.14"]
-    env:
-      PYTHONPATH: scripts
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Check published follow-ups and safe local replay
+      - name: Published web-commit title safety (Python 3.12)
+        id: titles312
+        if: ${{ !cancelled() && steps.setup312.outcome == 'success' }}
+        continue-on-error: true
         run: |
           python -m unittest -v \
             tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
@@ -61,6 +50,50 @@ jobs:
             tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
             tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
             tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+      - name: Set up Python 3.14
+        id: setup314
+        if: ${{ !cancelled() }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: SCM and browser repair isolation (Python 3.14)
+        id: repair314
+        if: ${{ !cancelled() && steps.setup314.outcome == 'success' }}
+        continue-on-error: true
+        run: python -m unittest tests.installation.install.WorkbenchRepairTests tests.installation.install.IndependentRepairTests -v
+      - name: Published web-commit title safety (Python 3.14)
+        id: titles314
+        if: ${{ !cancelled() && steps.setup314.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          python -m unittest -v \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
+            tests.commits.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
+            tests.commits.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
+            tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
+            tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+      - name: Require all four Python compatibility checks to pass
+        if: ${{ !cancelled() }}
+        env:
+          REPAIR_312: ${{ steps.repair312.outcome }}
+          TITLES_312: ${{ steps.titles312.outcome }}
+          REPAIR_314: ${{ steps.repair314.outcome }}
+          TITLES_314: ${{ steps.titles314.outcome }}
+        shell: bash
+        run: |
+          failed=0
+          for test in REPAIR_312 TITLES_312 REPAIR_314 TITLES_314; do
+            if [[ "${!test}" != "success" ]]; then
+              echo "::error::$test did not pass (${!test})"
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   inventory:
     name: Test inventory
@@ -102,7 +135,7 @@ jobs:
           - group: codex
             label: Codex
           - group: kefania
-            label: Kefania
+            label: Kefania GitHub App auth, PR workflows, and chat UI
           - group: lindsey
             label: Lindsey bulk merge
           - group: browser-ui
@@ -164,13 +197,13 @@ jobs:
           node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branches/branch-window.js
-          node --check tests/branches/branch-strip.js
+          node --check tests/branches/window.js
+          node --check tests/branches/strip.js
           node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
-        run: node tests/branches/branch-window.js
+        run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
-        run: node tests/branches/branch-strip.js
+        run: node tests/branches/strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
         run: node tests/branches/shared-main.js
 
@@ -231,10 +264,10 @@ jobs:
         run: python tests/browser/workflow-recovery-browser.py
       - name: Node.js timestamp, heading and countdown tests
         run: |
-          node tests/codex/codex-hide-chat-timestamps.js
-          node tests/codex/codex-window-label.js
-          node tests/codex/codex-usage.js
-          node tests/codex/codex-countdown.js
+          node tests/codex/hide-chat-timestamps.js
+          node tests/codex/window-label.js
+          node tests/codex/usage.js
+          node tests/codex/countdown.js
       - name: Current Codex usage-banner compatibility
         env:
           PYTHONPATH: scripts
@@ -242,7 +275,7 @@ jobs:
       - name: Codex manifest label tests
         env:
           PYTHONPATH: scripts
-        run: python -m unittest tests.codex.codex_label -v
+        run: python -m unittest tests.codex.label -v
 
   bot-app-identities:
     name: Separate GitHub App identity regressions
@@ -262,8 +295,8 @@ jobs:
           node --check extension/github/pull-request.js
           node tests/kefania/github-app-identity.js
           node tests/kefania/github-app-settings.js
-          node tests/kefania/kefania-app-environment.js
-          node tests/lindsey/lindsey-bulk-merge.js
+          node tests/kefania/app-environment.js
+          node tests/lindsey/bulk-merge.js
 
   packaged-runtime:
     name: Installed extension imports (ubuntu-latest)
@@ -304,15 +337,15 @@ jobs:
           node --check extension/branches/shared-main.js
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
-          node --check tests/branches/branch-window.js
-          node --check tests/branches/branch-strip.js
+          node --check tests/branches/window.js
+          node --check tests/branches/strip.js
           node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
         if: ${{ !cancelled() }}
-        run: node tests/branches/branch-window.js
+        run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
         if: ${{ !cancelled() }}
-        run: node tests/branches/branch-strip.js
+        run: node tests/branches/strip.js
       - name: Test real Git worktrees, session publication, and branch handoff
         if: ${{ !cancelled() }}
         run: node tests/branches/shared-main.js

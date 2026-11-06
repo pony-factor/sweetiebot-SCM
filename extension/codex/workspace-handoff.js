@@ -62,6 +62,13 @@ function registerCodexWorkspaceHandoff(vscode, context) {
     try {
       const roots = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath);
       if (!roots.includes(plan.destination)) throw new Error('The saved Codex handoff does not match this workspace.');
+      // Older trial windows saved a same-chat migration even though they opened
+      // alongside the original. Retire only those plans before restoring drafts
+      // or retrying thread/resume; the original chat and its queue stay put.
+      if (plan.continuationText?.startsWith('The user moved this same chat into a disposable experiment on branch ')) {
+        await context.globalState.update(key, undefined);
+        return;
+      }
       const extension = vscode.extensions.getExtension('openai.chatgpt');
       if (!extension) throw new Error('Codex is unavailable in the destination window.');
       await extension.activate();
