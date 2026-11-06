@@ -10,7 +10,7 @@ const { waitForMergeChecks } = require('./checks');
 const SHA = /^[a-f0-9]{40}$/i;
 
 async function localAuthorMerge({ repository, number, original, headSha, baseSha, tree, author, message,
-  git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false, privateRepository = false, integratedTree = false }) {
+  git, api, directory, checkOptions, expectChecks, onProgress = () => {}, privateRepository = false, integratedTree = false }) {
   const root = 'repos/' + repository, prPath = root + '/pulls/' + number;
   const head = original.head.ref, base = original.base.ref;
   const blocked = reason => ({ merged:false,status:'blocked',number,reason,headSha,base,baseSha });
@@ -60,8 +60,13 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   // publish an unsigned replacement when commit.gpgsign is disabled.
   const file=path.join(directory,'.git','sweetiebot-local-merge-message');
   await fs.writeFile(file,message+'\n',{mode:0o600});
-  const sha=await git('-c','user.name='+author.name,'-c','user.email='+author.email,
-    'commit-tree','-S',tree,'-p',baseSha,'-p',headSha,'-F',file);
+  let sha;
+  try {
+    sha=await git('-c','user.name='+author.name,'-c','user.email='+author.email,
+      'commit-tree','-S',tree,'-p',baseSha,'-p',headSha,'-F',file);
+  } catch {
+    throw Error('Lindsey requires an available Git signing key for replacement merges; no branch was pushed.');
+  }
   if (!SHA.test(sha)) throw Error('Local Git did not produce a verified merge commit.');
   const [name,email,...body]=(await git('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
   verifyCommit({commit:{author:{name,email},message:body.join('\0')}},message,author);
