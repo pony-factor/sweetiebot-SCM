@@ -190,13 +190,17 @@ function conversationSourceLinks(source) {
 function sourceDetailsMarkdown(source) {
   const links = conversationSourceLinks(source);
   if (!links) return '';
+  const entries = [
+    ...(links.online ? ['[Online](' + links.online + ')'] : []),
+    ...(links.local ? ['[Local](' + links.local + ')'] : []),
+    ...(links.desktop ? ['[Desktop](' + links.desktop + ')'] : []),
+  ];
+  if (!entries.length) return '';
   return [
     '<details>',
-    '<summary>Source details</summary>',
+    '<summary>Source links</summary>',
     '',
-    '- **Online:** ' + (links.online ? '[Online](' + links.online + ')' : 'Not shared'),
-    ...(links.local ? ['- **Local:** [Local](' + links.local + ')'] : []),
-    ...(links.desktop ? ['- **Desktop:** [Desktop](' + links.desktop + ')'] : []),
+    entries.join(' · '),
     '',
     '</details>',
   ].join('\n');
@@ -214,11 +218,14 @@ function stripGithubBulletPunctuation(body) {
 
 function appendSourceDetails(body, source) {
   const normalized = stripGithubBulletPunctuation(body);
-  const details = sourceDetailsMarkdown(source);
-  if (!details || typeof normalized !== 'string') return normalized;
+  if (typeof normalized !== 'string') return normalized;
+  // A draft can contain a stale provenance footer even when its current source
+  // has no usable links. Remove that footer rather than leaving an empty feature.
   const main = normalized.trimEnd()
-    .replace(/\n*<details>\s*<summary>Source details<\/summary>[\s\S]*?<\/details>\s*$/i, '')
+    .replace(/\n*<details>\s*<summary>(?:Source details|Source links)<\/summary>[\s\S]*?<\/details>\s*$/i, '')
     .trimEnd();
+  const details = sourceDetailsMarkdown(source);
+  if (!details) return main === normalized.trimEnd() ? normalized : main;
   return main + '\n\n' + details;
 }
 
@@ -292,7 +299,11 @@ function pullRequestPrompt({
 
   if (source) {
     sections.push(
-      'Use this exact conversation source metadata to draft the Source details block in the PR description. Preserve its kind, UUID, and URL. Do not pass a source argument to the publishing tool or call a source-comment tool: the description owns these links, and a separate provenance comment must not be created. This overrides any source-comment instruction in the canonical rules. If the conversation context below supports it, add a brief one- or two-sentence intentSummary describing what the source conversation was trying to accomplish; that provenance summary may differ from the final diff:\n\n'
+      'Use the following exact conversation source metadata as drafting context. Preserve its kind, UUID, and URL. ' +
+        (sourceDetailsMarkdown(source)
+          ? 'Keep verified Source links in the PR description, never in a separate provenance comment. Do not pass a source argument to the publishing tool or call a source-comment tool. '
+          : 'There are no verified source links, so omit the entire Source links disclosure, including its heading. Do not invent missing destinations or add a provenance comment. ') +
+        'This overrides any source-comment instruction in the canonical rules. If the conversation context below supports it, add a brief one- or two-sentence intentSummary describing what the source conversation was trying to accomplish; that provenance summary may differ from the final diff:\n\n'
         + JSON.stringify(source, null, 2)
     );
     // A local Codex thread is not a ChatGPT web conversation. Only a
@@ -323,9 +334,9 @@ function pullRequestPrompt({
         + conversationContext.trim()
     );
   }
-  if (source) sections.push(browserDraft
-    ? 'The local confirmation receiver will append the verified expandable Source details block at the end of the PR description. Do not add or duplicate this block yourself; it uses the Online link, GitHub-compatible HTTPS Local link, and native codex:// Desktop link.'
-    : 'End the published PR description with exactly this expandable Source details block, without inventing unavailable links:\n\n' + sourceDetailsMarkdown(source));
+  if (source && sourceDetailsMarkdown(source)) sections.push(browserDraft
+    ? 'The local confirmation receiver will append the verified expandable Source links block at the end of the PR description. Do not add or duplicate this block yourself; it uses the Online link, GitHub-compatible HTTPS Local link, and native codex:// Desktop link.'
+    : 'End the published PR description with exactly this expandable Source links block, without inventing unavailable links:\n\n' + sourceDetailsMarkdown(source));
 
   return sections.join('\n\n');
 }
@@ -577,11 +588,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     if (autoShareCodexChat) source = sourceWithSharedConversationUrl(context, source);
     // Capture a fresh native Share snapshot in the originating window before
     // opening the independent Kefania session. Do not share a different chat.
-    if (autoShareCodexChat && source?.kind === 'codex' && !options.source) {
+    if (autoShareCodexChat && options.explicitNewPullRequest === true
+        && source?.kind === 'codex' && !options.source) {
       try {
       const shared = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,
-      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid));
+      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid,
+        { explicitNewPullRequest: true }));
       if (!validSharedConversationUrl(shared?.sharedUrl) || shared.uuid !== source.uuid) {
         throw new Error('Kefania could not verify publication of the active Codex chat.');
       }

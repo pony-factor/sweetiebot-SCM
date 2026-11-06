@@ -24,7 +24,7 @@ const { verifiedHumanAuthor, verifyCommit } = require('./human-squash-merge');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
-  localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
+  localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal, assistantModelNumber,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
@@ -588,7 +588,7 @@ async function humanSquashMerge(repository, number, {
       const finalTree = await inRepo('write-tree');
       const prepared = await require('./resolution-commits').createResolutionCommits({
         git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
-        conflicts, decisions, author, base,
+        conflicts, decisions, author, base, assistantModelNumber,
         onCommit: decision => progress('decision-commit', decision)
       });
       operationCommitTitle = '🔄 Sync branch to ' + base;

@@ -293,7 +293,7 @@ function postedReviewActivity(notes) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, onViewportChange = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
   const readFetch = fetchImpl;
@@ -385,7 +385,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
-      type: 'state', repository: selection.repository, workers,
+      type: 'state', repository: selection.repository,
+      // Lane and overall totals must use the same verified PR states. Runner
+      // snapshots can lag after a merge is confirmed by GitHub or local execution.
+      workers: workers.map(worker => ({ ...worker,
+        merged: worker.numbers.filter(number => byNumber.get(number)?.state === 'merged').length })),
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })),
       events: events.filter(event => !routineTimelineEvent(event)), error,
@@ -707,6 +711,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
       return onFocusWorker(message.number);
+    }
+    if (message?.type === 'dashboard-viewport') {
+      if (Number.isInteger(message.width) && message.width >= 160 && message.width <= 20000)
+        return onViewportChange(message.width);
+      return;
     }
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh({ force: true });

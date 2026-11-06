@@ -3,6 +3,16 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { safePatchPath } = require('./patch');
+// Use only the model number supplied by the web coding assistant's handoff.
+const MODEL_NUMBER = /^[1-9]\d*(?:\.\d+){0,2}$/;
+function assistantCoauthorTrailer(modelNumber) {
+  if (modelNumber === undefined) return '';
+  if (typeof modelNumber !== 'string' || modelNumber.length > 16 ||
+      !MODEL_NUMBER.test(modelNumber)) {
+    throw Error('Invalid current web coding model number in resolution handoff.');
+  }
+  return 'Co-authored-by: ChatGPT ' + modelNumber + ' <noreply@openai.com>';
+}
 
 function validateDecisions(value = []) {
   if (!Array.isArray(value) || value.length > 512) throw Error('Invalid per-file resolution decisions.');
@@ -23,8 +33,11 @@ function validateDecisions(value = []) {
 // Build an append-only PR history in an isolated index. main is only a tree
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
-  conflicts, decisions, author, base, onCommit = () => {} }) {
+  conflicts, decisions, author, base, assistantModelNumber, onCommit = () => {} }) {
   decisions = validateDecisions(decisions);
+  const trailer = assistantCoauthorTrailer(assistantModelNumber);
+  if (decisions.length && !trailer) throw Error('Model-authored conflict decisions require the web generator model number.');
+  const withAttribution = message => message + (trailer ? '\n\n' + trailer : '');
   if (conflicts.some(file => !safePatchPath(file)) ||
       conflicts.length !== decisions.length || conflicts.some(file => !decisions.some(item => item.path === file))) {
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
@@ -49,18 +62,18 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
       await git('update-index', '--add', '--cacheinfo', match[1], match[2], decision.path);
     } else await git('update-index', '--force-remove', '--', decision.path);
     const tree = await git('write-tree');
-    const message = decision.title + '\n\n' + decision.description + '\n\nFile: ' + decision.path +
-      '\nIncoming ' + base + ': ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+    const message = withAttribution(decision.title + '\n\n' + decision.description +
+      '\n\nFile: ' + decision.path + '\nIncoming ' + base + ': ' + baseSha);
     tip = await commit(tree, tip, message);
     commits.push({ ...decision, sha: tip });
     try { onCommit({ ...decision, sha: tip }); } catch { /* Reporting cannot alter the prepared tree. */ }
   }
   // The remaining tree difference contains only nonconflicting incoming work.
   // Keep an empty sync marker if all incoming changes were resolved above.
-  tip = await commit(finalTree, tip, '🔄 Sync branch to ' + base +
+  tip = await commit(finalTree, tip, withAttribution('🔄 Sync branch to ' + base +
     '\n\nIncorporate the remaining incoming changes after the per-file conflict decisions.' +
-    '\nSource: ' + baseSha + '\n\nCo-authored-by: Codex Web <noreply@openai.com>', baseSha);
+    '\nSource: ' + baseSha), baseSha);
   return { sha: tip, commits };
 }
 
-module.exports = { validateDecisions, createResolutionCommits };
+module.exports = { validateDecisions, assistantCoauthorTrailer, createResolutionCommits };

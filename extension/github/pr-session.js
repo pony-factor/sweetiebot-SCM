@@ -155,6 +155,7 @@ async function resumeMergeDashboard(vscode, directory, context) {
   const auth = await require('./session').githubSession(vscode);
   const dashboard = require('../merge/dashboard');
   const hasEditors = vscode.window.tabGroups?.all.some(group => group.tabs.length) === true;
+  let observedDashboardWidth;
   // A dedicated merge workspace owns this layout; no edits to the source window.
   mergeDashboardController = dashboard.startMergeDashboard(vscode, selection, auth.accessToken, {
     onRefresh: async repairedNumbers => {
@@ -163,6 +164,12 @@ async function resumeMergeDashboard(vscode, directory, context) {
         const opened = await require('./pr-workflows').openWorkflow(vscode, launch.url);
         require('../merge/runner-layout').registerMergeRunner(vscode, 'batch:' + (launch.id || 'refreshed'), opened.tab);
         if (launch.id && opened.tab) mergeWorkerTabs.set(launch.id, opened.tab);
+      }
+    },
+    onViewportChange: async width => {
+      observedDashboardWidth = width;
+      if (mergeDashboardStarted) {
+        await require('../merge/runner-layout').updateResponsiveRunnerLayout(vscode,width);
       }
     },
     onFocusWorker: async id => {
@@ -187,6 +194,9 @@ async function resumeMergeDashboard(vscode, directory, context) {
   });
   await require('../merge/runner-layout').arrangeRunnerPanes(vscode);
   mergeDashboardStarted = true;
+  if (Number.isInteger(observedDashboardWidth)) {
+    await require('../merge/runner-layout').updateResponsiveRunnerLayout(vscode,observedDashboardWidth);
+  }
   return mergeDashboardController;
 }
 
