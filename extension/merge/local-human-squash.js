@@ -573,12 +573,21 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
-    const finishLocal = async (sha, finalTree, integratedTree = false) => require('./local-author-merge').localAuthorMerge({
+    const finishLocal = async (sha, finalTree, integratedTree = false) => {
+      const trailer = conflicts.length
+        ? require('./resolution-commits').assistantCoauthorTrailer(assistantModelNumber) : '';
+      if (conflicts.length && !trailer) {
+        throw Error('Model-authored conflict decisions require the active coding model number.');
+      }
+      const mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
+        ? preparedMessage.trimEnd() + '\n\n' + trailer : preparedMessage;
+      return require('./local-author-merge').localAuthorMerge({
       repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
-      message: preparedMessage, git: inRepo, api, directory: temp, checkOptions, integratedTree,
+      message: mergeMessage, git: inRepo, api, directory: temp, checkOptions, integratedTree,
       expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit,
       privateRepository: repositoryInfo.private === true
     });
+    };
     // Lindsey merge operations integrate in a disposable index and never update
     // the source PR head. Sync is a separate, explicit maintainer action.
     if (localGitMerge && operation === 'merge' && !requireSignedCommit) {

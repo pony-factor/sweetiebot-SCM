@@ -119,7 +119,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       const resolutionPatch=conflict?
         'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-main behavior\n+combined feature and main\n':null;
       const result=await action(conflict?{resolutionPatch,decisions:[{path:'file.txt',
-        title:'🛠️ Preserve both behaviors',description:'Combine main behavior and the PR feature.'}]}:{});
+        title:'🛠️ Preserve both behaviors',description:'Combine main behavior and the PR feature.'}],
+        assistantModelNumber:'6'}:{});
       if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
         assert.equal(result.merged,true,JSON.stringify(result));
