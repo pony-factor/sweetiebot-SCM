@@ -10,6 +10,10 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 **Open a Window on Shared Main** provides a managed main window. The ordinary new-branch action starts at the resolved default branch where possible; the **stacked branch** action starts at the current topic branch. Optional `gh-stack` manages native stacks. Creating a stacked branch is not publishing a PR; verify parent/base relationships before merging.
 
+Unsent Codex new-chat text and attachments belong to the saved window and Git branch. Separate windows on the same main checkout have independent drafts. Reloading restores that window's draft; switching branches selects that branch's slot. Delayed updates from the previous branch cannot populate the new one.
+
+An explicit checkout handoff transfers the captured draft once and retires the matching source copy after saving the destination. Retrying a handoff cannot restore text or attachments already sent, and an existing destination draft is preserved. Older checkout-wide caches remain stored but do not automatically seed new windows.
+
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
 ## Isolated experiments

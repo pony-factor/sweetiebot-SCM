@@ -48,6 +48,25 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_welcome_tour_reuses_real_settings_controls(self):
+        page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        self.assertIn('id="welcome-tour"', page)
+        self.assertIn('id="welcome-reopen"', page)
+        self.assertIn("data-welcome-step=\"2\"", page)
+        self.assertIn("data-welcome-step=\"3\"", page)
+        self.assertIn('data-welcome-section="Message bar"', page)
+        self.assertIn('data-welcome-section="Codex"', page)
+        for name in ("branchPicker", "compactWindowButton", "newWorkspaceWindowButton",
+                     "filledButtons", "codexSendWing"):
+            self.assertIn(f'data-welcome-setting="{name}"', page)
+            self.assertIn(f'name="{name}"', page)
+        for name in ("codexSendBackground", "codexSendForeground",
+                     "codexComposerLabelColor", "codexDropAccent"):
+            self.assertIn(f'data-welcome-color="{name}"', page)
+            self.assertIn(f'name="{name}"', page)
+        self.assertIn("field.dispatchEvent(new Event('input', {bubbles: true}))", page)
+        self.assertIn("queueAutosave()", page)
+
     def test_sidebar_centers_pill_headings_and_tabs(self):
         page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
         styles = page.split("<style>", 1)[1].split("</style>", 1)[0]
