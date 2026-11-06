@@ -4,6 +4,8 @@
 
 **New PR** starts a dedicated Sweetiebot PR workspace and ChatGPT drafting/research flow. The local **Kefania** runner supplies repository context, diff, actual head/base, and publication handoff. Opening a chat or creating a draft does **not** itself create a remote PR. `sweetiebot.autoPublishPullRequests` defaults to `true` in the manifest for **completed eligible drafts**; local settings and successful authorization control whether publishing actually happens. Optional independent pony-profile research is separate from PR description drafting; it includes a sourced **Important moments** section with timestamped links into verified full episodes when available. The existing confirmation window renders those Markdown links locally, and the research is not copied into the PR description.
 
+After opening an upstream or personal PR yourself, use **Sweetiebot: Post Change Summary to Existing Pull Request** from the Command Palette, or **Post change summary** beside an open PR in Lindsey. Paste the exact upstream PR URL when prompted. The editable Markdown form uses verified commit subjects and changed paths as a starting draft; it does not claim an AI code review. After you confirm, Sweetiebot re-reads the open PR head and posts a new top-level Conversation comment through your locally authenticated `gh` CLI. This works for public upstream contributions without a Kefania or Lindsey App installation, provided your GitHub account can comment. A same-author, same-head marker prevents duplicates. No PR title, description, branch, or commit is modified.
+
 PR opener, Git commit author/committer, co-author trailer and review commenter may be different identities. See [distinct GitHub App setup](distinct-github-apps.md).
 
 ## Merging and blockers

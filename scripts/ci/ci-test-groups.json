@@ -115,6 +115,7 @@
         "pr/browser-pr-background.js",
         "pr/browser-pr-submit.js",
         "pr/confirmation-render.js",
+        "pr/change-summary.js",
         "pr/draft-handoff.js",
         "github/file.js",
         "github/pr.py",
@@ -140,6 +141,7 @@
       ],
       "syntax": [
         "extension/github/pr-actions.js",
+        "extension/github/pr-change-summary.js",
         "extension/github/rate-limit.js",
         "extension/github/user-api.js",
         "extension/merge/human-squash-merge.js",

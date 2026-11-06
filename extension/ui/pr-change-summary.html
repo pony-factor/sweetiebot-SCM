@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__ 'nonce-__NONCE__'; script-src 'nonce-__NONCE__';">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post PR change summary</title>
+<style nonce="__NONCE__">
+:root{color-scheme:light dark}
+body{padding:22px;max-width:900px;margin:0 auto;background:var(--vscode-editor-background);color:var(--vscode-foreground);font:13px/1.6 var(--vscode-font-family,system-ui)}
+h1{font-size:20px;margin:0 0 6px}
+.muted{color:var(--vscode-descriptionForeground)}
+.pr{margin:0 0 18px;overflow-wrap:anywhere}
+textarea{box-sizing:border-box;width:100%;min-height:340px;resize:vertical;padding:14px;border:1px solid var(--vscode-input-border,var(--vscode-widget-border,#777));border-radius:8px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);font:13px/1.6 var(--vscode-editor-font-family,monospace)}
+textarea:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
+.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:6px;padding:10px 16px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+#status{white-space:pre-wrap;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<h1>Post change summary</h1>
+<div class="pr">__PR_TITLE__<div class="muted">__PR_URL__ · Head __PR_HEAD__</div></div>
+<p>Review or rewrite this draft before publishing. The summary is based on commit subjects and changed paths, not a verified AI code review. It will be posted as a new PR conversation comment using your GitHub CLI account. The original PR description will not be changed.</p>
+<form id="form">
+<label for="summary">Summary (GitHub Markdown)</label>
+<textarea id="summary" maxlength="10000" required spellcheck="true">__SUMMARY__</textarea>
+<div class="actions">
+<button id="post" type="submit">Post summary to GitHub</button>
+<span id="status" role="status" aria-live="polite"></span>
+</div>
+</form>
+<script nonce="__NONCE__">
+(() => {
+  const vscode = acquireVsCodeApi();
+  const form = document.getElementById('form');
+  const summary = document.getElementById('summary');
+  const post = document.getElementById('post');
+  const status = document.getElementById('status');
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (post.disabled || !summary.value.trim()) return;
+    post.disabled = true;
+    status.textContent = 'Posting…';
+    vscode.postMessage({ type: 'post', body: summary.value });
+  });
+  window.addEventListener('message', event => {
+    if (event.data?.type === 'error') {
+      post.disabled = false;
+      status.textContent = 'Not posted: ' + event.data.message;
+    } else if (event.data?.type === 'posted') {
+      post.disabled = true;
+      summary.readOnly = true;
+      status.textContent = event.data.alreadyPosted
+        ? 'A summary for this revision is already on GitHub.'
+        : 'Summary posted to GitHub.';
+    }
+  });
+})();
+</script>
+</body>
+</html>
