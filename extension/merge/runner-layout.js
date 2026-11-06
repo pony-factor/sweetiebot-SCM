@@ -3,7 +3,7 @@ const windows = new WeakMap();
 const names = ['First','Second','Third','Fourth','Fifth','Sixth','Seventh','Eighth','Ninth'];
 function state(vscode) {
   let current = windows.get(vscode.window);
-  if (!current) { current = {runners:new Map(),tail:Promise.resolve()}; windows.set(vscode.window,current); }
+  if (!current) { current = {runners:new Map(),tail:Promise.resolve(),compact:false}; windows.set(vscode.window,current); }
   const live = new Set((vscode.window.tabGroups?.all || []).flatMap(group=>group.tabs));
   for (const [id,tab] of current.runners) if (!live.has(tab)) current.runners.delete(id);
   return current;
@@ -27,6 +27,34 @@ async function moveTab(vscode,tab,column) {
   await focusTab(vscode,tab);
   await vscode.commands.executeCommand('moveActiveEditor',{to:'position',by:'group',value:column});
 }
+function runnerLayout(compact,stacked) {
+  const left=compact?0.5:0.2;
+  return {orientation:0,groups:[
+    stacked?{size:left,groups:[{size:0.5},{size:0.5}]}:{size:left},
+    {size:1-left}
+  ]};
+}
+// The webview reports its own available width. With the wide 80% dashboard,
+// switch at 820px; with a compact 50% dashboard, switch back above 690px.
+// These two thresholds are intentionally different so changing the editor
+// proportions cannot cause an endless resize loop.
+async function updateResponsiveRunnerLayout(vscode,dashboardWidth) {
+  if (!Number.isInteger(dashboardWidth) || dashboardWidth<160 || dashboardWidth>20000) return false;
+  const current=state(vscode);
+  const groups=vscode.window.tabGroups?.all || [];
+  const dashboardGroup=groups.find(group=>group.tabs.some(tab=>tab.label==='Lindsey · Merge progress'));
+  if (!dashboardGroup || !groups.some(group=>group!==dashboardGroup && group.tabs.length)) return false;
+  const compact=current.compact ? dashboardWidth<=690 : dashboardWidth<820;
+  if (compact===current.compact) return false;
+  current.compact=compact;
+  try {
+    await vscode.commands.executeCommand('vscode.setEditorLayout',runnerLayout(compact,groups.length>2));
+  } catch (error) {
+    current.compact=!compact;
+    throw error;
+  }
+  return true;
+}
 async function arrangeRunnerPanes(vscode) {
   const runners = [...state(vscode).runners.values()];
   const dashboard = (vscode.window.tabGroups?.all || []).flatMap(group=>group.tabs)
@@ -41,8 +69,7 @@ async function arrangeRunnerPanes(vscode) {
   // the user's setting after every move; no tab is closed or reloaded.
   await config.update('closeEmptyGroups',false,vscode.ConfigurationTarget.Workspace);
   try {
-    await vscode.commands.executeCommand('vscode.setEditorLayout',{orientation:0,
-      groups:[stacked?{size:0.2,groups:[{size:0.5},{size:0.5}]}:{size:0.2},{size:0.8}]});
+    await vscode.commands.executeCommand('vscode.setEditorLayout',runnerLayout(state(vscode).compact,stacked));
     for (let index=0;index<runners.length;index++) await moveTab(vscode,runners[index],index%2+1);
     for (const tab of others) await moveTab(vscode,tab,dashboardColumn);
     await moveTab(vscode,dashboard,dashboardColumn);
@@ -69,4 +96,4 @@ function openRepairRunner(vscode,url,{repository,number}) {
   current.tail=next.catch(()=>{});
   return next;
 }
-module.exports={registerMergeRunner,arrangeRunnerPanes,openRepairRunner};
+module.exports={registerMergeRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,openRepairRunner};

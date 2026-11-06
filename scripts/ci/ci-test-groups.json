@@ -76,6 +76,7 @@
         "branches/delete-empty-branch.js",
         "branches/local-pull-request-branch.js",
         "branches/main-sync.js",
+        "branches/sync-main.js",
         "branches/merged-branch.js",
         "branches/merged-branch.py",
         "branches/new-workspace.js",

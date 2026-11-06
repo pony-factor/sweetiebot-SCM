@@ -1,7 +1,7 @@
 'use strict';
 
 // Render GitHub Markdown into safe DOM nodes, never innerHTML.
-function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}) {
+function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink, inlineOnly = false } = {}) {
   const doc = root.ownerDocument;
   const TICK = String.fromCharCode(96);
   const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
@@ -282,6 +282,7 @@ function renderMergeMarkdown(root, markdown, { baseUrl, openLink, mapLink } = {}
       inline(node(parent, 'p'), paragraph.join('\n'));
     }
   }
-  blocks(root, lines);
+  if (inlineOnly) inline(root, lines.join('\n'), 0, false);
+  else blocks(root, lines);
 }
 if (typeof module === 'object' && module.exports) module.exports = { renderMergeMarkdown };
