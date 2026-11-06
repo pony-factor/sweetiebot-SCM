@@ -309,6 +309,28 @@ def run():
         assert bar.get_attribute('aria-valuenow') == '35', 'Weekly progress is independent of five-hour allowance'
         meter.evaluate('(el) => el.setAttribute("weekly-percent", "unavailable")')
         assert not bar.is_visible(), 'Unknown weekly usage must never appear full'
+        # Current Codex puts the usage rail beside the input surface, while
+        # queue styling clips the collapsed rail. Both indicators must survive.
+        surface.evaluate('''surface => {
+            const scope = document.createElement('section');
+            surface.before(scope); scope.append(surface);
+            const rail = document.createElement('div');
+            rail.setAttribute('data-composer-rail', '');
+            rail.setAttribute('data-composer-rail-placement', 'above');
+            rail.style.height = '2px';
+            scope.prepend(rail);
+            rail.append(document.getElementById('meter-control'));
+            const style = document.createElement('style');
+            style.textContent = ':root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"] {overflow:clip!important}';
+            document.head.append(style);
+        }''')
+        meter.evaluate('(el) => el.setAttribute("weekly-percent", "35")')
+        page.wait_for_function('getComputedStyle(document.querySelector("[data-composer-rail]")).overflow === "visible"')
+        assert meter.locator('scm-toolkit-usage-pie').is_visible()
+        assert bar.get_attribute('aria-valuenow') == '35'
+        assert bar.evaluate('el => el.parentElement.id') == 'meter-surface'
+        bounds, outer = bar.bounding_box(), surface.bounding_box()
+        assert abs(bounds['y'] + bounds['height'] - outer['y'] - outer['height']) < 1
         meter.evaluate('(el) => el.removeAttribute("percent")')
         meter.evaluate('el => el.remove()')
         assert page.locator('.scm-toolkit-usage-bar').count() == 0

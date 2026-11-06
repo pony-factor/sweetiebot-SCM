@@ -20,6 +20,8 @@
         z-index: 2; pointer-events: auto !important; }
       .scm-toolkit-location-overflow { overflow: visible !important;
         position: relative !important; z-index: 11 !important; pointer-events: auto !important; }
+      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"].scm-toolkit-location-overflow:has(button[data-composer-navigation-target="run-location"]) {
+        overflow: visible !important; }
       .scm-toolkit-empty-utility { min-height: 0 !important; height: 0 !important;
         padding-block: 0 !important; margin-block: 0 !important; border: 0 !important; overflow: visible !important; }
     `;
