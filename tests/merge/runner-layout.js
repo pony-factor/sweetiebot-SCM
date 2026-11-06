@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {openRepairRunner}=require('../../extension/merge/runner-layout');
+const {openRepairRunner,updateResponsiveRunnerLayout}=require('../../extension/merge/runner-layout');
 (async()=>{
   const batch={label:'Squash merge PRs'},dashboard={label:'Lindsey · Merge progress'},draft={label:'Original PR',draft:'unsent text'};
   const groups=[{viewColumn:1,tabs:[batch]},{viewColumn:2,tabs:[dashboard,draft]}];
@@ -35,6 +35,15 @@ const {openRepairRunner}=require('../../extension/merge/runner-layout');
   assert(groups[1].tabs.some(tab=>{const opened=new URL(tab.url);assert(opened.searchParams.get('sweetiebot_launch'));opened.searchParams.delete('sweetiebot_launch');return opened.href===url;}),'Second runner is stacked below the original batch');
   assert(groups[2].tabs.includes(dashboard)&&groups[2].tabs.includes(draft));
   assert.equal(draft.draft,'unsent text');assert.equal(setting,true,'Original editor setting is restored');
+  const beforeResize=layouts.length;
+  assert.equal(await updateResponsiveRunnerLayout(vscode,600),true,'Narrow dashboard gets equal-width editor panes');
+  assert.deepEqual(layouts.at(-1).groups.map(group=>group.size),[0.5,0.5]);
+  assert.equal(await updateResponsiveRunnerLayout(vscode,500),false,'Compact resize does not remount the editors');
+  assert.equal(layouts.length,beforeResize+1);
+  assert.equal(await updateResponsiveRunnerLayout(vscode,720),true,'Wide window restores the 20/80 split');
+  assert.deepEqual(layouts.at(-1).groups.map(group=>group.size),[0.2,0.8]);
+  assert.equal(await updateResponsiveRunnerLayout(vscode,850),false,'The changed ratio must not oscillate');
+  assert.equal(draft.draft,'unsent text','Resizing preserves the existing draft');
   await Promise.all([openRepairRunner(vscode,url+'2',{repository:'o/r',number:492}),openRepairRunner(vscode,url+'3',{repository:'o/r',number:496})]);
   assert.equal(groups[0].tabs.length,2,'Third runner becomes an upper-left tab');
   assert.equal(groups[1].tabs.length,2,'Fourth runner becomes a lower-left tab');

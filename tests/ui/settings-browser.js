@@ -140,6 +140,11 @@ async function run() {
   assert.equal(workspaceState.get('scmToolkit.settingsSessionUrl'), url);
   assert.equal(state.has('scmToolkit.settingsSessionUrl'), false, 'New sessions must not overwrite another workspace URL');
   assert.equal(state.get('scmToolkit.settingsPageOpened'), true);
+  await vm.runInContext('openSettings(context, true)', sandbox);
+  assert.equal(calls.at(-1).options.url, url + '&welcome=1',
+    'Reopening the tour keeps the authenticated settings URL');
+  assert.equal(state.get('scmToolkit.welcomeTourShown'), true);
+  calls.pop(); // Keep subsequent ordinary Settings call counts independent of the tour.
   await open();
   assert.equal(calls.length, 2, 'Repeated click must refocus the native browser');
   assert.equal(children.length, 1);

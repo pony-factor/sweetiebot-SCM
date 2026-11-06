@@ -269,6 +269,7 @@ async function run() {
   load('context-host.js', host);
   let liveResume = false, configListener, checkoutFoldersChanged, checkoutNeedsNewWindow = false;
   const hostVscode = {
+    // The snapshot URL must not require Sweetiebot discovery in the recipient's VS Code.
     workspace: {
       getConfiguration: () => ({get(key, fallback) { return key === 'codexContinueAtReset' ? liveResume : fallback; }}),
       onDidChangeConfiguration(callback) { configListener = callback; return {dispose() {}}; },
@@ -344,6 +345,9 @@ async function run() {
   assert.equal(snapshot.source.uuid, conversationId);
   assert.match(snapshot.source.url, /^https:\/\/vscode\.dev\/redirect\?url=/);
   assert(snapshot.source.url.includes(conversationId));
+  assert.equal(new URL(snapshot.source.url).searchParams.get('url'),
+    `vscode://openai.chatgpt/local/${conversationId}`,
+    'Codex source links must target the official Codex URI handler');
 
   provider.handleMessage(webview, { type: 'scm-toolkit-context-response' });
   assert.equal(messages.length, 2, 'no submit or interrupt messages are sent');

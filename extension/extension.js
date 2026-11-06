@@ -53,6 +53,7 @@ const CONFIG_ROOT = 'sweetiebot.workspaceSearch';
 const SETTINGS_BROWSER_COMMAND = 'workbench.action.browser.open';
 const SETTINGS_SESSION_URL_KEY = 'scmToolkit.settingsSessionUrl';
 const SETTINGS_PAGE_OPENED_KEY = 'scmToolkit.settingsPageOpened';
+const WELCOME_SHOWN_KEY = 'scmToolkit.welcomeTourShown';
 const INDEX_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 let configuratorProcess;
 let configuratorURL;
@@ -83,10 +84,13 @@ function persistedSettingsSessionArgs(context) {
   }
 }
 
-async function openSettingsBrowser(url, session = configuratorProcess) {
+async function openSettingsBrowser(url, session = configuratorProcess, welcome = false) {
   try {
+    const target = new URL(url);
+    if (welcome) target.searchParams.set('welcome', '1');
+    const browserUrl = welcome ? target.toString() : url;
     await vscode.commands.executeCommand(SETTINGS_BROWSER_COMMAND, {
-      url, openToSide: false, reuseUrlFilter: url
+      url: browserUrl, openToSide: false, reuseUrlFilter: browserUrl
     });
     return true;
   } catch {
@@ -112,11 +116,12 @@ function syncWindowSettingsToConfigurator() {
   });
 }
 
-async function ensureSettingsServer(context, openBrowserWhenReady = false) {
+async function ensureSettingsServer(context, openBrowserWhenReady = false, welcome = false) {
   if (configuratorProcess && configuratorProcess.exitCode === null) {
     if (openBrowserWhenReady && configuratorURL) {
-      if (await openSettingsBrowser(configuratorURL)) {
+      if (await openSettingsBrowser(configuratorURL, configuratorProcess, welcome)) {
         await context.globalState.update(SETTINGS_PAGE_OPENED_KEY, true);
+        if (welcome) await context.globalState.update(WELCOME_SHOWN_KEY, true);
       }
     }
     return;
@@ -274,8 +279,11 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
         configuratorURL = url;
         void (context.workspaceState || context.globalState).update(SETTINGS_SESSION_URL_KEY, url);
         if (openBrowserWhenReady) {
-          void openSettingsBrowser(url, child).then(opened => {
-            if (opened) void context.globalState.update(SETTINGS_PAGE_OPENED_KEY, true);
+          void openSettingsBrowser(url, child, welcome).then(opened => {
+            if (opened) {
+              void context.globalState.update(SETTINGS_PAGE_OPENED_KEY, true);
+              if (welcome) void context.globalState.update(WELCOME_SHOWN_KEY, true);
+            }
           });
         }
       } catch { /* Ignore non-protocol output without displaying the private URL. */ }
@@ -303,12 +311,12 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false) {
   });
 }
 
-async function openSettings(context) {
+async function openSettings(context, welcome = false) {
   if (!(await vscode.commands.getCommands(true)).includes(SETTINGS_BROWSER_COMMAND)) {
     vscode.window.showErrorMessage('Sweetiebot: Update VS Code to a version with the Integrated Browser to open settings.');
     return;
   }
-  return ensureSettingsServer(context, true);
+  return ensureSettingsServer(context, true, welcome);
 }
 
 async function linkedGithubRepositories(query = '') {
@@ -497,7 +505,18 @@ async function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openSettings', () => {
     return openSettings(context);
   }));
-  if (context.globalState.get(SETTINGS_PAGE_OPENED_KEY, false)) {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.openWelcome', () => {
+    return openSettings(context, true);
+  }));
+  const hasOpenedSettings = context.globalState.get(SETTINGS_PAGE_OPENED_KEY, false);
+  if (!hasOpenedSettings && !context.globalState.get(WELCOME_SHOWN_KEY, false)) {
+    // First activation after installation: open the guided tour once, not on
+    // every reload. Existing users who have opened Settings are unaffected.
+    setImmediate(() => {
+      void openSettings(context, true).catch(error =>
+        vscode.window.showErrorMessage('Sweetiebot welcome tour: ' + error.message));
+    });
+  } else if (hasOpenedSettings) {
     void ensureSettingsServer(context, false);
   }
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.chatgpt.searchRepositories', query => {

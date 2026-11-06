@@ -154,6 +154,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     # runtime_files includes extension/README.md with its third-party credits.
     files[Path("prune-merged-branches.py")] = here / "prune-merged-branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
+    files[Path("welcome-tour.py")] = here / "welcome-tour.py"
     files[Path("importaliases.py")] = here / "importaliases.py"
     files[Path("github-apps.py")] = here / "github-apps.py"
     files[Path("github-apps-ui.py")] = here / "github-apps-ui.py"

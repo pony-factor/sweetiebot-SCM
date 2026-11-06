@@ -81,6 +81,10 @@ function registerCodexWorkspaceHandoff(vscode, context) {
       if (plan.draft !== null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
       if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
       if (plan.draftOnly) {
+        if (plan.composerFocus) {
+          await vscode.commands.executeCommand('chatgpt.openSidebar');
+          await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus', { state: plan.composerFocus });
+        }
         await context.globalState.update(key, undefined);
         return;
       }

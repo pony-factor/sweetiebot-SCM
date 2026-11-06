@@ -293,7 +293,7 @@ function postedReviewActivity(notes) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, onViewportChange = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
   const readFetch = fetchImpl;
@@ -707,6 +707,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
       return onFocusWorker(message.number);
+    }
+    if (message?.type === 'dashboard-viewport') {
+      if (Number.isInteger(message.width) && message.width >= 160 && message.width <= 20000)
+        return onViewportChange(message.width);
+      return;
     }
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh({ force: true });

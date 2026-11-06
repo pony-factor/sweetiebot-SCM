@@ -12,7 +12,7 @@ cd sweetiebot-SCM
 python3 scripts/install.py --check
 ```
 
-Double-click `scripts/install.command` to build/open a locally signed **Sweetiebot Installer.app**. Alternatively use `python3 scripts/install.py`, `--app "/path/to/Visual Studio Code.app"` for a custom app path, or `--configure` for settings. The app build requires a local signing identity in Keychain; see the [root README](../README.md) for setup. Restart/reload VS Code after initial installation.
+Double-click `scripts/install.command` to build/open a locally signed **Sweetiebot Installer.app**. Alternatively use `python3 scripts/install.py`, `--app "/path/to/Visual Studio Code.app"` for a custom app path, or `--configure` for settings. The app build requires a local signing identity in Keychain; see the [root README](../README.md) for setup. Restart/reload VS Code after initial installation. On first activation, Sweetiebot opens a **Welcome tour** in the Integrated Browser. It walks through optional interface buttons, the existing draggable SCM Message bar and Codex composer editors, and theme-aware Codex color overrides. Choices autosave through Magic Settings; use **Rebuild app** to apply patched workbench and Codex appearance changes. Existing installations keep their current settings. Reopen the tour with **Sweetiebot: Show Sweetiebot Welcome Tour** in the Command Palette or **Welcome tour** in Magic Settings.
 
 ## Updates
 
