@@ -46,6 +46,11 @@ async function test() {
     assert.equal(await git('show', '-s', '--format=%an <%ae>', sha), original.name + ' <' + original.email + '>');
     assert.equal(await git('show', '-s', '--format=%cn <%ce>', sha), signer.name + ' <' + signer.email + '>');
     await git('verify-commit', sha);
+    // A GitHub-verified SSH signature need not have a local allowed-signers
+    // trust file. Only local verification is skipped in that case.
+    await git('config', '--local', 'gpg.ssh.allowedSignersFile', '');
+    await verifyLocalCommitIdentity(git, sha, identity);
+    await git('config', '--local', '--unset', 'gpg.ssh.allowedSignersFile');
 
     // The bulk-resolution path must use the same committer without rewriting
     // the Git author, including when it appends a routine integration marker.
