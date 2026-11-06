@@ -97,51 +97,62 @@ const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
   +'- **Local:** ['+localLink+']('+localLink+')\n'
   +'- **Desktop:** ['+desktopLink+']('+desktopLink+')\n\n</details>';
 context.renderMarkdown(output,sourceBlock);
-assert.equal(output.children.at(-1).tag,'details','Verified source footer is a collapsed native disclosure');
+assert.equal(output.children.at(-1).tag,'details','Legacy source footer still renders as a collapsed disclosure');
 assert.equal(output.children.at(-1).children[0].tag,'summary');
-assert.equal(output.children.at(-1).children[0].textContent,'Source details');
-const sourceRows=output.children.at(-1).children[1].children;
-assert.deepEqual(sourceRows.map(row=>row.children[1].href),[sourceShared,localLink,desktopLink]);
-assert.deepEqual(sourceRows.map(row=>row.children[1].textContent),['Online','Local','Desktop']);
-assert(!output.textContent.includes('<details>'), 'The preview must not display raw source HTML');
-const generatedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
-  kind: 'codex', uuid: sourceId,
-  url: require('../../extension/github/pull-request').codexConversationUrl(sourceId)
+assert.equal(output.children.at(-1).children[0].textContent,'Source links');
+const sourceLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(sourceLinks.map(node=>node.href),[sourceShared,localLink,desktopLink]);
+assert.deepEqual(sourceLinks.map(node=>node.textContent),['Online','Local','Desktop']);
+assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
+assert(!output.textContent.includes('<details>'),'The preview must not display raw source HTML');
+const generatedSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
+  kind:'codex',uuid:sourceId,
+  url:require('../../extension/github/pull-request').codexConversationUrl(sourceId)
 });
-context.renderMarkdown(output, 'Body.\n\n' + generatedSource);
-const generatedRows = output.children.at(-1).children[1].children;
-assert.equal(generatedRows[1].children[1].tag, 'a');
-assert(generatedRows[1].children[1].href.startsWith('https://vscode.dev/redirect?'));
-assert.equal(generatedRows[2].children[1].tag, 'a');
-assert.equal(generatedRows[2].children[1].href, desktopLink);
-assert.equal(generatedRows[2].children[1].textContent, 'Desktop');
+context.renderMarkdown(output,'Body.\n\n'+generatedSource);
+const generatedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(generatedLinks.length,2,'Unavailable Online links are omitted');
+assert(generatedLinks[0].href.startsWith('https://vscode.dev/redirect?'));
+assert.equal(generatedLinks[0].textContent,'Local');
+assert.equal(generatedLinks[1].href,desktopLink);
+assert.equal(generatedLinks[1].textContent,'Desktop');
+assert(!generatedLinks[1].textContent.includes('copy into your browser'));
 const legacyLocalLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,legacyLocalLink));
-assert.equal(output.children.at(-1).children[1].children[1].children[1].href,legacyLocalLink,
-  'Historical source links remain renderable in existing PR descriptions');
+const legacyLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(legacyLinks[1].href,legacyLocalLink,
+  'Historical Codex links remain renderable inside the compact disclosure');
 const previousSweetiebotLink='vscode://pony-factor.sweetiebot-scm/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,previousSweetiebotLink));
-assert.equal(output.children.at(-1).children[1].children[1].children[1].href,previousSweetiebotLink,
-  'The prior Sweetiebot URI remains renderable in existing PR descriptions');
+const previousLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.equal(previousLinks[1].href,previousSweetiebotLink,
+  'Earlier Sweetiebot handlers remain renderable inside the compact disclosure');
 const untrustedLocalLink='vscode://other.extension/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,untrustedLocalLink));
-assert.equal(output.children.at(-1).children[1].children[1].children[1].tag,'span',
-  'Unknown extension handlers cannot be activated from source metadata');
-assert(!generatedRows[2].textContent.includes('copy into your browser'));
+const validLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(validLinks.map(node=>node.href),[sourceShared,desktopLink],
+  'Unrecognized URI handlers must never be linked in the preview');
 
-const sharedSource = require('../../extension/github/pull-request').sourceDetailsMarkdown({
-  kind: 'codex', uuid: sourceId,
-  url: require('../../extension/github/pull-request').codexConversationUrl(sourceId), sharedUrl: sourceShared
+const sharedSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
+  kind:'codex',uuid:sourceId,
+  url:require('../../extension/github/pull-request').codexConversationUrl(sourceId),
+  sharedUrl:sourceShared
 });
-context.renderMarkdown(output, 'Body.\n\n' + sharedSource);
-const sharedRows = output.children.at(-1).children[1].children;
-assert.deepEqual(sharedRows.map(row=>row.children[0].textContent), ['Online: ', 'Local: ', 'Desktop: ']);
-assert.deepEqual(sharedRows.map(row=>row.children[1].textContent), ['Online','Local','Desktop']);
-assert(!sharedSource.includes('**Privacy:**'), 'Source details contains only the three conversation links');
+context.renderMarkdown(output,'Body.\n\n'+sharedSource);
+const sharedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(sharedLinks.map(node=>node.href),[
+  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId),desktopLink
+]);
+assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local','Desktop']);
+assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
+assert(!sharedSource.includes('**Privacy:**'),'Source links contains only the three conversation links');
 
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');
-assert.equal(output.children.at(-1).children[1].children[0].children[1].tag,'span',
-  'Untrusted source links are not activated');
+assert(!output.children.some(node=>node.tag==='details'),
+  'Untrusted source links must not become clickable or produce empty controls');
+context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source links</summary>\n\n\n</details>');
+assert(!output.children.some(node=>node.tag==='details'),
+  'No input links must suppress the entire Source links feature');
 context.renderMarkdown(output,'Source: <https://example.com/pony>.');
 assert.equal(output.children[0].children.find(node=>node.tag==='a').href,'https://example.com/pony','Explicit angle-bracket HTTPS links still work');
 context.renderMarkdown(output,'Maud in *Friendship Is Magic*, _Rock Solid Friendship_, **adult mare**, and `*literal*`.');
@@ -518,5 +529,71 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   context.fetch=async(_url,options)=>{assert.equal(options.signal.aborted,false);return {ok:true};};
   await originalClose();
   assert.equal(nativeCloses,2,'Successful host closure does not also close another tab');
+  // Reproduce the cached Happy Trails profile's dead image, then load the
+  // production capture returned by the independent recovery source.
+  let recoveryRequests=0;
+  context.fetch=async(url,options)=>{
+    recoveryRequests++;
+    assert.equal(new URL(url).searchParams.get('q'),'safe, screencap, happy trails');
+    assert.equal(options.credentials,'omit');
+    return {ok:true,json:async()=>({images:[
+      {id:851096,tags:['safe','screencap','happy trails'],representations:{large:'https://derpicdn.net/img/2015/3/16/851096/full.png'}},
+      {id:2,tags:['safe','screencap','wrong pony'],representations:{large:'https://derpicdn.net/wrong.png'}},
+      {id:3,tags:['safe','screencap','happy trails'],representations:{large:'https://untrusted.example/image.png'}}
+    ]})};
+  };
+  const drain=async()=>{for(let step=0;step<10;step++)await Promise.resolve()};
+  context.imageIndex('![Happy Trails](https://img3.wikia.nocookie.net/__cb20121231055640/mlp/images/a/ad/UES1_S02E12.png)',{slug:'happy-trails'});
+  assert.equal(recoveryRequests,0,'Working originals are attempted before fallback');
+  pendingImages.at(-1).onerror();
+  await drain();
+  assert.equal(recoveryRequests,1,'All failed originals trigger one recovery search');
+  assert.equal(images.children.length,0,'Recovery candidates must load before display');
+  const recovered=pendingImages.at(-1);
+  assert.equal(recovered.src,'https://derpicdn.net/img/2015/3/16/851096/full.png');
+  Object.assign(recovered,{naturalWidth:800,naturalHeight:600});
+  recovered.onload();
+  assert.equal(images.children.length,1,'A dead cached URL recovers actual artwork');
+  images.children[0].children[0].fire('click');
+  assert.equal(getElementById('lightbox-source').href,'https://derpibooru.org/images/851096');
+  recovered.onerror();
+  await drain();
+  assert.equal(recoveryRequests,1,'Failed recovered artwork cannot loop requests');
+  let finishRecovery;
+  context.fetch=async()=>new Promise(resolve=>{finishRecovery=resolve});
+  context.imageIndex('No embedded image.',{slug:'happy-trails'});
+  const before=pendingImages.length;
+  context.imageIndex('Different profile.');
+  finishRecovery({ok:true,json:async()=>({images:[{id:851096,tags:['safe','screencap','happy trails'],representations:{large:'https://derpicdn.net/old.png'}}]})});
+  await drain();
+  assert.equal(pendingImages.length,before,'Stale recovery cannot populate a newer profile');
+  assert.equal((await context.recoverPonyImages({slug:'unsafe, query'})).length,0,'Identity cannot inject search operators');
+  // A decoded Fandom placeholder is not a successful image, even though
+  // browsers may fire load for its 404 image response.
+  context.fetch=async url=>url.includes('wikia.nocookie.net')
+    ? {ok:false,headers:{get:()=>null},body:{cancel:()=>Promise.resolve()}}
+    : {ok:true,json:async()=>({images:[{id:851096,tags:['safe','screencap','happy trails'],representations:{large:'https://derpicdn.net/recovered.png'}}]})};
+  context.imageIndex('![Happy Trails](https://static.wikia.nocookie.net/mlp/missing.png)',{slug:'happy-trails'});
+  const placeholder=pendingImages.at(-1);
+  Object.assign(placeholder,{naturalWidth:300,naturalHeight:171});
+  await placeholder.onload();
+  await drain();
+  assert.equal(images.children.length,0,'Decoded 404 placeholders cannot become artwork cards');
+  assert.equal(pendingImages.at(-1).src,'https://derpicdn.net/recovered.png');
+  context.imageIndex('![Happy Trails in a *Friendship Is Magic* show still](https://example.com/still.png)');
+  const captionImage=pendingImages.at(-1);
+  Object.assign(captionImage,{naturalWidth:800,naturalHeight:600});
+  await captionImage.onload();
+  const formatted=images.children[0].children[1];
+  assert.equal(formatted.children.find(node=>node.tag==='em').textContent,'Friendship Is Magic');
+  assert.equal(captionImage.alt,'Happy Trails in a Friendship Is Magic show still');
+  images.children[0].children[0].fire('click');
+  assert.equal(getElementById('lightbox-caption').children.find(node=>node.tag==='em').textContent,'Friendship Is Magic');
+  assert(getElementById('lightbox-caption').textContent.endsWith(' · 1 of 1'));
+  const inertCaption=new Element('span');
+  context.renderImageCaption(inertCaption,'**Credit** <script>alert(1)</script> [link](javascript:alert(1))');
+  assert.equal(inertCaption.children[0].tag,'strong');
+  assert(!inertCaption.children.some(node=>node.tag==='a'||node.tag==='script'),'Caption formatting cannot activate links or HTML');
+  console.log('Automatic failed-image recovery and stale result checks passed.');
   console.log('Ludicrous mode and offline close fallback checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

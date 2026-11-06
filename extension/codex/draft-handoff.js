@@ -40,7 +40,7 @@ async function createDraftHandoff(publish) {
     const origin = `http://127.0.0.1:${server.address().port}`;
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
-    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src https:; base-uri 'none'; frame-ancestors 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' https://derpibooru.org https://*.wikia.nocookie.net; img-src https:; base-uri 'none'; frame-ancestors 'none'");
     const json = (code, value) => { response.writeHead(code, {'Content-Type':'application/json'}); response.end(JSON.stringify(value)); };
     const fail = (code, error) => json(code, {error});
     const match = /^\/kefania-draft\/([0-9a-f-]{36})(?:\/(draft|pony|state|close|merge|merge-history|merge-local-signed|merge-help))?$/.exec(request.url);
