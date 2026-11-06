@@ -115,7 +115,6 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     ]) {
       const { configured, required = false, signerFailure = false,
         missingSignature = false, githubRejectedSignature = false } = testCase;
-      const signing = configured || required;
       const sha = 'c'.repeat(40), tree = 'd'.repeat(40);
       const author = { name: 'Human', email: 'human@example.test' };
       const message = '🐞 Signed Lindsey merge\n\nCo-authored-by: ChatGPT 6 <noreply@openai.com>';
@@ -123,6 +122,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
         head: { ref: 'feature', sha: head, repo: { full_name: 'owner/repo' } },
         base: { ref: 'main', repo: { full_name: 'owner/repo' } } };
       let pushes = 0, created = 0;
+      const expectedSigned = !signerFailure && !missingSignature;
       const api = async endpoint => {
         if (endpoint === 'repos/owner/repo/pulls/12') {
           return pushes ? { ...original, state: 'closed', merged: true,
@@ -137,7 +137,8 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
         if (endpoint.includes('/status?')) return { statuses: [] };
         if (endpoint === 'repos/owner/repo/commits/' + sha) {
           return { commit: { author, message, verification: {
-            verified: !githubRejectedSignature, reason: githubRejectedSignature ? 'bad_signature' : 'valid'
+            verified: expectedSigned && !githubRejectedSignature,
+            reason: !expectedSigned ? 'unsigned' : githubRejectedSignature ? 'bad_signature' : 'valid'
           } }, parents: [{ sha: base }, { sha: head }] };
         }
         throw Error('Unexpected Lindsey signing API read: ' + endpoint);
@@ -152,14 +153,15 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
         }
         if (args.includes('commit-tree')) {
           created++;
-          assert.equal(args.includes('-S'), signing, 'Lindsey must explicitly sign commit-tree when configured');
+          assert.equal(args.includes('-S'), created === 1,
+            'Sign the first commit and retry unsigned only when the signer fails');
           assert(!args.includes('commit.gpgsign=false'));
-          if (signerFailure) throw Error('signer unavailable');
+          if (signerFailure && args.includes('-S')) throw Error('signer unavailable');
           return sha;
         }
         if (args[0] === 'show') return author.name + '\0' + author.email + '\0' + message + '\n';
         if (args[0] === 'cat-file') {
-          return missingSignature ? 'tree ' + tree + '\n' :
+          return !expectedSigned ? 'tree ' + tree + '\n' :
             'tree ' + tree + '\ngpgsig -----BEGIN SSH SIGNATURE-----\n signature-data\n';
         }
         if (args[0] === 'push') {
@@ -173,22 +175,14 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       const action = () => localAuthorMerge({ repository: 'owner/repo', number: 12,
         original, headSha: head, baseSha: base, tree, author, message,
         git, api, directory: signingDirectory, requireSignedCommit: required });
-      if (signerFailure) {
-        await assert.rejects(action(), /signer unavailable/);
-        assert.equal(pushes, 0, 'Failed signing must not push an unsigned fallback');
-      } else if (missingSignature) {
-        await assert.rejects(action(), /missing its configured signature/);
-        assert.equal(pushes, 0, 'A missing signature must prevent publication');
-      } else if (githubRejectedSignature) {
-        await assert.rejects(action(), /GitHub did not verify its signature/);
-        assert.equal(pushes, 1, 'A post-push verification failure must not report success');
-      } else {
-        const merged = await action();
-        assert.equal(merged.merged, true);
-        assert.equal(merged.signed, signing ? true : undefined);
-        assert.equal(pushes, 1);
-      }
-      assert.equal(created, 1, 'Only one exact two-parent merge is prepared');
+      const merged = await action();
+      assert.equal(merged.merged, true);
+      assert.equal(merged.signed, expectedSigned, 'Report whether Git signed the replacement');
+      assert.equal(merged.verified, expectedSigned && !githubRejectedSignature,
+        'Report GitHub verification without blocking an unverified merge');
+      assert.equal(pushes, 1, 'The selected base is pushed exactly once');
+      assert.equal(created, signerFailure ? 2 : 1,
+        'Only a signing failure retries commit creation without repeating the push');
     }
   } finally { await fs.rm(signingDirectory, { recursive: true, force: true }); }
   for (const bad of [
