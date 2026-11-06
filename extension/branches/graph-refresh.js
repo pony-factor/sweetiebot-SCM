@@ -1,48 +1,62 @@
 'use strict';
 
 // A Source Control graph opened before Git has scanned the workspace can stay
-// empty until another Git command forces a status read. Refresh each repository
-// once on startup and when Git discovers additional workspace repositories.
+// empty. Linked worktrees can also be discovered before their history provider
+// has finished initializing, so a successful first status is not always enough.
 async function registerGraphStartupRefresh(vscode, context, { retryDelayMs = 1500,
   setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
-  const completed = new WeakSet();
-  const active = new WeakSet();
-  const attempts = new WeakMap();
-  const timers = new Set();
+  // Git's API creates fresh wrappers for the same underlying repository. Key
+  // scans by the worktree root, not wrapper identity, to keep retries bounded.
+  const scans = new Map();
+  const timers = new Map();
   let disposed = false;
 
+  const repositoryKey = repository => repository?.rootUri?.fsPath || repository?.rootUri?.toString?.();
+  const schedule = (repository, key) => {
+    if (disposed || timers.has(key)) return;
+    const timer = setTimer(() => {
+      timers.delete(key);
+      void refresh(repository);
+    }, retryDelayMs);
+    timer?.unref?.();
+    timers.set(key, timer);
+  };
+
   const refresh = async repository => {
-    if (disposed || !repository?.rootUri || repository.rootUri.scheme !== 'file' ||
-        completed.has(repository) || active.has(repository)) return;
-    const attempt = (attempts.get(repository) || 0) + 1;
-    if (attempt > 3) return;
-    active.add(repository);
-    attempts.set(repository, attempt);
+    const key = repositoryKey(repository);
+    if (disposed || !key || repository.rootUri.scheme !== 'file') return;
+    const state = scans.get(key) || { attempts: 0, active: false, complete: false };
+    if (state.active || state.complete || state.attempts >= 3) return;
+    scans.set(key, state);
+    state.active = true;
+    const attempt = ++state.attempts;
     try {
-      // Using this repository's API avoids git.refresh's repository picker and
-      // preserves the selected branch, working tree and other Git preferences.
+      // Use this repository's API to avoid git.refresh's repository picker and
+      // preserve the selected branch, worktree and other Git preferences.
       await repository.status();
-      if (!disposed) completed.add(repository);
+      if (disposed || scans.get(key) !== state) return;
+      // An early successful status may precede HEAD discovery. The Git API's
+      // worktree history provider may also attach only after that first scan.
+      const missingHead = repository.state && !repository.state.HEAD?.commit;
+      if (attempt < 3 && (missingHead || (repository.kind === 'worktree' && attempt === 1))) {
+        schedule(repository, key);
+      } else {
+        state.complete = true;
+      }
     } catch {
       // The initial Git scan may race repository discovery. Retry briefly,
       // without making ordinary Git operations or the SCM view depend on us.
-      if (!disposed && attempt < 3) {
-        const timer = setTimer(() => {
-          timers.delete(timer);
-          void refresh(repository);
-        }, retryDelayMs);
-        timer?.unref?.();
-        timers.add(timer);
-      }
+      if (!disposed && scans.get(key) === state && attempt < 3) schedule(repository, key);
     } finally {
-      active.delete(repository);
+      state.active = false;
     }
   };
 
   context.subscriptions.push({ dispose() {
     disposed = true;
-    for (const timer of timers) clearTimer(timer);
+    for (const timer of timers.values()) clearTimer(timer);
     timers.clear();
+    scans.clear();
   } });
 
   const extension = vscode.extensions.getExtension('vscode.git');
@@ -53,6 +67,15 @@ async function registerGraphStartupRefresh(vscode, context, { retryDelayMs = 150
   if (typeof api.onDidOpenRepository === 'function') {
     context.subscriptions.push(api.onDidOpenRepository(repository => {
       void refresh(repository);
+    }));
+  }
+  if (typeof api.onDidCloseRepository === 'function') {
+    context.subscriptions.push(api.onDidCloseRepository(repository => {
+      const key = repositoryKey(repository);
+      if (!key) return;
+      scans.delete(key);
+      if (timers.has(key)) clearTimer(timers.get(key));
+      timers.delete(key);
     }));
   }
   if (typeof vscode.workspace?.onDidChangeWorkspaceFolders === 'function') {
