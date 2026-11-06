@@ -40,7 +40,7 @@ function reviewSummary(notes) {
   }).join('\n\n');
 }
 
-async function publishBlockerReport({ repository, pr, reason, paths, explanation, decisions = [], kind, api = githubApi }) {
+async function publishBlockerReport({ repository, pr, reason, paths, explanation, decisions = [], kind, actorLogin, api = githubApi }) {
   paths = [...new Set(paths || [])].filter(safePatchPath);
   const report = blockerReport(pr, reason, paths, explanation, decisions);
   // A filename or executor failure cannot establish the competing code intentions.
@@ -56,7 +56,7 @@ async function publishBlockerReport({ repository, pr, reason, paths, explanation
   const prefix = 'repos/' + repository;
   const postedNotes = [];
   try {
-    const actor = await api('user');
+    const actor = actorLogin ? { login: actorLogin } : await api('user');
     const matches = fresh => fresh.state === 'open' && fresh.head?.sha === pr.headSha &&
       fresh.head?.ref === pr.head && fresh.base?.ref === pr.base && (!pr.title || fresh.title === pr.title);
     if (!matches(await api(prefix + '/pulls/' + pr.number))) throw Error('The selected PR changed; refresh the code analysis.');

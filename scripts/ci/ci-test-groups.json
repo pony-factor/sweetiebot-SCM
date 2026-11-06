@@ -241,6 +241,7 @@
         "merge/order.js",
         "merge/handoff-page.js",
         "merge/progress.js",
+        "merge/publication.js",
         "merge/runner-layout.js",
         "merge/auto-ci-repair.js",
         "merge/batch.js",
