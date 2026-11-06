@@ -20,6 +20,7 @@ h3{margin:16px 0 8px;font-size:13px}
 .merge-header .dashboard-brand{flex-wrap:wrap}
 .merge-workers{display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px}
 .merge-workers[hidden]{display:none}
+.cleared-counter{display:inline-flex;align-items:center;flex:none;padding-left:10px;border-left:1px solid var(--merge-border);color:var(--merge-muted);font-size:11px;font-weight:600;white-space:nowrap}
 .merge-worker{border:0;border-radius:3px;background:transparent;color:var(--merge-muted);font-size:11px;line-height:1.5;padding:3px 4px;text-align:left}
 .merge-worker:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.15));color:var(--vscode-editor-foreground)}
 .pill{border:1px solid var(--vscode-widget-border,#555);border-radius:18px;padding:4px 10px}
@@ -385,12 +386,12 @@ body.celebrating .merge-header .pill{border-color:rgba(255,255,255,.5)}
 </head>
 <body>
 <header class="merge-header">
-<div class="dashboard-brand"><img class="owner-logo" id="repository" alt="GitHub owner" hidden referrerpolicy="no-referrer"><h1>Lindsey · Bulk merge</h1><nav id="merge-workers" class="merge-workers" aria-label="GPT review sessions" hidden></nav></div>
+<div class="dashboard-brand"><h1>Lindsey</h1><nav id="merge-workers" class="merge-workers" aria-label="GPT review sessions" hidden></nav><span id="conflicts-cleared" class="cleared-counter" role="status" aria-label="Conflicts cleared" title="Conflicts cleared">0 cleared</span></div>
 <div class="overview" role="group" aria-label="Bulk merge preferences"><span class="ci-repair-controls"><label class="toolbar-option" title="After the bulk merger exhausts its built-in CI retry, open one repair task per still-failing PR head. Off by default; merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span></span><details class="github-post-menu" id="github-post-menu">
   <summary class="github-post-trigger">Post to GitHub <span id="github-post-count" class="github-post-count">Off</span><svg class="github-post-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg></summary>
   <div class="github-post-options" role="group" aria-label="GitHub posting options">
-    <label class="toolbar-option" title="Applies to upcoming merge handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> AI summaries</label>
-    <label class="toolbar-option" title="Applies to upcoming tasks and handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Status updates</label>
+    <label class="toolbar-option" title="Applies immediately to verified completed merges and upcoming handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> AI summaries</label>
+    <label class="toolbar-option" title="Applies immediately to verified integration results and upcoming handoffs. Independent of post-merge AI summaries."><input type="checkbox" id="post-status-updates"> Status updates</label>
   </div>
 </details><button id="show-celebration" class="secondary" hidden>🎉 Celebration</button><span id="progress" class="pill" role="status" aria-live="polite">0 merged</span><button id="refresh" class="refresh-icon" aria-label="Refresh GitHub status" title="Refresh GitHub status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8.3 8.3 0 0 1 20 12M4 12a8.3 8.3 0 0 0 13.9 5.9"/></svg></button></div>
 </header>
@@ -778,19 +779,13 @@ __RATE_LIMIT_FORMATTER__
     outer.scrollTop = scroll;
   }
   function render() {
-    const ownerLogo = byId('repository');
-    const owner = String(model.repository || '').split('/')[0];
-    ownerLogo.hidden = !owner;
-    ownerLogo.alt = owner + ' logo';
-    ownerLogo.title = model.repository || '';
-    const ownerLogoUrl = 'https://github.com/' + encodeURIComponent(owner) + '.png?size=64';
-    if (ownerLogo.getAttribute('src') !== ownerLogoUrl) ownerLogo.src = ownerLogoUrl;
     const merged = model.prs.filter(p => p.state === 'merged').length;
     const resolved = model.prs.filter(p => p.conflictCleared).length;
     const blockers = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed' && (pr.localReview || pr.state === 'review' || pr.state === 'conflict' || pr.state === 'blocked'));
     const problems = blockers.length;
     byId('progress').textContent = merged + '/' + model.prs.length +
-      ' merged · ' + resolved + ' conflicts cleared · ' + problems + ' need attention';
+      ' merged · ' + problems + ' need attention';
+    byId('conflicts-cleared').textContent = resolved + ' cleared';
     byId('bar-fill').style.width = (model.prs.length ? 100 * merged / model.prs.length : 0) + '%';
     // Only per-PR confirmed merged states unlock the celebration.
     const complete = allPullRequestsMerged(model.prs);

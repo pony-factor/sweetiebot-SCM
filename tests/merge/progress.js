@@ -23,7 +23,7 @@ const {updateMergeSessionCompletion}=require('../../extension/merge/session-comp
   await withMergeProgress(vscode,{numbers:[653],branchOnly:false},async report=>{
     report({number:653,stage:'checks-polled'});
   },{schedule:()=>1,cancel:()=>{}});
-  assert.equal(options.title,'Applying merge batch round');
+  assert.equal(options.title,'Merging');
   assert.equal(messages.at(-1),'#653 · GitHub checks refreshed');
   assert.equal((`${options.title}: ${messages.at(-1)}`.match(/#653/g)||[]).length,1,
     'Merge progress must not duplicate the PR number');

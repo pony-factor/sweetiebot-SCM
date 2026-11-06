@@ -69,5 +69,12 @@ assert.equal(firstDiffAnchor('not a patch'), null);
   moved=true;
   const stopped=await run({decisions, kind:'human_review'}); assert(!stopped.posted); assert.equal(stopped.notes.length,2,'Substantive local explanations survive GitHub publication failure');
   assert.equal(writes.length,7,'Never post against a changed head');
+  moved=false;
+  const appReport = await publishBlockerReport({repository:'o/r',pr,paths,decisions,kind:'human_review',
+    actorLogin:'lindsey[bot]',api:(endpoint, options)=>{
+      assert.notEqual(endpoint,'user','Installation tokens must not use the personal /user endpoint');
+      return api(endpoint,options);
+    }});
+  assert(appReport.posted,'Lindsey can publish grouped decisions with its verified App login');
   console.log('Per-file analysis, real anchors, legacy replacement and snapshot checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

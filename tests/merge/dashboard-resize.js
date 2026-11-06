@@ -111,16 +111,28 @@ assert.match(dashboardController, /engine === 'web' \? 'ChatGPT' : 'Codex branch
 const progressScript = dashboardHtml.slice(dashboardHtml.indexOf('    const merged = model.prs.filter'),
   dashboardHtml.indexOf("    byId('bar-fill')"));
 const deferred = { state: 'waiting', localReview: { text: 'Local execution stopped.' } };
-for (const [state, expected] of [['waiting', '1/3 merged · 0 conflicts cleared · 1 need attention'],
-  ['closed', '1/3 merged · 0 conflicts cleared · 0 need attention'],
-  ['merged', '2/3 merged · 0 conflicts cleared · 0 need attention']]) {
+assert.match(dashboardHtml, /id="merge-workers"[^>]*><\/nav><span id="conflicts-cleared"/,
+  'Show the cleared-conflicts counter after the oldest/newest review lanes');
+for (const [state, expected] of [['waiting', '1/3 merged · 1 need attention'],
+  ['closed', '1/3 merged · 0 need attention'],
+  ['merged', '2/3 merged · 0 need attention']]) {
   const progress = {};
+  const cleared = {};
   vm.runInNewContext(progressScript, {
     model: { prs: [{ ...deferred, state }, { state: 'merged', localReview: deferred.localReview }, { state: 'waiting' }] },
-    byId: () => progress
+    byId: id => id === 'progress' ? progress : cleared
   });
   assert.equal(progress.textContent, expected);
+  assert.equal(cleared.textContent, '0 cleared');
 }
+const progress = {};
+const cleared = {};
+vm.runInNewContext(progressScript, {
+  model: { prs: [{ state: 'merged', conflictCleared: true }, { state: 'waiting', conflictCleared: true }] },
+  byId: id => id === 'progress' ? progress : cleared
+});
+assert.equal(progress.textContent, '1/2 merged · 0 need attention');
+assert.equal(cleared.textContent, '2 cleared', 'Count conflicts cleared even after their PRs have merged');
 console.log('Dashboard attention count includes local blockers and excludes settled PRs.');
 
 const workerScript = dashboardHtml.slice(dashboardHtml.indexOf("    const workerList = byId('merge-workers');"),
