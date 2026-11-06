@@ -14,11 +14,14 @@ function validIdentity(identity) {
     /^[^\s<>\r\n\x00]+@[^\s<>\r\n\x00]+$/.test(identity.email);
 }
 
+async function signingEnabled(git) {
+  return (await git('config', '--type=bool', '--default', 'false',
+    '--get', 'commit.gpgsign')) === 'true';
+}
+
 async function commitIdentity(git, originalAuthor, requireSignedCommit = false) {
   if (!validIdentity(originalAuthor)) throw Error('Invalid original Git author identity.');
-  const signingEnabled = (await git('config', '--type=bool', '--default', 'false',
-    '--get', 'commit.gpgsign')) === 'true';
-  const signed = requireSignedCommit || signingEnabled;
+  const signed = requireSignedCommit || await signingEnabled(git);
   // Preserve existing unsigned-commit behavior. Only a signed commit needs the
   // local signing identity instead of the PR author's email as its committer.
   if (!signed) return { author: originalAuthor, committer: originalAuthor, signed: false };
@@ -69,4 +72,4 @@ async function verifyLocalCommitIdentity(git, sha, identity) {
   }
 }
 
-module.exports = { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity };
+module.exports = { signingEnabled, commitIdentity, attributedCommitTree, verifyLocalCommitIdentity };
