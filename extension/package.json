@@ -584,6 +584,21 @@
           "scope": "resource",
           "description": "Optional shared ChatGPT Project for PR drafting, pony-profile research, batch squash-merges, and interactive ChatGPT reviews unless overridden by chatgptReviewProjectUrl. Automatic commit titles and post-commit spellcheck remain on local Ollama."
         },
+        "sweetiebot.spellcheckDateFormat": {
+          "type": "string",
+          "enum": ["preserve", "month-first", "day-first", "iso", "us-numeric", "day-numeric"],
+          "enumDescriptions": [
+            "Keep each date exactly as written.",
+            "Spell out the month first: May 6, 2026.",
+            "Spell out the month after the day: 6 May 2026.",
+            "Use ISO calendar dates: 2026-05-06.",
+            "Use numeric month/day/year: 05/06/2026.",
+            "Use numeric day/month/year: 06/05/2026."
+          ],
+          "default": "preserve",
+          "scope": "application",
+          "description": "Preferred date formatting for manual ChatGPT Spellcheck Only reviews. Only unambiguous full dates in editable prose are normalized; ambiguous dates, citations, links and quoted content are preserved."
+        },
         "sweetiebot.chatgptReviewProjectUrl": {
           "type": "string",
           "default": "",

@@ -6,7 +6,7 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 | --- | --- |
 | Message bar, Source control | Commit buttons/hotkeys, Codex co-author icon upload/reset, push toggle, branch strip, sync counts/arrows, labels, whitespace |
 | Ollama | Commit-title models, budgets, low-memory options, direct/background workflows |
-| Spellcheck Changes | Draft-title suggestions, filename proposals, post-commit Markdown, manual Spellcheck Only |
+| Spellchecker | Draft-title suggestions, filename proposals, post-commit Markdown, manual Spellcheck Only and its saved date-format preference |
 | Branch names, Workspaces | Name packs, worktree windows, cleanup, stack selection, trust |
 | Search | EFS index scope, mode, model, limits, exclusions and Ask Ollama |
 | Pull requests, Kefania, Lindsey, GitHub | Drafts, publication, dashboard, auto-refresh, checks, rate-limit handling, App identities |
@@ -36,6 +36,7 @@ Magic Settings organizes its existing pages under **Source Control & Commits**, 
 | `sweetiebot.autoPublishPullRequests` | `true` | Publish *completed eligible* Kefania drafts |
 | `sweetiebot.kefaniaAutoShareCodexChat` | `false` | Opt in to making a public snapshot of the active Codex chat when clicking Kefania |
 | `sweetiebot.postCommitSpellcheck` | `true` | Permit a globally enabled post-commit spellcheck in this repo |
+| `sweetiebot.spellcheckDateFormat` | `preserve` | Date style used in manual ChatGPT Spellcheck Only reviews; configurable in Magic Settings → Spellchecker |
 | `sweetiebot.workspaceSearch.mode` | `hybrid` | Blend text and semantic ranking |
 | `sweetiebot.workspaceSearch.embeddingModel` | `qwen3-embedding:0.6b` | Local embedding model name |
 | `sweetiebot.workspaceSearch.autoReindex` | `true` | Reindex approximately every 2 minutes |
