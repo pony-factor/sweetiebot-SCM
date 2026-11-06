@@ -36,7 +36,7 @@ function withMergeProgress(vscode, { numbers, branchOnly }, task,
   { schedule = setInterval, cancel = clearInterval, now = Date.now } = {}) {
   if (!numbers.length) return task(() => {});
   const scope = numbers.map(number => '#' + number).join(', ');
-  const title = 'Lindsey · Applying ' + (branchOnly ? 'PR fix ' : 'merge batch round · ') + scope;
+  const title = branchOnly ? 'Applying PR fix' : 'Merging';
   return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
     title, cancellable: false }, async progress => {
     let message = 'Starting local execution…';
@@ -53,7 +53,7 @@ function withMergeProgress(vscode, { numbers, branchOnly }, task,
         progress.report({message});
       });
     } catch (error) {
-      void vscode.window.showWarningMessage?.('Lindsey could not finish applying ' + scope + '. See the local handoff result for the error.');
+      void vscode.window.showWarningMessage?.('Could not finish applying ' + scope + '. See the local handoff result for the error.');
       throw error;
     } finally { cancel(timer); }
   });

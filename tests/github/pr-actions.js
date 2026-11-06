@@ -481,6 +481,7 @@ async function main() {
     window: { withProgress: (_, fn) => fn(), showErrorMessage: message => errors.push(message) }
   }, { subscriptions: [] });
   assert.deepEqual(registeredIds, [
+    'sweetiebot.squashMergeTreePullRequest',
     'sweetiebot.squashMergePullRequest',
     'sweetiebot.squashMergeSelectedPullRequest'
   ]);

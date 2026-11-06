@@ -110,8 +110,11 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
 
     // Inform the visible chat about the isolated test clone. Unlike branch
     // switching, this deliberately does not migrate its cwd or interrupt work.
-    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, destination, branch }) => {
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, destination, branch, expectedThreadId }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+        if (expectedThreadId && identity?.threadId !== expectedThreadId) {
+            throw new Error('The original Codex chat changed; the trial notice was not sent to another chat.');
+        }
         if (!identity?.threadId) return false;
         const thread = await read(identity.threadId);
         const original = await canonical(source);
@@ -187,7 +190,7 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
 
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.prepareWorkspaceHandoff', async ({ from }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
-        if (!identity?.threadId) return null;
+        if (!identity?.threadId) return identity?.composerFocus ? { draftOnly: true, composerFocus: identity.composerFocus } : null;
         const threadId = identity.threadId;
         const thread = await read(threadId);
         const oldCwd = await canonical(thread.cwd);
@@ -211,7 +214,8 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
                 await new Promise(done => setTimeout(done, 100));
             }
         }
-        return { threadId, oldCwd, relative, wasActive, id: randomUUID() };
+        return { threadId, oldCwd, relative, wasActive, id: randomUUID(),
+            ...(identity.composerFocus ? { composerFocus: identity.composerFocus } : {}) };
     }));
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.resumeWorkspaceHandoff', async plan => {
         const root = await canonical(plan.destination);
@@ -232,6 +236,8 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
                 input: [{ type: 'text', text: plan.continuationText || 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
             });
         }
+        if (plan.composerFocus) await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus',
+            { threadId: plan.threadId, state: plan.composerFocus });
         return { threadId: plan.threadId, cwd };
     }));
     return { dispose() {

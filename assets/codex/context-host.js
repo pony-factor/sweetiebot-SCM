@@ -6,7 +6,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const originalHandleMessage = provider.handleMessage;
     const crypto = require('crypto');
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const extensionId = 'jfwooten4.scm-toolkit-workspace-search';
+    // The external URI belongs to Codex, not Sweetiebot. The receiving user
+    // only needs the official Codex extension with its onUri handler.
+    const CODEX_URI_EXTENSION = 'openai.chatgpt';
     const resumeEnabled = () => vscode.workspace?.getConfiguration('sweetiebot')
         ?.get('codexContinueAtReset', false) === true;
     const sendResumeSetting = webview => webview?.postMessage?.({
@@ -37,7 +39,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const sourceFor = conversationId => {
         const value = String(conversationId ?? '').trim();
         if (!uuid.test(value)) return undefined;
-        const deepLink = `vscode://${extensionId}/codex/${value}`;
+        const deepLink = `vscode://${CODEX_URI_EXTENSION}/local/${value}`;
         return {
             kind: 'codex',
             uuid: value,
@@ -95,8 +97,66 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         const listener = webview.onDidReceiveMessage(message => {
             const request = pending.get(message?.id);
             if (message?.type !== 'scm-toolkit-context-response' || request?.webview !== webview) return;
+            if (message.nativeCopy && !request.shareOnly && !request.identityOnly && !request.modelOnly && !request.reloadState) {
+                if (request.copying) return;
+                request.copying = true;
+                void (async () => {
+                    if (!uuid.test(message.conversationId || '') ||
+                        (request.threadId && request.threadId !== message.conversationId))
+                        throw new Error('The active Codex chat changed during capture.');
+                    const expected = request.text === undefined ? 'markdown' : 'deeplink';
+                    if (message.nativeCopy !== expected) throw new Error('Unexpected Codex copy response.');
+                    const until = Date.now() + 15000;
+                    let value;
+                    do {
+                        value = await vscode.env.clipboard.readText();
+                        if (value && value !== request.marker) break;
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    } while (Date.now() < until);
+                    if (!value || value === request.marker) throw new Error('Codex did not copy the requested chat content.');
+                    if (expected === 'markdown') {
+                        request.text = value;
+                        request.threadId = message.conversationId;
+                        request.marker = crypto.randomUUID();
+                        await vscode.env.clipboard.writeText(request.marker);
+                        request.copying = false;
+                        await webview.postMessage({ type: 'scm-toolkit-context-request', id: message.id,
+                            copyDeepLink: true, expectedThreadId: request.threadId });
+                        return;
+                    }
+                    const link = new URL(value.trim());
+                    if (link.protocol !== 'codex:' || link.hostname !== 'threads' ||
+                        link.pathname !== '/' + request.threadId || link.username || link.password || link.port || link.hash)
+                        throw new Error('Codex did not copy a deeplink for the originating chat.');
+                    pending.delete(message.id);
+                    clearTimeout(request.timeout);
+                    await vscode.env.clipboard.writeText(request.clipboard);
+                    // Native Markdown includes tool activity and inline image data.
+                    // Remove those before transport bounding so actual user turns
+                    // and assistant replies are not displaced by binary payloads.
+                    const text = request.text
+                        .replace(/^<details><summary>\d+ previous messages?<\/summary>[\s\S]*?^<\/details>/gm,
+                            '[Tool activity omitted from drafting context.]')
+                        .replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi,
+                            'attachment:image-data-omitted')
+                        .trim();
+                    request.resolve(request.includeSource ? { text,
+                        source: { ...sourceFor(request.threadId), desktopUrl: value.trim() }, model: message.model } : text);
+                })().catch(async error => {
+                    pending.delete(message.id);
+                    clearTimeout(request.timeout);
+                    await vscode.env.clipboard.writeText(request.clipboard);
+                    request.reject(error);
+                });
+                return;
+            }
             pending.delete(message.id);
             clearTimeout(request.timeout);
+            if (message.error) {
+                if (request.clipboard !== undefined) void vscode.env.clipboard.writeText(request.clipboard);
+                request.reject(new Error(message.error));
+                return;
+            }
             if (request.reloadState) {
                 // Restore only an identified chat. No conversation text is captured.
                 request.resolve(uuid.test(message.conversationId ?? ''));
@@ -121,12 +181,17 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 }).catch(request.reject);
                 return;
             }
+            if (request.composerFocus) {
+                request.resolve(message.focused === true);
+                return;
+            }
             if (request.identityOnly) {
                 if (message.hasConversation && !uuid.test(message.conversationId ?? '')) {
                     request.reject(new Error('Cannot identify the visible Codex chat; its worker was not moved.'));
                     return;
                 }
-                request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null });
+                request.resolve({ threadId: uuid.test(message.conversationId ?? '') ? message.conversationId : null,
+                    ...(message.composerFocus && typeof message.composerFocus === 'object' ? { composerFocus: message.composerFocus } : {}) });
                 return;
             }
             if (request.modelOnly) {
@@ -169,7 +234,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false) => {
+    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker, composerFocus) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -195,10 +260,11 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 reject(new Error(shareOnly
                     ? 'Codex Share is still preparing. PR creation can continue without its public link.'
                     : 'Codex text capture timed out. Reopen this window after installing the toolkit.'));
-            }, shareOnly ? 155000 : 5000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState });
+                if (clipboard !== undefined) void vscode.env.clipboard.writeText(clipboard);
+            }, shareOnly ? 155000 : (identityOnly || modelOnly || reloadState || composerFocus) ? 5000 : 45000);
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, marker: clipboardMarker, composerFocus });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
-            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState }).then(sent => {
+            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState, composerFocus }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -210,6 +276,24 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 reject(error);
             });
         });
+    };
+
+    let copying = false;
+    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, composerFocus) => {
+        if (identityOnly || modelOnly || reloadState || composerFocus) return captureRaw(includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, undefined, composerFocus);
+        if (copying) return Promise.reject(new Error('A Codex copy is already in progress. Retry when it finishes.'));
+        copying = true;
+        return (async () => {
+            const saved = clipboard ?? await vscode.env.clipboard.readText();
+            const marker = crypto.randomUUID();
+            try {
+                await vscode.env.clipboard.writeText(marker);
+                return await captureRaw(includeSource, false, false, shareOnly, saved, false, marker);
+            } finally {
+                await vscode.env.clipboard.writeText(saved);
+                copying = false;
+            }
+        })();
     };
 
     const textCommand = vscode.commands.registerCommand(
@@ -224,11 +308,25 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         'sweetiebot.preserveCodexConversation',
         () => capture(false, false, false, false, undefined, true)
     );
-    const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async threadId => {
+    const cancelShareCommand = vscode.commands.registerCommand('sweetiebot.cancelCodexShare', () => {
+        for (const [id, request] of pending) {
+            if (!request.shareOnly) continue;
+            clearTimeout(request.timeout);
+            pending.delete(id);
+            void request.webview.postMessage({ type: 'scm-toolkit-cancel-share' });
+            request.reject(new Error('Codex sharing stopped because the checkout is changing.'));
+        }
+    });
+    const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async (threadId, options) => {
+        if (options?.explicitNewPullRequest !== true) {
+            throw new Error('Codex sharing requires an explicit New PR action.');
+        }
         if (!uuid.test(threadId || '')) throw new Error('A verified active Codex chat is required.');
         return capture(false, false, false, threadId, await vscode.env.clipboard.readText());
     });
     const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
+    const focusCommand = vscode.commands.registerCommand('sweetiebot.codex.restoreComposerFocus', value =>
+        capture(false, false, false, false, undefined, false, value));
     const modelCommand = vscode.commands.registerCommand('sweetiebot.readCodexModel', () => capture(false, false, true));
     const legacyTextCommand = vscode.commands.registerCommand(
         'scmToolkit.readCodexContext', () => capture(false)
@@ -242,7 +340,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         sourceCommand.dispose();
         reloadCommand.dispose();
         identityCommand.dispose();
+        focusCommand.dispose();
         shareCommand.dispose();
+        cancelShareCommand.dispose();
         modelCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();

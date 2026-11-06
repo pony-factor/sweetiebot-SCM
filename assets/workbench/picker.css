@@ -776,9 +776,11 @@
 }
 
 /* Give Sweetiebot's repair, PR merge, commit generation, and failure notices their own glyphs. */
+.notification-list-item.scm-toolkit-lindsey-notice .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-push-waiting .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before,
+.notification-list-item.scm-toolkit-sharing-chat .notification-list-item-icon::before,
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
@@ -788,12 +790,16 @@
     font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
     font-size: 14px;
 }
+.notification-list-item.scm-toolkit-lindsey-notice .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-push-waiting .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-reload-ready .notification-list-item-icon.codicon-info::before {
     content: '🤖';
 }
 .notification-list-item.scm-toolkit-generating-commit .notification-list-item-icon::before {
     content: '✨';
+}
+.notification-list-item.scm-toolkit-sharing-chat .notification-list-item-icon::before {
+    content: '💬';
 }
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before {
     content: '🫧';

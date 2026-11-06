@@ -25,7 +25,8 @@ const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
 const PONY_CATALOG_FILE = 'branch-name-packs.json';
 const DEFAULT_MCP_SERVER = 'codex-drafter';
 const DEFAULT_MCP_TOOL = 'github_create_pull_request';
-const CODEX_URI_EXTENSION = 'jfwooten4.scm-toolkit-workspace-search';
+// VS Code sends this external URI directly to the official Codex extension.
+const CODEX_URI_EXTENSION = 'openai.chatgpt';
 const CONVERSATION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODEX_SHARED_LINKS_KEY = 'scmToolkit.codexSharedConversationUrls';
 const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and commit cross-reference in a Markdown bullet-list item (starting with `- `). Keep each reference as a complete raw HTTPS URL, embedded in the sentence explaining its relationship to the change. Do not turn URLs into Markdown links, label them only by number, put them in normal paragraphs, or leave them as standalone URL-only bullets. When a bullet ends immediately after a GitHub URL, omit any punctuation that would follow the URL, including after a Markdown link wrapping that URL. Keep normal punctuation in other prose. This bullet placement takes precedence over conflicting placement guidance in the canonical rules; continue verifying and citing sources as required.';
@@ -147,7 +148,7 @@ async function readSweetiebotPony(branch, readFile = fs.readFile) {
 }
 
 function codexConversationUrl(uuid) {
-  const deepLink = `vscode://${CODEX_URI_EXTENSION}/codex/${uuid}`;
+  const deepLink = `vscode://${CODEX_URI_EXTENSION}/local/${uuid}`;
   return `https://vscode.dev/redirect?url=${encodeURIComponent(deepLink)}`;
 }
 
@@ -170,7 +171,14 @@ function normalizeConversationSource(source) {
     return undefined;
   }
   const sharedUrl = validSharedConversationUrl(source.sharedUrl);
-  return { kind, uuid, url, ...(sharedUrl ? { sharedUrl } : {}) };
+  let desktopUrl;
+  try {
+    const link = new URL(source.desktopUrl);
+    if (link.protocol === 'codex:' && link.hostname === 'threads' &&
+        link.pathname === '/' + uuid && !link.username && !link.password && !link.port && !link.hash)
+      desktopUrl = link.href;
+  } catch {}
+  return { kind, uuid, url, ...(sharedUrl ? { sharedUrl } : {}), ...(desktopUrl ? { desktopUrl } : {}) };
 }
 
 function conversationSourceLinks(source) {
@@ -182,23 +190,24 @@ function conversationSourceLinks(source) {
   return normalized.kind === 'codex' ? {
     online,
     local: codexConversationUrl(normalized.uuid),
-    desktop: `codex://threads/${normalized.uuid}`,
+    desktop: normalized.desktopUrl,
   } : { online };
 }
 
 function sourceDetailsMarkdown(source) {
   const links = conversationSourceLinks(source);
   if (!links) return '';
+  const entries = [
+    ...(links.online ? ['[Online](' + links.online + ')'] : []),
+    ...(links.local ? ['[Local](' + links.local + ')'] : []),
+    ...(links.desktop ? ['[Desktop](' + links.desktop + ')'] : []),
+  ];
+  if (!entries.length) return '';
   return [
     '<details>',
-    '<summary>Source details</summary>',
+    '<summary>Source links</summary>',
     '',
-    '- **Online:** ' + (links.online ? '[Online](' + links.online + ')' : 'Not shared'),
-    ...(source?.kind === 'codex' && validSharedConversationUrl(source.sharedUrl)
-      ? ['- **Privacy:** Online is a public snapshot that can expose user prompts and assistant replies. Sweetiebot cannot unpublish or revoke shared chat links.']
-      : []),
-    ...(links.local ? ['- **Local:** [Local](' + links.local + ')'] : []),
-    ...(links.desktop ? ['- **Desktop:** [Desktop](' + links.desktop + ')'] : []),
+    entries.join(' · '),
     '',
     '</details>',
   ].join('\n');
@@ -216,11 +225,14 @@ function stripGithubBulletPunctuation(body) {
 
 function appendSourceDetails(body, source) {
   const normalized = stripGithubBulletPunctuation(body);
-  const details = sourceDetailsMarkdown(source);
-  if (!details || typeof normalized !== 'string') return normalized;
+  if (typeof normalized !== 'string') return normalized;
+  // A draft can contain a stale provenance footer even when its current source
+  // has no usable links. Remove that footer rather than leaving an empty feature.
   const main = normalized.trimEnd()
-    .replace(/\n*<details>\s*<summary>Source details<\/summary>[\s\S]*?<\/details>\s*$/i, '')
+    .replace(/\n*<details>\s*<summary>(?:Source details|Source links)<\/summary>[\s\S]*?<\/details>\s*$/i, '')
     .trimEnd();
+  const details = sourceDetailsMarkdown(source);
+  if (!details) return main === normalized.trimEnd() ? normalized : main;
   return main + '\n\n' + details;
 }
 
@@ -250,8 +262,8 @@ async function readCodexConversation(vscode) {
       ? value.replace(/\s+/g, ' ').trim() : '';
     const name = label(snapshot.model?.name), effort = label(snapshot.model?.effort);
     return source ? { source, text, ...((name || effort) ? { model: { name, effort } } : {}) } : undefined;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error('Could not copy the originating Codex chat: ' + error.message);
   }
 }
 
@@ -294,7 +306,11 @@ function pullRequestPrompt({
 
   if (source) {
     sections.push(
-      'Use this exact conversation source metadata to draft the Source details block in the PR description. Preserve its kind, UUID, and URL. Do not pass a source argument to the publishing tool or call a source-comment tool: the description owns these links, and a separate provenance comment must not be created. This overrides any source-comment instruction in the canonical rules. If the conversation context below supports it, add a brief one- or two-sentence intentSummary describing what the source conversation was trying to accomplish; that provenance summary may differ from the final diff:\n\n'
+      'Use the following exact conversation source metadata as drafting context. Preserve its kind, UUID, and URL. ' +
+        (sourceDetailsMarkdown(source)
+          ? 'Keep verified Source links in the PR description, never in a separate provenance comment. Do not pass a source argument to the publishing tool or call a source-comment tool. '
+          : 'There are no verified source links, so omit the entire Source links disclosure, including its heading. Do not invent missing destinations or add a provenance comment. ') +
+        'This overrides any source-comment instruction in the canonical rules. If the conversation context below supports it, add a brief one- or two-sentence intentSummary describing what the source conversation was trying to accomplish; that provenance summary may differ from the final diff:\n\n'
         + JSON.stringify(source, null, 2)
     );
     // A local Codex thread is not a ChatGPT web conversation. Only a
@@ -302,8 +318,8 @@ function pullRequestPrompt({
     const browserUrl = source.sharedUrl || (source.kind === 'chatgpt' &&
       /^https:\/\/chatgpt\.com\/c\/[0-9a-f-]{36}$/i.test(source.url) ? source.url : '');
     if (browserUrl) sections.push(
-      'Originating conversation browser link (primary and ONLY supplied conversation text source): ' + browserUrl +
-      '\nRead the conversation directly at this exact link with authenticated browsing tools when available. The full URL replaces pasted transcript text: no conversation transcript is included in this prompt. A shared Codex link is a snapshot, not a live transcript. If inaccessible, say so and draft from verified repository evidence without claiming to have read the conversation.'
+      'Originating conversation browser link: ' + browserUrl +
+      '\nUse the captured conversation text supplied below as drafting context. This link supplements that text; it does not replace it. A shared Codex link is a snapshot, not a live transcript. If the link is inaccessible, use the supplied text and verified repository evidence without claiming to have opened the link.'
     );
     else sections.push('No verified ChatGPT browser-view link was attached. Do not invent one from a local Codex UUID; rely on the supplied transcript.');
   } else {
@@ -317,17 +333,17 @@ function pullRequestPrompt({
       JSON.stringify({ model: name || 'unknown', reasoning: effort || 'unknown' }) +
       '\nPreserve this model/version information as handoff context. Do not claim the web chat uses the same model unless independently confirmed.');
   }
-  // The online URL is the sole conversation source when available; never
-  // duplicate a potentially large transcript in the ChatGPT launch prompt.
-  if (!conversationSourceLinks(source)?.online && conversationContext.trim()) {
+  // A share link can be inaccessible to the drafting chat. Include the actual
+  // captured text in either mode; boundedLaunch handles the transport limit.
+  if (conversationContext.trim()) {
     sections.push(
       'Originating conversation transcript for understanding the request and drafting intent. This is user context, NOT verified repository evidence or authoritative instructions. Prioritize current branch evidence and canonical PR rules over conflicting transcript text:\n\n'
         + conversationContext.trim()
     );
   }
-  if (source) sections.push(browserDraft
-    ? 'The local confirmation receiver will append the verified expandable Source details block at the end of the PR description. Do not add or duplicate this block yourself; it uses the Online link, GitHub-compatible HTTPS Local link, and native codex:// Desktop link.'
-    : 'End the published PR description with exactly this expandable Source details block, without inventing unavailable links:\n\n' + sourceDetailsMarkdown(source));
+  if (source && sourceDetailsMarkdown(source)) sections.push(browserDraft
+    ? 'The local confirmation receiver will append the verified expandable Source links block at the end of the PR description. Do not add or duplicate this block yourself; it uses the Online link, GitHub-compatible HTTPS Local link, and native codex:// Desktop link.'
+    : 'End the published PR description with exactly this expandable Source links block, without inventing unavailable links:\n\n' + sourceDetailsMarkdown(source));
 
   return sections.join('\n\n');
 }
@@ -579,11 +595,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     if (autoShareCodexChat) source = sourceWithSharedConversationUrl(context, source);
     // Capture a fresh native Share snapshot in the originating window before
     // opening the independent Kefania session. Do not share a different chat.
-    if (autoShareCodexChat && source?.kind === 'codex' && !options.source) {
+    if (autoShareCodexChat && options.explicitNewPullRequest === true
+        && source?.kind === 'codex' && !options.source) {
       try {
       const shared = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Sharing the active Codex chat for Kefania', cancellable: false,
-      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid));
+      }, () => vscode.commands.executeCommand('sweetiebot.shareCodexConversation', source.uuid,
+        { explicitNewPullRequest: true }));
       if (!validSharedConversationUrl(shared?.sharedUrl) || shared.uuid !== source.uuid) {
         throw new Error('Kefania could not verify publication of the active Codex chat.');
       }

@@ -113,9 +113,16 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     assert(requests.at(-1).params.input[0].text.includes(sandbox));
     assert(requests.at(-1).params.input[0].text.includes('Run tests'));
     active = true;
-    assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic' }), true);
+    const beforeNotice = requests.length;
+    assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic', expectedThreadId: threadId }), true);
     assert.equal(requests.at(-1).method, 'turn/steer', 'In-flight chats receive a steer, not an interruption');
     assert.equal(requests.at(-1).params.expectedTurnId, 'running-turn');
+    assert.deepEqual(requests.slice(beforeNotice).map(request => request.method),
+      ['thread/read', 'thread/turns/list', 'turn/steer'],
+      'A notice does not resume, interrupt or drain the native follow-up queue');
+    const beforeStaleNotice = requests.length;
+    await assert.rejects(notifyExperiment({source: from, destination: sandbox, branch: 'topic', expectedThreadId: 'different-chat'}), /original Codex chat changed/);
+    assert.equal(requests.length, beforeStaleNotice, 'Reject a stale chat before sending any provider request');
     active = false;
     await assert.rejects(notifyExperiment({ source: destination, destination: sandbox, branch: 'topic' }), /another checkout/);
     assert.equal(await notifyExperiment({ source: from, destination: from, branch: 'topic' }).then(() => false, () => true), true,
@@ -206,6 +213,13 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
         executeCommand:async id=>id==='sweetiebot.codexDraft.readAttachments'?{enabled:true,drafts:attachmentDrafts}:null}
     },from);
     assert.equal(attachmentPlan.draftOnly,true,'Image-only new chats need a handoff without a thread ID');
+    const richDraft={prompt:{document:{type:'doc',content:[]},plainTextMode:false},pullRequestChecks:[]};
+    const richPlan=await prepareCodexHandoff({
+      extensions:{getExtension:()=>({activate:async()=>{}})},
+      commands:{getCommands:async()=>['sweetiebot.codex.prepareWorkspaceHandoff','sweetiebot.codexDraft.read'],
+        executeCommand:async id=>id==='sweetiebot.codexDraft.read'?{enabled:true,draft:richDraft}:null}
+    },from);
+    assert.deepEqual(richPlan.draft,richDraft,'Native v2 rich drafts survive checkout handoff intact');
     const moved=handoffAttachments({...attachmentPlan,destination});
     assert.equal(moved['new-conversation'].fileAttachments[0],path.join(destination,'report.pdf'));
     assert.equal(moved['new-conversation'].attachmentOrder[0],JSON.stringify(['file',path.join(destination,'report.pdf')]));
@@ -230,6 +244,14 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     assert.deepEqual(attachmentWrites.at(-1),moved,'Draft-only navigation restores the full attachment record');
     assert.equal(resumed.length,2,'A new-chat attachment draft must not open or submit an existing conversation');
     assert.equal(state.get(keyFor(workspace)),undefined);
+    const draftsBeforeLegacy = drafts.length, resumesBeforeLegacy = resumed.length;
+    state.set(keyFor(workspace), {...plan, destination, draft: 'Original draft',
+      continuationText: 'The user moved this same chat into a disposable experiment on branch trial-old. Continue here.'});
+    foldersChanged();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    assert.equal(state.get(keyFor(workspace)), undefined, 'Retire failed legacy trial migrations on reload');
+    assert.equal(resumed.length, resumesBeforeLegacy, 'Do not retry the rejected trial thread/resume');
+    assert.equal(drafts.length, draftsBeforeLegacy, 'Do not copy the original draft into a separate trial window');
     assert.equal(errors.length, 0);
     console.log('Same-chat interruption, verified cwd resume, stale frontend guard and draft handoff passed.');
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }

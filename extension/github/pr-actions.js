@@ -507,10 +507,29 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       cancellable: false
     }, progress => processMerge(node, progress));
   };
+  // The contributed sidebar action must exist even after GitHub PR updates
+  // replace its patched bundle. Only the owner-side bridge handles tree nodes.
+  try {
+    context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.squashMergeTreePullRequest', async node => {
+      await vscode.extensions?.getExtension('github.vscode-pull-request-github')?.activate();
+      const bridge = 'sweetiebot.github.squashMergeTreePullRequest';
+      if ((await vscode.commands.getCommands(true)).includes(bridge)) {
+        return vscode.commands.executeCommand(bridge, node);
+      }
+      // A URL or fully rendered row remains safe without the optional bridge.
+      // Resolution still rejects unknown rows and never substitutes selection.
+      return handler(node);
+    }));
+  } catch (error) {
+    // An older, still-running GitHub integration may own the public command
+    // until reload. Keep that working handler and all canonical merge actions.
+    if (!require('../ui/command-aliases').isDuplicateCommandError(error)) throw error;
+  }
   context.subscriptions.push(
     vscode.commands.registerCommand('sweetiebot.squashMergePullRequest', handler),
     vscode.commands.registerCommand('sweetiebot.squashMergeSelectedPullRequest', handler)
   );
+
 }
 
 module.exports = { squashMergePullRequest, deleteMergedRemoteBranch, resolveMergeTarget, closeMergedPullRequestTab, registerGitHubPullRequestActions };

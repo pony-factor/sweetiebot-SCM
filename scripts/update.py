@@ -30,7 +30,7 @@ from wrapper_dependencies import wrapper_files
 REMOTE = "https://github.com/pony-factor/sweetiebot-SCM.git"
 THINKING_ASSET = Path('assets/browser/maximize-thinking.js')
 SHARED_PROFILE_SOURCE = Path('scripts/browser-pr.py')
-SHARED_PROFILE_MARKER = 'SHARED_BROWSER_PROFILE = 3'
+SHARED_PROFILE_MARKER = 'SHARED_BROWSER_PROFILE = 4'
 FORMATS = {
     "scripts": {".py", ".json"},
     "extension": None,  # Archive the complete extension subtree; filter with the shared predicate.

@@ -93,6 +93,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
 
   function validateRound(input, selection) {
     (branchOnly ? validateSyncResolution : validateResolution)(input, selection);
+    if (!branchOnly && input.results.some(item => item.operation === 'sync')) {
+      throw Error('Automatic merges cannot synchronize PR branches. Use Sweetiebot Sync explicitly.');
+    }
     if (input.results.length > 1) throw Error('Return one PR per round so the next resolution uses the actual merged base.');
     for (const item of input.results) {
       const pr = entries.get(item.number);
@@ -109,6 +112,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           typeof item.reason !== 'string' || !item.reason.trim() || item.reason.length > 4000) {
         throw Error('Deferred decisions must identify a current selected PR and its specific non-routine blocker.');
       }
+      require('./resolution-commits').validateDecisions(item.decisions);
+      if (item.paths !== undefined && (!Array.isArray(item.paths) || item.paths.length > 100 ||
+          item.paths.some(file => !require('./patch').safePatchPath(file)))) throw Error('Invalid deferred conflict paths.');
       seen.add(item.number);
     }
   }
@@ -182,6 +188,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           const detail = { number: item.number, title: pr.title, base: pr.base,
             status: item.status, explanation: input.explanation, decisions: require('./resolution-commits').validateDecisions(input.decisions), reason: item.reason || '',
             sourceHeadSha: input.headSha, destinationSha: item.merged ? item.sha : undefined,
+            sha: item.sha, previousHeadSha: item.previousHeadSha, repairChecks: input.repairChecks === true,
             conflictPaths: item.conflictPaths || [], baseSha: item.baseSha || pr.baseSha };
           history.push(detail);
           if (item.merged === true && item.status === 'merged') merged.push(detail);
@@ -194,8 +201,10 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             reason: item.reason || 'Nothing needed synchronization; do not retry the unchanged branch.' });
           if (item.status === 'checks_failed') {
             pr.checkFailures = (pr.checkFailures || 0) + 1;
-            // Give the next AI round the verified failing head before deferring.
-            if (pr.checkFailures >= 2 || pr.attempts >= 3) deferred.push({ number: pr.number, reason: item.reason });
+            // A deterministic CI failure is not a reason to synchronize main again.
+            // A dedicated check-repair task can act on this verified failing head.
+            deferred.push({ number: pr.number, kind: 'failed_checks',
+              reason: item.reason || 'Inspect failing job logs and repair the selected PR.' });
           }
           else if (!item.merged && !(branchOnly && item.status === 'synced') && (item.status === 'blocked' || pr.attempts >= 3)) deferred.push({ number: pr.number, ...(item.kind ? { kind: item.kind } : {}),
             reason: item.reason || 'Repeated integration attempts require inspection.' });
@@ -224,7 +233,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         head: pr.head, headSha: pr.headSha, base: pr.base, baseSha: pr.baseSha,
         mergeable: pr.mergeable, mergeableState: pr.mergeableState, waitingFor: pr.waitingFor, changeSize: pr.changeSize,
         initiallyMergeable: pr.initialMergeable, baseAdvancedByEarlierWork: pr.baseAdvanced }))),
-      'Reassess remaining PRs after every merge. Do not treat checks from the old PR head as checks on the integrated tree. Local preparation is allowed to incorporate the new base; merging still requires the resulting head’s checks to pass. On the first fresh check failure, inspect the actual failing job logs and attempt the smallest behavior-preserving repair through the existing complete current-base patch handoff with repairChecks:true (supporting regression test files are permitted only after the runner independently confirms checks failed on that exact head). Do not resubmit the same failing tree or merely rerun deterministic failures. Retain the PR feature and passing-check gate. Defer with the exact limitation if a repair exceeds the allowed PR file set, requires unavailable tools or authorization, or changes ambiguous behavior. A second failed repair is deferred; never loop indefinitely. Ambiguous behavior choices remain blockers. Update existing tagged reports rather than duplicating them.',
+      'Reassess remaining PRs after every merge. Do not treat checks from the old PR head as checks on the integrated tree. Local preparation is allowed to incorporate the new base; merging still requires the resulting head’s checks to pass. After resolving conflicts in the disposable integration tree, check CI. Defer confirmed failures immediately with kind:failed_checks for a dedicated current-head repair; inspect the failing job logs and correct the actual failure before retrying a merge. Never synchronize the PR head because main advanced or CI failed. Sweetiebot Sync is a separate maintainer action. Do not repeat deterministic failures or bypass checks, reviews and branch policy. Ambiguous behavior choices remain blockers. Update existing tagged reports rather than duplicating them.',
       'For a genuine non-routine blocker, include deferred:[{"number":123,"headSha":"exact selected head","kind":"human_review|capability|failed_checks","reason":"specific ambiguity or actual failure"}] in the versioned result JSON. Do not defer routine integration merely because it needs a new Git resolution. Continue unrelated remaining PRs. An unrelated external head/title/base-branch change is outside this batch’s snapshot and must not be overwritten.',
       require('./blocker-actions').reportOptionsInstructions(),
       resolutionInstructions(selection, bridge.url)

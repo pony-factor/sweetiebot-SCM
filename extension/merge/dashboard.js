@@ -293,7 +293,7 @@ function postedReviewActivity(notes) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, onViewportChange = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
   const readFetch = fetchImpl;
@@ -302,12 +302,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     { enableScripts: true, retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.file(path.join(__dirname, '../../assets/imgs'))] });
   const nonce = randomBytes(16).toString('hex');
-  const celebrationArt = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/activity-cannon.png'))).toString();
+  const celebrationBackgroundUri = panel.webview.asWebviewUri(
+    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/bulk-merge-cannon.jpeg'))).toString();
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
-    .replace('__CELEBRATION_PONY__', celebrationArt)
+    .replace('__CELEBRATION_BACKGROUND__', celebrationBackgroundUri)
     .replace('__MERGE_CELEBRATION_PREDICATE__', require('./celebration').allPullRequestsMerged.toString())
     .replace('__MERGE_HEADER_CSS__', fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8'))
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard-markdown.js'), 'utf8'))
@@ -385,13 +385,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   function publish() {
     if (disposed) return;
     void panel.webview.postMessage({
-      type: 'state', repository: selection.repository, workers,
+      type: 'state', repository: selection.repository,
+      // Lane and overall totals must use the same verified PR states. Runner
+      // snapshots can lag after a merge is confirmed by GitHub or local execution.
+      workers: workers.map(worker => ({ ...worker,
+        merged: worker.numbers.filter(number => byNumber.get(number)?.state === 'merged').length })),
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })),
       events: events.filter(event => !routineTimelineEvent(event)), error,
       postStatusUpdates: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
       postSummaries: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostSummaries', false) === true,
-      autoFixCi: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) === true,
+      autoFixCi: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) === true,
       autoFixCiMethod: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web',
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
@@ -643,7 +647,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   // separate runner. A task never grants permission to merge or waive checks.
   function queueAutomaticCiRepair(state) {
     if (disposed || !state || state.repository !== selection.repository || state.rateLimit ||
-        vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) !== true) return;
+        vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) !== true) return;
     for (const pr of prs) {
       const candidate = deferredCiRepairCandidate(state, pr);
       if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
@@ -681,7 +685,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           addEvent(pr, 'blocked', 'Automatic CI repair skipped · a human implementation choice is pending');
           return;
         }
-        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', false) !== true) {
+        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) !== true) {
           addEvent(pr, 'updated', 'Automatic CI repair canceled · preference disabled');
           return;
         }
@@ -707,6 +711,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   panel.webview.onDidReceiveMessage(async message => {
     if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
       return onFocusWorker(message.number);
+    }
+    if (message?.type === 'dashboard-viewport') {
+      if (Number.isInteger(message.width) && message.width >= 160 && message.width <= 20000)
+        return onViewportChange(message.width);
+      return;
     }
     if (message?.type === 'ready') return publish();
     if (message?.type === 'refresh') return refresh({ force: true });

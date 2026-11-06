@@ -1,11 +1,13 @@
-// Read-only snapshot requests; never submit, steer, focus, or stop a Codex turn.
+// Snapshots are read-only; explicit checkout handoffs can restore composer focus.
 function scmToolkitRegisterCodexSnapshot(api) {
     const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+    const composerFocus = typeof scmToolkitComposerFocus === 'function' ? scmToolkitComposerFocus() : null;
     const reloadKey = 'sweetiebotReloadConversation';
     let restored = false;
     let checkoutVisibility = null;
     let pendingCheckout = null;
     let checkoutRequestId = 0;
+    let shareGeneration = 0;
 
     const conversationId = (allowHidden = false) => {
         const locations = [
@@ -56,6 +58,10 @@ function scmToolkitRegisterCodexSnapshot(api) {
 
     window.addEventListener('message', async event => {
         const request = event.data;
+        if (request?.type === 'scm-toolkit-cancel-share') {
+            ++shareGeneration;
+            return;
+        }
         if (request?.type === 'scm-toolkit-checkout-visibility-result') {
             if (pendingCheckout?.threadId === request.threadId
                 && pendingCheckout.requestId === request.requestId
@@ -99,12 +105,17 @@ function scmToolkitRegisterCodexSnapshot(api) {
             return;
         }
         if (request.shareOnly) {
+            const generation = ++shareGeneration;
+            const checkShare = () => {
+                if (generation !== shareGeneration) throw new Error('Codex sharing was cancelled.');
+                if (conversationId() !== request.shareOnly) throw new Error('The active chat changed; sharing stopped.');
+            };
             const visible = element => element.getClientRects().length;
             const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
             const waitFor = async (find, timeout = 15000) => {
                 const until = Date.now() + timeout;
                 while (Date.now() < until) {
-                    if (conversationId() !== request.shareOnly) throw new Error('The active chat changed; sharing stopped.');
+                    checkShare();
                     const found = find();
                     if (found) return found;
                     await new Promise(resolve => setTimeout(resolve, 100));
@@ -143,6 +154,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
                 if (!/Anyone with the link/.test(dialog?.textContent || '')) {
                     throw new Error('Choose Anyone with the link in Codex Share before retrying New PR.');
                 }
+                checkShare();
                 copy.click();
                 // Copy link can leave the native dialog open. The host waits
                 // for the verified clipboard URL instead of requiring closure.
@@ -152,10 +164,15 @@ function scmToolkitRegisterCodexSnapshot(api) {
             }
             return;
         }
+        if (request.composerFocus) {
+            const focused = await composerFocus?.restore(request.composerFocus.state, conversationId, request.composerFocus.threadId ?? undefined);
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, focused: focused === true });
+            return;
+        }
         if (request.identityOnly) {
             const hasConversation = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')]
                 .some(element => request.allowHidden || element.getClientRects().length);
-            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation });
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation, composerFocus: composerFocus?.capture() });
             return;
         }
         // Capture only visible composer labels at handoff time. Codex does not
@@ -182,16 +199,46 @@ function scmToolkitRegisterCodexSnapshot(api) {
             api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, model });
             return;
         }
-        const transcripts = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')];
-        const visible = transcripts.find(element => element.getClientRects().length);
-        const text = (visible ?? transcripts.at(-1))?.innerText?.trim() ?? '';
-        api.postMessage({
-            type: 'scm-toolkit-context-response',
-            id: request.id,
-            text,
-            conversationId: conversationId(),
-            model,
-        });
+        // Use Codex's export, which loads history and preserves Markdown.
+        // Never infer an export from the virtualized, rendered transcript.
+        const current = conversationId(request.allowHidden);
+        try {
+            if (!current || (request.expectedThreadId && current !== request.expectedThreadId))
+                throw new Error('The active Codex chat changed during capture.');
+            const visible = element => element.getClientRects().length;
+            const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
+            const waitFor = async find => {
+                const until = Date.now() + 5000;
+                do {
+                    if (conversationId(request.allowHidden) !== current)
+                        throw new Error('The active Codex chat changed during capture.');
+                    const found = find();
+                    if (found) return found;
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                } while (Date.now() < until);
+                throw new Error('Codex Copy menu is unavailable. Open the originating chat and retry.');
+            };
+            const menu = await waitFor(() => [...document.querySelectorAll('button')]
+                .find(element => visible(element) && label(element) === 'Chat actions'));
+            for (const type of ['pointerdown', 'pointerup'])
+                menu.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+                    button: 0, pointerType: 'mouse', isPrimary: true }));
+            menu.click();
+            const items = () => [...document.querySelectorAll('[role="menuitem"]')].filter(visible);
+            const copy = await waitFor(() => items().find(element => /^Copy$/i.test(label(element))));
+            for (const type of ['pointermove', 'pointerdown', 'pointerup'])
+                copy.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+                    button: 0, pointerType: 'mouse', isPrimary: true }));
+            copy.click();
+            const item = await waitFor(() => items().find(element => request.copyDeepLink
+                ? /^(?:Copy )?deeplink$/i.test(label(element))
+                : /^(?:Copy as )?Markdown$/i.test(label(element))));
+            item.click();
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id,
+                conversationId: current, nativeCopy: request.copyDeepLink ? 'deeplink' : 'markdown', model });
+        } catch (error) {
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, error: error.message });
+        }
     });
 
     // Place the action beside the existing chat actions, outside the transcript.

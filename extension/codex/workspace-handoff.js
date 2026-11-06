@@ -1,6 +1,6 @@
 'use strict';
 
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const path = require('node:path');
 const keyFor = workspace => 'sweetiebot.codexHandoff.' + createHash('sha256').update(path.resolve(workspace)).digest('hex');
 
@@ -28,6 +28,9 @@ async function prepareCodexHandoff(vscode, from) {
   if (!extension) return null;
   await extension.activate();
   const commands = await vscode.commands.getCommands(true);
+  if (commands.includes('sweetiebot.cancelCodexShare')) {
+    await vscode.commands.executeCommand('sweetiebot.cancelCodexShare');
+  }
   if (!commands.includes('sweetiebot.codex.prepareWorkspaceHandoff')) {
     throw new Error('Reload this window before switching checkouts so the same Codex chat can follow the branch.');
   }
@@ -37,10 +40,15 @@ async function prepareCodexHandoff(vscode, from) {
   const attachments = commands.includes('sweetiebot.codexDraft.readAttachments')
     ? await vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments') : null;
   const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
-  const draft = typeof saved?.draft === 'string' ? saved.draft : null;
+  const draft = saved?.draft ?? null;
   const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
+  if (saved?.scope && attachments?.scope && (saved.scope !== attachments.scope || saved.generation !== attachments.generation)) {
+    throw Error('The branch changed while capturing the Codex draft. Retry the checkout switch.');
+  }
   if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
-  return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts };
+  return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts,
+    ...(saved?.scope || attachments?.scope ? { draftScope: saved?.scope || attachments.scope,
+      draftGeneration: saved?.generation ?? attachments?.generation ?? 0, draftTransferId: randomUUID() } : {}) };
 }
 
 function registerCodexWorkspaceHandoff(vscode, context) {
@@ -62,15 +70,32 @@ function registerCodexWorkspaceHandoff(vscode, context) {
     try {
       const roots = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath);
       if (!roots.includes(plan.destination)) throw new Error('The saved Codex handoff does not match this workspace.');
+      // Older trial windows saved a same-chat migration even though they opened
+      // alongside the original. Retire only those plans before restoring drafts
+      // or retrying thread/resume; the original chat and its queue stay put.
+      if (plan.continuationText?.startsWith('The user moved this same chat into a disposable experiment on branch ')) {
+        await context.globalState.update(key, undefined);
+        return;
+      }
       const extension = vscode.extensions.getExtension('openai.chatgpt');
       if (!extension) throw new Error('Codex is unavailable in the destination window.');
       await extension.activate();
       // Consume automatic continuation before sending it. A window crash or
       // failed response must never submit the same continuation a second time.
       await context.globalState.update(key, { ...plan, wasActive: false });
-      if (plan.draft !== null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
-      if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
+      if (!plan.draftsConsumed) {
+        if (plan.draftScope) await vscode.commands.executeCommand('sweetiebot.codexDraft.adopt', plan);
+        else {
+          if (plan.draft != null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
+          if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
+        }
+        await context.globalState.update(key, { ...plan, wasActive: false, draftsConsumed: true });
+      }
       if (plan.draftOnly) {
+        if (plan.composerFocus) {
+          await vscode.commands.executeCommand('chatgpt.openSidebar');
+          await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus', { state: plan.composerFocus });
+        }
         await context.globalState.update(key, undefined);
         return;
       }

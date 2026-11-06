@@ -26,7 +26,7 @@ BACKGROUND_END = '/* sweetiebot-browser-background:end */'
 BACKGROUND_ANCHOR = 'this.setupEventListeners()}static{this.MAX_CONSOLE_LOG_ENTRIES='
 STORAGE_START = '/* sweetiebot-pr-storage:start */'
 STORAGE_END = '/* sweetiebot-pr-storage:end */'
-SHARED_BROWSER_PROFILE = 3
+SHARED_BROWSER_PROFILE = 4
 
 
 def transform_storage(source, remove=False):
@@ -73,6 +73,7 @@ def transform_storage(source, remove=False):
         + f'&&{options}.network===void 0&&{options}.affinity===void 0)?(()=>{{let sweetiebotPath='
         + f'{join}(this.environmentMainService.userHome,"Library","Application Support","Sweetiebot","browserStorage"),'
         + f'sweetiebotSession={electron}.fromPath(sweetiebotPath.fsPath);'
+        + '(' + ASSET.with_name('session-persistence.js').read_text() + ')(sweetiebotSession);'
         + f'return {cls}._bySession.get(sweetiebotSession)??this.instantiationService.createInstance({cls},"sweetiebot-pr",sweetiebotSession,"workspace"'
         + (',void 0,void 0' if modern_session else '') + ')})():' + STORAGE_END
     )

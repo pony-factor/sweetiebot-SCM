@@ -165,11 +165,14 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(!selectedPrompt.includes('When finished, update the existing tagged inline review comment'),
     'The legacy edit-in-place instruction must not return');
   const decisionInstructions = reportOptionsInstructions();
-  assert(decisionInstructions.includes('connected user-authenticated GitHub app'),
-    'New unresolved decisions also use the connected user identity');
-  assert(decisionInstructions.includes('new current-head root inline review comment'),
+  assert(decisionInstructions.includes('Automatic reviews belong to the Lindsey GitHub App'),
+    'Automatic unresolved decisions use Lindsey, never the personal account');
+  const selectedDecisionInstructions = reportOptionsInstructions({ userSelected: true });
+  assert(selectedPrompt.includes('add_review_to_pr or reply_to_review_comment'));
+  assert(selectedDecisionInstructions.includes('connected user-authenticated GitHub app'));
+  assert(selectedDecisionInstructions.includes('new current-head root inline review comment'),
     'New emoji decisions need independent, current-head inline comments');
-  assert(decisionInstructions.includes('publish a new review comment'),
+  assert(selectedDecisionInstructions.includes('publish a new review comment'),
     'Revised decisions cannot overwrite old reaction instructions');
   assert(!decisionInstructions.includes('update the existing tagged comment'),
     'The original Lindsey review is kept as authored');
@@ -429,14 +432,22 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(apiRequests, hiddenRequests, 'Hidden dashboards do not poll');
   panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
-  assert(panel.webview.html.includes('Lindsey · Bulk merge'));
+  assert(panel.webview.html.includes('<h1>Lindsey</h1>'), 'Keep the Lindsey identity visible in the header');
+  assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Do not restore the bulk merge subtitle');
+  assert(!panel.webview.html.includes('id="repository"'), 'Omit the repository logo from the stripped-down header');
   assert(panel.webview.html.includes('Everypony made it! 🎉'), 'Show pony confirmation on complete merges');
   assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
   assert(panel.webview.html.includes('id="review-merges"'), 'Keep PR details and timeline available');
   assert(panel.webview.html.includes('id="show-celebration"'), 'Allow return to finish page');
-  assert(panel.webview.html.includes('vscode-webview://test/activity-cannon.png'), 'Approved bundled art URI');
+  assert(panel.webview.html.includes("url('vscode-webview://test/bulk-merge-cannon.jpeg')"),
+     'The supplied full-size artwork is loaded through the approved bundled-asset URI');
+   assert(panel.webview.html.includes('background-size:cover'), 'Artwork fills the complete confirmation window');
+   assert(panel.webview.html.includes('body.celebrating{'), 'The background is limited to verified bulk-merge completion');
+   assert(!panel.webview.html.includes('<img class="completion-art"'), 'Artwork is not confined to a small inline image');
+   assert(panel.webview.html.includes('href="https://x.com/fcolumnare/status/1952740544443998252"'),
+     'Artist attribution is linked directly on the confirmation screen');
   assert(!panel.webview.html.includes('__MERGE_CELEBRATION_PREDICATE__'));
-  assert(!panel.webview.html.includes('__CELEBRATION_PONY__'));
+  assert(!panel.webview.html.includes('__CELEBRATION_BACKGROUND__'));
   assert(panel.webview.html.includes('if (!complete) celebrationDismissed = false'));
   assert(panel.webview.html.includes('complete && !celebrationDismissed'));
   assert(panel.webview.html.includes('id="progress"'), 'Keep actionable merge progress visible');
@@ -465,13 +476,47 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('.event.checks-pending{border-color:var(--vscode-progressBar-background,'),
     'In-progress CI has its own timeline styling');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
-  assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
+  assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey keeps a CI auto-repair toggle');
+  assert(panel.webview.html.includes('On by default; turn off to disable automatic repair.'),
+    'CI repair is the default without overriding an explicitly disabled preference');
+  const extensionSettings = JSON.parse(fs.readFileSync(require.resolve('../../extension/package.json'), 'utf8'));
+  assert.equal(extensionSettings.contributes.configuration.properties['sweetiebot.mergeAutoFixCi'].default, true,
+    'Automatic CI repair is enabled for installations without a saved preference');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
+  assert(panel.webview.html.includes('class="ci-repair-controls"'),
+    'Keep the CI auto-fix checkbox and method picker grouped');
+  assert(panel.webview.html.includes('.overview .ci-repair-controls{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 6px}'),
+    'Use a six-pixel horizontal gap between auto-fix and the using selector');
+  assert(panel.webview.html.includes('for="auto-fix-ci-method">using</label>'),
+    'Keep the inline method label lowercase');
+  assert(!panel.webview.html.includes('for="auto-fix-ci-method">Using</label>'),
+    'Avoid regressing to capitalized Using');
+  assert(panel.webview.html.includes('id="github-post-menu"'),
+    'Group the two GitHub posting preferences in one compact disclosure');
+  assert(panel.webview.html.includes('<summary class="github-post-trigger">Post to GitHub'),
+    'Label the posting menu without adding a master on/off switch');
+  assert(panel.webview.html.includes('role="group" aria-label="GitHub posting options"'),
+    'Expose the individual posting preferences accessibly');
+  assert(panel.webview.html.includes('id="post-summaries"> AI summaries</label>'),
+    'AI summaries retain their independent checkbox');
+  assert(panel.webview.html.includes('id="post-status-updates"> Status updates</label>'),
+    'Status updates retain their independent checkbox');
+  assert(panel.webview.html.includes('function updateGitHubPostingCount()') &&
+    panel.webview.html.includes("enabled === 0 ? 'Off' : enabled + ' enabled'"),
+    'The collapsed menu reflects how many posting options are enabled');
+  assert(panel.webview.html.includes("type: 'post-summaries', enabled: event.target.checked") &&
+    panel.webview.html.includes("type: 'post-status-updates', enabled: event.target.checked"),
+    'Both existing GitHub posting messages are preserved');
+  assert(panel.webview.html.includes("event.key === 'Escape' && menu.open") &&
+    panel.webview.html.includes("!menu.contains(event.target)"),
+    'Escape and outside clicks dismiss the menu');
   assert(panel.webview.html.includes('class="merge-header"'), 'Bulk dashboard uses the shared header');
   assert(panel.webview.html.includes('.merge-header .dashboard-brand'), 'Shared header CSS is inlined');
   assert(!panel.webview.html.includes('__MERGE_HEADER_CSS__'), 'No unexpanded header placeholder');
   assert(panel.webview.html.includes('class="dashboard-brand"'),
-    'Keep the repository identity grouped beside the dashboard title');
+    'Keep the Lindsey name and review indicators grouped in the header');
+  assert(panel.webview.html.includes('id="merge-workers"'), 'Retain the oldest/newest review lanes');
+  assert(panel.webview.html.includes('id="conflicts-cleared"'), 'Retain the standalone cleared-conflicts counter');
   assert(panel.webview.html.includes('aria-label="Bulk merge preferences"'),
     'Group merge preferences accessibly');
   assert(panel.webview.html.includes('class="toolbar-option"'),
@@ -982,9 +1027,22 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   const stalePoll = dashboard.refresh({ force: true });
   await started;
   pausePRRead = undefined;
+  const laggingWorkerState = { repository: selection.repository, deferred: [],
+    workers: [{ id: 1, label: 'Oldest first', phase: 'Reviewing',
+      numbers: [12], merged: 0, total: 1 }] };
+  dashboard.recordBatchState(laggingWorkerState);
+  assert.equal(events.at(-1).workers[0].merged, 0);
   dashboard.recordLocalResult({ repository: selection.repository,
     results: [{ number: 12, status: 'merged', merged: true, sha: 'c'.repeat(40) }] });
   assert.equal(events.at(-1).prs[0].state, 'merged', 'Verified merge results update the badge before polling');
+  assert.equal(events.at(-1).workers[0].merged, 1,
+    'Lane count uses verified PR state, not the lagging runner snapshot');
+  assert.equal(events.at(-1).workers[0].merged,
+    events.at(-1).prs.filter(pr => pr.state === 'merged').length,
+    'The lane subtotal reconciles with the dashboard total');
+  dashboard.recordBatchState(laggingWorkerState);
+  assert.equal(events.at(-1).workers[0].merged, 1,
+    'Replaying a stale worker snapshot cannot regress the displayed lane subtotal');
   assert.equal(events.at(-1).prs[0].statusMessage, 'GitHub confirms the pull request was merged');
   assert.equal(events.at(-1).prs[0].mergeCommit, 'c'.repeat(40));
   assert(!events.at(-1).prs[0].mergedAt, 'A result without a GitHub timestamp must not invent one');

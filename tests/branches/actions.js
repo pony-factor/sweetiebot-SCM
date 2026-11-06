@@ -503,6 +503,23 @@ async function run() {
     assert.equal(await commands.get('sweetiebot.publishBranch')({ rootUri: uri }, {
       branch: 'topic', remote: 'origin'
     }), true);
+    const experimentPolicy = require('../../extension/branches/experiment-policy');
+    const originalPolicy = experimentPolicy.deferExperimentPublish;
+    experimentPolicy.deferExperimentPublish = async () => true;
+    try {
+      const beforePublish = calls.length;
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'topic', remote: 'origin', automatic: true
+      }), false, 'Automatic picker publishing skips trial workspaces');
+      assert.equal(calls.length, beforePublish, 'Trial publishing stops before any Git operation');
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'topic', remote: 'origin'
+      }), true, 'Explicit manual publishing remains available in a trial workspace');
+      experimentPolicy.deferExperimentPublish = async () => false;
+      assert.equal(await commands.get('sweetiebot.publishBranch')(uri, {
+        branch: 'topic', remote: 'origin', automatic: true
+      }), true, 'A trial with a new commit can publish automatically');
+    } finally { experimentPolicy.deferExperimentPublish = originalPolicy; }
     repository.state.HEAD = { name: 'topic' };
     assert.equal(await commands.get('sweetiebot.syncBranch')({ rootUri: uri }, {
       ...options, branch: 'topic', strategy: 'merge'
@@ -567,9 +584,13 @@ async function run() {
         branch: 'busy', remote: 'origin'
       }), false, 'The selected pending branch stays protected');
       repository.state.HEAD = { name: 'main', upstream: { remote: 'origin', name: 'main' }, ahead: 0 };
+      // This assertion exercises the Git API fixture; its temporary checkout
+      // above is still on fresh and has intentionally unfinished worker files.
+      delete repository.rootUri;
       assert.equal(await commands.get('sweetiebot.syncBranch')(uri, {
         ...options, branch: 'main', strategy: 'merge'
       }), 'main', 'Syncing main is independent of the busy branch');
+      repository.rootUri = { fsPath: root };
       fs.writeFileSync(path.join(root, '.git', 'sweetiebot-async-commit.json'), '{}');
       await assert.rejects(commands.get('sweetiebot.returnHome')(uri), /still being finalized/,
         'Keep the legacy worker guard until it supports inactive refs');
@@ -653,9 +674,9 @@ async function run() {
       // Repeating an unchanged squash must not create another commit.
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
       assert.equal(git('rev-parse', 'HEAD'), squashHead);
-      // An already-merged upstream ref is also a no-op.
+      // Even an incorporated target must not bypass divergent local main.
       git('update-ref', 'refs/remotes/origin/main', squashHead);
-      assert.equal(await syncBranch(repository, syncOptions), 'topic');
+      await assert.rejects(syncBranch(repository, syncOptions), /has diverged/);
       assert.equal(git('rev-parse', 'HEAD'), squashHead);
 
       // Never swallow or rewrite local edits to the workspace.
