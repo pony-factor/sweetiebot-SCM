@@ -225,7 +225,7 @@ async function humanSquashMerge(repository, number, {
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
   }
-  if (!localGitMerge || operation === 'sync' || nativeSquash) await checkHeadWritable();
+  if (!localGitMerge || operation === 'sync') await checkHeadWritable();
   let temp, pushedSha, conflicts = [];
   try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
   catch { throw Error('Invalid Git branch name.'); }
@@ -470,7 +470,7 @@ async function humanSquashMerge(repository, number, {
       if (conflicts.length && (conflicts.length !== decisions.length ||
           conflicts.some(file => !decisions.some(item => item.path === file)))) {
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
-          conflictPaths: conflicts, reason: 'Provide a specific decision title and explanation for each conflicted file before synchronizing the PR branch.' };
+          conflictPaths: conflicts, reason: 'Provide a specific decision title and explanation for each conflicted file before preparing the merge.' };
       }
       if (compactResolution) {
         const actual = conflicts.slice().sort();
@@ -554,7 +554,7 @@ async function humanSquashMerge(repository, number, {
         if (!conflicts.length) throw error;
         if (conflicts.some(name => !safePatchPath(name))) throw Error('Conflict involves an unsafe or secret-bearing path.');
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
-          conflictPaths: conflicts, reason: 'Resolve the overlapping edits against the current base, preserving both intentions.' };
+          conflictPaths: conflicts, reason: 'Resolve overlapping edits in the temporary merge tree, preserving both intentions without synchronizing the PR branch.' };
       }
     }
     // A clean integration is not a conflict resolution. Do not append main-only
@@ -573,12 +573,39 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
-    const finishLocal = async (sha, finalTree) => require('./local-author-merge').localAuthorMerge({
+    const finishLocal = async (sha, finalTree, integratedTree = false) => require('./local-author-merge').localAuthorMerge({
       repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
-      message: preparedMessage, git: inRepo, api, directory: temp, checkOptions,
+      message: preparedMessage, git: inRepo, api, directory: temp, checkOptions, integratedTree,
       expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit,
       privateRepository: repositoryInfo.private === true
     });
+    // Lindsey merge operations integrate in a disposable index and never update
+    // the source PR head. Sync is a separate, explicit maintainer action.
+    if (localGitMerge && operation === 'merge' && !requireSignedCommit) {
+      const finalTree = await inRepo('write-tree');
+      if (nativeSquash && !conflicts.length && !needsResolution) {
+        return await finish(originalSha, preparedMessage, 'squash');
+      }
+      const headTree = await inRepo('rev-parse', originalSha + '^{tree}');
+      if (finalTree !== headTree && await fs.stat(path.join(temp,
+        'scripts', 'ci', 'ci-test-runner.py')).then(s => s.isFile()).catch(() => false)) {
+        // Exercise the integrated tree's regression suites when this repository
+        // provides them; a failure must stop publication before any push.
+        for (const group of ['lindsey', 'github-pr']) {
+          progress('testing-integration', { description: group });
+          try {
+            await exec('python3', ['scripts/ci/ci-test-runner.py', 'run', group],
+              { cwd: temp, timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
+          } catch (error) {
+            return { merged: false, status: 'checks_failed', number,
+              sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+              reason: 'Integrated-tree ' + group + ' checks failed: ' +
+                String(error.stderr || error.message).slice(-1800) };
+          }
+        }
+      }
+      return await finishLocal(originalSha, finalTree, finalTree !== headTree);
+    }
     if (requireSignedCommit) return await finishSignedSquash(await inRepo('write-tree'));
     if (localGitMerge && operation === 'merge' && !nativeSquash) {
       const finalTree = await inRepo('write-tree');
