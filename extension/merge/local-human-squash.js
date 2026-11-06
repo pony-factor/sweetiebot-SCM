@@ -21,6 +21,7 @@ const REPO = /^[\w.-]+\/[\w.-]+$/;
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 
 const { verifiedHumanAuthor, verifyCommit } = require('./human-squash-merge');
+const { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
@@ -279,21 +280,25 @@ async function humanSquashMerge(repository, number, {
       }
       if (await readBaseTip() !== baseSha) throw refreshBase();
 
+      const signedIdentity = await commitIdentity(inRepo, author, true);
       const originalTree = await inRepo('rev-parse', originalSha + '^{tree}');
       const originalParents = (await inRepo('show', '-s', '--format=%P', originalSha)).trim().split(/\s+/).filter(Boolean);
+      const originalIdentity = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce', originalSha)).split('\0');
       const originalMessage = (await inRepo('show', '-s', '--format=%B', originalSha))
         .replace(/\r\n/g, '\n').trimEnd();
       let signedSha;
       if (originalTree === finalTree && originalParents.length === 1 && originalParents[0] === baseSha &&
           originalMessage === preparedMessage.trimEnd() &&
+          originalIdentity[0] === signedIdentity.author.name && originalIdentity[1] === signedIdentity.author.email &&
+          originalIdentity[2] === signedIdentity.committer.name && originalIdentity[3] === signedIdentity.committer.email &&
           /(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', originalSha))) {
         signedSha = originalSha;
       }
       if (!signedSha) {
         const messageFile = path.join(temp, '.git', 'sweetiebot-signed-squash-message');
         await fs.writeFile(messageFile, preparedMessage + '\n', { mode: 0o600 });
-        signedSha = await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-          'commit-tree', '-S', finalTree, '-p', baseSha, '-F', messageFile);
+        signedSha = await attributedCommitTree({ directory: temp, tree: finalTree,
+          parents: [baseSha], messageFile, identity: signedIdentity });
         const raw = await inRepo('cat-file', '-p', signedSha);
         const parents = (await inRepo('show', '-s', '--format=%P', signedSha)).trim().split(/\s+/).filter(Boolean);
         if (!SHA.test(signedSha) || !/(?:^|\n)gpgsig /.test(raw) || parents.length !== 1 ||
@@ -304,6 +309,7 @@ async function humanSquashMerge(repository, number, {
         verifyCommit({ commit: { author: { name, email }, message: body.join('\0') } }, preparedMessage, author);
       }
 
+      await verifyLocalCommitIdentity(inRepo, signedSha, signedIdentity);
       const newHeadPushed = signedSha !== originalSha;
       const rollbackHead = async () => {
         if (!newHeadPushed) return true;
@@ -631,8 +637,11 @@ async function humanSquashMerge(repository, number, {
     progress('rewrite-approved', { description: 'Explicit local approval to preserve the original human author; incremental integration cannot produce the required squash.' });
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
-    await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
-      'commit', ...(requireSignedCommit ? ['-S'] : []), '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+    const identity = await commitIdentity(inRepo, author, requireSignedCommit);
+    await inRepo('-c', 'user.name=' + identity.committer.name,
+      '-c', 'user.email=' + identity.committer.email,
+      'commit', ...(identity.signed ? ['-S'] : []), '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
+    await verifyLocalCommitIdentity(inRepo, 'HEAD', identity);
     if (requireSignedCommit && !/(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', 'HEAD'))) {
       throw Error('The local Git signer did not attach a commit signature; no branch was pushed.');
     }
