@@ -126,6 +126,10 @@ const copiedDesktopLinks=output.children.at(-1).children[1].children.filter(node
 assert.equal(copiedDesktopLinks.length,2);
 assert.equal(copiedDesktopLinks[1].href,desktopLink+'?host=remote',
   'Preserve query parameters on verified copied native Codex routes');
+context.renderMarkdown(output,sourceBlock.replaceAll(desktopLink,desktopLink+'#fragment'));
+const rejectedDesktopLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+assert.deepEqual(rejectedDesktopLinks.map(node=>node.href),[sourceShared,localLink],
+  'Desktop links with URL fragments must remain unclickable');
 const legacyLocalLink='vscode://jfwooten4.scm-toolkit-workspace-search/codex/'+sourceId;
 context.renderMarkdown(output,sourceBlock.replaceAll(localLink,legacyLocalLink));
 const legacyLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');

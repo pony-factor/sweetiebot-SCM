@@ -130,7 +130,14 @@ function renderMarkdown(target, markdown) {
       ? /^https:\/\/chatgpt\.com\/(?:s\/cx_[A-Za-z0-9_-]{16,128}|c\/[0-9a-f-]{36})$/i.test(value)
       : label === 'Local'
         ? /^(?:vscode:\/\/(?:openai\.chatgpt\/local|(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)\/codex)\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2F(?:openai\.chatgpt%2Flocal|(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)%2Fcodex)%2F[0-9a-f-]{36})$/i.test(value)
-        : /^codex:\/\/threads\/[0-9a-f-]{36}$/i.test(value);
+        : (() => {
+          try {
+            const native = new URL(value);
+            return native.protocol === 'codex:' && native.hostname === 'threads' &&
+              /^\/[0-9a-f-]{36}$/i.test(native.pathname) &&
+              !native.username && !native.password && !native.port && !native.hash;
+          } catch { return false; }
+        })();
     if (!valid) return;
     if (links.children.length) links.append(document.createTextNode(' · '));
     const node = document.createElement('a');
