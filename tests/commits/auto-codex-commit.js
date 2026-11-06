@@ -216,6 +216,12 @@ async function run() {
   assert.equal(button.disabled, true, 'detached or unresolved branches cannot be enabled');
 
   const manifest = require('../../extension/package.json');
+  assert(manifest.activationEvents.includes('onCommand:sweetiebot.autoCommitForBranch'),
+    'reading branch preferences must activate the extension on a fresh window');
+  const extensionSource = fs.readFileSync(path.join(__dirname, '../../extension/extension.js'), 'utf8');
+  assert(extensionSource.indexOf('  registerAutoCodexCommit(vscode, context);')
+    < extensionSource.indexOf('  await registerManagedWindowActivity(vscode, context);'),
+  'register branch preferences before asynchronous startup can reveal SCM');
   assert.equal(manifest.contributes.configuration.properties['sweetiebot.autoCommitWithCodex'],
     undefined, 'the old global toggle must not override branch-scoped preferences');
   console.log('Window/repository/branch automatic commit tests passed');

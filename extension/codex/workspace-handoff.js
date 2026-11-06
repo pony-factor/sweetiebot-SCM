@@ -28,6 +28,9 @@ async function prepareCodexHandoff(vscode, from) {
   if (!extension) return null;
   await extension.activate();
   const commands = await vscode.commands.getCommands(true);
+  if (commands.includes('sweetiebot.cancelCodexShare')) {
+    await vscode.commands.executeCommand('sweetiebot.cancelCodexShare');
+  }
   if (!commands.includes('sweetiebot.codex.prepareWorkspaceHandoff')) {
     throw new Error('Reload this window before switching checkouts so the same Codex chat can follow the branch.');
   }
@@ -89,6 +92,10 @@ function registerCodexWorkspaceHandoff(vscode, context) {
         await context.globalState.update(key, { ...plan, wasActive: false, draftsConsumed: true });
       }
       if (plan.draftOnly) {
+        if (plan.composerFocus) {
+          await vscode.commands.executeCommand('chatgpt.openSidebar');
+          await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus', { state: plan.composerFocus });
+        }
         await context.globalState.update(key, undefined);
         return;
       }
