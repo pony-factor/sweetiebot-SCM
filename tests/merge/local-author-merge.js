@@ -10,6 +10,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
+  const signer={name:'Local Signer',email:'signer@example.test'};
   const git=async(...args)=>(await run('git',['-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false',
     '-c','user.name='+author.name,'-c','user.email='+author.email,...args])).stdout.trim();
   const inWork=(...args)=>git('-C',work,...args);
@@ -21,9 +22,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       await run('ssh-keygen',['-q','-t','ed25519','-N','','-C',author.email,'-f',path.join(root,'signing_key')]);
       const publicKey=(await fs.readFile(path.join(root,'signing_key.pub'),'utf8')).trim();
       const allowed=path.join(root,'allowed_signers');
-      await fs.writeFile(allowed,author.email+' '+publicKey+'\n');
+      await fs.writeFile(allowed,signer.email+' '+publicKey+'\n');
       const config=path.join(root,'gitconfig');
-      await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
+      await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tname = '+signer.name+'\n\temail = '+signer.email+'\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
       process.env.GIT_CONFIG_GLOBAL=config;
     }
     await git('init','--quiet','--bare','--initial-branch=main',remote);
@@ -88,6 +89,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     };
     let competing;
     const localGit=async(...args)=>{
+      if(requireSignedCommit&&args.includes('config')&&args.at(-1)==='user.name')return signer.name;
+      if(requireSignedCommit&&args.includes('config')&&args.at(-1)==='user.email')return signer.email;
       if(args[0]==='clone')args[3]=remote;
       if(args.includes('push')){
         pushes.push(args);
@@ -122,6 +125,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha,'A signed squash has only the base as its parent');
           assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),'The published squash carries a real SSH signature');
           await inRemote('verify-commit',result.sha);
+          assert.equal(await inRemote('show','-s','--format=%an <%ae>',result.sha),author.name+' <'+author.email+'>');
+          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),signer.name+' <'+signer.email+'>');
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
         } else if(!humanOpener) assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
