@@ -19,11 +19,11 @@ async function signingEnabled(git) {
     '--get', 'commit.gpgsign')) === 'true';
 }
 
-async function commitIdentity(git, originalAuthor, requireSignedCommit = false) {
+async function commitIdentity(git, originalAuthor, requireSignedCommit = false, preferSigning = false) {
   if (!validIdentity(originalAuthor)) throw Error('Invalid original Git author identity.');
-  const signed = requireSignedCommit || await signingEnabled(git);
-  // Preserve existing unsigned-commit behavior. Only a signed commit needs the
-  // local signing identity instead of the PR author's email as its committer.
+  const signed = requireSignedCommit || preferSigning || await signingEnabled(git);
+  // Preserve the original author. Prefer the local signing committer for merges,
+  // but allow unsigned fallbacks when signing is unavailable.
   if (!signed) return { author: originalAuthor, committer: originalAuthor, signed: false };
   let name, email;
   try {
@@ -32,10 +32,12 @@ async function commitIdentity(git, originalAuthor, requireSignedCommit = false) 
       git('config', '--get', 'user.email')
     ]);
   } catch {
+    if (preferSigning && !requireSignedCommit) return { author: originalAuthor, committer: originalAuthor, signed: false };
     throw Error('Lindsey needs a configured local Git user.name and user.email to sign commits.');
   }
   const committer = { name: String(name).trim(), email: String(email).trim() };
   if (!validIdentity(committer)) {
+    if (preferSigning && !requireSignedCommit) return { author: originalAuthor, committer: originalAuthor, signed: false };
     throw Error('Lindsey needs a valid local Git committer name and email to sign commits.');
   }
   return { author: originalAuthor, committer, signed: true };

@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -18,15 +18,19 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const pushes=[];
   const oldGlobalConfig=process.env.GIT_CONFIG_GLOBAL;
   try {
-    if(requireSignedCommit) {
+    if(!missingSigningKey) {
       await run('ssh-keygen',['-q','-t','ed25519','-N','','-C',author.email,'-f',path.join(root,'signing_key')]);
       const publicKey=(await fs.readFile(path.join(root,'signing_key.pub'),'utf8')).trim();
       const allowed=path.join(root,'allowed_signers');
       await fs.writeFile(allowed,signer.email+' '+publicKey+'\n');
       const config=path.join(root,'gitconfig');
       await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tname = '+signer.name+'\n\temail = '+signer.email+'\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
-      process.env.GIT_CONFIG_GLOBAL=config;
     }
+    // Isolate the fixture from the developer's global Git settings. Without
+    // a signer, Lindsey may publish only an explicitly unsigned fallback.
+    const config=path.join(root,'gitconfig');
+    if(missingSigningKey)await fs.writeFile(config,'[gpg]\n\tformat = ssh\n');
+    process.env.GIT_CONFIG_GLOBAL=config;
     await git('init','--quiet','--bare','--initial-branch=main',remote);
     await git('init','--quiet','--initial-branch=main',work);
     await inWork('remote','add','origin',remote);
@@ -83,15 +87,16 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         const [name,email,...message]=(await inRemote('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
         const signed=/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',sha));
         return {commit:{author:{name,email},message:message.join('\0'),
-          verification:{verified:signed,reason:signed?'valid':'unsigned'}},
+          verification:{verified:signed&&!githubCannotVerifySignature,
+            reason:!signed?'unsigned':githubCannotVerifySignature?'bad_email':'valid'}}, 
           parents:(await inRemote('show','-s','--format=%P',sha)).split(' ').map(sha=>({sha}))};
       }
       throw Error('Unexpected API write or endpoint: '+endpoint);
     };
     let competing;
     const localGit=async(...args)=>{
-      if(requireSignedCommit&&args.includes('config')&&args.at(-1)==='user.name')return signer.name;
-      if(requireSignedCommit&&args.includes('config')&&args.at(-1)==='user.email')return signer.email;
+      if(!missingSigningKey && args.includes('config') && args.at(-1)==='user.name')return signer.name;
+      if(!missingSigningKey && args.includes('config') && args.at(-1)==='user.email')return signer.email;
       if(args[0]==='clone')args[3]=remote;
       if(args.includes('push')){
         pushes.push(args);
@@ -139,7 +144,20 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           assert.equal(await inRemote('show','-s','--format=%an <%ae>',result.sha),author.name+' <'+author.email+'>');
           assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),signer.name+' <'+signer.email+'>');
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
-        } else if(!humanOpener) assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
+        } else if(!humanOpener) {
+          assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
+          assert.equal(result.signed,!missingSigningKey,
+            'Lindsey signs when possible and falls back when the signing key is missing');
+          assert.equal(result.verified,!missingSigningKey&&!githubCannotVerifySignature,
+            'Report GitHub verification independently of whether Git signed the commit');
+          assert.equal(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),
+            !missingSigningKey,'Only the missing-key fallback is unsigned');
+          if(!missingSigningKey) {
+            await inRemote('verify-commit',result.sha);
+            assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),signer.name+' <'+signer.email+'>');
+          } else assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
+            author.name+' <'+author.email+'>','Unsigned fallback retains original committer');
+        }
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
@@ -154,8 +172,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await fs.rm(root,{recursive:true,force:true});
   }
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true},{githubCannotVerifySignature:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
- console.log('Local Git merges preserve history and human authors; signed squashes verify signatures, lease only the PR head, fast-forward unprotected bases, and respect checks and branch rules.');
+ console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

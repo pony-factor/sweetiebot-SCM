@@ -68,6 +68,9 @@ async function test() {
     const unsigned = await commitIdentity(git, original);
     assert.equal(unsigned.signed, false);
     assert.deepEqual(unsigned.committer, original, 'Unsigned commits retain their existing attribution');
+    const preferred = await commitIdentity(git, original, false, true);
+    assert.equal(preferred.signed, true, 'Merge replacements attempt signing with commit.gpgsign=false');
+    assert.deepEqual(preferred.committer, signer, 'Signing uses the configured local committer');
     const unsignedSha = await attributedCommitTree({
       directory: repo, tree, parents: [sha], messageFile, identity: unsigned
     });

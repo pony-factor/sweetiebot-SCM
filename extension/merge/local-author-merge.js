@@ -57,14 +57,30 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
     await git('rev-parse', headSha + '^{tree}');
   if (verifiedTree !== tree) throw Error('The locally verified integration tree changed.');
   onProgress('preparing-merge',{sha:headSha});
-  const identity = await commitIdentity(git, author, requireSignedCommit);
-  const signMerge = identity.signed;
+  // Use the actual local committer for signature attribution, while preserving
+  // the selected PR author. Signing is preferred even if commit.gpgsign is off.
+  let identity = await commitIdentity(git, author, requireSignedCommit, true);
   const file=path.join(directory,'.git','sweetiebot-local-merge-message');
   await fs.writeFile(file,message+'\n',{mode:0o600});
-  const sha = await createCommitTree({ directory, tree, parents: [baseSha, headSha],
-    messageFile: file, identity });
+  const create = identity => createCommitTree({ directory, tree,
+    parents: [baseSha, headSha], messageFile: file, identity });
+  let sha;
+  try {
+    sha = await create(identity);
+  } catch (error) {
+    if (requireSignedCommit || !identity.signed) throw error;
+    identity = { author, committer: author, signed: false };
+    sha = await create(identity);
+  }
+  if (!SHA.test(sha)) throw Error('Local Git did not produce a merge commit.');
+  if (identity.signed && !/(?:^|\n)gpgsig /.test(await git('cat-file','-p',sha))) {
+    if (requireSignedCommit) throw Error('The signed merge commit is missing its signature.');
+    identity = { author, committer: author, signed: false };
+    sha = await create(identity);
+    if (!SHA.test(sha)) throw Error('Local Git did not produce an unsigned fallback commit.');
+  }
   await verifyLocalCommitIdentity(git, sha, identity);
-  if (!SHA.test(sha)) throw Error('Local Git did not produce a verified merge commit.');
+  const signMerge = identity.signed;
   const [name,email,...body]=(await git('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
   verifyCommit({commit:{author:{name,email},message:body.join('\0')}},message,author);
   if (signMerge && !/(?:^|\n)gpgsig /.test(await git('cat-file','-p',sha))) throw Error('Local merge commit is missing its configured signature; no branch was pushed.');
@@ -78,16 +94,16 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   onProgress('verifying-merge',{sha});
   const destination=await api(root+'/commits/'+sha);
   verifyCommit(destination,message,author);
-  if (signMerge && destination.commit?.verification?.verified !== true) {
-    throw Error('The signed merge reached the base, but GitHub did not verify its signature (' +
-      (destination.commit?.verification?.reason || 'unknown reason') + '); inspect the pushed commit before retrying.');
-  }
+  // Signature verification is informational: unavailable keys or a GitHub
+  // identity mismatch must not prevent an otherwise authorized merge.
+  const verified = destination.commit?.verification?.verified === true;
   if (destination.parents?.length!==2 || destination.parents[0].sha!==baseSha || destination.parents[1].sha!==headSha) throw Error('Remote merge ancestry was not verified.');
   for (let attempt=0;attempt<12;attempt++) {
     const fresh=await api(prPath);
     if (fresh.merged===true && fresh.merge_commit_sha===sha && fresh.base?.ref===base) {
       return {merged:true,status:'merged',number,sha,headSha,previousHeadSha:original.head.sha,
-        author,base,baseSha,authorsPreserved:true,method:'local-git',...(signMerge?{signed:true}:{}),url:'https://github.com/'+repository+'/commit/'+sha};
+        author,base,baseSha,authorsPreserved:true,method:'local-git',signed:signMerge,verified,
+        url:'https://github.com/'+repository+'/commit/'+sha};
     }
     if (attempt<11) await new Promise(resolve=>setTimeout(resolve,1000));
   }
