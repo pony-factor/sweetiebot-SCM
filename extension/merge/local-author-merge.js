@@ -11,7 +11,8 @@ const { waitForMergeChecks } = require('./checks');
 const SHA = /^[a-f0-9]{40}$/i;
 
 async function localAuthorMerge({ repository, number, original, headSha, baseSha, tree, author, message,
-  git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false, privateRepository = false }) {
+  git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false,
+  privateRepository = false, createCommitTree = attributedCommitTree }) {
   const root = 'repos/' + repository, prPath = root + '/pulls/' + number;
   const head = original.head.ref, base = original.base.ref;
   const blocked = reason => ({ merged:false,status:'blocked',number,reason,headSha,base,baseSha });
@@ -52,7 +53,7 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   const signMerge = identity.signed;
   const file=path.join(directory,'.git','sweetiebot-local-merge-message');
   await fs.writeFile(file,message+'\n',{mode:0o600});
-  const sha = await attributedCommitTree({ directory, tree, parents: [baseSha, headSha],
+  const sha = await createCommitTree({ directory, tree, parents: [baseSha, headSha],
     messageFile: file, identity });
   await verifyLocalCommitIdentity(git, sha, identity);
   if (!SHA.test(sha)) throw Error('Local Git did not produce a verified merge commit.');
