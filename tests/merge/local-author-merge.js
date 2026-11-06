@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -26,7 +26,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
     }
     // Isolate the fixture from the developer's global Git settings. Without
-    // a signer, an attempted Lindsey replacement must fail before any push.
+    // a signer, Lindsey may publish only an explicitly unsigned fallback.
     const config=path.join(root,'gitconfig');
     if(missingSigningKey)await fs.writeFile(config,'[gpg]\n\tformat = ssh\n');
     process.env.GIT_CONFIG_GLOBAL=config;
@@ -86,7 +86,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         const [name,email,...message]=(await inRemote('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
         const signed=/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',sha));
         return {commit:{author:{name,email},message:message.join('\0'),
-          verification:{verified:signed,reason:signed?'valid':'unsigned'}},
+          verification:{verified:signed&&!githubCannotVerifySignature,
+            reason:!signed?'unsigned':githubCannotVerifySignature?'bad_email':'valid'}}, 
           parents:(await inRemote('show','-s','--format=%P',sha)).split(' ').map(sha=>({sha}))};
       }
       throw Error('Unexpected API write or endpoint: '+endpoint);
@@ -113,11 +114,6 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
     if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
-    else if(missingSigningKey){
-      await assert.rejects(action(),/sign|key|gpg/i);
-      assert.equal(pushes.length,0,'Missing signing keys must block publication');
-      assert.equal(await branch('main'),baseSha,'The base must remain untouched without a signer');
-    }
     else if(race){await assert.rejects(action(),/rejected|fetch first|non-fast-forward/);assert.equal(await branch('main'),competing);}
     else {
       if(conflict){
@@ -145,10 +141,13 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
         } else if(!humanOpener) {
           assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
-          assert.equal(result.signed,true,'Generated merge commits are always signed');
-          assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),
-            'Git must sign the replacement even when commit.gpgsign is disabled');
-          await inRemote('verify-commit',result.sha);
+          assert.equal(result.signed,!missingSigningKey,
+            'Lindsey signs when possible and falls back when the signing key is missing');
+          assert.equal(result.verified,!missingSigningKey&&!githubCannotVerifySignature,
+            'Report GitHub verification independently of whether Git signed the commit');
+          assert.equal(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),
+            !missingSigningKey,'Only the missing-key fallback is unsigned');
+          if(!missingSigningKey) await inRemote('verify-commit',result.sha);
         }
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
@@ -164,8 +163,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await fs.rm(root,{recursive:true,force:true});
   }
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true},{githubCannotVerifySignature:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
- console.log('Local Git merges require signatures, verify signed replacements, reject missing keys before pushing, preserve history and human authors, and respect checks and branch rules.');
+ console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
