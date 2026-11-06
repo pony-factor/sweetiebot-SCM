@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -43,7 +43,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     const headSha=commits.at(-1).sha;
     if(advanceBase){
       await inWork('checkout','--quiet','main');await fs.writeFile(path.join(work,'base-only.txt'),'Retain the new base behavior\n');
-      await inWork('add','base-only.txt');await inWork('commit','--quiet','-m','Advance base');baseSha=await inWork('rev-parse','HEAD');
+      if(conflict)await fs.writeFile(path.join(work,'file.txt'),'main behavior\n');
+      await inWork('add',conflict?'file.txt':'base-only.txt');await inWork('commit','--quiet','-m','Advance base');baseSha=await inWork('rev-parse','HEAD');
       await inWork('checkout','--quiet','feature');
     }
     await inWork('push','--quiet','origin','main','feature');
@@ -52,7 +53,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       const tip=await branch('main');
       const merged=tip!==baseSha && !race;
       return {state:merged?'closed':'open',merged,merged_at:merged?'2026-10-28':null,
-        merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:true,mergeable_state:'clean',
+        merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:!conflict,mergeable_state:conflict?'dirty':'clean',
         user:humanOpener?{type:'User',login:'human'}:{type:'Bot',login:'automation[bot]'},head:{ref:'feature',sha:await branch('feature'),repo:{full_name:'owner/repo'}},
         base:{ref:'main',sha:tip,repo:{full_name:'owner/repo'}}};
     };
@@ -104,19 +105,28 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       return git(...args);
     };
-    const action=()=>humanSquashMerge('owner/repo',1,{api,git:localGit,localGitMerge:true,requireSignedCommit,
+    const action=(options={})=>humanSquashMerge('owner/repo',1,{api,git:localGit,localGitMerge:true,requireSignedCommit,
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
-      temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-'))});
+      temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
     if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
     else if(race){await assert.rejects(action(),/rejected|fetch first|non-fast-forward/);assert.equal(await branch('main'),competing);}
     else {
-      const result=await action();
-      if(protectedBase||rules.length||failed){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
+      if(conflict){
+        const pending=await action();
+        assert.equal(pending.status,'needs_resolution','A genuine conflict requests a current-base decision');
+        assert.equal(pushes.length,0,'Conflict discovery never synchronizes the PR head');
+      }
+      const resolutionPatch=conflict?
+        'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-main behavior\n+combined feature and main\n':null;
+      const result=await action(conflict?{resolutionPatch,decisions:[{path:'file.txt',
+        title:'🛠️ Preserve both behaviors',description:'Combine main behavior and the PR feature.'}]}:{});
+      if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
         assert.equal(result.merged,true,JSON.stringify(result));
         if(requireSignedCommit) assert.equal(result.method,'local-signed-squash');
         else if(!humanOpener) assert.equal(result.method,'local-git');
-        assert.equal(pushes.length,requireSignedCommit?2:humanOpener?(advanceBase?1:0):advanceBase?2:1);
+        assert.equal(pushes.length,requireSignedCommit?2:humanOpener?0:1,
+          'Automatic integration must push the destination only');
         assert.equal(await inRemote('rev-parse',result.sha+'^1'),baseSha);
         if(requireSignedCommit) {
           assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha,'A signed squash has only the base as its parent');
@@ -125,19 +135,20 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
         } else if(!humanOpener) assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
-        if(advanceBase)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
-        assert.equal(await inRemote('show',result.sha+':file.txt'),'finished feature');
+        if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
+        assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
         assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
       }
     }
-    if(!advanceBase)assert.equal(await branch('feature'),headSha,'The original PR head is never rewritten or synchronized unnecessarily');
+    if(!requireSignedCommit)assert.equal(await branch('feature'),headSha,
+      'The original PR head stays untouched even when main advances or conflicts exist');
   } finally {
     if(oldGlobalConfig===undefined) delete process.env.GIT_CONFIG_GLOBAL;
     else process.env.GIT_CONFIG_GLOBAL=oldGlobalConfig;
     await fs.rm(root,{recursive:true,force:true});
   }
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true}])await fixture(options);
+(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
  console.log('Local Git merges preserve history and human authors; signed squashes verify signatures, lease only the PR head, fast-forward unprotected bases, and respect checks and branch rules.');
