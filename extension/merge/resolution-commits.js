@@ -34,7 +34,8 @@ function validateDecisions(value = []) {
 // Build an append-only PR history in an isolated index. main is only a tree
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
-  conflicts, decisions, author, base, assistantModelNumber, onCommit = () => {} }) {
+  conflicts, decisions, author, base, assistantModelNumber, onCommit = () => {},
+  createCommitTree = attributedCommitTree }) {
   decisions = validateDecisions(decisions);
   const trailer = assistantCoauthorTrailer(assistantModelNumber);
   if (decisions.length && !trailer) throw Error('Model-authored conflict decisions require the web generator model number.');
@@ -47,7 +48,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
   const identity = await commitIdentity(git, author);
   const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
-    const sha = await attributedCommitTree({ directory, tree, parents: incoming ? [parent, incoming] : [parent],
+    const sha = await createCommitTree({ directory, tree, parents: incoming ? [parent, incoming] : [parent],
       messageFile, identity });
     await verifyLocalCommitIdentity(git, sha, identity);
     return sha;
