@@ -6,6 +6,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { verifyCommit } = require('./human-squash-merge');
+const { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
 const { waitForMergeChecks } = require('./checks');
 const SHA = /^[a-f0-9]{40}$/i;
 
@@ -47,15 +48,13 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   if (reason) return blocked(reason);
   if (await git('rev-parse',headSha+'^{tree}') !== tree) throw Error('The local merge tree differs from the checked PR head.');
   onProgress('preparing-merge',{sha:headSha});
-  // Unlike git commit, git commit-tree does not honor commit.gpgsign by itself.
-  // Use the same configuration as incremental Lindsey resolution commits.
-  const signingConfigured = (await git('config', '--type=bool', '--default', 'false',
-    '--get', 'commit.gpgsign')) === 'true';
-  const signMerge = requireSignedCommit || signingConfigured;
+  const identity = await commitIdentity(git, author, requireSignedCommit);
+  const signMerge = identity.signed;
   const file=path.join(directory,'.git','sweetiebot-local-merge-message');
   await fs.writeFile(file,message+'\n',{mode:0o600});
-  const sha=await git('-c','user.name='+author.name,'-c','user.email='+author.email,
-    'commit-tree',...(signMerge?['-S']:[]),tree,'-p',baseSha,'-p',headSha,'-F',file);
+  const sha = await attributedCommitTree({ directory, tree, parents: [baseSha, headSha],
+    messageFile: file, identity });
+  await verifyLocalCommitIdentity(git, sha, identity);
   if (!SHA.test(sha)) throw Error('Local Git did not produce a verified merge commit.');
   const [name,email,...body]=(await git('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
   verifyCommit({commit:{author:{name,email},message:body.join('\0')}},message,author);
