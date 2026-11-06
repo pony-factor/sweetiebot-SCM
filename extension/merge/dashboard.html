@@ -459,6 +459,7 @@ __RATE_LIMIT_FORMATTER__
   const expandedReviewComments = new Set();
   const openActivities = new Set();
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  let lastViewportWidth = 0;
   function saveLayout() {
     vscode.setState({ ...vscode.getState(), sidebarRatio, timelineRatio, layoutPreferences });
   }
@@ -488,6 +489,13 @@ __RATE_LIMIT_FORMATTER__
       applySize('sidebar', bounds('sidebar').total * (sidebarRatio ?? (window.innerWidth <= 900 ? 0.4 : 0.37)));
     }
     applySize('timeline', bounds('timeline').total * timelineRatio);
+    // Pane width is available inside the webview even though the extension
+    // host cannot inspect editor pixel sizes through VS Code's public API.
+    const width = Math.round(window.innerWidth);
+    if (width >= 160 && width !== lastViewportWidth) {
+      lastViewportWidth = width;
+      vscode.postMessage({ type: 'dashboard-viewport', width });
+    }
   }
   function rememberSize(kind, size) {
     const ratio = applySize(kind, size);

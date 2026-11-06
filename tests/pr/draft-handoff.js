@@ -68,7 +68,7 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.match(pageHtml, /id="merge-progress" class="merge-progress" role="status" aria-live="polite" hidden/,
       'Merge confirmation exposes an accessible, initially hidden live progress indicator');
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
-    assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\)\)\)/, 'The confirmation window renders the independent pony profile as Markdown, including timestamped moment links');
+    assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\),state\.pony\)\)/, 'The confirmation window renders the independent pony profile as Markdown, including timestamped moment links');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
     assert.match(pageHtml, /function keepOpenForPony\(state\)/, 'Automatic merge close must inspect pony research and pending cache writes');
     assert.equal((pageHtml.match(/!keepOpenForPony\(state\)&&updated&&!keepOpenForPony\(updated\)/g)||[]).length, 2,
