@@ -73,6 +73,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       const created = [];
       const git = async (...args) => {
         if (args[0] === 'config') {
+          if (args.at(-1) === 'gpg.format') return 'openpgp';
           if (args.at(-1) === 'user.name') return 'Human';
           if (args.at(-1) === 'user.email') return 'human@example.test';
           return String(enabled);
@@ -153,6 +154,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
       };
       const git = async (...args) => {
         if (args[0] === 'config') {
+          if (args.at(-1) === 'gpg.format') return 'openpgp';
           if (args.at(-1) === 'user.name') return author.name;
           if (args.at(-1) === 'user.email') return author.email;
           assert.deepEqual(args, ['config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign']);
