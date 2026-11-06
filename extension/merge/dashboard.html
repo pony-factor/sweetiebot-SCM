@@ -636,6 +636,11 @@ __RATE_LIMIT_FORMATTER__
       const button = show('button', 'secondary', item[1], actions);
       button.addEventListener('click', () => dispatch(item[0], pr.number));
     }
+    if (pr.state !== 'merged') {
+      const summaryButton = show('button', 'secondary', 'Post change summary', actions);
+      summaryButton.title = 'Review and post a new PR conversation comment; never edit the description';
+      summaryButton.addEventListener('click', () => dispatch('post-change-summary', pr.number));
+    }
     if (pr.mergedAt) {
       const outcome = showTextPanel(parent, '✓ Verified outcome',
         formatMergeOutcome(pr.mergedAt, pr.mergeCommit, model.timestampMode), '');
