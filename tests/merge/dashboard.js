@@ -476,7 +476,12 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('.event.checks-pending{border-color:var(--vscode-progressBar-background,'),
     'In-progress CI has its own timeline styling');
   assert(panel.webview.html.includes('id="refresh"'), 'Keep the manual GitHub refresh control');
-  assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey offers an opt-in CI auto-repair toggle');
+  assert(panel.webview.html.includes('id="auto-fix-ci"'), 'Lindsey keeps a CI auto-repair toggle');
+  assert(panel.webview.html.includes('On by default; turn off to disable automatic repair.'),
+    'CI repair is the default without overriding an explicitly disabled preference');
+  const extensionSettings = JSON.parse(fs.readFileSync(require.resolve('../../extension/package.json'), 'utf8'));
+  assert.equal(extensionSettings.contributes.configuration.properties['sweetiebot.mergeAutoFixCi'].default, true,
+    'Automatic CI repair is enabled for installations without a saved preference');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
   assert(panel.webview.html.includes('class="ci-repair-controls"'),
     'Keep the CI auto-fix checkbox and method picker grouped');
