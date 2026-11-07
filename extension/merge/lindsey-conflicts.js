@@ -104,13 +104,13 @@ async function applyPreview(repository, temporary, manifest) {
   return files.length;
 }
 
-async function generatePreview(vscode, repository, { sync = false } = {}) {
+async function generatePreview(vscode, repository, { sync = false, run = exec, findScript = lindseyScript } = {}) {
   const root = repository.rootUri?.fsPath;
   if (!root) throw new Error('No local Git repository selected.');
-  const script = lindseyScript(root, vscode.workspace?.workspaceFolders || []);
+  const script = findScript(root, vscode.workspace?.workspaceFolders || []);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-lindsey-'));
   try {
-    const { stdout } = await exec(process.execPath,
+    const { stdout } = await run(process.execPath,
       [script, '--repo', root, '--output', temporary], {
         cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }

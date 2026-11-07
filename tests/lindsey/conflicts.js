@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const {
-  lindseyScript, safeRelative, inspectPreview, applyPreview, offerConflictRecoveryOptions
+  lindseyScript, safeRelative, inspectPreview, applyPreview, generatePreview, offerConflictRecoveryOptions
 } = require('../../extension/merge/lindsey-conflicts');
 
 async function run() {
@@ -67,6 +67,31 @@ async function run() {
     await assert.rejects(applyPreview(mockRepo, tmp, manifest), /changed while Lindsey/);
     await assert.rejects(inspectPreview(mockRepo, tmp,
       { ...manifest, files: [{ ...manifest.files[0], path: '../../bad' }] }), /invalid/);
+    fs.writeFileSync(path.join(root, 'file.txt'), original);
+    let approve = false;
+    const syncUI = {
+      Uri: { file: value => value },
+      commands: { executeCommand: async command => assert.equal(command, 'vscode.diff') },
+      window: { showInformationMessage: async (message, action) => {
+        assert.match(message, /configured Lindsey App identity/);
+        assert.equal(action, 'Apply and sync with Lindsey');
+        return approve ? action : undefined;
+      } }
+    };
+    const previewOptions = { sync: true, findScript: () => '/fixture/resolve-conflicts.js',
+      run: async (_, args) => {
+        const output = args[args.indexOf('--output') + 1];
+        fs.writeFileSync(path.join(output, candidate), 'merged\n');
+        return { stdout: JSON.stringify(manifest) };
+      }
+    };
+    assert.equal(await generatePreview(syncUI, mockRepo, previewOptions), undefined);
+    assert.deepEqual(fs.readFileSync(path.join(root, 'file.txt')), original, 'Cancellation preserves the conflict');
+    approve = true;
+    assert.deepEqual(await generatePreview(syncUI, mockRepo, previewOptions), { files: [{
+      path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex')
+    }] });
+    assert(git('ls-files', '-u'), 'Preview returns reviewed bytes to the sync coordinator before staging');
     assert.throws(() => lindseyScript(root, [], '/nonexistent/lindsey-sync'), /not available locally/);
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });

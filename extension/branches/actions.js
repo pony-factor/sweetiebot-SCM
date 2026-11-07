@@ -3,7 +3,7 @@
 const { execFile } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const { existsSync } = require('node:fs');
-const { mkdtemp, rm, readFile, writeFile, rename } = require('node:fs/promises');
+const { mkdtemp, rm, readFile, writeFile, rename, lstat } = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
@@ -1275,7 +1275,9 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           throw Error('Lindsey must resolve every sync conflict before committing.');
         }
         for (const file of proposal.files) {
-          const bytes = await readFile(path.join(root, file.path));
+          const filename = path.join(root, file.path);
+          if (!(await lstat(filename)).isFile()) throw Error('A Lindsey proposal changed file type after review.');
+          const bytes = await readFile(filename);
           if (createHash('sha256').update(bytes).digest('hex') !== file.sha256) {
             throw Error('A Lindsey proposal changed after review. No sync commit was created.');
           }
