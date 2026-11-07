@@ -120,6 +120,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                         request.threadId = message.conversationId;
                         request.marker = crypto.randomUUID();
                         await vscode.env.clipboard.writeText(request.marker);
+                        if (pending.get(message.id) !== request) return;
                         request.copying = false;
                         await webview.postMessage({ type: 'scm-toolkit-context-request', id: message.id,
                             copyDeepLink: true, expectedThreadId: request.threadId });
@@ -328,10 +329,12 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             if (!request.shareOnly && request.clipboard === undefined) continue;
             clearTimeout(request.timeout);
             pending.delete(id);
-            // Stop renderer menu automation before restoring the clipboard.
-            await request.webview.postMessage({ type: 'scm-toolkit-cancel-capture' });
-            if (request.clipboard !== undefined) await vscode.env.clipboard.writeText(request.clipboard);
             request.reject(new Error('Codex capture stopped because the checkout is changing.'));
+            // Stop renderer menu automation before restoring the clipboard.
+            try { await request.webview.postMessage({ type: 'scm-toolkit-cancel-capture' }); }
+            finally {
+                if (request.clipboard !== undefined) await vscode.env.clipboard.writeText(request.clipboard);
+            }
         }
     });
     const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async (threadId, options) => {
