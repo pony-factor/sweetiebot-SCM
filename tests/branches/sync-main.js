@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { refreshMain, syncPublisher } = require('../../extension/branches/sync-main');
+const { refreshMain, syncIdentity, syncPublisher } = require('../../extension/branches/sync-main');
 const { syncBranch } = require('../../extension/branches/actions');
 
 async function run() {
@@ -68,9 +68,18 @@ async function run() {
     assert.equal(git(root, 'rev-parse', 'HEAD'), topicTip);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 
-  let writes = 0, tokens = 0;
+  const bot = { name: 'fixture-lindsey[bot]', email: '123+fixture-lindsey[bot]@users.noreply.github.com' };
+  const fetchImpl = async url => {
+    assert.equal(url, 'https://api.github.com/users/fixture-lindsey%5Bbot%5D');
+    return { ok: true, json: async () => ({ login: bot.name, id: 123, type: 'Bot' }) };
+  };
+  assert.deepEqual(await syncIdentity({ login: bot.name, fetchImpl }), bot);
+  await assert.rejects(syncIdentity({ login: bot.name,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ login: 'someone', id: 123, type: 'User' }) }) }), /verify/);
+  let writes = 0, tokens = 0, commits = 0;
   const publish = await syncPublisher('/fixture', 'origin', {
     enabled: () => true,
+    identity: async () => bot,
     transport: repo => {
       assert.equal(repo, 'owner/fork');
       return { async gitToken() { tokens++; return 'fixture-token'; } };
@@ -78,6 +87,15 @@ async function run() {
     run: async (command, args, options) => {
       assert.equal(command, 'git');
       if (args[0] === 'remote') return { stdout: 'git@github.com:owner/fork.git\n' };
+      if (args[0] === 'commit') {
+        commits++;
+        assert.equal(options.env.GIT_AUTHOR_NAME, bot.name);
+        assert.equal(options.env.GIT_AUTHOR_EMAIL, bot.email);
+        assert.equal(options.env.GIT_COMMITTER_NAME, bot.name);
+        assert.equal(options.env.GIT_COMMITTER_EMAIL, bot.email);
+        assert(!args.includes('--no-gpg-sign'));
+        return { stdout: '' };
+      }
       writes++;
       assert(args.includes('https://github.com/owner/fork.git'));
       assert(args.includes('abc:refs/heads/topic'));
@@ -87,6 +105,8 @@ async function run() {
     }
   });
   assert.equal(tokens, 1, 'App credentials are checked before committing');
+  await publish.commit('🔄 Sync branch to main');
+  assert.equal(commits, 1);
   await publish('topic', 'abc');
   assert.equal(writes, 1);
   assert.equal(tokens, 2, 'Publication refreshes credentials');

@@ -1477,8 +1477,8 @@ function registerBranchCommands(vscode, context) {
               isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork, commitDraftValue })
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
-              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details)
-              , resolveConflicts: repo => generatePreview(vscode, repo, { sync: true })
+              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
+              resolveConflicts: repo => generatePreview(vscode, repo, { sync: true })
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: detachedTip => confirmUnverifiedLocalDeletion(vscode, repository, {
