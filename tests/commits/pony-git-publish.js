@@ -56,13 +56,15 @@ async function fixture(run) {
     git(root, 'add', 'README.md');
     await fs.writeFile(path.join(root, 'scratch.txt'), 'do not commit\n');
     const initial = git(root, 'rev-parse', 'HEAD');
-    const result = await publishPonyProfile(root, pony, 'g4-mares/berry-punch.json');
+    const result = await publishPonyProfile(root,
+      { ...pony, assistantModelNumber: '6.1' }, 'g4-mares/berry-punch.json');
     assert.equal(result.pushed, true);
     assert.equal(result.path, 'ponies/g4-mares/berry-punch.json');
     assert.notEqual(result.commit, initial);
     assert.equal(git(root, 'show', '--format=', '--name-only', 'HEAD'), result.path);
     assert.match(git(root, 'log', '-1', '--format=%B'), /^🦄 Add pony profile: g4-mares\/berry-punch\n/);
-    assert.match(git(root, 'log', '-1', '--format=%B'), /Co-authored-by: Codex Web <noreply@openai.com>/);
+    assert.match(git(root, 'log', '-1', '--format=%B'), /Co-authored-by: ChatGPT 6\.1 <noreply@openai.com>/);
+    assert.doesNotMatch(git(root, 'log', '-1', '--format=%B'), /Co-authored-by: Codex Web/);
     assert.equal(git(root, 'rev-parse', 'HEAD'), git(root, 'rev-parse', 'refs/remotes/origin/main'));
     assert.equal(execFileSync('git', ['--git-dir', remote, 'rev-parse', 'main'], { encoding: 'utf8' }).trim(), result.commit);
     assert.equal(git(root, 'status', '--porcelain=1', '--', 'README.md'), 'M  README.md');
@@ -73,8 +75,17 @@ async function fixture(run) {
   });
 
   await fixture(async root => {
+    await publishPonyProfile(root, pony, 'g4-mares/berry-punch.json');
+    assert.doesNotMatch(git(root, 'log', '-1', '--format=%B'), /Co-authored-by:/);
+  });
+
+  await fixture(async root => {
     const original = git(root, 'rev-parse', 'HEAD');
     await assert.rejects(publishPonyProfile(root, pony, '../../README.md'), /unexpected pony profile path/);
+    for (const assistantModelNumber of ['Codex Web', '6.1\nCo-authored-by: Fake <x@y>', 6]) {
+      await assert.rejects(publishPonyProfile(root, { ...pony, assistantModelNumber },
+        'g4-mares/berry-punch.json'), /Invalid web coding model number/);
+    }
     assert.equal(git(root, 'rev-parse', 'HEAD'), original);
     git(root, 'checkout', '-b', 'topic');
     await assert.rejects(publishPonyProfile(root, pony, 'g4-mares/berry-punch.json'), /main tracking origin\/main/);

@@ -72,6 +72,20 @@ async function fixture(check) {
     assert.equal((await publishPonyProfile(root, pony, stored, { run })).reason, 'existing-profile-preserved');
   });
   await fixture(async (root, state, run) => {
+    // The model number survives retries without relying on the active web model.
+    state.failFetch = true;
+    await assert.rejects(publishPonyProfile(root, { ...pony, assistantModelNumber: '6.2' },
+      stored, { run }), /Network/);
+    const pending = await pendingPonyProfiles(root, { run });
+    assert.equal(pending[0].assistantModelNumber, '6.2');
+    await assert.rejects(publishPonyProfile(root, { ...pony, assistantModelNumber: '6.1' },
+      stored, { run }), /different web coding model number/);
+    state.failFetch = false;
+    await publishPonyProfile(root, pending[0].pony, stored, { run });
+    assert.match(state.message, /Co-authored-by: ChatGPT 6\.2 <noreply@openai.com>/);
+    assert.doesNotMatch(state.message, /Co-authored-by: Codex Web/);
+  });
+  await fixture(async (root, state, run) => {
     state.failPush = true;
     await assert.rejects(publishPonyProfile(root, pony, stored, { run }));
     const receiptPath = path.join(root, '.git/sweetiebot-pony-publish/g4-mares--stardom.json');

@@ -8,6 +8,17 @@ const { randomUUID } = require('node:crypto');
 
 const execute = promisify(execFile);
 const VALID_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const MODEL_NUMBER = /^[1-9]\d*(?:\.\d+){0,2}$/;
+
+// The publisher also runs as a standalone worker, so keep validation local.
+function webCoauthor(modelNumber) {
+  if (modelNumber === undefined) return '';
+  if (typeof modelNumber !== 'string' || modelNumber.length > 16 ||
+      !MODEL_NUMBER.test(modelNumber)) {
+    throw new Error('Invalid web coding model number for pony publication.');
+  }
+  return 'Co-authored-by: ChatGPT ' + modelNumber + ' <noreply@openai.com>';
+}
 
 async function pendingDirectory(root, run) {
   const { stdout } = await run(process.env.SCM_TOOLKIT_REAL_GIT || 'git', ['rev-parse', '--absolute-git-dir'], { cwd: root });
@@ -43,6 +54,9 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   if (!VALID_SLUG.test(pack) || !VALID_SLUG.test(slug) || storedPath !== `${pack}/${slug}.json`) {
     throw new Error('Kafania returned an unexpected pony profile path.');
   }
+  // Only attribute a generating web model when its response supplied a number.
+  const suppliedModelNumber = pony?.assistantModelNumber;
+  webCoauthor(suppliedModelNumber);
   const relativePath = `ponies/${storedPath}`;
   const root = path.resolve(directory);
   const git = async (...args) => {
@@ -73,6 +87,11 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   if (receipt && (receipt.path !== storedPath || receipt.pony?.packId !== pack || receipt.pony?.slug !== slug)) {
     throw new Error('Invalid pending pony publication receipt.');
   }
+  if (receipt?.assistantModelNumber !== undefined) webCoauthor(receipt.assistantModelNumber);
+  if (receipt && suppliedModelNumber !== undefined &&
+      receipt.assistantModelNumber !== suppliedModelNumber) {
+    throw new Error('Pending pony publication has a different web coding model number.');
+  }
   if (receipt?.parent && (!/^[a-f0-9]{40,64}$/.test(receipt.parent)
       || !/^[a-f0-9]{40,64}$/.test(receipt.blob))) throw new Error('Invalid pending pony commit evidence.');
   const saveReceipt = async () => {
@@ -87,7 +106,8 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
     if (status !== `?? ${relativePath}` && status !== `A  ${relativePath}`) {
       throw new Error('The pony profile is not a new, uncommitted file; refusing to overwrite existing work.');
     }
-    receipt = { pony: { packId: pack, slug }, path: storedPath, id: randomUUID() };
+    receipt = { pony: { packId: pack, slug }, path: storedPath, id: randomUUID(),
+      ...(suppliedModelNumber === undefined ? {} : { assistantModelNumber: suppliedModelNumber }) };
     // Persist before any network request so a failed fetch can retry after restart.
     await saveReceipt();
   }
@@ -162,7 +182,8 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   }
 
   const title = `🦄 Add pony profile: ${pack}/${slug}`;
-  const message = `${title}\n\nAdd the researched pony profile to Kafania's permanent library.\n\nSweetiebot-Pony-Publication: ${receipt.id}\nCo-authored-by: Codex Web <noreply@openai.com>`;
+  const trailer = webCoauthor(receipt.assistantModelNumber);
+  const message = `${title}\n\nAdd the researched pony profile to Kafania's permanent library.\n\nSweetiebot-Pony-Publication: ${receipt.id}${trailer ? '\n\n' + trailer : ''}`;
   // --only commits just this path, preserving all other staged user changes.
   await git('commit', '--only', '-m', message, '--', relativePath);
   const sha = await git('rev-parse', 'HEAD');
