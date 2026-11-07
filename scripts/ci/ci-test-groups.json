@@ -157,6 +157,7 @@
         "codex/chatgpt-project-setup.js",
         "codex/adaptive-video.js",
         "codex/cannon.py",
+        "codex/clipboard.js",
         "codex/clipboard-submit.js",
         "codex/colors.py",
         "codex/composer.py",
