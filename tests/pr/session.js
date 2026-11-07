@@ -261,9 +261,15 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert(directPrompt.includes('Do not bury conflict decisions'));
     assert(directPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
     assert(!new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).has('return_to'),'Direct web repairs have no local apply callback');
-    // The restored direct button launches the real branch-only executor route.
+    // App-enabled web repairs launch the same branch-only executor route.
     const localOption = manualBlockerActions({ ...pr, state: 'conflict' }).find(item => item.id === 'resolve-conflicts-local');
-    await launchBlockerAction(source, context, root, selection.repository, pr, localOption, localOption.engine);
+    const modeBeforeRepair = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+    process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'separate-apps';
+    try { await launchBlockerAction(source, context, root, selection.repository, pr, localOption, 'web'); }
+    finally {
+      if (modeBeforeRepair === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+      else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = modeBeforeRepair;
+    }
     const actionWorkspace = calls.at(-1)[1];
     const actionDirectory = path.dirname(actionWorkspace.fsPath);
     assert.equal(path.basename(actionWorkspace.fsPath), 'Resolve #12 [repository].code-workspace');
