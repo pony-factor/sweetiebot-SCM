@@ -266,9 +266,10 @@ const run = promisify(execFile);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
  }
  for (const checkState of ['success', 'pending', 'failure']) await successiveMerges(checkState);
+ await successiveMerges('success', true);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
-async function successiveMerges(checkState) {
+async function successiveMerges(checkState, appMode = false) {
  const { createMergeBatch } = require('../../extension/merge/batch');
  const { executeResolution } = require('../../extension/merge/resolution');
  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-successive-test-'));
@@ -303,6 +304,7 @@ async function successiveMerges(checkState) {
    await repo('push', '--quiet', 'origin', 'main', 'feature-1', 'feature-2', 'feature-3');
    const branch = name => git('--git-dir=' + remote, 'rev-parse', 'refs/heads/' + name);
    const author = { name: 'John Wooten', email: 'human@example.test' };
+   const bot = { name: 'lindsey-fixture[bot]', email: '123+lindsey-fixture[bot]@users.noreply.github.com' };
    const merged = new Set();
    const thirdCheckHead = heads[3];
    const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
@@ -320,10 +322,13 @@ async function successiveMerges(checkState) {
       head: { ref: 'feature-' + number, sha: await branch('feature-' + number), repo: { full_name: 'owner/repo' } },
       base: { ref: 'main', sha: baseTip, repo: { full_name: 'owner/repo' } } };
     };
-    const commit = async sha => ({ sha, author: { type: 'User', login: 'human' }, commit: { author,
-     message: await git('--git-dir=' + remote, 'show', '-s', '--format=%B', sha) },
-     parents: (await git('--git-dir=' + remote, 'show', '-s', '--format=%P', sha))
-        .split(' ').filter(Boolean).map(sha => ({ sha })) });
+    const commit = async sha => {
+      const [name,email,committerName,committerEmail,...body] = (await git('--git-dir=' + remote,
+        'show','-s','--format=%an%x00%ae%x00%cn%x00%ce%x00%B',sha)).split('\0');
+      return { sha, author: name === bot.name ? {type:'Bot',login:bot.name} : {type:'User',login:'human'},
+        commit: { author:{name,email}, committer:{name:committerName,email:committerEmail}, message:body.join('\0') },
+        parents:(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', sha)).split(' ').filter(Boolean).map(sha=>({sha})) };
+    };
    const api = async (endpoint, method, fields) => {
      if (endpoint === 'repos/owner/repo') return { allow_rebase_merge: true, allow_squash_merge: true, default_branch: 'main' };
      if (endpoint.includes('/rules/branches/')) return [];
@@ -354,7 +359,9 @@ async function successiveMerges(checkState) {
        const messageFile = path.join(root, 'native-squash-message');
        await fs.writeFile(messageFile, message);
        const mergedTree = await git('--git-dir=' + remote, 'merge-tree', '--write-tree', base, head);
-        const squash = await git('--git-dir=' + remote, 'commit-tree', mergedTree, '-p', base, '-F', messageFile);
+        const squash = await git('--git-dir=' + remote,
+          ...(appMode ? require('../../extension/github/app-commit-identity').commitIdentityArgs(author,bot) : []),
+          'commit-tree', mergedTree, '-p', base, '-F', messageFile);
        await git('--git-dir=' + remote, 'update-ref', 'refs/heads/main', squash, base);
        merged.add(number);
        return { merged: true, sha: squash };
@@ -368,7 +375,9 @@ async function successiveMerges(checkState) {
      head: 'feature-' + number, headSha: heads[number], base: 'main' })) };
    batch = await createMergeBatch(selection, { api, destination: 'https://chatgpt.com/',
      execute: (input, selected) => executeResolution(input, selected, { merge: (repository, number, options) =>
-       humanSquashMerge(repository, number, { ...options, api, git: localGit, checkOptions: { timeoutMs: 0 },
+       humanSquashMerge(repository, number, { ...options, api: appMode ? ()=>assert.fail('No user API in App bulk handoff') : api,
+         getAppActor: async()=>appMode ? { api, gitToken:async()=> 'fixture-app-token', author:bot } : null,
+         git: localGit, checkOptions: { timeoutMs: 0 },
          temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) }) }) });
    const submit = async (url, number, patch = null) => {
      const launch = new URLSearchParams(new URL(url).hash.slice(1));
@@ -401,7 +410,12 @@ async function successiveMerges(checkState) {
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
-   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
+   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
+     appMode ? `${bot.name} <${bot.email}>` : 'John Wooten <human@example.test>');
+   if(appMode) {
+     assert.equal(await git('--git-dir='+remote,'show','-s','--format=%cn <%ce>','main'),`${bot.name} <${bot.email}>`);
+     assert.equal(await git('--git-dir='+remote,'show','-s','--format=%an <%ae>',heads[2]),'John Wooten <human@example.test>');
+   }
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
    const newCredit = 'Co-authored-by: ChatGPT 6.1 <noreply@openai.com>';

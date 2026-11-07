@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { createLindseyTransport } = require('../../extension/merge/lindsey-transport');
+const { configuredMergeActor, commitIdentityArgs } = require('../../extension/github/app-commit-identity');
 
 (async () => {
   const {decodeKeychainPassword} = require('../../extension/github/app-settings');
@@ -38,5 +39,29 @@ const { createLindseyTransport } = require('../../extension/merge/lindsey-transp
     fetchImpl:()=>assert.fail('Never fall back to user authentication')});
   await assert.rejects(legacy.gitToken(),/Lindsey GitHub App/);
   await assert.rejects(legacy.api('repos/owner/repo'),/Lindsey GitHub App/);
+  const bot = { name: 'lindsey-fixture[bot]', email: '123+lindsey-fixture[bot]@users.noreply.github.com' };
+  let authenticated = false;
+  const actor = await configuredMergeActor('owner/repo', { enabled: () => true,
+    transport: repo => { assert.equal(repo, 'owner/repo'); return { gitToken: async () => { authenticated = true; } }; },
+    identity: async () => { assert(authenticated, 'App authentication precedes commit identity'); return bot; }
+  });
+  assert.deepEqual(actor.author, bot);
+  await assert.rejects(configuredMergeActor('owner/repo', { enabled: () => true,
+    transport: () => ({ gitToken: async () => { throw Error('App unavailable'); } }),
+    identity: () => assert.fail('No identity or fallback after App failure') }), /App unavailable/);
+  assert.equal(await configuredMergeActor('owner/repo', { enabled: () => false,
+    transport: () => assert.fail('Disabled mode must not request an App') }), null);
+  const args = commitIdentityArgs(bot);
+  for (const key of ['author', 'committer']) {
+    assert(args.includes(key + '.name=' + bot.name));
+    assert(args.includes(key + '.email=' + bot.email));
+  }
+  assert.throws(() => commitIdentityArgs({ name: 'bad\nname', email: bot.email }), /identity/);
+  const { implementationEngine } = require('../../extension/merge/blocker-actions');
+  assert.equal(implementationEngine('web', {id:'fix-checks'}, true), 'kefania');
+  assert.equal(implementationEngine('web', {id:'resolve-conflicts'}, true), 'kefania');
+  assert.equal(implementationEngine('web', {id:'fix-checks'}, false), 'web');
+  assert.equal(implementationEngine('web', {id:'suggest-options'}, true), 'web');
+  assert.equal(implementationEngine('codex', {id:'fix-checks'}, true), 'codex');
   console.log('Lindsey read/write identity, Git credentials, refresh and repository scope passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

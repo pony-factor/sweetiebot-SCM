@@ -4,8 +4,8 @@ const { separateAppsEnabled, getRoleInstallationToken } = require('../github/app
 const { createLindseyReadFetch } = require('../github/read-api');
 const { githubUserAPI, legacyAPI } = require('../github/user-api');
 
-// Keep original Git authorship while making Lindsey the actual authenticated
-// actor for pushes and merge writes. Never fall back to the user's credential.
+// Lindsey is the actual authenticated actor for pushes and merge writes.
+// Commit builders choose authorship separately. Never borrow user credentials.
 function createLindseyTransport(repository, { env = process.env, fetchImpl = globalThis.fetch,
   getToken = getRoleInstallationToken, now = Date.now } = {}) {
   if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(repository || '')) throw Error('Invalid Lindsey repository.');

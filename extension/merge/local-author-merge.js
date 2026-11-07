@@ -2,7 +2,8 @@
 
 // Integrate a bot-opened PR locally without replacing any existing commit.
 // The two-parent commit retains the selected head and lets GitHub recognize
-// the original PR as merged while using the verified human Git author.
+// the original PR as merged. App-enabled integration uses the verified bot;
+// the original human commits remain in the parent chain.
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { verifyCommit } = require('./human-squash-merge');
