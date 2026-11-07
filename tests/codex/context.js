@@ -437,6 +437,32 @@ async function run() {
   await cancellation;
   assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-share');
 
+  const queuedFirst = registered.get('sweetiebot.readCodexContext')();
+  const firstFailure = assert.rejects(queuedFirst, /first copy failed/);
+  await new Promise(setImmediate);
+  const firstRequest = messages.at(-1);
+  const requestsBeforeQueue = messages.length;
+  const queuedSecond = registered.get('sweetiebot.readCodexConversation')();
+  await new Promise(setImmediate);
+  assert.equal(messages.length, requestsBeforeQueue, 'A busy copy queues the next request without opening another menu');
+  listener({ type: 'scm-toolkit-context-response', id: firstRequest.id, error: 'first copy failed' });
+  await firstFailure;
+  await new Promise(setImmediate);
+  assert.notEqual(messages.at(-1).id, firstRequest.id, 'A failed copy releases the queue after restoring the clipboard');
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, text: 'Queued conversation', conversationId });
+  assert.equal((await queuedSecond).text, 'Queued conversation');
+  assert.equal(clipboard, 'previous clipboard');
+
+  const runningCopy = registered.get('sweetiebot.readCodexContext')();
+  const runningCancelled = assert.rejects(runningCopy, /checkout is changing/);
+  await new Promise(setImmediate);
+  const waitingCopy = registered.get('sweetiebot.readCodexConversation')();
+  const waitingCancelled = assert.rejects(waitingCopy, /checkout is changing/);
+  await registered.get('sweetiebot.cancelCodexCapture')();
+  const messagesAfterCancel = messages.length;
+  await Promise.all([runningCancelled, waitingCancelled]);
+  assert.equal(messages.length, messagesAfterCancel, 'A checkout change cancels queued copies before they open a menu');
+
   provider.sidebarViews.clear();
   await assert.rejects(
     registered.get('sweetiebot.readCodexConversation')(),

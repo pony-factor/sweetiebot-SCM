@@ -1,3 +1,122 @@
+// All VS Code extension hosts share the system clipboard. A window-local
+// busy flag cannot protect another window's saved contents or copy marker.
+async function scmToolkitLockClipboard() {
+    if (typeof process === 'undefined') return async () => {};
+    const fs = require('node:fs/promises');
+    const path = require('node:path');
+    const directory = path.join(require('node:os').tmpdir(), 'sweetiebot-codex-clipboard-' + (process.getuid?.() ?? 'user'));
+    const ownerFile = path.join(directory, 'owner.json');
+    const owner = { pid: process.pid, token: require('node:crypto').randomUUID() };
+    const deadline = Date.now() + 185000;
+    while (true) {
+        try {
+            await fs.mkdir(directory, { mode: 0o700 });
+            try { await fs.writeFile(ownerFile, JSON.stringify(owner), { mode: 0o600, flag: 'wx' }); }
+            catch (error) { await fs.rmdir(directory).catch(() => {}); throw error; }
+            return async () => {
+                const current = JSON.parse(await fs.readFile(ownerFile, 'utf8'));
+                if (current.token === owner.token) await fs.rm(directory, { recursive: true });
+            };
+        } catch (error) {
+            if (error.code !== 'EEXIST') throw error;
+        }
+        try {
+            const current = JSON.parse(await fs.readFile(ownerFile, 'utf8'));
+            try { process.kill(current.pid, 0); }
+            catch (error) {
+                if (error.code === 'ESRCH') {
+                    // Only one waiter may reclaim a dead host's lock. Re-read
+                    // ownership after taking that guard so another waiter's
+                    // newly acquired lock cannot be removed.
+                    const recovery = directory + '.recovery';
+                    let recovering = false;
+                    try {
+                        await fs.mkdir(recovery, { mode: 0o700 });
+                        recovering = true;
+                        const latest = JSON.parse(await fs.readFile(ownerFile, 'utf8'));
+                        if (latest.token === current.token) await fs.rm(directory, { recursive: true, force: true });
+                    } catch (recoveryError) {
+                        if (!['EEXIST', 'ENOENT'].includes(recoveryError.code)) throw recoveryError;
+                    } finally {
+                        if (recovering) await fs.rmdir(recovery);
+                    }
+                    continue;
+                }
+                throw error;
+            }
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+            // Allow the winning host to finish publishing its owner record.
+            const stat = await fs.stat(directory).catch(() => null);
+            if (stat && Date.now() - stat.mtimeMs > 10000) await fs.rmdir(directory).catch(() => {});
+        }
+        if (Date.now() >= deadline) throw new Error('Another window is copying Codex context. Retry after it finishes.');
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+}
+
+// Keep every macOS pasteboard representation in memory, including images,
+// file URLs and rich text. VS Code's clipboard API can preserve only text.
+async function scmToolkitSaveClipboard(vscode) {
+    if (typeof process === 'undefined' || process.platform !== 'darwin') {
+        const text = await vscode.env.clipboard.readText();
+        return { restore: () => vscode.env.clipboard.writeText(text) };
+    }
+    const source = `import AppKit
+let board = NSPasteboard.general
+var saved: [[(NSPasteboard.PasteboardType, Data)]] = []
+for item in board.pasteboardItems ?? [] {
+    var representations: [(NSPasteboard.PasteboardType, Data)] = []
+    for type in item.types {
+        guard let data = item.data(forType: type) else { exit(1) }
+        representations.append((type, data))
+    }
+    saved.append(representations)
+}
+print("ready")
+fflush(stdout)
+_ = readLine()
+let items = saved.map { representations -> NSPasteboardItem in
+    let item = NSPasteboardItem()
+    for (type, data) in representations { item.setData(data, forType: type) }
+    return item
+}
+board.clearContents()
+if !items.isEmpty && !board.writeObjects(items) { exit(2) }
+`;
+    const child = require('node:child_process').spawn('/usr/bin/swift', ['-e', source], {
+        stdio: ['pipe', 'pipe', 'ignore']
+    });
+    child.stdin.on('error', () => {});
+    let ready = false, restored;
+    const completion = new Promise((resolve, reject) => {
+        child.once('error', () => reject(new Error('Cannot preserve the macOS clipboard; Codex capture was skipped.')));
+        child.once('exit', code => code === 0 ? resolve() : reject(new Error('The macOS clipboard could not be restored.')));
+    });
+    // A startup failure must be observed even before restore() is called.
+    completion.catch(() => {});
+    await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            child.stdin.end();
+            reject(new Error('Clipboard preservation timed out; Codex capture was skipped.'));
+        }, 15000);
+        child.stdout.once('data', data => {
+            clearTimeout(timeout);
+            if (String(data).trim() !== 'ready') { child.stdin.end(); reject(new Error('Clipboard preservation failed.')); return; }
+            ready = true;
+            resolve();
+        });
+        child.once('error', () => { clearTimeout(timeout); reject(new Error('Cannot preserve the macOS clipboard; Codex capture was skipped.')); });
+        child.once('exit', () => {
+            if (!ready) { clearTimeout(timeout); reject(new Error('Cannot preserve the macOS clipboard; Codex capture was skipped.')); }
+        });
+    });
+    return { restore: () => restored ??= (async () => {
+        child.stdin.end();
+        await completion;
+    })() };
+}
+
 // Registered inside each Codex extension host, so requests stay in this window.
 function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const pending = new Map();
@@ -285,22 +404,34 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         });
     };
 
-    let copying = false;
+    let copyQueue = Promise.resolve();
+    let captureGeneration = 0;
     const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, composerFocus) => {
         if (identityOnly || modelOnly || reloadState || composerFocus) return captureRaw(includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, undefined, composerFocus);
-        if (copying) return Promise.reject(new Error('A Codex copy is already in progress. Retry when it finishes.'));
-        copying = true;
-        return (async () => {
-            const saved = clipboard ?? await vscode.env.clipboard.readText();
-            const marker = crypto.randomUUID();
+        const generation = captureGeneration;
+        const result = copyQueue.then(async () => {
+            if (generation !== captureGeneration) throw new Error('Codex capture stopped because the checkout is changing.');
+            let snapshot, release;
             try {
+                release = await scmToolkitLockClipboard();
+                if (generation !== captureGeneration) throw new Error('Codex capture stopped because the checkout is changing.');
+                snapshot = await scmToolkitSaveClipboard(vscode);
+                const saved = clipboard ?? await vscode.env.clipboard.readText();
+                const marker = crypto.randomUUID();
+                if (generation !== captureGeneration) throw new Error('Codex capture stopped because the checkout is changing.');
                 await vscode.env.clipboard.writeText(marker);
                 return await captureRaw(includeSource, false, false, shareOnly, saved, false, marker);
             } finally {
-                await vscode.env.clipboard.writeText(saved);
-                copying = false;
+                try { await snapshot?.restore(); }
+                finally {
+                    await release?.();
+                }
             }
-        })();
+        });
+        // A failed copy must not prevent the next queued request from running.
+        // Wait through clipboard restoration before starting another export.
+        copyQueue = result.catch(() => {});
+        return result;
     };
 
     const textCommand = vscode.commands.registerCommand(
@@ -325,6 +456,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         }
     });
     const cancelCaptureCommand = vscode.commands.registerCommand('sweetiebot.cancelCodexCapture', async () => {
+        ++captureGeneration;
         for (const [id, request] of pending) {
             if (!request.shareOnly && request.clipboard === undefined) continue;
             clearTimeout(request.timeout);
@@ -342,7 +474,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             throw new Error('Codex sharing requires an explicit New PR action.');
         }
         if (!uuid.test(threadId || '')) throw new Error('A verified active Codex chat is required.');
-        return capture(false, false, false, threadId, await vscode.env.clipboard.readText());
+        return capture(false, false, false, threadId);
     });
     const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
     const focusCommand = vscode.commands.registerCommand('sweetiebot.codex.restoreComposerFocus', value =>
@@ -356,6 +488,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     );
 
     return { dispose() {
+        ++captureGeneration;
         textCommand.dispose();
         sourceCommand.dispose();
         reloadCommand.dispose();
