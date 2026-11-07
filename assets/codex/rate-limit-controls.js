@@ -34,16 +34,37 @@ function scmToolkitFindRateLimitHeading(root) {
     }
     return null;
 }
+// Stickers replace or visually hide the native heading. Mount the shortcut
+// beside the actual image, not inside the now-hidden rate-limit caption.
+function scmToolkitFindRateLimitSticker(root) {
+    const stickers = [...root.querySelectorAll('[data-scm-toolkit-rate-limit-pony="true"]')]
+        .filter(node => node.isConnected !== false
+            && node.querySelector?.('img')
+            && !node.closest?.(scmToolkitRateLimitTranscriptSelector)
+            && !node.closest?.('[hidden], [aria-hidden="true"], [inert]'));
+    return stickers.length === 1 ? stickers[0] : null;
+}
+function scmToolkitRemoveResetShortcut(button) {
+    const parent = button?.parentElement;
+    if (parent?.dataset?.scmToolkitResetShortcutLayout === 'true') {
+        parent.style.flexDirection = parent.dataset.scmToolkitResetShortcutFlexDirection || '';
+        delete parent.dataset.scmToolkitResetShortcutLayout;
+        delete parent.dataset.scmToolkitResetShortcutFlexDirection;
+    }
+    button?.remove();
+}
 function scmToolkitSyncResetShortcut(root) {
     const nativeSummary = scmToolkitFindAvailableResetSummary(root);
     const existing = root.querySelector('[data-scm-toolkit-reset-action]');
-    const heading = nativeSummary ? scmToolkitFindRateLimitHeading(root) : null;
-    if (!heading) {
-        existing?.remove();
+    const sticker = nativeSummary ? scmToolkitFindRateLimitSticker(root) : null;
+    const heading = nativeSummary && !sticker ? scmToolkitFindRateLimitHeading(root) : null;
+    const mount = sticker || heading?.parentElement;
+    if (!mount) {
+        scmToolkitRemoveResetShortcut(existing);
         return;
     }
-    if (existing && existing.parentElement === heading.parentElement) return;
-    existing?.remove();
+    if (existing && existing.parentElement === mount) return;
+    scmToolkitRemoveResetShortcut(existing);
     const button = root.createElement('button');
     button.type = 'button';
     button.textContent = 'Use credits';
@@ -51,8 +72,10 @@ function scmToolkitSyncResetShortcut(root) {
     button.setAttribute('data-scm-toolkit-reset-action', '');
     button.setAttribute('aria-label', 'Use an available Codex rate-limit reset');
     button.title = 'Review and confirm a banked Codex reset';
-    button.style.marginInlineStart = 'auto';
+    button.style.marginInlineStart = sticker ? '0' : 'auto';
+    button.style.marginTop = sticker ? '6px' : '0';
     button.style.flex = '0 0 auto';
+    button.style.maxWidth = '100%';
     button.style.cursor = 'pointer';
     button.style.padding = '4px 10px';
     button.style.borderRadius = '6px';
@@ -64,14 +87,19 @@ function scmToolkitSyncResetShortcut(root) {
         if (native?.isConnected && typeof native.click === 'function') {
             native.click(); // Native reset dialog owns all confirmations.
         } else {
-            button.remove();
+            scmToolkitRemoveResetShortcut(button);
         }
     });
-    const row = heading.parentElement;
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
-    row.append(button);
+    if (sticker) {
+        sticker.dataset.scmToolkitResetShortcutLayout = 'true';
+        sticker.dataset.scmToolkitResetShortcutFlexDirection = sticker.style.flexDirection || '';
+        sticker.style.flexDirection = 'column';
+    } else {
+        mount.style.display = 'flex';
+        mount.style.alignItems = 'center';
+        mount.style.gap = '8px';
+    }
+    mount.append(button);
 }
 
 // The empty status strip above the composer owns the Twilight sticker.
