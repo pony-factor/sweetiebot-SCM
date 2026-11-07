@@ -110,6 +110,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     let value;
                     do {
                         value = await vscode.env.clipboard.readText();
+                        if (pending.get(message.id) !== request) return;
                         if (value && value !== request.marker) break;
                         await new Promise(resolve => setTimeout(resolve, 50));
                     } while (Date.now() < until);
@@ -143,6 +144,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     request.resolve(request.includeSource ? { text,
                         source: { ...sourceFor(request.threadId), desktopUrl: value.trim() }, model: message.model } : text);
                 })().catch(async error => {
+                    if (pending.get(message.id) !== request) return;
                     pending.delete(message.id);
                     clearTimeout(request.timeout);
                     await vscode.env.clipboard.writeText(request.clipboard);
@@ -259,12 +261,16 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 pending.delete(id);
                 reject(new Error(shareOnly
                     ? 'Codex Share is still preparing. PR creation can continue without its public link.'
+                    : identityOnly ? 'Codex chat identification timed out. Reload this window and retry the branch switch.'
+                    : composerFocus ? 'Codex composer focus restoration timed out.'
                     : 'Codex text capture timed out. Reopen this window after installing the toolkit.'));
                 if (clipboard !== undefined) void vscode.env.clipboard.writeText(clipboard);
             }, shareOnly ? 155000 : (identityOnly || modelOnly || reloadState || composerFocus) ? 5000 : 45000);
             pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, marker: clipboardMarker, composerFocus });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
-            webview.postMessage({ type: 'scm-toolkit-context-request', id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState, composerFocus }).then(sent => {
+            const type = identityOnly ? 'scm-toolkit-chat-identity-request'
+                : composerFocus ? 'scm-toolkit-composer-focus-request' : 'scm-toolkit-context-request';
+            webview.postMessage({ type, id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState, composerFocus }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -317,6 +323,17 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
             request.reject(new Error('Codex sharing stopped because the checkout is changing.'));
         }
     });
+    const cancelCaptureCommand = vscode.commands.registerCommand('sweetiebot.cancelCodexCapture', async () => {
+        for (const [id, request] of pending) {
+            if (!request.shareOnly && request.clipboard === undefined) continue;
+            clearTimeout(request.timeout);
+            pending.delete(id);
+            // Stop renderer menu automation before restoring the clipboard.
+            await request.webview.postMessage({ type: 'scm-toolkit-cancel-capture' });
+            if (request.clipboard !== undefined) await vscode.env.clipboard.writeText(request.clipboard);
+            request.reject(new Error('Codex capture stopped because the checkout is changing.'));
+        }
+    });
     const shareCommand = vscode.commands.registerCommand('sweetiebot.shareCodexConversation', async (threadId, options) => {
         if (options?.explicitNewPullRequest !== true) {
             throw new Error('Codex sharing requires an explicit New PR action.');
@@ -343,6 +360,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         focusCommand.dispose();
         shareCommand.dispose();
         cancelShareCommand.dispose();
+        cancelCaptureCommand.dispose();
         modelCommand.dispose();
         legacyTextCommand.dispose();
         legacySourceCommand.dispose();

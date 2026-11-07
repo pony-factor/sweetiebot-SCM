@@ -43,6 +43,13 @@ async function run() {
   assert.equal(stage, 4, 'Capture the native deeplink separately');
   assert.equal(responses[1].nativeCopy, 'deeplink');
 
+  const beforeHandoff = stage;
+  await receive({ data: { type: 'scm-toolkit-chat-identity-request', id: 'branch-identity' } });
+  assert.equal(responses.at(-1).conversationId, conversationId);
+  await receive({ data: { type: 'scm-toolkit-composer-focus-request', id: 'branch-focus' } });
+  assert.equal(responses.at(-1).focused, false);
+  assert.equal(stage, beforeHandoff, 'Branch identity and focus never invoke Copy or Share, even without flags');
+
   // The webview saves only a UUID, retaining the existing VS Code webview state.
   let reloadReceive;
   let reloadState = { existingCodexState: 'preserved' };
@@ -372,10 +379,28 @@ async function run() {
   sidebar.visible = false;
 
   const identityPending = registered.get('sweetiebot.readCodexIdentity')();
+  assert.equal(messages.at(-1).type, 'scm-toolkit-chat-identity-request');
   assert.equal(messages.at(-1).identityOnly, true);
   assert.equal(messages.at(-1).allowHidden, true);
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId, hasConversation: true });
   assert.equal((await identityPending).threadId, conversationId);
+  const focusPending = registered.get('sweetiebot.codex.restoreComposerFocus')({ state: {}, threadId: conversationId });
+  assert.equal(messages.at(-1).type, 'scm-toolkit-composer-focus-request');
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, focused: true });
+  assert.equal(await focusPending, true);
+
+  clipboard = 'clipboard before branch switch';
+  const interruptedCopy = registered.get('sweetiebot.readCodexContext')();
+  const cancelledCopy = assert.rejects(interruptedCopy, /checkout is changing/);
+  await new Promise(setImmediate);
+  const cancelledId = messages.at(-1).id;
+  await registered.get('sweetiebot.cancelCodexCapture')();
+  await cancelledCopy;
+  assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-capture');
+  assert.equal(clipboard, 'clipboard before branch switch');
+  listener({ type: 'scm-toolkit-context-response', id: cancelledId, nativeCopy: 'markdown', conversationId });
+  assert.equal(clipboard, 'clipboard before branch switch', 'Late copy responses cannot restart a cancelled export');
+  clipboard = 'previous clipboard';
   const ambiguous = registered.get('sweetiebot.readCodexIdentity')();
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, hasConversation: true });
   await assert.rejects(ambiguous, /identify/);
