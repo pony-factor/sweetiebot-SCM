@@ -25,7 +25,7 @@ A co-author action adds `Co-authored-by` after a **blank line**, without replaci
 1. **Draft title** — proposes a conservative correction to the message field; confirm before using.
 2. **Spellcheck Filenames** — preview-only rename suggestions; does not silently change/stage/commit files.
 3. **Post-commit Markdown Spellcheck Changes** — globally opt-in, proposes **unstaged** prose edits in **Spellchecks Performed**. Repository `sweetiebot.postCommitSpellcheck=true` only permits it; `false` opts the repository out.
-4. **Review Text with ChatGPT Spellcheck Only** — separate manual native ChatGPT bridge.
+4. **Review Text with ChatGPT Spellcheck Only** — separate manual native ChatGPT bridge. In **Sweetiebot Settings → Spellchecker → ChatGPT Spellcheck Only**, choose a saved date style: preserve original (default), `May 6, 2026`, `6 May 2026`, `2026-05-06`, `05/06/2026`, or `06/05/2026`. A review applies the chosen style consistently to unambiguous complete dates in editable prose; ambiguous or incomplete dates, quotations, links, citations and code remain untouched. This preference does not change automatic draft-title or post-commit Markdown spellcheck.
 
 Markdown code, links, author quotes, protected terminology, file paths and model suggestions need manual review. For a PR review thread, use [the dedicated AI-review workflow](ai-review-reply.md), not a generic spellcheck action.
 

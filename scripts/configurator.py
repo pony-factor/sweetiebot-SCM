@@ -399,6 +399,7 @@ SETTINGS = (
     Setting("postCommitSpellcheck", "scm-toolkit.post-commit-spellcheck", "Post-commit Markdown spellcheck", "After an automatic commit, propose corrections to changed Markdown prose as unstaged edits for review. Use en dashes for numeric ranges. Off by default.", "Spellchecker"),
     Setting("spellcheckChangesEmoji", "scm-toolkit.spellcheck-changes-emoji", "Add professional emoji to spellcheck commits", "Include the professional leading emoji from normal AI commit-title generation when accepting reviewed Spellcheck Changes. Turn off to omit it without changing title quality, model effort, or attribution. On by default.", "Spellchecker"),
     Setting("spellcheckPreserveLineBreaks", "scm-toolkit.spellcheck-preserve-line-breaks", "Preserve intentional line breaks", "Off by default: prefer joining unnecessarily separated prose and adjacent Markdown links, without flattening distinct paragraphs or Markdown blocks. Turn on to preserve every original line break.", "Spellchecker"),
+    Setting("spellcheckDateFormat", "scm-toolkit.spellcheck-date-format", "Spellcheck Only date format", "Choose one consistent date style for manual ChatGPT Spellcheck Only reviews. Keep original is the default. Only unambiguous complete dates in editable prose are reformatted; quoted text, code, links, citations, and incomplete or ambiguous dates remain unchanged.", "Spellchecker", "select", ("preserve", "month-first", "day-first", "iso", "us-numeric", "day-numeric")),
     Setting("spellcheckInstructions", "scm-toolkit.spellcheck-instructions", "Markdown spellcheck instructions", "Terminology and spelling guidance for post-commit Markdown corrections. Preserve facts, numbers, URLs, and code.", "Spellchecker", "textarea"),
     Setting("aiCommit", "scm-toolkit.ai-commit", "AI commit titles", "Generate commit messages with the selected local AI backend.", "AI"),
     Setting("aiBackend", "scm-toolkit.ai-backend", "Backend preference order", "Choose one backend or the order to try them. If a backend fails or produces no valid message, try the next before using a simple fallback. Core ML requires its bridge and prepared models; Workspace Search still uses Ollama.", "AI", "select", ("ollama", "coreml", "coreml,ollama", "ollama,coreml")),
@@ -852,10 +853,16 @@ def _setting_control(setting: Setting, current: object) -> str:
     if setting.kind == "select":
         backend_labels = {"ollama": "Ollama only", "coreml": "Core ML only",
                           "coreml,ollama": "Core ML → Ollama", "ollama,coreml": "Ollama → Core ML"}
+        date_labels = {"preserve": "Keep original formatting", "month-first": "May 6, 2026",
+                       "day-first": "6 May 2026", "iso": "2026-05-06",
+                       "us-numeric": "05/06/2026 (MM/DD/YYYY)",
+                       "day-numeric": "06/05/2026 (DD/MM/YYYY)"}
+        display_labels = (backend_labels if setting.name == "aiBackend"
+                          else date_labels if setting.name == "spellcheckDateFormat" else {})
         options = "".join(
             f'<option value="{html.escape(choice, quote=True)}"'
             + (' selected' if choice == str(current) else '')
-            + f'>{html.escape(backend_labels[choice] if setting.name == "aiBackend" else choice.capitalize() if choice else "None")}</option>'
+            + f'>{html.escape(display_labels.get(choice, choice.capitalize() if choice else "None"))}</option>'
             for choice in setting.choices
         )
         return (
@@ -1155,10 +1162,14 @@ def render_form(
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
                           for setting in SETTINGS if setting.section == section
                           and setting.name in draft_controls)
+                + '</div><div class="settings-group"><h3>ChatGPT Spellcheck Only</h3>'
+                + "".join(_setting_control(setting, current.get(setting.name, ""))
+                          for setting in SETTINGS if setting.name == "spellcheckDateFormat")
                 + '</div><div class="settings-group"><h3>After committing</h3>'
                 + "".join(_setting_control(setting, current.get(setting.name, ""))
                           for setting in SETTINGS if setting.section == section
-                          and setting.name not in draft_controls)
+                          and setting.name not in draft_controls
+                          and setting.name != "spellcheckDateFormat")
                 + '<div class="setting"><span><strong>Opt out in one repository</strong>'
                   '<small>Keep the global Spellcheck toggle on, but stop automatic post-commit '
                   'Markdown corrections in a particular repository. In that repository, add '

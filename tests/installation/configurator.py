@@ -393,6 +393,27 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("&quot;sweetiebot.postCommitSpellcheck&quot;: false", page)
         self.assertIn("Other repositories still spellcheck", page)
 
+    def test_spellcheck_only_date_format_persists_and_has_a_separate_panel(self):
+        self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckDateFormat"], "preserve")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckDateFormat"],
+                         "scm-toolkit.spellcheck-date-format")
+        values = form_values()
+        values["spellcheckDateFormat"] = ["day-first"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["spellcheckDateFormat"], "day-first")
+        self.assertEqual(configurator.extension_settings_payload(parsed)["vscodeSettings"]["spellcheckDateFormat"],
+                         "day-first")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn("<h3>ChatGPT Spellcheck Only</h3>", page)
+        self.assertIn('name="spellcheckDateFormat"', page)
+        self.assertIn('<option value="day-first" selected>6 May 2026</option>', page)
+        for format_name in ("preserve", "month-first", "day-first", "iso", "us-numeric", "day-numeric"):
+            values["spellcheckDateFormat"] = [format_name]
+            self.assertEqual(configurator.parse_submission(values)["spellcheckDateFormat"], format_name)
+        values["spellcheckDateFormat"] = ["unexpected"]
+        with self.assertRaises(ValueError):
+            configurator.parse_submission(values)
+
     def test_spellcheck_line_break_preference_can_be_toggled(self):
         values = form_values()
         values["spellcheckPreserveLineBreaks"] = ["true"]
