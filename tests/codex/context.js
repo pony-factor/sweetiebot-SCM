@@ -43,6 +43,13 @@ async function run() {
   assert.equal(stage, 4, 'Capture the native deeplink separately');
   assert.equal(responses[1].nativeCopy, 'deeplink');
 
+  const beforeHandoff = stage;
+  await receive({ data: { type: 'scm-toolkit-chat-identity-request', id: 'branch-identity' } });
+  assert.equal(responses.at(-1).conversationId, conversationId);
+  await receive({ data: { type: 'scm-toolkit-composer-focus-request', id: 'branch-focus' } });
+  assert.equal(responses.at(-1).focused, false);
+  assert.equal(stage, beforeHandoff, 'Branch identity and focus never invoke Copy or Share, even without flags');
+
   // The webview saves only a UUID, retaining the existing VS Code webview state.
   let reloadReceive;
   let reloadState = { existingCodexState: 'preserved' };
@@ -372,10 +379,28 @@ async function run() {
   sidebar.visible = false;
 
   const identityPending = registered.get('sweetiebot.readCodexIdentity')();
+  assert.equal(messages.at(-1).type, 'scm-toolkit-chat-identity-request');
   assert.equal(messages.at(-1).identityOnly, true);
   assert.equal(messages.at(-1).allowHidden, true);
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, conversationId, hasConversation: true });
   assert.equal((await identityPending).threadId, conversationId);
+  const focusPending = registered.get('sweetiebot.codex.restoreComposerFocus')({ state: {}, threadId: conversationId });
+  assert.equal(messages.at(-1).type, 'scm-toolkit-composer-focus-request');
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, focused: true });
+  assert.equal(await focusPending, true);
+
+  clipboard = 'clipboard before branch switch';
+  const interruptedCopy = registered.get('sweetiebot.readCodexContext')();
+  const cancelledCopy = assert.rejects(interruptedCopy, /checkout is changing/);
+  await new Promise(setImmediate);
+  const cancelledId = messages.at(-1).id;
+  await registered.get('sweetiebot.cancelCodexCapture')();
+  await cancelledCopy;
+  assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-capture');
+  assert.equal(clipboard, 'clipboard before branch switch');
+  listener({ type: 'scm-toolkit-context-response', id: cancelledId, nativeCopy: 'markdown', conversationId });
+  assert.equal(clipboard, 'clipboard before branch switch', 'Late copy responses cannot restart a cancelled export');
+  clipboard = 'previous clipboard';
   const ambiguous = registered.get('sweetiebot.readCodexIdentity')();
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, hasConversation: true });
   await assert.rejects(ambiguous, /identify/);
@@ -411,6 +436,32 @@ async function run() {
   registered.get('sweetiebot.cancelCodexShare')();
   await cancellation;
   assert.equal(messages.at(-1).type, 'scm-toolkit-cancel-share');
+
+  const queuedFirst = registered.get('sweetiebot.readCodexContext')();
+  const firstFailure = assert.rejects(queuedFirst, /first copy failed/);
+  await new Promise(setImmediate);
+  const firstRequest = messages.at(-1);
+  const requestsBeforeQueue = messages.length;
+  const queuedSecond = registered.get('sweetiebot.readCodexConversation')();
+  await new Promise(setImmediate);
+  assert.equal(messages.length, requestsBeforeQueue, 'A busy copy queues the next request without opening another menu');
+  listener({ type: 'scm-toolkit-context-response', id: firstRequest.id, error: 'first copy failed' });
+  await firstFailure;
+  await new Promise(setImmediate);
+  assert.notEqual(messages.at(-1).id, firstRequest.id, 'A failed copy releases the queue after restoring the clipboard');
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, text: 'Queued conversation', conversationId });
+  assert.equal((await queuedSecond).text, 'Queued conversation');
+  assert.equal(clipboard, 'previous clipboard');
+
+  const runningCopy = registered.get('sweetiebot.readCodexContext')();
+  const runningCancelled = assert.rejects(runningCopy, /checkout is changing/);
+  await new Promise(setImmediate);
+  const waitingCopy = registered.get('sweetiebot.readCodexConversation')();
+  const waitingCancelled = assert.rejects(waitingCopy, /checkout is changing/);
+  await registered.get('sweetiebot.cancelCodexCapture')();
+  const messagesAfterCancel = messages.length;
+  await Promise.all([runningCancelled, waitingCancelled]);
+  assert.equal(messages.length, messagesAfterCancel, 'A checkout change cancels queued copies before they open a menu');
 
   provider.sidebarViews.clear();
   await assert.rejects(

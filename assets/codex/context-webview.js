@@ -8,6 +8,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
     let pendingCheckout = null;
     let checkoutRequestId = 0;
     let shareGeneration = 0;
+    let captureGeneration = 0;
 
     const conversationId = (allowHidden = false) => {
         const locations = [
@@ -58,6 +59,11 @@ function scmToolkitRegisterCodexSnapshot(api) {
 
     window.addEventListener('message', async event => {
         const request = event.data;
+        if (request?.type === 'scm-toolkit-cancel-capture') {
+            ++captureGeneration;
+            ++shareGeneration;
+            return;
+        }
         if (request?.type === 'scm-toolkit-cancel-share') {
             ++shareGeneration;
             return;
@@ -92,7 +98,20 @@ function scmToolkitRegisterCodexSnapshot(api) {
                 }
             }
         }
-        if (request?.type !== 'scm-toolkit-context-request' || typeof request.id !== 'string') return;
+        // Checkout requests cannot fall through into transcript export.
+        if (typeof request?.id !== 'string') return;
+        if (request.type === 'scm-toolkit-composer-focus-request' || request.type === 'scm-toolkit-context-request' && request.composerFocus) {
+            const focused = await composerFocus?.restore(request.composerFocus?.state, conversationId, request.composerFocus?.threadId ?? undefined);
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, focused: focused === true });
+            return;
+        }
+        if (request.type === 'scm-toolkit-chat-identity-request' || request.type === 'scm-toolkit-context-request' && request.identityOnly) {
+            const hasConversation = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')]
+                .some(element => request.allowHidden || element.getClientRects().length);
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation, composerFocus: composerFocus?.capture() });
+            return;
+        }
+        if (request.type !== 'scm-toolkit-context-request') return;
         if (request.reloadState === true) {
             const current = conversationId();
             const next = { ...(api.getState?.() ?? {}) };
@@ -164,17 +183,6 @@ function scmToolkitRegisterCodexSnapshot(api) {
             }
             return;
         }
-        if (request.composerFocus) {
-            const focused = await composerFocus?.restore(request.composerFocus.state, conversationId, request.composerFocus.threadId ?? undefined);
-            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, focused: focused === true });
-            return;
-        }
-        if (request.identityOnly) {
-            const hasConversation = [...document.querySelectorAll('[data-thread-user-message-navigation-content]')]
-                .some(element => request.allowHidden || element.getClientRects().length);
-            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, conversationId: conversationId(request.allowHidden), hasConversation, composerFocus: composerFocus?.capture() });
-            return;
-        }
         // Capture only visible composer labels at handoff time. Codex does not
         // provide a stable public API for a thread's historical model choices.
         const composerLabel = kind => {
@@ -202,6 +210,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
         // Use Codex's export, which loads history and preserves Markdown.
         // Never infer an export from the virtualized, rendered transcript.
         const current = conversationId(request.allowHidden);
+        const generation = captureGeneration;
         try {
             if (!current || (request.expectedThreadId && current !== request.expectedThreadId))
                 throw new Error('The active Codex chat changed during capture.');
@@ -210,6 +219,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
             const waitFor = async find => {
                 const until = Date.now() + 5000;
                 do {
+                    if (generation !== captureGeneration) throw new Error('Codex capture was cancelled.');
                     if (conversationId(request.allowHidden) !== current)
                         throw new Error('The active Codex chat changed during capture.');
                     const found = find();

@@ -28,7 +28,9 @@ async function prepareCodexHandoff(vscode, from) {
   if (!extension) return null;
   await extension.activate();
   const commands = await vscode.commands.getCommands(true);
-  if (commands.includes('sweetiebot.cancelCodexShare')) {
+  if (commands.includes('sweetiebot.cancelCodexCapture')) {
+    await vscode.commands.executeCommand('sweetiebot.cancelCodexCapture');
+  } else if (commands.includes('sweetiebot.cancelCodexShare')) {
     await vscode.commands.executeCommand('sweetiebot.cancelCodexShare');
   }
   if (!commands.includes('sweetiebot.codex.prepareWorkspaceHandoff')) {

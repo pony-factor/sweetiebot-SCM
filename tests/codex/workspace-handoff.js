@@ -202,6 +202,16 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     tasks[0]();
     for (let i = 0; i < 15; i++) await Promise.resolve();
     assert.equal(errors.length, 0);
+    const handoffCalls = [];
+    await prepareCodexHandoff({
+      extensions: { getExtension: () => ({ activate: async () => {} }) },
+      commands: {
+        getCommands: async () => ['sweetiebot.cancelCodexCapture', 'sweetiebot.codex.prepareWorkspaceHandoff'],
+        executeCommand: async id => { handoffCalls.push(id); return null; }
+      }
+    }, from);
+    assert.deepEqual(handoffCalls, ['sweetiebot.cancelCodexCapture', 'sweetiebot.codex.prepareWorkspaceHandoff'],
+      'Branch switching cancels exports before preparing the same chat and never requests conversation text');
     const attachmentDrafts = { 'new-conversation': {
       imageAttachments:[{id:'image',src:'data:image/png;base64,aGVsbG8=',localPath:'/tmp/image.png'}],
       fileAttachments:[path.join(from,'report.pdf')],
