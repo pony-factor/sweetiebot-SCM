@@ -38,6 +38,12 @@ async function run() {
     const found = findBulkMergeScript(path.join(tmp, 'other-repo'));
     assert.equal(found, path.join(tmp, 'lindsey-sync', 'scripts', 'bulk-merge.js'));
 
+    // Select the fixture's auth mode explicitly: local integration checks also
+    // run on machines with a real Lindsey App saved in global Git settings.
+    const legacy = {
+      env: { ...process.env, SWEETIEBOT_BOT_IDENTITY_MODE: 'legacy' },
+      roleToken: async () => assert.fail('Legacy fixtures must not authenticate a real GitHub App')
+    };
     let seen;
     const fakeExec = async (binary, args, options) => {
       assert.equal(binary, process.execPath);
@@ -50,7 +56,7 @@ async function run() {
       assert.equal((await fs.stat(seen)).mode & 0o077, 0);
       return { stdout: JSON.stringify(good) };
     };
-    assert.deepEqual(await invokeLindseyBulkMerge(found, selection, 'session-token', fakeExec), good);
+    assert.deepEqual(await invokeLindseyBulkMerge(found, selection, 'session-token', fakeExec, legacy), good);
     await assert.rejects(fs.access(seen), /ENOENT/);
     // Separate-App mode uses the Lindsey installation, never the user's
     // session token, and does not propagate any App private keys to the CLI.
@@ -90,7 +96,7 @@ async function run() {
       const originalPath = process.env.PATH;
       try {
         process.env.PATH = '/usr/bin:/bin';
-        assert.deepEqual(await invokeLindseyBulkMerge(probe, selection, 'session-token'), good);
+        assert.deepEqual(await invokeLindseyBulkMerge(probe, selection, 'session-token', undefined, legacy), good);
       } finally {
         if (originalPath === undefined) delete process.env.PATH;
         else process.env.PATH = originalPath;

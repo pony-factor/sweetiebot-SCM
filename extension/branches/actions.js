@@ -1185,10 +1185,9 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   const message = defaultBranch === 'main'
     ? '🔄 Sync brach to main'
     : `🔄 Sync branch to ${defaultBranch}`;
-  // A routine sync has no generated prose: only its fixed title and the
-  // required authorship trailer. Proposed substantive edits need their own
-  // human-reviewed commit before the sync is retried.
-  const routineCommitMessage = message + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+  // Routine Git synchronization has no model-authored changes. Do not
+  // invent a Codex/Web co-author; preserve credits in existing commits.
+  const routineCommitMessage = message;
   repository.inputBox.value = message;
   try {
     const root = repository.rootUri?.fsPath;

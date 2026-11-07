@@ -8,7 +8,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { syncBranch } = require('../../extension/branches/actions');
 
-const MESSAGE = '🔄 Sync brach to main\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+const MESSAGE = '🔄 Sync brach to main';
 
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-routine-sync-'));
@@ -49,7 +49,7 @@ async function run() {
       assert.equal(await syncBranch(repository, { ...options, strategy }), 'topic');
       assert.notEqual(git('rev-parse', 'HEAD'), oldTip);
       assert.equal(git('log', '-1', '--format=%B').trim(), MESSAGE,
-        'Sync commit contains only its fixed subject and attribution');
+        'Routine syncs must not invent an assistant co-author');
       assert.equal(git('show', '-s', '--format=%an', 'HEAD'), 'Human Author');
       assert.equal(git('status', '--porcelain'), '');
       assert.equal(fs.readFileSync(path.join(root, 'main.txt'), 'utf8'), 'existing main work\n');
