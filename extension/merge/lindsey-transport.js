@@ -24,15 +24,15 @@ function createLindseyTransport(repository, { env = process.env, fetchImpl = glo
     return pending;
   };
   const read = githubUserAPI('unused', createLindseyReadFetch(repository, {env, fetchImpl, getToken, now}));
-  const api = legacyAPI(async (endpoint, options = {}) => {
+  const request = async (endpoint, options = {}) => {
     if (!separateAppsEnabled(env)) throw Error('Enable and configure the Lindsey GitHub App for local handoffs.');
     if ((endpoint !== prefix && !endpoint.startsWith(prefix + '/')) || /%(?:2f|5c|2e)/i.test(endpoint)
         || endpoint.split('?')[0].split('/').some(part => part === '..' || part === '.'))
       throw Error('Lindsey handoff request is outside the selected repository.');
     if ((options.method || 'GET') === 'GET') return read(endpoint, options);
     return githubUserAPI(await getGitToken(), fetchImpl)(endpoint, options);
-  });
-  return { api, gitToken: getGitToken };
+  };
+  return { api: legacyAPI(request), request, gitToken: getGitToken };
 }
 
 module.exports = { createLindseyTransport };

@@ -21,24 +21,39 @@ const REPO = /^[\w.-]+\/[\w.-]+$/;
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
 
 const { verifiedHumanAuthor, verifyCommit } = require('./human-squash-merge');
+const { configuredMergeActor, commitIdentityArgs } = require('../github/app-commit-identity');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
   localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal, assistantModelNumber,
-  temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-'))
+  temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-')),
+  getAppActor = configuredMergeActor
 } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0 ||
       !expected || !SHA.test(expected.headSha || '') || !SHA.test(expected.baseSha || '')) {
     throw Error('Invalid repository or PR number.');
   }
+  const appActor = await getAppActor(repository);
+  if (appActor) {
+    api = appActor.api;
+    gitToken = appActor.gitToken;
+  }
+  const automationAuthor = appActor?.author;
   api ||= require('../github/user-api').legacyAPI(require('./pull-request').githubApi);
   git ||= async (...args) => {
     const credential = typeof gitToken === 'function' ? await gitToken() : gitToken;
+    const env = { ...process.env, ...(credential ? { GH_TOKEN: credential, GITHUB_TOKEN: credential } : {}),
+      GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' };
+    // New local commits receive explicit identity arguments below. Inherited
+    // Git environment overrides must not replace either selected identity.
+    for (const key of Object.keys(env)) {
+      if (/^GIT_(?:AUTHOR|COMMITTER)_/.test(key)) delete env[key];
+    }
     try { return (await exec('git', ['-c', 'core.hooksPath=/dev/null',
     '-c', 'core.fsmonitor=false', '-c', 'credential.helper=',
     '-c', 'credential.helper=!' + gh + ' auth git-credential', ...args],
   { timeout: 120000, maxBuffer: 4 * 1024 * 1024,
-    env: { ...process.env, ...(credential ? { GH_TOKEN: credential } : {}), GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' } })).stdout.trim();
+    env })).stdout.trim();
     } catch (error) { throw require('../commits/git-failure').gitFailure(error, args); }
   };
   const endpoint = 'repos/' + repository;
@@ -292,7 +307,7 @@ async function humanSquashMerge(repository, number, {
       if (!signedSha) {
         const messageFile = path.join(temp, '.git', 'sweetiebot-signed-squash-message');
         await fs.writeFile(messageFile, preparedMessage + '\n', { mode: 0o600 });
-        signedSha = await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
+        signedSha = await inRepo(...commitIdentityArgs(author, automationAuthor || author),
           'commit-tree', '-S', finalTree, '-p', baseSha, '-F', messageFile);
         const raw = await inRepo('cat-file', '-p', signedSha);
         const parents = (await inRepo('show', '-s', '--format=%P', signedSha)).trim().split(/\s+/).filter(Boolean);
@@ -579,10 +594,13 @@ async function humanSquashMerge(repository, number, {
       if (conflicts.length && !trailer) {
         throw Error('Model-authored conflict decisions require the active coding model number.');
       }
-      const mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
+      let mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
         ? preparedMessage.trimEnd() + '\n\n' + trailer : preparedMessage;
+      const humanCredit = `Co-authored-by: ${author.name} <${author.email}>`;
+      if (automationAuthor && !mergeMessage.split('\n').includes(humanCredit)) mergeMessage += '\n\n' + humanCredit;
       return require('./local-author-merge').localAuthorMerge({
       repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
+      automationAuthor,
       message: mergeMessage, git: inRepo, api, directory: temp, checkOptions, integratedTree,
       expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit,
       privateRepository: repositoryInfo.private === true
@@ -624,7 +642,7 @@ async function humanSquashMerge(repository, number, {
       const finalTree = await inRepo('write-tree');
       const prepared = await require('./resolution-commits').createResolutionCommits({
         git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
-        conflicts, decisions, author, base, assistantModelNumber,
+        conflicts, decisions, author: automationAuthor || author, base, assistantModelNumber,
         onCommit: decision => progress('decision-commit', decision)
       });
       operationCommitTitle = '🔄 Sync branch to ' + base;
@@ -667,7 +685,7 @@ async function humanSquashMerge(repository, number, {
     progress('rewrite-approved', { description: 'Explicit local approval to preserve the original human author; incremental integration cannot produce the required squash.' });
     const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
     await fs.writeFile(messageFile, message + '\n');
-    await inRepo('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
+    await inRepo(...commitIdentityArgs(author, automationAuthor || author),
       'commit', ...(requireSignedCommit ? ['-S'] : []), '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
     if (requireSignedCommit && !/(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', 'HEAD'))) {
       throw Error('The local Git signer did not attach a commit signature; no branch was pushed.');

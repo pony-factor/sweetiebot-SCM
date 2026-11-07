@@ -4,7 +4,8 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
 const { githubRepository } = require('../merge/sync-review');
-const { separateAppsEnabled, workflowBotLogin } = require('../github/app-identity');
+const { separateAppsEnabled } = require('../github/app-identity');
+const { appCommitIdentity: syncIdentity } = require('../github/app-commit-identity');
 const { createLindseyTransport } = require('../merge/lindsey-transport');
 const { gitFailure } = require('../commits/git-failure');
 const exec = promisify(execFile);
@@ -54,23 +55,6 @@ async function refreshMain(repository, { defaultBranch, remote, checkBranch }) {
   }
   await checkBranch();
   return local;
-}
-
-// Resolve the configured App's public bot account rather than inventing a
-// noreply address or borrowing the human's Git identity.
-async function syncIdentity({ login = workflowBotLogin('lindsey'), fetchImpl = globalThis.fetch } = {}) {
-  let response, account;
-  try {
-    response = await fetchImpl('https://api.github.com/users/' + encodeURIComponent(login), {
-      headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000)
-    });
-    if (response.ok) account = await response.json();
-  } catch { /* Authentication and identity failures must never expose response bodies. */ }
-  if (!account || account.login?.toLowerCase() !== login.toLowerCase()
-      || account.type !== 'Bot' || !Number.isSafeInteger(account.id) || account.id <= 0) {
-    throw Error('Could not verify the configured Lindsey bot identity. No sync commit was created.');
-  }
-  return { name: account.login, email: `${account.id}+${account.login}@users.noreply.github.com` };
 }
 
 // Use the same verified App for Git authorship and authenticated publication.

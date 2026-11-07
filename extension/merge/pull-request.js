@@ -7,6 +7,7 @@ const exec = promisify(execFile);
 const { verifiedHumanAuthor } = require('./human-squash-merge');
 const { humanSquashMerge } = require('./local-human-squash');
 const { squashMessage, readCommits } = require('./squash-attribution');
+const { configuredMergeActor } = require('../github/app-commit-identity');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
@@ -20,12 +21,9 @@ async function gitCommitSigningEnabled(directory) {
   return stdout.trim() === 'true';
 }
 
-// VS Code callers provide the signed-in user's transport; local handoffs
-// inherit that same session through GH_TOKEN, never the PR-creation bot.
-// GitHub applies repository permissions, reviews, and branch protection.
+// Legacy transport when distinct App mode is disabled. Configured Lindsey
+// workflows replace this transport before reading or writing the selected PR.
 function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn) {
-  // A local merge or branch-sync handoff must use the same signed-in gh CLI
-  // for reads and writes. Bot installation credentials are not required here.
   return new Promise((resolve, reject) => {
     const args = ['api', '--include', '--hostname', 'github.com', '--method', method, endpoint];
     if (body !== undefined) args.push('--input', '-');
@@ -73,7 +71,8 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
 }
 
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
-  { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath, onProgress = () => {} } = {}) {
+  { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath, onProgress = () => {},
+    getAppActor = configuredMergeActor } = {}) {
   if (!['squash', 'merge', 'local-signed-squash'].includes(method)) throw new Error('Unknown merge method.');
   if (method === 'squash' && repositoryPath && await gitCommitSigningEnabled(repositoryPath)) {
     method = 'local-signed-squash';
@@ -85,6 +84,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       result.url !== `https://github.com/${repository}/pull/${result.number}`) {
     throw new Error('Invalid published pull-request identity; refusing to merge.');
   }
+  const appActor = await getAppActor(repository);
+  if (appActor) { request = appActor.request; gitToken = appActor.gitToken; }
   const endpoint = `repos/${repository}/pulls/${result.number}`;
   onProgress({ stage: 'reading-pr' });
   const pr = await request(endpoint);
@@ -111,8 +112,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     onProgress({ stage: 'reading-history' });
     const info = await request('repos/' + repository);
     if (info.allow_merge_commit !== true) throw new Error('This repository does not allow merge commits.');
-    const actor = await request('user');
-    if (actor.type !== 'User' || /\[bot\]$/i.test(actor.login || '')) throw new Error('A signed-in human account is required for this merge.');
+    const actor = appActor ? { type: 'Bot', login: appActor.author.name } : await request('user');
+    if (!appActor && (actor.type !== 'User' || /\[bot\]$/i.test(actor.login || ''))) throw new Error('A signed-in human account is required for this merge.');
     const commits = await readCommits(async ([url]) => request(url), repository, result.number);
     const human = verifiedHumanAuthor(commits);
     const prepared = squashMessage(pr.title, result.number, commits,
@@ -135,8 +136,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     const parents = destination.parents?.map(parent => parent.sha) || [];
     const verified = await request(endpoint);
     if (!parents.includes(baseSha) || !parents.includes(pr.head.sha) || destination.author?.login !== actor.login ||
-        destination.author?.type !== 'User' || verified.merged !== true || verified.merge_commit_sha !== merged.sha) {
-      throw new Error('The merge occurred, but preserved ancestry or human attribution could not be verified. Inspect GitHub.');
+        destination.author?.type !== actor.type || verified.merged !== true || verified.merge_commit_sha !== merged.sha) {
+      throw new Error('The merge occurred, but preserved ancestry or the selected merge identity could not be verified. Inspect GitHub.');
     }
     return { merged: true, sha: merged.sha, url: result.url, number: result.number, base, method: 'merge', authorsPreserved: true };
   }
@@ -157,6 +158,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     };
     onProgress({ stage: 'preparing-local' });
     const landed = await humanMerge(repository, result.number, { api, gitToken, onProgress, localGitMerge: true, offerAuthorChoice: false,
+      getAppActor: async () => appActor,
       allowHistoryRewrite: false, rewriteReason: '', requireSignedCommit: signLocally,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
     if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
