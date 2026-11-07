@@ -136,7 +136,9 @@ async function publishSyncReports(root, { api, output,
           || !Array.isArray(report.files) || report.files.length > 50) continue;
       if (githubRepository(await git(root, ['remote', 'get-url', report.remote]).catch(() => '')) !== report.repo) continue;
       // Configured App mode must never publish a routine report as the user.
-      const request = api || (enabled() ? transport(report.repo).api : githubApi);
+      const app = !api && enabled() ? transport(report.repo) : null;
+      const request = api || (app ? (endpoint, method = 'GET', body) =>
+        app.api(endpoint, method, body === undefined ? [] : ['-f', 'body=' + body]) : githubApi);
       const branch = report.branch.split('/').map(encodeURIComponent).join('/');
       const ref = await request('repos/' + report.repo + '/git/ref/heads/' + branch);
       if (ref?.object?.sha !== report.sha) continue; // Not yet pushed, or branch advanced.
