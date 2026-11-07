@@ -15,7 +15,7 @@ async function appCommitIdentity({ login = workflowBotLogin('lindsey'), fetchImp
       || account.type !== 'Bot' || !Number.isSafeInteger(account.id) || account.id <= 0) {
     throw Error('Could not verify the configured Lindsey bot identity. No automation commit was created.');
   }
-  return { name: account.login, email: `${account.id}+${account.login}@users.noreply.github.com` };
+  return { name: 'Lindsey', email: `${account.id}+${account.login}@users.noreply.github.com`, login: account.login };
 }
 
 async function configuredMergeActor(repository, { enabled = separateAppsEnabled,
@@ -24,7 +24,8 @@ async function configuredMergeActor(repository, { enabled = separateAppsEnabled,
   if (!enabled()) return null;
   const actor = transport(repository);
   await actor.gitToken(); // Verify App access before any commit or publication.
-  return { ...actor, author: await identity() };
+  const { login, ...author } = await identity();
+  return { ...actor, author, login };
 }
 
 // Both roles are explicit: inherited author configuration must not attribute

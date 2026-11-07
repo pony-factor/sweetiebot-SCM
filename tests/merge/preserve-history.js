@@ -42,8 +42,8 @@ function fixture({ checksFail = false, baseMoves = false, appMode = false } = {}
   assert.equal(defaultAction.writes(), 0, 'The default squash must not silently switch merge methods');
   const app = fixture({appMode:true});
   assert((await squashMergePullRequest(input,()=>assert.fail('Never use the personal API'),{
-    method:'merge',getAppActor:async()=>({request:app.request,gitToken:async()=> 'fixture-app-token',
-      author:{name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'}})
+    method:'merge',getAppActor:async()=>({request:app.request,gitToken:async()=> 'fixture-app-token',login:'lindsey-fixture[bot]',
+      author:{name:'Lindsey',email:'123+lindsey-fixture[bot]@users.noreply.github.com'}})
   })).merged);
   assert.equal(app.writes(),1);
   let personalReads=0;

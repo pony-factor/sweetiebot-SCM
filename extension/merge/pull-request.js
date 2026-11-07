@@ -112,7 +112,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     onProgress({ stage: 'reading-history' });
     const info = await request('repos/' + repository);
     if (info.allow_merge_commit !== true) throw new Error('This repository does not allow merge commits.');
-    const actor = appActor ? { type: 'Bot', login: appActor.author.name } : await request('user');
+    const actor = appActor ? { type: 'Bot', login: appActor.login } : await request('user');
     if (!appActor && (actor.type !== 'User' || /\[bot\]$/i.test(actor.login || ''))) throw new Error('A signed-in human account is required for this merge.');
     const commits = await readCommits(async ([url]) => request(url), repository, result.number);
     const human = verifiedHumanAuthor(commits);

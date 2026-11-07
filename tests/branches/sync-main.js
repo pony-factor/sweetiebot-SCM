@@ -69,13 +69,14 @@ async function run() {
     assert.equal(git(root, 'rev-parse', 'HEAD'), topicTip);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 
-  const bot = { name: 'fixture-lindsey[bot]', email: '123+fixture-lindsey[bot]@users.noreply.github.com' };
+  const login = 'fixture-lindsey[bot]';
+  const bot = { name: 'Lindsey', email: '123+fixture-lindsey[bot]@users.noreply.github.com' };
   const fetchImpl = async url => {
     assert.equal(url, 'https://api.github.com/users/fixture-lindsey%5Bbot%5D');
-    return { ok: true, json: async () => ({ login: bot.name, id: 123, type: 'Bot' }) };
+    return { ok: true, json: async () => ({ login, id: 123, type: 'Bot' }) };
   };
-  assert.deepEqual(await syncIdentity({ login: bot.name, fetchImpl }), bot);
-  await assert.rejects(syncIdentity({ login: bot.name,
+  assert.deepEqual(await syncIdentity({ login, fetchImpl }), { ...bot, login });
+  await assert.rejects(syncIdentity({ login,
     fetchImpl: async () => ({ ok: true, json: async () => ({ login: 'someone', id: 123, type: 'User' }) }) }), /verify/);
   let writes = 0, tokens = 0, commits = 0;
   const publish = await syncPublisher('/fixture', 'origin', {

@@ -39,13 +39,14 @@ const { configuredMergeActor, commitIdentityArgs } = require('../../extension/gi
     fetchImpl:()=>assert.fail('Never fall back to user authentication')});
   await assert.rejects(legacy.gitToken(),/Lindsey GitHub App/);
   await assert.rejects(legacy.api('repos/owner/repo'),/Lindsey GitHub App/);
-  const bot = { name: 'lindsey-fixture[bot]', email: '123+lindsey-fixture[bot]@users.noreply.github.com' };
+  const bot = { name: 'Lindsey', email: '123+lindsey-fixture[bot]@users.noreply.github.com' };
   let authenticated = false;
   const actor = await configuredMergeActor('owner/repo', { enabled: () => true,
     transport: repo => { assert.equal(repo, 'owner/repo'); return { gitToken: async () => { authenticated = true; } }; },
-    identity: async () => { assert(authenticated, 'App authentication precedes commit identity'); return bot; }
+    identity: async () => { assert(authenticated, 'App authentication precedes commit identity'); return {...bot,login:'lindsey-fixture[bot]'}; }
   });
   assert.deepEqual(actor.author, bot);
+  assert.equal(actor.login, 'lindsey-fixture[bot]', 'Git display name and authenticated bot login remain distinct');
   await assert.rejects(configuredMergeActor('owner/repo', { enabled: () => true,
     transport: () => ({ gitToken: async () => { throw Error('App unavailable'); } }),
     identity: () => assert.fail('No identity or fallback after App failure') }), /App unavailable/);
