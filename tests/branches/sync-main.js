@@ -55,7 +55,8 @@ async function run() {
       repository.state.HEAD = { name: git(root, 'branch', '--show-current') };
       repository.state.mergeChanges = [];
     };
-    assert.equal(await syncBranch(repository, { branch: 'topic', defaultBranch: 'main', remote: 'origin' }), 'topic');
+    assert.equal(await syncBranch(repository, { branch: 'topic', defaultBranch: 'main', remote: 'origin',
+      createPublisher: async () => null }), 'topic');
     assert.equal(fetches.at(-1), 'upstream', 'Button prefers upstream while origin remains the publishing remote');
     assert.equal(fs.readFileSync(path.join(root, 'incoming'), 'utf8'), 'upstream work\n');
     assert.equal(repository.inputBox.value, 'Preserved draft');

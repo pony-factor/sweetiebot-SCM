@@ -40,7 +40,7 @@ function setup() {
       this.state.HEAD = { name: git('branch', '--show-current') };
     }
   };
-  const options = { branch: 'topic', defaultBranch: 'main', remote: 'origin' };
+  const options = { branch: 'topic', defaultBranch: 'main', remote: 'origin', createPublisher: async () => null };
   return { root, git, repository, options };
 }
 
