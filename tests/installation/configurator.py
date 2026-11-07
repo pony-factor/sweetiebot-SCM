@@ -116,6 +116,36 @@ class SubmissionTests(unittest.TestCase):
             self.assertIn(f'id="settings-panel-{i}"', page)
         self.assertNotIn('>Other</div>', sidebar)
 
+    def test_ai_commit_controls_and_instructions_share_one_panel(self):
+        with patch.object(configurator, "load_commit_instructions", return_value="Use <emojis> & concise titles"):
+            page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+
+        def panel(section):
+            match = re.search(
+                r'<section class="settings-panel"[^>]*><h2>' + re.escape(section) + r'</h2>(.*?)</section>',
+                page, re.S,
+            )
+            self.assertIsNotNone(match, section)
+            return match.group(1)
+
+        ai = panel("AI")
+        commits = panel("Commits")
+        source = panel("Source control")
+        self.assertIn("<h3>AI commit generation</h3>", ai)
+        self.assertIn("Use &lt;emojis&gt; &amp; concise titles", ai)
+        for name in ("commitInstructions", "aiCommit", "aiBackend", "aiCommitModel",
+                     "aiCommitRequestTimeoutSeconds", "aiCommitAttempts",
+                     "aiDetailedCommitStyle", "aiEmojiPriorityRules",
+                     "codexCommitContext", "chatgptReviewProjectUrl"):
+            self.assertIn(f'name="{name}"', ai)
+        self.assertEqual(page.count('name="commitInstructions"'), 1)
+        self.assertNotIn('name="commitInstructions"', source)
+        self.assertNotIn('name="aiCommit"', commits)
+        self.assertIn('name="durableBackgroundCommits"', commits)
+        self.assertIn('name="placeholderPrefix"', commits)
+        self.assertIn('id="signing-key"', source)
+        self.assertIn('>AI</button>', page)
+
     def test_missing_gpg_does_not_claim_no_keys_exist(self):
         status = {"gpgAvailable": False, "configured": "0123456789ABCDEF", "enabled": True, "keys": []}
         with patch.object(configurator, "signing_status", return_value=status), \
@@ -988,7 +1018,7 @@ class SubmissionTests(unittest.TestCase):
 
     def test_ai_commit_fallback_toggle_defaults_on_and_supports_strict_debugging(self):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
-        self.assertEqual(setting.section, "Commits")
+        self.assertEqual(setting.section, "AI")
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
         values = form_values()
@@ -1003,7 +1033,7 @@ class SubmissionTests(unittest.TestCase):
                 ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
                 ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
             setting = next(s for s in configurator.SETTINGS if s.name == name)
-            self.assertEqual(setting.section, 'Commits')
+            self.assertEqual(setting.section, 'AI')
             self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
             self.assertEqual(toolkit_settings.SETTING_KEYS[name], key)
             values = form_values()
