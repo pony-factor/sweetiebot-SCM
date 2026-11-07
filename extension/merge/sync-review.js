@@ -32,6 +32,7 @@ async function reviewSyncConflicts(vscode, repository, details) {
   await unchanged();
   for (;;) {
     const choice = await vscode.window.showQuickPick([
+      ...(details.appIdentity ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Review conflict proposals, then commit and publish with the configured App' }] : []),
       { id: 'inspect', label: '$(diff) Inspect conflict preview', description: 'Read Git conflict details; no files are changed' },
       { id: 'resolve', label: '$(tools) Start conflict resolution', description: 'Proceed to Git merge editor without auto-committing' },
       { id: 'own', label: '$(git-commit) Make my own commit first', description: 'Prefill an editable commit title and cancel this sync' },
@@ -40,6 +41,7 @@ async function reviewSyncConflicts(vscode, repository, details) {
       placeHolder: 'Git cannot automatically reconcile this ' + strategy + ' sync', ignoreFocusOut: true });
     if (!choice || choice.id === 'cancel') return false;
     await unchanged();
+    if (choice.id === 'lindsey') return 'lindsey';
     if (choice.id === 'own') {
       const suggested = '🛠️ Prepare ' + branch + ' for synchronization with ' + defaultBranch;
       const input = await vscode.window.showInputBox({
@@ -109,7 +111,9 @@ async function githubApi(endpoint, method = 'GET', body) {
   if (method === 'POST') args.push('-X', 'POST', '-f', 'body=' + body);
   return JSON.parse((await exec(gh, args, { timeout: 30000, maxBuffer: 1024 * 1024 })).stdout);
 }
-async function publishSyncReports(root, { api = githubApi, output } = {}) {
+async function publishSyncReports(root, { api, output,
+  enabled = require('../github/app-identity').separateAppsEnabled,
+  transport = require('./lindsey-transport').createLindseyTransport } = {}) {
   const directory = path.join(await git(root, ['rev-parse', '--absolute-git-dir']), 'sweetiebot-sync-reports');
   let names;
   try { names = await fs.readdir(directory); }
@@ -131,15 +135,17 @@ async function publishSyncReports(root, { api = githubApi, output } = {}) {
           || !/^[\w./-]+$/.test(report.branch || '')
           || !Array.isArray(report.files) || report.files.length > 50) continue;
       if (githubRepository(await git(root, ['remote', 'get-url', report.remote]).catch(() => '')) !== report.repo) continue;
+      // Configured App mode must never publish a routine report as the user.
+      const request = api || (enabled() ? transport(report.repo).api : githubApi);
       const branch = report.branch.split('/').map(encodeURIComponent).join('/');
-      const ref = await api('repos/' + report.repo + '/git/ref/heads/' + branch);
+      const ref = await request('repos/' + report.repo + '/git/ref/heads/' + branch);
       if (ref?.object?.sha !== report.sha) continue; // Not yet pushed, or branch advanced.
       const endpoint = 'repos/' + report.repo + '/commits/' + report.sha + '/comments';
-      const comments = await api(endpoint + '?per_page=100');
+      const comments = await request(endpoint + '?per_page=100');
       if (!Array.isArray(comments) || comments.length >= 100) continue;
       const marker = '<!-- sweetiebot-sync-report:' + report.sha + ' -->';
       if (!comments.some(comment => String(comment.body || '').includes(marker))) {
-        await api(endpoint, 'POST', reportBody(report));
+        await request(endpoint, 'POST', reportBody(report));
       }
       await fs.unlink(file);
       output?.appendLine?.('Published verified sync report for ' + report.sha);

@@ -104,7 +104,7 @@ async function applyPreview(repository, temporary, manifest) {
   return files.length;
 }
 
-async function generatePreview(vscode, repository) {
+async function generatePreview(vscode, repository, { sync = false } = {}) {
   const root = repository.rootUri?.fsPath;
   if (!root) throw new Error('No local Git repository selected.');
   const script = lindseyScript(root, vscode.workspace?.workspaceFolders || []);
@@ -122,11 +122,13 @@ async function generatePreview(vscode, repository) {
         vscode.Uri.file(file.target), vscode.Uri.file(file.candidate),
         'Lindsey proposal: ' + file.path);
     }
-    const approval = await vscode.window.showInformationMessage(
-      'Review the Lindsey diff editors, then choose Apply proposed resolutions to write ' + files.length + ' working-tree file(s). Nothing will be staged, committed or pushed.',
-      'Apply proposed resolutions');
-    if (approval !== 'Apply proposed resolutions') return undefined;
+    const action = sync ? 'Apply and sync with Lindsey' : 'Apply proposed resolutions';
+    const approval = await vscode.window.showInformationMessage(sync
+      ? 'Review the Lindsey diff editors. Apply and sync with Lindsey will stage these ' + files.length + ' resolved file(s), commit the synchronization and publish using the configured Lindsey App identity.'
+      : 'Review the Lindsey diff editors, then choose Apply proposed resolutions to write ' + files.length + ' working-tree file(s). Nothing will be staged, committed or pushed.', action);
+    if (approval !== action) return undefined;
     const applied = await applyPreview(repository, temporary, manifest);
+    if (sync) return { files: files.map(file => ({ path: file.path, sha256: sha256(file.proposed) })) };
     void vscode.window.showInformationMessage(
       'Applied Lindsey proposals to ' + applied + ' file(s). Review, stage and commit the results yourself.');
     return undefined;
