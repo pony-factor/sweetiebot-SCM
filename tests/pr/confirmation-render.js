@@ -111,11 +111,12 @@ const generatedSource=require('../../extension/github/pull-request').sourceDetai
 });
 context.renderMarkdown(output,'Body.\n\n'+generatedSource);
 const generatedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
-assert.equal(generatedLinks.length,1,'Unavailable Online and unverified Desktop links are omitted');
+assert.equal(generatedLinks.length,2,'Local and Desktop links are available without a shared Online link');
 assert(generatedLinks[0].href.startsWith('https://vscode.dev/redirect?'));
 assert.equal(generatedLinks[0].textContent,'Local');
-assert(!generatedSource.includes('[Desktop]('),
-  'Do not fabricate a desktop deeplink when native Codex copy did not provide one');
+assert.equal(generatedLinks[1].href,desktopLink,
+  'Derive the Desktop deeplink from the Local thread ID without requiring native copy');
+assert.equal(generatedLinks[1].textContent,'Desktop');
 const copiedDesktopSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
   kind:'codex',uuid:sourceId,
   url:require('../../extension/github/pull-request').codexConversationUrl(sourceId),
@@ -154,10 +155,10 @@ const sharedSource=require('../../extension/github/pull-request').sourceDetailsM
 context.renderMarkdown(output,'Body.\n\n'+sharedSource);
 const sharedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
 assert.deepEqual(sharedLinks.map(node=>node.href),[
-  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId)
+  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId),desktopLink
 ]);
-assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local']);
-assert.equal(output.children.at(-1).children[1].textContent,'Online · Local');
+assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local','Desktop']);
+assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
 assert(!sharedSource.includes('**Privacy:**'),'Source links contains only available verified links');
 
 context.renderMarkdown(output,'Body.\n\n<details>\n<summary>Source details</summary>\n\n- **Online:** javascript:alert(1)\n</details>');

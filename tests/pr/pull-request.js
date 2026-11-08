@@ -199,8 +199,10 @@ async function run() {
   const codexSource = { kind: 'codex', uuid: '019c56c3-06fc-7db3-a928-9c3607e17129',
     url: codexConversationUrl('019c56c3-06fc-7db3-a928-9c3607e17129'),
     desktopUrl: 'codex://threads/019c56c3-06fc-7db3-a928-9c3607e17129' };
-  assert.equal(conversationSourceLinks({ ...codexSource, desktopUrl: undefined }).desktop, undefined,
-    'Do not invent a Desktop link when Codex did not copy one');
+  assert.equal(conversationSourceLinks({ ...codexSource, desktopUrl: undefined }).desktop, codexSource.desktopUrl,
+    'Derive the Desktop link from the same thread ID as Local when native copy is unavailable');
+  assert.equal(conversationSourceLinks({ ...codexSource, desktopUrl: 'codex://threads/11111111-2222-4333-8444-555555555555' }).desktop,
+    codexSource.desktopUrl, 'An invalid copied route falls back to the originating thread');
   assert.equal(conversationSourceLinks({ ...codexSource, desktopUrl: codexSource.desktopUrl + '?host=remote' }).desktop,
     codexSource.desktopUrl + '?host=remote', 'Preserve the copied native route parameters');
   const stored = { [codexSource.uuid]: share };
