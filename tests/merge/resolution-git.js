@@ -172,12 +172,22 @@ const run = promisify(execFile);
     assert.equal(await branch('main'), baseSha, 'Every blocked preflight leaves main unchanged');
     // An ordinary fast-forward push must preserve a competing branch update.
     const competing = await git('--git-dir=' + remote, 'commit-tree', headSha + '^{tree}', '-p', headSha, '-m', 'Competing fixture update');
-    await assert.rejects(attempt({ git: async (...args) => {
-      if (args.includes('push')) await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', competing, headSha);
-      return localGit(...args);
-    } }), /stale info|rejected/);
-    assert.equal(await branch('feature'), competing, 'A normal push preserves the competing head');
-    await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
+    if (resolving) {
+      await assert.rejects(attempt({ git: async (...args) => {
+        if (args.includes('push')) await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', competing, headSha);
+        return localGit(...args);
+      } }), /stale info|rejected/);
+      assert.equal(await branch('feature'), competing, 'A competing update blocks a real synchronization push');
+      await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
+    } else {
+      const clean = await attempt({ git: async (...args) => {
+        assert(!args.includes('push'), 'A clean sync must not push at all');
+        return localGit(...args);
+      } });
+      assert.equal(clean.status, 'synced');
+      assert.equal(clean.unchanged, true);
+      assert.equal(await branch('feature'), headSha);
+    }
     pushed = false;
     // A child PR built from the parent must remain untouched while the parent
     // accepts a normal append-only synchronization commit.
