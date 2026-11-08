@@ -166,6 +166,8 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
           return { [head + '^{tree}']: tree, [sha + '^1']: base, [sha + '^2']: head }[args[1]];
         }
         if (args[0] === 'show') {
+          if (args.includes('--format=%an%x00%ae%x00%cn%x00%ce%x00%B'))
+            return [author.name,author.email,author.name,author.email,message+'\n'].join('\0');
           if (args.includes('--format=%an%x00%ae%x00%cn%x00%ce'))
             return [author.name, author.email, author.name, author.email].join('\0');
           return author.name + '\0' + author.email + '\0' + message + '\n';

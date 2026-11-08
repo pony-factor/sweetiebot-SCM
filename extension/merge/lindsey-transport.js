@@ -4,8 +4,8 @@ const { separateAppsEnabled, getRoleInstallationToken } = require('../github/app
 const { createLindseyReadFetch } = require('../github/read-api');
 const { githubUserAPI, legacyAPI } = require('../github/user-api');
 
-// Keep original Git authorship while making Lindsey the actual authenticated
-// actor for pushes and merge writes. Never fall back to the user's credential.
+// Lindsey is the actual authenticated actor for pushes and merge writes.
+// Commit builders choose authorship separately. Never borrow user credentials.
 function createLindseyTransport(repository, { env = process.env, fetchImpl = globalThis.fetch,
   getToken = getRoleInstallationToken, now = Date.now } = {}) {
   if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(repository || '')) throw Error('Invalid Lindsey repository.');
@@ -24,15 +24,15 @@ function createLindseyTransport(repository, { env = process.env, fetchImpl = glo
     return pending;
   };
   const read = githubUserAPI('unused', createLindseyReadFetch(repository, {env, fetchImpl, getToken, now}));
-  const api = legacyAPI(async (endpoint, options = {}) => {
+  const request = async (endpoint, options = {}) => {
     if (!separateAppsEnabled(env)) throw Error('Enable and configure the Lindsey GitHub App for local handoffs.');
     if ((endpoint !== prefix && !endpoint.startsWith(prefix + '/')) || /%(?:2f|5c|2e)/i.test(endpoint)
         || endpoint.split('?')[0].split('/').some(part => part === '..' || part === '.'))
       throw Error('Lindsey handoff request is outside the selected repository.');
     if ((options.method || 'GET') === 'GET') return read(endpoint, options);
     return githubUserAPI(await getGitToken(), fetchImpl)(endpoint, options);
-  });
-  return { api, gitToken: getGitToken };
+  };
+  return { api: legacyAPI(request), request, gitToken: getGitToken };
 }
 
 module.exports = { createLindseyTransport };

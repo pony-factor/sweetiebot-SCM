@@ -6,11 +6,13 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
   const signer={name:'Local Signer',email:'signer@example.test'};
+  const bot={name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'};
+  const expectedSigner=appMode?bot:signer;
   const git=async(...args)=>(await run('git',['-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false',
     '-c','user.name='+author.name,'-c','user.email='+author.email,...args])).stdout.trim();
   const inWork=(...args)=>git('-C',work,...args);
@@ -22,7 +24,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       await run('ssh-keygen',['-q','-t','ed25519','-N','','-C',author.email,'-f',path.join(root,'signing_key')]);
       const publicKey=(await fs.readFile(path.join(root,'signing_key.pub'),'utf8')).trim();
       const allowed=path.join(root,'allowed_signers');
-      await fs.writeFile(allowed,signer.email+' '+publicKey+'\n');
+      await fs.writeFile(allowed,[author.email,signer.email,bot.email].map(email=>email+' '+publicKey).join('\n')+'\n');
       const config=path.join(root,'gitconfig');
       await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tname = '+signer.name+'\n\temail = '+signer.email+'\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
     }
@@ -84,9 +86,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       if(endpoint.includes('/status?'))return {statuses:[]};
       if(endpoint.includes('/commits/')){
         const sha=endpoint.split('/').at(-1);
-        const [name,email,...message]=(await inRemote('show','-s','--format=%an%x00%ae%x00%B',sha)).split('\0');
+        const [name,email,committerName,committerEmail,...message]=(await inRemote('show','-s','--format=%an%x00%ae%x00%cn%x00%ce%x00%B',sha)).split('\0');
         const signed=/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',sha));
-        return {commit:{author:{name,email},message:message.join('\0'),
+        return {commit:{author:{name,email},committer:{name:committerName,email:committerEmail},message:message.join('\0'),
           verification:{verified:signed&&!githubCannotVerifySignature,
             reason:!signed?'unsigned':githubCannotVerifySignature?'bad_email':'valid'}}, 
           parents:(await inRemote('show','-s','--format=%P',sha)).split(' ').map(sha=>({sha}))};
@@ -113,7 +115,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       return git(...args);
     };
-    const action=(options={})=>humanSquashMerge('owner/repo',1,{api,git:localGit,localGitMerge:true,requireSignedCommit,
+    const action=(options={})=>humanSquashMerge('owner/repo',1,{api:appMode?()=>assert.fail('App mode must not borrow the user API'):api,
+      git:localGit,localGitMerge:true,requireSignedCommit,
+      getAppActor:async()=>appMode?{api,gitToken:async()=> 'fixture-app-token',author:bot}:null,
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
     if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
@@ -126,9 +130,22 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       const resolutionPatch=conflict?
         'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-main behavior\n+combined feature and main\n':null;
-      const result=await action(conflict?{resolutionPatch,decisions:[{path:'file.txt',
+      const result=await action({...(syncOnly?{operation:'sync'}:{}),...(conflict?{resolutionPatch,decisions:[{path:'file.txt',
         title:'🛠️ Preserve both behaviors',description:'Combine main behavior and the PR feature.'}],
-        assistantModelNumber:'6'}:{});
+        assistantModelNumber:'6'}:{})});
+      if(syncOnly) {
+        assert.equal(result.status,'synced');
+        assert.equal(await branch('main'),baseSha);
+        assert.equal(await branch('feature'),result.sha);
+        assert.equal(await inRemote('rev-parse',result.sha+'^^'),headSha);
+        for(const sha of [result.sha,result.sha+'^']) {
+          assert.equal(await inRemote('show','-s','--format=%an <%ae>|%cn <%ce>',sha),
+            `${bot.name} <${bot.email}>|${bot.name} <${bot.email}>`,'Both fix and sync commits belong to the App');
+        }
+        assert.equal(await inRemote('show','-s','--format=%an',headSha),author.name);
+        assert.equal(pushes.length,1);
+        return;
+      }
       if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
         assert.equal(result.merged,true,JSON.stringify(result));
@@ -142,7 +159,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),'The published squash carries a real SSH signature');
           await inRemote('verify-commit',result.sha);
           assert.equal(await inRemote('show','-s','--format=%an <%ae>',result.sha),author.name+' <'+author.email+'>');
-          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),signer.name+' <'+signer.email+'>');
+          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),expectedSigner.name+' <'+expectedSigner.email+'>');
           assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
         } else if(!humanOpener) {
           assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
@@ -154,14 +171,19 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
             !missingSigningKey,'Only the missing-key fallback is unsigned');
           if(!missingSigningKey) {
             await inRemote('verify-commit',result.sha);
-            assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),signer.name+' <'+signer.email+'>');
+            assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),expectedSigner.name+' <'+expectedSigner.email+'>');
           } else assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
             author.name+' <'+author.email+'>','Unsigned fallback retains original committer');
         }
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
-        assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
+        assert.equal(await inRemote('show','-s','--format=%an',result.sha),appMode&&!requireSignedCommit&&!humanOpener?bot.name:author.name);
+        if(appMode) {
+          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),`${bot.name} <${bot.email}>`);
+          if(!requireSignedCommit&&!humanOpener)assert((await inRemote('show','-s','--format=%B',result.sha)).includes(`Co-authored-by: ${author.name} <${author.email}>`));
+          assert.equal(await inRemote('show','-s','--format=%an',headSha),author.name,'Original human commits remain unchanged');
+        }
       }
     }
     if(!requireSignedCommit)assert.equal(await branch('feature'),headSha,
@@ -175,5 +197,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
 (async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true},{githubCannotVerifySignature:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
+ await fixture({appMode:true});
+ await fixture({appMode:true,advanceBase:true,conflict:true});
+ await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true});
+ await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
  console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

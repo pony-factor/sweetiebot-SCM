@@ -97,7 +97,11 @@ def browser_needed(spec):
 
 def execute(command, env=None):
     print("+", " ".join(map(str, command)), flush=True)
-    return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
+    # Integrated-tree checks also run locally. Personal App identities and
+    # formatting preferences must not change fixtures or trigger live auth.
+    test_env = dict(os.environ if env is None else env)
+    test_env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    return subprocess.run(command, cwd=ROOT, env=test_env, check=False).returncode
 
 
 def run_group(name, spec):

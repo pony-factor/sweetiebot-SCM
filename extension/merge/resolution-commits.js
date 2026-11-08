@@ -34,7 +34,7 @@ function validateDecisions(value = []) {
 // Build an append-only PR history in an isolated index. main is only a tree
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
-  conflicts, decisions, author, base, assistantModelNumber, onCommit = () => {},
+  conflicts, decisions, author, automationCommitter = null, base, assistantModelNumber, onCommit = () => {},
   createCommitTree = attributedCommitTree }) {
   decisions = validateDecisions(decisions);
   const trailer = assistantCoauthorTrailer(assistantModelNumber);
@@ -45,7 +45,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
   }
   const messageFile = path.join(directory, '.git', 'sweetiebot-resolution-message');
-  const identity = await commitIdentity(git, author);
+  const identity = await commitIdentity(git, author, false, false, automationCommitter);
   const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
     const sha = await createCommitTree({ directory, tree, parents: incoming ? [parent, incoming] : [parent],

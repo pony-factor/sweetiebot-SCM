@@ -1,14 +1,14 @@
 'use strict';
 
 const { execFile } = require('node:child_process');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { existsSync } = require('node:fs');
-const { mkdtemp, rm, readFile, writeFile, rename } = require('node:fs/promises');
+const { mkdtemp, rm, readFile, writeFile, rename, lstat } = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
-const { isConflictState, offerConflictRecoveryOptions } = require('../merge/lindsey-conflicts');
+const { isConflictState, offerConflictRecoveryOptions, generatePreview, safeRelative } = require('../merge/lindsey-conflicts');
 const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = require('../merge/sync-review');
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name-selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./strip');
@@ -1142,7 +1142,8 @@ async function confirmUnverifiedLocalDeletion(vscode, repository, {
   });
 }
 
-async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash', reviewConflicts }) {
+async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash', reviewConflicts,
+  resolveConflicts, createPublisher = require('./sync-main').syncPublisher }) {
   if (!branch) throw new Error('Select a branch to sync.');
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
   const checkBranch = async () => {
@@ -1157,8 +1158,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     if (root && existsSync(path.join(root, '.git'))) {
       const pull = await automaticPullTarget(repository, repository.state.HEAD);
       await requireFinalizedCommit(repository, { refs: [`refs/heads/${defaultBranch}`] });
-      const { refreshMain, syncPublisher } = require('./sync-main');
-      const publish = await syncPublisher(root, remote);
+      const { refreshMain } = require('./sync-main');
+      const publish = await createPublisher(root, remote);
       await refreshMain(repository, { defaultBranch, remote: pull.remote, checkBranch });
       await checkBranch();
       const sha = (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
@@ -1176,7 +1177,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   const pull = await automaticPullTarget(repository, { name: defaultBranch, upstream: { remote } });
   const publishingRemote = remote;
   remote = pull.remote;
-  const { refreshMain, syncPublisher } = require('./sync-main');
+  const { refreshMain } = require('./sync-main');
   await requireFinalizedCommit(repository, { refs: [`refs/heads/${defaultBranch}`] });
   const mainRef = await refreshMain(repository, { defaultBranch, remote, checkBranch });
   if (!mainRef) await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
@@ -1185,10 +1186,9 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   const message = defaultBranch === 'main'
     ? '🔄 Sync brach to main'
     : `🔄 Sync branch to ${defaultBranch}`;
-  // A routine sync has no generated prose: only its fixed title and the
-  // required authorship trailer. Proposed substantive edits need their own
-  // human-reviewed commit before the sync is retried.
-  const routineCommitMessage = message + '\n\nCo-authored-by: Codex Web <noreply@openai.com>';
+  // Routine Git synchronization has no model-authored changes. Do not
+  // invent a Codex/Web co-author; preserve credits in existing commits.
+  const routineCommitMessage = message;
   repository.inputBox.value = message;
   try {
     const root = repository.rootUri?.fsPath;
@@ -1201,7 +1201,9 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       throw new Error('Commit or stash your changes before syncing the default branch. Unrelated edits must be reviewed and committed separately.');
     }
     const target = mainRef || `refs/remotes/${remote}/${defaultBranch}`;
-    const publish = git ? await syncPublisher(root, publishingRemote) : null;
+    const publish = git ? await createPublisher(root, publishingRemote) : null;
+    const commit = message => publish ? publish.commit(message) : git(['commit', '-m', message]);
+    let conflictChoice, resolved = false;
     const isAncestor = async () => promisify(execFile)('git',
       ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
       .then(() => true, error => {
@@ -1232,9 +1234,11 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       if (expectedTree !== null || typeof reviewConflicts !== 'function') return true;
       const targetSha = await git(['rev-parse', target]);
       const approved = await reviewConflicts(repository, {
-        branch, defaultBranch, remote, strategy, targetRef: target, head: headBefore, target: targetSha
+        branch, defaultBranch, remote, strategy, targetRef: target, head: headBefore, target: targetSha,
+        appIdentity: Boolean(publish)
       });
       if (!approved) return false;
+      conflictChoice = approved;
       // A reviewer might switch branches, edit files, or move the target while
       // looking at the preview. Never apply a stale decision.
       await checkBranch();
@@ -1245,6 +1249,51 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       }
       return true;
     };
+    const merge = async (args, headBefore, expectedTree) => {
+      try { await git(args); }
+      catch (error) {
+        if (expectedTree !== null || conflictChoice !== 'lindsey' || !publish
+            || typeof resolveConflicts !== 'function') throw error;
+        const unmerged = await git(['ls-files', '-u', '-z']);
+        if (!unmerged) throw error;
+        const paths = [...new Set(unmerged.split('\0').filter(Boolean).map(entry => entry.slice(entry.indexOf('\t') + 1)))];
+        if (!paths.every(safeRelative)) throw Error('Unsupported sync conflict paths.');
+        const index = await git(['ls-files', '--stage', '-z']);
+        const targetSha = await git(['rev-parse', target]);
+        const proposal = await resolveConflicts(repository);
+        if (!proposal) return false;
+        await checkBranch();
+        if (await git(['rev-parse', 'HEAD']) !== headBefore
+            || await git(['rev-parse', target]) !== targetSha
+            || await git(['ls-files', '--stage', '-z']) !== index) {
+          throw Error('Git changed during Lindsey conflict review. No sync commit was created.');
+        }
+        if (!Array.isArray(proposal.files) || proposal.files.length !== paths.length
+            || new Set(proposal.files.map(file => file.path)).size !== paths.length
+            || !proposal.files.every(file => paths.includes(file.path))) {
+          throw Error('Lindsey must resolve every sync conflict before committing.');
+        }
+        for (const file of proposal.files) {
+          const filename = path.join(root, file.path);
+          if (!(await lstat(filename)).isFile()) throw Error('A Lindsey proposal changed file type after review.');
+          const bytes = await readFile(filename);
+          if (createHash('sha256').update(bytes).digest('hex') !== file.sha256) {
+            throw Error('A Lindsey proposal changed after review. No sync commit was created.');
+          }
+        }
+        // The approval explicitly covers staging these reviewed resolutions.
+        await git(['--literal-pathspecs', 'add', '--', ...paths]);
+        if (await git(['ls-files', '-u']) || await git(['diff', '--name-only'])
+            || await git(['ls-files', '--others', '--exclude-standard'])) {
+          throw Error('Unreviewed working changes remain. No sync commit was created.');
+        }
+        resolved = true;
+      }
+      return true;
+    };
+    const commitSync = async () => commit(resolved
+      ? `🛠️ Resolve conflicts syncing ${branch} to ${defaultBranch}\n\nApply reviewed Lindsey conflict resolutions and incorporate incoming ${defaultBranch} changes.`
+      : publish ? message : routineCommitMessage);
     const recordSync = async before => {
       const sha = await git(['rev-parse', 'HEAD']);
       const targetSha = await git(['rev-parse', target]);
@@ -1267,7 +1316,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         const expectedTree = await proposedMergeTree(headBefore);
         if (!await confirmConflict(headBefore, expectedTree)) return false;
         // Do not let Git auto-commit with an arbitrary/generated description.
-        await git(['merge', '--no-ff', '--no-commit', '-m', message, target]);
+        if (!await merge(['merge', '--no-ff', '--no-commit', '-m', message, target], headBefore, expectedTree)) return false;
         await checkBranch();
         if (await git(['rev-parse', 'HEAD']) !== headBefore) {
           throw new Error('The branch advanced during synchronization; no sync commit was created.');
@@ -1275,8 +1324,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         const mergeHead = await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).catch(() => '');
         if (!mergeHead) throw new Error('Git did not leave a verifiable merge to commit.');
         await verifyAutomaticResult(expectedTree);
-        await git(['commit', '-m', routineCommitMessage]);
-        await recordSync(headBefore);
+        await commitSync();
+        if (!resolved) await recordSync(headBefore);
       }
     } else {
       if (!git) throw new Error('A local Git checkout is required for squash synchronization.');
@@ -1287,7 +1336,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         if (!await confirmConflict(headBefore, expectedTree)) return false;
         await checkBranch();
         // A conflict intentionally leaves the index and worktree available to resolve.
-        await git(['merge', '--squash', target]);
+        if (!await merge(['merge', '--squash', target], headBefore, expectedTree)) return false;
         await checkBranch();
         const staged = await promisify(execFile)('git',
           ['diff', '--cached', '--quiet'], { cwd: root })
@@ -1300,8 +1349,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
             throw new Error('The branch advanced during synchronization; changes were left staged.');
           }
           await verifyAutomaticResult(expectedTree);
-          await git(['commit', '-m', routineCommitMessage]);
-          await recordSync(headBefore);
+          await commitSync();
+          if (!resolved) await recordSync(headBefore);
         }
       }
     }
@@ -1429,7 +1478,8 @@ function registerBranchCommands(vscode, context) {
               isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork, commitDraftValue })
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
-              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details)
+              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
+              resolveConflicts: repo => generatePreview(vscode, repo, { sync: true })
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: detachedTip => confirmUnverifiedLocalDeletion(vscode, repository, {

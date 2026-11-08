@@ -10,6 +10,7 @@ const ADDRESS = '127.0.0.1';
 const MAX_INPUT = 60000;
 const MAX_REPLY = 120000;
 const DEFAULT_TIMEOUT_MS = 180000;
+const DATE_FORMATS = new Set(['preserve', 'month-first', 'day-first', 'iso', 'us-numeric', 'day-numeric']);
 
 // Quoted Markdown is source material, not prose the assistant may revise.
 // Include unmarked lazy continuation lines until a blank or a new block starts.
@@ -51,9 +52,12 @@ function validReply(value) {
 }
 
 async function startNativeSpellcheckBridge(draft, {
-  timeoutMs = DEFAULT_TIMEOUT_MS, projectUrl = '', mode = 'spellcheck'
+  timeoutMs = DEFAULT_TIMEOUT_MS, projectUrl = '', mode = 'spellcheck', dateFormat = 'preserve'
 } = {}) {
   if (!['spellcheck', 'commit-title'].includes(mode)) throw new Error('Unsupported ChatGPT review mode.');
+  if (mode === 'spellcheck' && !DATE_FORMATS.has(dateFormat)) {
+    throw new Error('Unsupported Spellcheck Only date format.');
+  }
   if (!validDraft(draft)) throw new Error('The spellcheck draft must have a nonempty, bounded body.');
   // Invalid configured projects never silently downgrade to a general chat.
   const destination = normalizeChatgptProjectUrl(projectUrl) || 'https://chatgpt.com/';
@@ -113,7 +117,7 @@ async function startNativeSpellcheckBridge(draft, {
       if (claimed) { reply(res, 409, {error: 'Already claimed'}); return; }
       claimed = true;
       reply(res, 200, {title: draft.title, body: draft.body,
-        ...(mode === 'commit-title' ? {mode} : {})});
+        ...(mode === 'commit-title' ? {mode} : dateFormat === 'preserve' ? {} : {dateFormat})});
       return;
     }
     if (req.method === 'POST' && req.url === '/result') {
@@ -188,8 +192,10 @@ function registerNativeSpellcheckBridge(vscode, context, start = startNativeSpel
     if (!registered.includes('workbench.action.browser.open')) {
       throw new Error('This VS Code build does not have the native Integrated Browser.');
     }
-    const projectUrl = resolveChatgptReviewProjectUrl(vscode.workspace.getConfiguration?.('sweetiebot'));
-    const session = await start({title: '', body}, {projectUrl});
+    const config = vscode.workspace.getConfiguration?.('sweetiebot');
+    const projectUrl = resolveChatgptReviewProjectUrl(config);
+    const dateFormat = config?.get?.('spellcheckDateFormat', 'preserve') || 'preserve';
+    const session = await start({title: '', body}, {projectUrl, dateFormat});
     active.add(session);
     try {
       await vscode.commands.executeCommand('workbench.action.browser.open', {

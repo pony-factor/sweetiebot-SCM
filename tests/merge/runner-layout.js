@@ -44,6 +44,22 @@ const {openRepairRunner,updateResponsiveRunnerLayout}=require('../../extension/m
   assert.deepEqual(layouts.at(-1).groups.map(group=>group.size),[0.2,0.8]);
   assert.equal(await updateResponsiveRunnerLayout(vscode,850),false,'The changed ratio must not oscillate');
   assert.equal(draft.draft,'unsent text','Resizing preserves the existing draft');
+  // A restored dashboard may occupy the lower-left group, as in the live
+  // bulk-merge window. Its width grows from 20% to 50% on compaction.
+  groups[2].tabs.splice(groups[2].tabs.indexOf(dashboard),1);
+  groups[1].tabs.push(dashboard);
+  const beforeRestoredResize=layouts.length;
+  assert.equal(await updateResponsiveRunnerLayout(vscode,288),true);
+  for(const width of [720,719,721,720]) {
+    assert.equal(await updateResponsiveRunnerLayout(vscode,width),false,
+      'The compacted left dashboard must not immediately restore its narrower layout');
+  }
+  assert.equal(layouts.length,beforeRestoredResize+1,'Restored panes settle after one resize');
+  assert.equal(await updateResponsiveRunnerLayout(vscode,2200),true);
+  assert.equal(await updateResponsiveRunnerLayout(vscode,880),false,
+    'Restoring a left dashboard leaves it above the compact-entry threshold');
+  groups[1].tabs.splice(groups[1].tabs.indexOf(dashboard),1);
+  groups[2].tabs.push(dashboard);
   await Promise.all([openRepairRunner(vscode,url+'2',{repository:'o/r',number:492}),openRepairRunner(vscode,url+'3',{repository:'o/r',number:496})]);
   assert.equal(groups[0].tabs.length,2,'Third runner becomes an upper-left tab');
   assert.equal(groups[1].tabs.length,2,'Fourth runner becomes a lower-left tab');

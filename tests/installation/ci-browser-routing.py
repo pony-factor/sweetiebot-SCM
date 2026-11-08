@@ -15,6 +15,7 @@ for _sb_parent in _sb_path(__file__).resolve().parent.parents:
 
 import importlib.util
 import json
+import os
 import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -30,6 +31,28 @@ SPEC.loader.exec_module(ci)
 
 
 class BrowserRoutingTests(unittest.TestCase):
+    def test_checks_ignore_personal_git_preferences(self):
+        with TemporaryDirectory() as temporary:
+            config = Path(temporary) / "gitconfig"
+            config.write_text('[scm-toolkit]\n'
+                              'github-app-identity-mode = separate-apps\n'
+                              'squash-omit-bullets-for-emoji-titles = true\n',
+                              encoding="utf-8")
+            script = """
+const assert = require('node:assert/strict');
+assert.equal(process.env.CI_FIXTURE_CONTEXT, 'preserved');
+assert.equal(require('./extension/github/app-identity').separateAppsEnabled(), false);
+const { squashMessage } = require('./extension/merge/squash-attribution');
+const result = squashMessage('Fix', 1, [{commit: {
+  author: {name: 'Fixture', email: 'fixture@example.invalid'}, message: '🐛 Fix'
+}}]);
+assert(result.message.startsWith('- 🐛 Fix'));
+"""
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": str(config),
+                   "CI_FIXTURE_CONTEXT": "preserved"}
+            env.pop("SWEETIEBOT_BOT_IDENTITY_MODE", None)
+            self.assertEqual(ci.execute(["node", "-e", script], env), 0)
+
     def test_commit_button_browser_regression_has_one_owner(self):
         manifest = json.loads(ci.CONFIG.read_text(encoding="utf-8"))
         owners = [name for name, group in manifest["groups"].items()

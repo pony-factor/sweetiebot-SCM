@@ -157,6 +157,7 @@
         "codex/chatgpt-project-setup.js",
         "codex/adaptive-video.js",
         "codex/cannon.py",
+        "codex/clipboard.js",
         "codex/clipboard-submit.js",
         "codex/colors.py",
         "codex/composer.py",
@@ -267,6 +268,7 @@
       "syntax": [
         "extension/merge/lindsey-bulk-merge.js",
         "extension/merge/lindsey-transport.js",
+        "extension/github/app-commit-identity.js",
         "extension/commits/git-failure.js",
         "extension/merge/parallel-merge-batch.js",
         "extension/merge/local-human-squash.js",

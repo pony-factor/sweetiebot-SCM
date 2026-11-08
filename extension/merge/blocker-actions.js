@@ -172,8 +172,16 @@ async function openCodexBranch(vscode, context, root, repository, pr, prompt, {
   }
 }
 
+function implementationEngine(engine, option, appEnabled = require('../github/app-identity').separateAppsEnabled()) {
+  // Connected web GitHub tools publish under the user's OAuth identity.
+  // Keep ChatGPT as the authoring surface but publish App-enabled repairs
+  // through the same local Lindsey executor used by bulk handoffs.
+  return engine === 'web' && option.id !== 'suggest-options' && appEnabled ? 'kefania' : engine;
+}
+
 async function launchBlockerAction(vscode, context, rootUri, repository, pr, option, engine) {
   if (!rootUri?.fsPath) throw Error('The selected repository workspace is unavailable.');
+  engine = implementationEngine(engine, option);
   const prompt = blockerPrompt(repository, pr, option, engine, {
     postStatusUpdates: vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true
   });
@@ -193,4 +201,4 @@ async function launchBlockerAction(vscode, context, rootUri, repository, pr, opt
 }
 
 module.exports = { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, blockerPrompt,
-  reportOptionsInstructions, launchBlockerAction, openCodexBranch };
+  reportOptionsInstructions, launchBlockerAction, openCodexBranch, implementationEngine };

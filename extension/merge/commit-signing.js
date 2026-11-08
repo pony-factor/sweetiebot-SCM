@@ -19,12 +19,16 @@ async function signingEnabled(git) {
     '--get', 'commit.gpgsign')) === 'true';
 }
 
-async function commitIdentity(git, originalAuthor, requireSignedCommit = false, preferSigning = false) {
+async function commitIdentity(git, originalAuthor, requireSignedCommit = false, preferSigning = false, automationCommitter = null) {
   if (!validIdentity(originalAuthor)) throw Error('Invalid original Git author identity.');
+  if (automationCommitter && !validIdentity(automationCommitter)) throw Error('Invalid automation Git committer identity.');
   const signed = requireSignedCommit || preferSigning || await signingEnabled(git);
   // Preserve the original author. Prefer the local signing committer for merges,
   // but allow unsigned fallbacks when signing is unavailable.
-  if (!signed) return { author: originalAuthor, committer: originalAuthor, signed: false };
+  if (!signed) return { author: originalAuthor, committer: automationCommitter || originalAuthor, signed: false };
+  // App-authored integration retains the verified App committer, not the human's
+  // local signing identity. Local user merges continue to use user.name/email.
+  if (automationCommitter) return { author: originalAuthor, committer: automationCommitter, signed: true };
   let name, email;
   try {
     [name, email] = await Promise.all([

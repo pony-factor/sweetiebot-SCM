@@ -38,6 +38,11 @@ async function test() {
     const identity = await commitIdentity(git, original);
     assert.deepEqual(identity.author, original);
     assert.deepEqual(identity.committer, signer);
+    const bot = { name: 'Verified App[bot]', email: '123+Verified-App[bot]@users.noreply.github.com' };
+    const botIdentity = await commitIdentity(git, original, true, false, bot);
+    assert.deepEqual(botIdentity.author, original);
+    assert.deepEqual(botIdentity.committer, bot);
+    assert.equal(botIdentity.signed, true);
     assert.equal(identity.signed, true);
     const messageFile = path.join(root, 'message');
     await fs.writeFile(messageFile, '🔩 Preserve original author and local committer\n');
@@ -68,6 +73,9 @@ async function test() {
     const unsigned = await commitIdentity(git, original);
     assert.equal(unsigned.signed, false);
     assert.deepEqual(unsigned.committer, original, 'Unsigned commits retain their existing attribution');
+    const unsignedBot = await commitIdentity(git, original, false, false, bot);
+    assert.equal(unsignedBot.signed, false);
+    assert.deepEqual(unsignedBot.committer, bot, 'Automation attribution persists in unsigned integration');
     const preferred = await commitIdentity(git, original, false, true);
     assert.equal(preferred.signed, true, 'Merge replacements attempt signing with commit.gpgsign=false');
     assert.deepEqual(preferred.committer, signer, 'Signing uses the configured local committer');

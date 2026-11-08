@@ -664,7 +664,7 @@ async function run() {
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
       const squashHead = git('rev-parse', 'HEAD');
       assert.equal(git('log', '-1', '--format=%s'), '🔄 Sync brach to main');
-      assert.match(git('log', '-1', '--format=%B'), /Co-authored-by: Codex Web <noreply@openai.com>/);
+      assert.doesNotMatch(git('log', '-1', '--format=%B'), /Co-authored-by:/);
       assert.equal(git('rev-list', '--count', 'HEAD'), '3', 'Exactly one squash commit on the topic branch');
       assert.equal(fs.readFileSync(path.join(root, 'shared.txt'), 'utf8'), 'upstream change\\n');
       assert.equal(fs.readFileSync(path.join(root, 'topic.txt'), 'utf8'), 'topic change\\n');

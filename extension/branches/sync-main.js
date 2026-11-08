@@ -5,6 +5,7 @@ const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
 const { githubRepository } = require('../merge/sync-review');
 const { separateAppsEnabled } = require('../github/app-identity');
+const { appCommitIdentity: syncIdentity } = require('../github/app-commit-identity');
 const { createLindseyTransport } = require('../merge/lindsey-transport');
 const { gitFailure } = require('../commits/git-failure');
 const exec = promisify(execFile);
@@ -56,17 +57,18 @@ async function refreshMain(repository, { defaultBranch, remote, checkBranch }) {
   return local;
 }
 
-// The installation token makes Lindsey the authenticated publisher; retain
-// the existing Git author and configured commit signing behavior.
+// Use the same verified App for Git authorship and authenticated publication.
+// Command-scoped identity preserves the user's config and signing behavior.
 async function syncPublisher(root, remote, { enabled = separateAppsEnabled, transport = createLindseyTransport,
-  run = exec } = {}) {
+  run = exec, identity = syncIdentity } = {}) {
   if (!enabled()) return null;
   const url = (await run('git', ['remote', 'get-url', '--push', remote], { cwd: root })).stdout.trim();
   const repo = githubRepository(url);
   if (!repo) throw Error('Lindsey sync requires a GitHub publishing remote.');
   const auth = transport(repo);
   await auth.gitToken(); // Fail before creating a commit when App setup is invalid.
-  return async (branch, sha) => {
+  const author = await identity();
+  const publish = async (branch, sha) => {
     const token = await auth.gitToken();
     const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
     const args = ['-c', 'credential.helper=', '-c', `credential.helper=!${gh} auth git-credential`,
@@ -77,6 +79,15 @@ async function syncPublisher(root, remote, { enabled = separateAppsEnabled, tran
           GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GIT_ASKPASS: '', SSH_ASKPASS: '' } });
     } catch (error) { throw gitFailure(error, ['push']); }
   };
+  publish.commit = async message => {
+    try {
+      await run('git', ['commit', '-m', message], { cwd: root, timeout: 120000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0',
+          GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
+          GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email } });
+    } catch (error) { throw gitFailure(error, ['commit']); }
+  };
+  return publish;
 }
 
-module.exports = { refreshMain, syncPublisher };
+module.exports = { refreshMain, syncIdentity, syncPublisher };

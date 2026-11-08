@@ -54,6 +54,25 @@ test('the authenticated channel rejects rewritten blockquotes but accepts change
   assert.deepEqual(await session.completed, {title: '', body: safe});
 });
 
+test('date format is validated and sent through the authenticated job, not the URL', async () => {
+  await assert.rejects(startNativeSpellcheckBridge(
+    {title: '', body: 'May 6, 2026'}, {dateFormat: 'invented'}),
+  /Unsupported Spellcheck Only date format/);
+  const session = await startNativeSpellcheckBridge(
+    {title: '', body: 'May 6, 2026'}, {dateFormat: 'iso', timeoutMs: 10000});
+  const launch = new URL(session.url);
+  assert.doesNotMatch(launch.href, /dateFormat|iso/);
+  const q = new URLSearchParams(launch.hash.slice(1));
+  const port = Number(q.get('port')), ticket = q.get('ticket');
+  assert.deepEqual(await request(port, ticket, 'GET', '/job'), {
+    status: 200, body: {title: '', body: 'May 6, 2026', dateFormat: 'iso'}
+  });
+  assert.equal((await request(port, ticket, 'POST', '/result', {
+    status: 'complete', result: {title: '', body: '2026-05-06'}
+  })).status, 200);
+  assert.equal((await session.completed).body, '2026-05-06');
+});
+
 test('strict loopback token transport accepts exactly one claimed result', async () => {
   const session = await startNativeSpellcheckBridge({title: '', body: 'Fxi teh wrds.'}, {timeoutMs: 10000});
   const launch = new URL(session.url);
@@ -125,7 +144,10 @@ test('explicit VS Code command opens only the native browser and returns a revie
       async getCommands() { return ['workbench.action.browser.open']; },
       async executeCommand(name, params) {calls.push([name, params]);}
     },
-    workspace: {async openTextDocument(spec) {calls.push(['document', spec]); return spec;}},
+    workspace: {
+      getConfiguration() {return {get(name) {return name === 'spellcheckDateFormat' ? 'day-first' : undefined;}};},
+      async openTextDocument(spec) {calls.push(['document', spec]); return spec;}
+    },
     window: {async showTextDocument(spec) {calls.push(['show', spec]);}},
   };
   const session = {
@@ -133,8 +155,9 @@ test('explicit VS Code command opens only the native browser and returns a revie
     completed: Promise.resolve({title: '', body: 'Corrected result.'}),
     cancel() {throw new Error('must not cancel successful result');}
   };
-  registerNativeSpellcheckBridge(vscode, {subscriptions}, async draft => {
+  registerNativeSpellcheckBridge(vscode, {subscriptions}, async (draft, options) => {
     assert.deepEqual(draft, {title: '', body: 'Fxi teh words.'});
+    assert.equal(options.dateFormat, 'day-first');
     return session;
   });
   assert.equal(typeof handlers['sweetiebot.spellcheckWithChatGPT'], 'function');
@@ -153,7 +176,7 @@ test('the scoped native preload exchanges a real authenticated job without Chrom
   const vm = require('node:vm');
   const path = require('node:path');
   const script = fs.readFileSync(path.join(__dirname, '../../assets/browser/spellcheck-bridge.js'), 'utf8');
-  const session = await startNativeSpellcheckBridge({title: '', body: 'Fxi teh wrds.'}, {timeoutMs: 10000});
+  const session = await startNativeSpellcheckBridge({title: '', body: 'Fxi teh wrds.'}, {timeoutMs: 10000, dateFormat: 'iso'});
   const location = new URL(session.url);
   const revisions = [], sent = [], messages = [], observers = [];
   let mentioned = false;
@@ -233,6 +256,8 @@ test('the scoped native preload exchanges a real authenticated job without Chrom
   assert.equal(sent.length, 1);
   assert.match(sent[0], /Spellcheck this text/);
   assert.match(sent[0], /Leave Markdown blockquotes completely unchanged/);
+  assert.match(sent[0], /2026-05-06/);
+  assert.match(sent[0], /leave ambiguous numeric dates and partial dates unchanged/);
   assert.match(sent[0], /Fxi teh wrds\./);
   assert.doesNotMatch(sent[0], /Bearer|127\.0\.0\.1|sweetiebot_spellcheck/);
 });

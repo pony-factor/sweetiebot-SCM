@@ -34,17 +34,18 @@ function runnerLayout(compact,stacked) {
     {size:1-left}
   ]};
 }
-// The webview reports its own available width. With the wide 80% dashboard,
-// switch at 820px; with a compact 50% dashboard, switch back above 690px.
-// These two thresholds are intentionally different so changing the editor
-// proportions cannot cause an endless resize loop.
+// Restored windows can have the dashboard in either left-hand group. Returning
+// to 20/80 must leave it wider than the compact-entry threshold on that side.
 async function updateResponsiveRunnerLayout(vscode,dashboardWidth) {
   if (!Number.isInteger(dashboardWidth) || dashboardWidth<160 || dashboardWidth>20000) return false;
   const current=state(vscode);
   const groups=vscode.window.tabGroups?.all || [];
   const dashboardGroup=groups.find(group=>group.tabs.some(tab=>tab.label==='Lindsey · Merge progress'));
   if (!dashboardGroup || !groups.some(group=>group!==dashboardGroup && group.tabs.length)) return false;
-  const compact=current.compact ? dashboardWidth<=690 : dashboardWidth<820;
+  const dashboardOnLeft=groups.indexOf(dashboardGroup)<groups.length-1;
+  const expandedShare=dashboardOnLeft?0.2:0.8;
+  const restoreWidth=Math.max(690,860*0.5/expandedShare);
+  const compact=current.compact ? dashboardWidth<=restoreWidth : dashboardWidth<820;
   if (compact===current.compact) return false;
   current.compact=compact;
   try {
