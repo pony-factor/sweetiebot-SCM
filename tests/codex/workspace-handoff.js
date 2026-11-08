@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const vm = require('node:vm');
-const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttachments } = require('../../extension/codex/workspace-handoff');
+const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFocus, keyFor, handoffAttachments } = require('../../extension/codex/workspace-handoff');
 
 (async () => {
   const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'codex-handoff-test-')));
@@ -128,6 +128,33 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     assert.equal(await notifyExperiment({ source: from, destination: from, branch: 'topic' }).then(() => false, () => true), true,
       'Never treat the original checkout as a disposable experiment');
 
+    const focus = { threadId, state: { anchor: { path: [], offset: 0 } } };
+    const focusAttempts = [];
+    const immediate = async () => {};
+    const retryFocus = {
+      commands: { async executeCommand(id, value) {
+        assert.equal(id, 'sweetiebot.codex.restoreComposerFocus');
+        assert.equal(value, focus);
+        focusAttempts.push(id);
+        return focusAttempts.length === 1 ? null : true;
+      } }
+    };
+    assert.equal(await retryCodexComposerFocus(retryFocus, focus, () => true, immediate), true);
+    assert.equal(focusAttempts.length, 2, 'Retry an editor that was still hydrating');
+    focusAttempts.length = 0;
+    const cancelledFocus = { commands: { async executeCommand() { focusAttempts.push('cancel'); return false; } } };
+    assert.equal(await retryCodexComposerFocus(cancelledFocus, focus, () => true, immediate), false);
+    assert.equal(focusAttempts.length, 1, 'Never retry after the user cancels restoration');
+    let timeoutCount = 0;
+    const timeoutFocus = { commands: { async executeCommand() {
+      if (++timeoutCount === 1) throw new Error('Codex composer focus restoration timed out.');
+      return true;
+    } } };
+    assert.equal(await retryCodexComposerFocus(timeoutFocus, focus, () => true, immediate), true);
+    assert.equal(timeoutCount, 2, 'A host timeout is transient rather than a paused handoff');
+    const staleFocus = { commands: { async executeCommand() { assert.fail('Stale handoffs must not restore focus'); } } };
+    assert.equal(await retryCodexComposerFocus(staleFocus, focus, () => false, immediate), false);
+
     const beforeResumption = requests.filter(request => request.method === 'turn/start').length;
     await resume({ ...plan, destination });
     assert.deepEqual(routes, ['/local/' + threadId]);
@@ -143,6 +170,22 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttac
     await resume({ ...plan, destination, wasActive: false, continuationText: 'Try the experiment.' });
     assert.equal(requests.filter(request => request.method === 'turn/start').length, startsAfterExperiment,
       'A consumed experiment handoff must not submit its instruction again');
+
+    const focusFollowUps = [];
+    commands.set('sweetiebot.codexHandoff.restoreFocusWhenReady', value => {
+      focusFollowUps.push(value);
+      return Promise.resolve();
+    });
+    const turnsBeforeFocus = requests.filter(request => request.method === 'turn/start').length;
+    await resume({ ...plan, destination, wasActive: false, composerFocus: focus.state });
+    assert.equal(focusFollowUps.length, 1, 'Schedule editor focus after resuming a chat');
+    assert.equal(focusFollowUps[0].threadId, threadId);
+    assert.equal(requests.filter(request => request.method === 'turn/start').length, turnsBeforeFocus,
+      'A focus-only restoration must not replay the chat continuation');
+    commands.set('sweetiebot.codexHandoff.restoreFocusWhenReady', async () => {
+      throw new Error('Focus UI is temporarily unavailable');
+    });
+    await resume({ ...plan, destination, wasActive: false, composerFocus: focus.state });
 
     connection.sendProviderRequest('frontend', 'frontend-request', 'thread/resume', { threadId, cwd: from });
     assert.equal(requests.at(-1).params.cwd, destination, 'A stale frontend resume cannot reattach the worker to main');

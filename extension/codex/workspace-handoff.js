@@ -53,6 +53,26 @@ async function prepareCodexHandoff(vscode, from) {
       draftGeneration: saved?.generation ?? attachments?.generation ?? 0, draftTransferId: randomUUID() } : {}) };
 }
 
+// Best-effort UI restoration is separate from the durable thread and draft handoff.
+// Retry only a not-yet-hydrated composer; stop after user interaction or navigation.
+async function retryCodexComposerFocus(vscode, focus, isCurrent = () => true,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  if (!focus?.state || typeof focus.state !== 'object') return false;
+  const deadline = Date.now() + 60000;
+  while (isCurrent() && Date.now() < deadline) {
+    try {
+      const restored = await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus', focus);
+      if (restored !== null) return restored === true; // false means cancelled, not delayed
+    } catch (error) {
+      // A webview may be starting or replacing its composer during checkout.
+      if (!/Codex composer focus restoration timed out|Codex view (?:is unavailable|closed)|Open a Codex conversation in this window first/i.test(String(error?.message || error))) return false;
+    }
+    if (!isCurrent() || Date.now() >= deadline) return false;
+    await sleep(250);
+  }
+  return false;
+}
+
 function registerCodexWorkspaceHandoff(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.save', async ({ workspace, plan }) => {
     await context.globalState.update(keyFor(workspace), plan);
@@ -60,6 +80,13 @@ function registerCodexWorkspaceHandoff(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.clear', async workspace => {
     await context.globalState.update(keyFor(workspace), undefined);
   }));
+  let focusGeneration = 0;
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.restoreFocusWhenReady', focus => {
+    const generation = ++focusGeneration;
+    // Never await focus before consuming the completed handoff journal.
+    void retryCodexComposerFocus(vscode, focus, () => generation === focusGeneration);
+  }));
+  context.subscriptions.push({ dispose() { ++focusGeneration; } });
   let resuming = false;
   const resume = async () => {
     if (resuming) return;
@@ -96,7 +123,7 @@ function registerCodexWorkspaceHandoff(vscode, context) {
       if (plan.draftOnly) {
         if (plan.composerFocus) {
           await vscode.commands.executeCommand('chatgpt.openSidebar');
-          await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus', { state: plan.composerFocus });
+          await vscode.commands.executeCommand('sweetiebot.codexHandoff.restoreFocusWhenReady', { state: plan.composerFocus });
         }
         await context.globalState.update(key, undefined);
         return;
@@ -117,4 +144,4 @@ function registerCodexWorkspaceHandoff(vscode, context) {
   setImmediate(() => void resume());
 }
 
-module.exports = { prepareCodexHandoff, registerCodexWorkspaceHandoff, keyFor, handoffAttachments };
+module.exports = { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFocus, keyFor, handoffAttachments };
