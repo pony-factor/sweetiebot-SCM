@@ -633,20 +633,37 @@ async function humanSquashMerge(repository, number, {
         return await finish(originalSha, preparedMessage, 'squash');
       }
       const headTree = await inRepo('rev-parse', originalSha + '^{tree}');
-      if (finalTree !== headTree && await fs.stat(path.join(temp,
-        'scripts', 'ci', 'ci-test-runner.py')).then(s => s.isFile()).catch(() => false)) {
+      const runnerPath = 'scripts/ci/ci-test-runner.py';
+      // Use only an integration runner already present in the verified base.
+      // A PR deleting it must not silently turn off pre-publication testing.
+      const baseHasRunner = await inRepo('cat-file', '-e', liveBase + ':' + runnerPath)
+        .then(() => true, () => false);
+      const integratedHasRunner = await fs.stat(path.join(temp, runnerPath))
+        .then(stat => stat.isFile(), () => false);
+      if (baseHasRunner && !integratedHasRunner) {
+        return { merged: false, status: 'blocked', number,
+          sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+          reason: 'Integrated-tree test runner was removed or is not a regular file; refusing to skip the required regression suites.' };
+      }
+      if (finalTree !== headTree && baseHasRunner) {
         // Exercise the integrated tree's regression suites when this repository
         // provides them; a failure must stop publication before any push.
         for (const group of ['lindsey', 'github-pr']) {
           progress('testing-integration', { description: group });
           try {
-            await exec('python3', ['scripts/ci/ci-test-runner.py', 'run', group],
+            await exec('python3', [runnerPath, 'run', group],
               { cwd: temp, timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
           } catch (error) {
+            const diagnostics = String(error.stderr || '').split(/\r?\n/)
+              .filter(line => /^::error(?:\s|::)/.test(line)).slice(-4);
+            const detail = diagnostics.length ? diagnostics.join(' | ')
+              : String(error.stderr || error.message).trim().slice(-1800);
+            const unavailable = error.code === 125 || error.code === 'ENOENT';
             return { merged: false, status: 'checks_failed', number,
               sha: originalSha, previousHeadSha: originalSha, base, baseSha,
-              reason: 'Integrated-tree ' + group + ' checks failed: ' +
-                String(error.stderr || error.message).slice(-1800) };
+              reason: 'Integrated-tree ' + group +
+                (unavailable ? ' test infrastructure unavailable: ' : ' checks failed: ') +
+                detail };
           }
         }
       }
