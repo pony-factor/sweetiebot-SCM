@@ -369,9 +369,7 @@ body.celebrating .merge-header .pill{border-color:var(--merge-accent)}
 .completion-eyebrow{font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.17em;color:#f5d9ff}
 .completion h2{font-size:clamp(25px,4vw,36px);line-height:1.18;margin:10px 0 12px;letter-spacing:-.03em}
 .completion p{margin:10px auto;max-width:520px}
-.completion-message{font-size:15px}
 .completion-count{font-size:18px;font-weight:750}
-.completion-recap{color:rgba(255,255,255,.9);font-size:13px}
 .completion-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:26px}
 .completion-actions .action-primary{width:auto;min-width:220px}
 .completion-attribution{margin-top:22px!important;font-size:11px;color:rgba(255,255,255,.9)}
@@ -403,10 +401,8 @@ body.celebrating .merge-header .pill{border-color:var(--merge-accent)}
   <div class="completion-card">
     <div class="completion-eyebrow">Mission accomplished</div>
     
-    <h2 id="completion-title">Everypony made it! 🎉</h2>
-    <p class="completion-message">Every selected pull request has been confirmed merged into its destination branch.</p>
+    <h2 id="completion-title">Win</h2>
     <p id="completion-count" class="completion-count"></p>
-    <p id="completion-recap" class="completion-recap"></p>
     <div class="completion-actions"><button id="review-merges" class="action-primary">View merged PRs and activity timeline</button></div>
     <p class="completion-attribution">Cannon artwork by <a href="https://x.com/fcolumnare/status/1952740544443998252" target="_blank" rel="noopener noreferrer">Cerberus</a>.</p>
   </div>
@@ -795,7 +791,6 @@ __RATE_LIMIT_FORMATTER__
     byId('completion').hidden = !showCelebration;
     byId('show-celebration').hidden = !complete || showCelebration;
     byId('completion-count').textContent = merged + ' of ' + model.prs.length + ' pull requests merged';
-    byId('completion-recap').textContent = resolved + ' conflicts cleared · 0 remaining';
     const pending = model.prs.filter(pr => pr.state !== 'merged' && pr.state !== 'closed');
     const runningPhases = ['verifying', 'reviewing', 'applying', 'refreshing', 'preparing', 'message-prepared',
       'integrating', 'applying-resolution', 'rewrite-approved', 'prepared', 'decision-commit', 'sync-prepared',

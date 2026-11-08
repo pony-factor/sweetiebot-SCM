@@ -438,7 +438,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('<h1>Lindsey</h1>'), 'Keep the Lindsey identity visible in the header');
   assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Do not restore the bulk merge subtitle');
   assert(!panel.webview.html.includes('id="repository"'), 'Omit the repository logo from the stripped-down header');
-  assert(panel.webview.html.includes('Everypony made it! 🎉'), 'Show pony confirmation on complete merges');
+  assert(panel.webview.html.includes('<h2 id="completion-title">Win</h2>'), 'Show the concise completion heading');
   assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
   assert(panel.webview.html.includes('id="review-merges"'), 'Keep PR details and timeline available');
   assert(panel.webview.html.includes('id="show-celebration"'), 'Allow return to finish page');
