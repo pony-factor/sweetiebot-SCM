@@ -656,9 +656,10 @@ async function humanSquashMerge(repository, number, {
           } catch (error) {
             const diagnostics = String(error.stderr || '').split(/\r?\n/)
               .filter(line => /^::error(?:\s|::)/.test(line)).slice(-4);
-            const detail = diagnostics.length ? diagnostics.join(' | ')
-              : String(error.stderr || error.message).trim().slice(-1800);
-            const unavailable = error.code === 125 || error.code === 'ENOENT';
+            const detail = (diagnostics.length ? diagnostics.join(' | ')
+              : String(error.stderr || error.message).trim()).slice(-1800);
+            const unavailable = error.code === 125 || error.code === 'ENOENT' ||
+              error.killed === true || error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
             return { merged: false, status: unavailable ? 'blocked' : 'checks_failed', number,
               ...(unavailable ? { kind: 'capability' } : {}),
               sha: originalSha, previousHeadSha: originalSha, base, baseSha,
