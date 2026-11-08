@@ -1,7 +1,8 @@
 'use strict';
 const { pendingPRCommits } = require('./pr-commit-wait');
 const { runKefania } = require('../codex/kefania-runner');
-const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl, readCodexConversation } = require('./pull-request');
+const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl,
+  readCodexConversation, stackedPullRequestBase } = require('./pull-request');
 const { resolveForkPullRequestTarget, chooseForkPullRequestTarget } = require('./fork-pr-target');
 
 function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
@@ -24,7 +25,11 @@ function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
     if (waitForCommits) await waitForCommits();
     const resolveTarget = dependencies.resolveForkPullRequestTarget || resolveForkPullRequestTarget;
     const chooseTarget = dependencies.chooseForkPullRequestTarget || chooseForkPullRequestTarget;
-    const target = await resolveTarget(vscode, url, options.base);
+    const resolveStackBase = dependencies.stackedPullRequestBase || stackedPullRequestBase;
+    const stackBase = await resolveStackBase(repository.rootUri.fsPath, options.branch, options.base);
+    const target = stackBase === options.base
+      ? await resolveTarget(vscode, url, options.base)
+      : { repository: url.slice('https://github.com/'.length), repositoryUrl: url, base: stackBase };
     const selected = await chooseTarget(vscode, repository.rootUri.fsPath, target, options.branch, {
       run: dependencies.runKefania || runKefania, priorDecision: options.forkTargetDecision
     });
