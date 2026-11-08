@@ -553,7 +553,7 @@ async function run() {
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
   const beforeCaptureFailure = vscode.commands.executeCommand;
   vscode.commands.executeCommand = async (id, ...args) => {
-    if (id === 'sweetiebot.readCodexConversation') {
+    if (id === 'sweetiebot.readCodexIdentity') {
       throw Error('The active Codex chat changed during capture.');
     }
     return beforeCaptureFailure(id, ...args);
@@ -564,7 +564,7 @@ async function run() {
     'Never substitute a different chat after a branch switch');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
     'Do not send a partial or stale transcript');
-  assert.match(warningMessages.at(-1), /PR drafting will continue without its transcript.*active Codex chat changed/);
+  assert.match(warningMessages.at(-1), /Could not identify the originating Codex chat.*active Codex chat changed/);
   vscode.commands.executeCommand = beforeCaptureFailure;
   autoShareCodexChat = true;
   const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main',
