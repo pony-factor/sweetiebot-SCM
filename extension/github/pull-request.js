@@ -597,7 +597,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       run, priorDecision: options.forkTargetDecision, skipProbe: Boolean(waitForCommits)
     });
     if (!selected) return { cancelled: true };
-    const repositoryUrl = selected.repositoryUrl;
+    let repositoryUrl = selected.repositoryUrl;
     options = { ...options, base: selected.base,
       ...(target.fork ? { forkTargetDecision: selected.fallbackToFork ? 'fork-main' : 'upstream' } : {}) };
     // Recheck at click time, before sharing a conversation or launching a
@@ -655,7 +655,25 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         await verifyPublished(repository.rootUri.fsPath, branch, options.remote);
         evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
       }
-      catch (error) { evidenceError = error; }
+      catch (error) {
+        // A queued commit may finish after the original click-time probe.
+        // Still require a fresh, explicit choice before changing the base.
+        if (target.fork && !selected.fallbackToFork && upstreamAccessFailure(error)) {
+          const choice = await vscode.window.showWarningMessage(
+            `Kefania cannot access upstream ${target.repository}: ${error.message}. Open the PR against your fork ${target.headRepository}:main instead? No upstream PR will be created.`,
+            { modal: true }, 'Open PR on fork main');
+          if (choice === 'Open PR on fork main') {
+            input.repository = target.headRepository;
+            delete input.headRepository;
+            input.base = 'main';
+            options.base = 'main';
+            repositoryUrl = sourceRepositoryUrl;
+            try {
+              evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
+            } catch (fallbackError) { evidenceError = fallbackError; }
+          } else evidenceError = new Error('Upstream access failed and fork/main was not approved.');
+        } else evidenceError = error;
+      }
       // Kefania identifies PRs by their head branch, even when they target another base.
       // Reuse the existing PR before initiating independent draft or pony workflows.
       if (evidence?.existingPullRequest) {

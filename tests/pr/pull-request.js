@@ -46,6 +46,13 @@ async function run() {
   assert.deepEqual(target, { repository: 'upstream/project',
     repositoryUrl: 'https://github.com/upstream/project', headRepository: 'owner/fork',
     base: 'main', fork: true });
+  const unreadable = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main',
+    async endpoint => {
+      if (endpoint === 'repos/owner/fork') return { full_name: 'owner/fork', fork: true,
+        parent: { full_name: 'upstream/project' } };
+      throw new Error('GitHub request failed (HTTP 403)');
+    });
+  assert.equal(unreadable.upstreamAccessError, 'GitHub request failed (HTTP 403)');
   const ordinary = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main',
     async () => ({ full_name: 'owner/fork', fork: false }));
   assert.equal(ordinary.headRepository, undefined);
@@ -64,6 +71,11 @@ async function run() {
   assert.equal(fallback.repository, 'owner/fork');
   assert.equal(fallback.base, 'main');
   assert.equal(fallback.fallbackToFork, true);
+  choices = ['Open PR on fork main'];
+  const unreadableChoice = await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork',
+    unreadable, 'topic', { checkApp: async () => false });
+  assert.equal(unreadableChoice.repository, 'owner/fork');
+  assert.equal(unreadableChoice.fallbackToFork, true);
   assert.match(prompts[0].message, /upstream/);
   assert.match(prompts[1].message, /NOT create a PR on upstream/);
   choices = ['Try upstream', undefined];

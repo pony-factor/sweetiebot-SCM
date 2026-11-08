@@ -20,7 +20,15 @@ async function resolveForkPullRequestTarget(vscode, repositoryUrl, base, request
   if (!REPOSITORY_NAME.test(upstream || '') || upstream.toLowerCase() === name.toLowerCase()) {
     throw new Error('The fork parent is unavailable; Kefania will not guess an upstream PR target.');
   }
-  const parent = await request('repos/' + upstream);
+  let parent;
+  try { parent = await request('repos/' + upstream); }
+  catch (error) {
+    if (!upstreamAccessFailure(error)) throw error;
+    // The fork parent itself is verified; its default branch is not. The
+    // user may opt into fork/main without pretending upstream was writable.
+    return { repository: upstream, repositoryUrl: 'https://github.com/' + upstream,
+      headRepository: name, base, fork: true, upstreamAccessError: error.message };
+  }
   if (parent?.full_name?.toLowerCase() !== upstream.toLowerCase() ||
       !/^[A-Za-z0-9_.\/-]+$/.test(parent.default_branch || '')) {
     throw new Error('GitHub could not verify the upstream default branch.');
@@ -54,6 +62,12 @@ async function chooseForkPullRequestTarget(vscode, repositoryPath, target, branc
     repositoryUrl: 'https://github.com/' + target.headRepository,
     base: 'main', fallbackToFork: true };
   if (priorDecision === 'fork-main') return fallback;
+  if (target.upstreamAccessError) {
+    const choice = await vscode.window.showWarningMessage(
+      `GitHub cannot read the verified parent ${target.repository}: ${target.upstreamAccessError}. Open a PR against your fork ${target.headRepository}:main instead? No upstream PR will be created.`,
+      { modal: true }, 'Open PR on fork main');
+    return choice === 'Open PR on fork main' ? fallback : undefined;
+  }
   if (priorDecision === 'upstream') return target;
   if (await checkApp(target.repository) !== true) {
     const choice = await vscode.window.showWarningMessage(
