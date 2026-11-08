@@ -102,7 +102,8 @@ function scmToolkitRegisterCodexSnapshot(api) {
         if (typeof request?.id !== 'string') return;
         if (request.type === 'scm-toolkit-composer-focus-request' || request.type === 'scm-toolkit-context-request' && request.composerFocus) {
             const focused = await composerFocus?.restore(request.composerFocus?.state, conversationId, request.composerFocus?.threadId ?? undefined);
-            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, focused: focused === true });
+            api.postMessage({ type: 'scm-toolkit-context-response', id: request.id,
+                focused: focused === true, focusRetry: focused === null });
             return;
         }
         if (request.type === 'scm-toolkit-chat-identity-request' || request.type === 'scm-toolkit-context-request' && request.identityOnly) {

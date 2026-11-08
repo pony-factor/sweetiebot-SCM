@@ -236,8 +236,9 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
                 input: [{ type: 'text', text: plan.continuationText || 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
             });
         }
-        if (plan.composerFocus) await vscode.commands.executeCommand('sweetiebot.codex.restoreComposerFocus',
-            { threadId: plan.threadId, state: plan.composerFocus });
+        // A late composer must never make a successfully resumed chat look paused.
+        if (plan.composerFocus) void vscode.commands.executeCommand('sweetiebot.codexHandoff.restoreFocusWhenReady',
+            { threadId: plan.threadId, state: plan.composerFocus }).catch(() => {});
         return { threadId: plan.threadId, cwd };
     }));
     return { dispose() {

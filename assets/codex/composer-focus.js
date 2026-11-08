@@ -46,7 +46,7 @@ function scmToolkitComposerFocus() {
         },
         restore(state, current, expected) {
             return new Promise(resolve => {
-                let finished = false;
+                let finished = false, sawExpectedConversation = false;
                 const finish = result => {
                     if (finished) return;
                     finished = true;
@@ -70,7 +70,13 @@ function scmToolkitComposerFocus() {
                     return value.offset >= 0 && value.offset <= limit ? { node, offset: value.offset } : null;
                 };
                 const attempt = () => {
-                    if (finished || current() !== expected) return;
+                    if (finished) return;
+                    if (current() !== expected) {
+                        // A later navigation must not steal focus back from another chat.
+                        if (sawExpectedConversation) finish(false);
+                        return;
+                    }
+                    sawExpectedConversation = true;
                     const editor = [...document.querySelectorAll(selector)].find(item => item.getClientRects().length);
                     if (!editor) return;
                     // Wait for the restored draft's DOM to contain both saved
@@ -83,7 +89,8 @@ function scmToolkitComposerFocus() {
                     finish(true);
                 };
                 const observer = new MutationObserver(attempt);
-                const timeout = setTimeout(() => finish(false), 4000);
+                // Not ready is retryable; explicit user activity is not.
+                const timeout = setTimeout(() => finish(null), 4000);
                 observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
                 document.addEventListener('pointerdown', cancel, true);
                 document.addEventListener('keydown', cancel, true);

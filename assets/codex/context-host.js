@@ -304,7 +304,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 return;
             }
             if (request.composerFocus) {
-                request.resolve(message.focused === true);
+                // null means the editor has not hydrated yet; false cancels retries.
+                request.resolve(message.focusRetry === true ? null : message.focused === true);
                 return;
             }
             if (request.identityOnly) {

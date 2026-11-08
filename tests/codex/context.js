@@ -50,6 +50,52 @@ async function run() {
   assert.equal(responses.at(-1).focused, false);
   assert.equal(stage, beforeHandoff, 'Branch identity and focus never invoke Copy or Share, even without flags');
 
+  // Editor hydration is retryable, but user activity or a chat change cancels it.
+  const focusListeners = new Map(), focusTimers = [];
+  let changedFocus, visibleThread = conversationId;
+  const focusDocument = {
+    documentElement: {},
+    activeElement: null,
+    querySelectorAll() { return []; },
+    addEventListener(name, callback) { focusListeners.set(name, callback); },
+    removeEventListener(name) { focusListeners.delete(name); }
+  };
+  const focusVM = vm.createContext({
+    document: focusDocument, window: { getSelection: () => null },
+    MutationObserver: class {
+      constructor(callback) { changedFocus = callback; }
+      observe() {}
+      disconnect() {}
+    },
+    setTimeout(callback) { focusTimers.push(callback); return focusTimers.length; },
+    clearTimeout() {}
+  });
+  load('composer-focus.js', focusVM);
+  const focus = focusVM.scmToolkitComposerFocus();
+  const waiting = focus.restore({}, () => visibleThread, conversationId);
+  focusTimers.at(-1)();
+  assert.equal(await waiting, null, 'An unhydrated composer should request a later retry');
+  const cancelled = focus.restore({}, () => visibleThread, conversationId);
+  focusListeners.get('pointerdown')();
+  assert.equal(await cancelled, false, 'User interaction must stop focus retries');
+  const departed = focus.restore({}, () => visibleThread, conversationId);
+  visibleThread = 'another-chat';
+  changedFocus();
+  assert.equal(await departed, false, 'Never restore focus after the intended chat is left');
+
+  let focusReceive;
+  const focusResponses = [];
+  const focusWebview = vm.createContext({
+    scmToolkitComposerFocus: () => ({ restore: async () => null }),
+    window: { location: { hash: `#/local/${conversationId}` }, addEventListener: (_, callback) => { focusReceive = callback; } },
+    document: { querySelectorAll: () => [] }
+  });
+  load('context-webview.js', focusWebview);
+  focusWebview.scmToolkitRegisterCodexSnapshot({ postMessage: value => focusResponses.push(value) });
+  await focusReceive({ data: { type: 'scm-toolkit-composer-focus-request', id: 'still-loading',
+    composerFocus: { state: {}, threadId: conversationId } } });
+  assert.equal(focusResponses[0].focusRetry, true, 'Pass the hydration retry signal to the host');
+
   // The webview saves only a UUID, retaining the existing VS Code webview state.
   let reloadReceive;
   let reloadState = { existingCodexState: 'preserved' };
@@ -388,6 +434,12 @@ async function run() {
   assert.equal(messages.at(-1).type, 'scm-toolkit-composer-focus-request');
   listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, focused: true });
   assert.equal(await focusPending, true);
+  const loadingFocus = registered.get('sweetiebot.codex.restoreComposerFocus')({ state: {}, threadId: conversationId });
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, focused: false, focusRetry: true });
+  assert.equal(await loadingFocus, null, 'A delayed editor is distinct from cancellation');
+  const cancelledFocus = registered.get('sweetiebot.codex.restoreComposerFocus')({ state: {}, threadId: conversationId });
+  listener({ type: 'scm-toolkit-context-response', id: messages.at(-1).id, focused: false });
+  assert.equal(await cancelledFocus, false, 'User cancellation must not cause retries');
 
   clipboard = 'clipboard before branch switch';
   const interruptedCopy = registered.get('sweetiebot.readCodexContext')();
