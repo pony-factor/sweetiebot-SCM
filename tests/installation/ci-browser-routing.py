@@ -81,6 +81,18 @@ assert(result.message.startsWith('- 🐛 Fix'));
         self.assertIn("Node.js executable not found", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
+    def test_repeated_process_exhaustion_fails_after_bounded_retries(self):
+        unavailable = OSError(errno.EAGAIN, "Resource temporarily unavailable")
+        with patch.object(ci.subprocess, "run", side_effect=unavailable) as run, \
+             patch.object(ci.time, "sleep") as sleep, \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(ci.execute(["node", "--check", "broken.js"]),
+                             ci.EXECUTION_UNAVAILABLE)
+        self.assertEqual(run.call_count, 4)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],
+                         [0.25, 0.5, 1.0])
+        self.assertIn("Resource temporarily unavailable", stderr.getvalue())
+
     def test_local_launch_failure_stops_the_group_before_other_processes(self):
         spec = {"label": "Lindsey bulk merge",
                 "tests": ["merge/local-author-merge.js", "merge/dashboard.js"],
