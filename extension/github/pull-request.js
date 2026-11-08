@@ -19,6 +19,7 @@ const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('../codex
 const { kefaniaClosePosition } = require('../codex/kefania-close-position');
 const { linkPublishedStack } = require('../branches/stacked-branch');
 const { workflowBotLogin, separateAppsEnabled, roleSettings } = require('./app-identity');
+const { resolveForkPullRequestTarget, chooseForkPullRequestTarget, upstreamAccessFailure } = require('./fork-pr-target');
 
 const KEFANIA_DIRECTORY = 'kefania';
 const KEFANIA_RULES_FILE = 'PULL_REQUEST.md';
@@ -47,21 +48,23 @@ function githubRepository(remoteUrl) {
   return match ? `https://github.com/${match[1]}/${match[2]}` : undefined;
 }
 
-async function findOpenPullRequest(vscode, repositoryUrl, branch, request) {
+async function findOpenPullRequest(vscode, repositoryUrl, branch, request, headRepository) {
   const normalized = githubRepository(repositoryUrl);
   if (!normalized || !branch) throw new Error('Select a GitHub repository and head branch.');
   const repository = normalized.slice('https://github.com/'.length);
   if (!request) {
     const session = await require('./session').githubSession(vscode);
-    const fetchRead = require('./read-api').createLindseyReadFetch(repository);
+    const fetchRead = headRepository ? undefined : require('./read-api').createLindseyReadFetch(repository);
     request = require('./user-api').githubUserAPI(session.accessToken, fetchRead);
   }
   // Do not filter by base or draft status: either can still have an open PR.
-  const query = new URLSearchParams({ state: 'open', head: repository.split('/')[0] + ':' + branch, per_page: '100' });
+  const source = headRepository || repository;
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(source)) throw new Error('Invalid PR head repository.');
+  const query = new URLSearchParams({ state: 'open', head: source.split('/')[0] + ':' + branch, per_page: '100' });
   const pulls = await request('repos/' + repository + '/pulls?' + query);
   if (!Array.isArray(pulls)) throw new Error('GitHub returned an invalid pull-request list.');
   const pr = pulls.find(pr => pr.state === 'open' && pr.head?.ref === branch
-    && pr.head?.repo?.full_name?.toLowerCase() === repository.toLowerCase());
+    && pr.head?.repo?.full_name?.toLowerCase() === source.toLowerCase());
   if (!pr) return undefined;
   if (!Number.isSafeInteger(pr.number) || pr.number < 1 || pr.html_url !== normalized + '/pull/' + pr.number) {
     throw new Error('GitHub returned an invalid existing pull-request reference.');
@@ -412,6 +415,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
   const run = dependencies.runKefania || runKefania;
   const findOpenPR = dependencies.findOpenPullRequest || findOpenPullRequest;
   const verifyPublished = dependencies.verifyPublishedBranch || verifyPublishedBranch;
+  const resolveTarget = dependencies.resolveForkPullRequestTarget || resolveForkPullRequestTarget;
+  const chooseTarget = dependencies.chooseForkPullRequestTarget || chooseForkPullRequestTarget;
   const resolveStackBase = dependencies.stackedPullRequestBase || stackedPullRequestBase;
   const merge = dependencies.mergePullRequest || squashMergePullRequest;
   const ludicrousMode = dependencies.readLudicrousMode || readLudicrousMode;
@@ -469,6 +474,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const repository = git.getAPI(1).getRepository(root);
     if (!repository) throw new Error('The selected Git repository is unavailable.');
     await repository.status();
+    const selectedBase = options.base;
     options = { ...options, base: await resolveStackBase(repository.rootUri.fsPath, options.branch, options.base) };
     if (repository.state.HEAD?.name !== options.branch || options.branch === options.base) {
       throw new Error('The selected branch changed during the PR eligibility check.');
@@ -476,20 +482,31 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
     const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
     if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    const target = options.base === selectedBase
+      ? await resolveTarget(vscode, repositoryUrl, options.base)
+      : { repository: repositoryUrl.slice('https://github.com/'.length), repositoryUrl, base: options.base };
     // A queued commit can be locally captured while naming or pushing is still
     // underway. Open the PR workspace now; its drafting flow waits for the
     // durable queue to finish before checking published-branch eligibility.
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
     if (waitForCommits) {
-      const pullRequest = await findOpenPR(vscode, repositoryUrl, options.branch);
+      const pullRequest = await findOpenPR(vscode, target.repositoryUrl, options.branch, undefined, target.headRepository);
       if (pullRequest) return { allowed: false, reason: 'open-pr', pullRequest };
       return { allowed: true, reason: 'pending-commits' };
     }
     await verifyPublished(repository.rootUri.fsPath, options.branch, options.remote);
-    const evidence = await run(repository.rootUri.fsPath, {
-      repository: repositoryUrl.slice('https://github.com/'.length),
-      head: options.branch, base: options.base, contextOnly: true,
-    }, { botOnly: true });
+    let evidence;
+    try {
+      evidence = await run(repository.rootUri.fsPath, {
+        repository: target.repository, ...(target.headRepository ? { headRepository: target.headRepository } : {}),
+        head: options.branch, base: target.base, contextOnly: true,
+      }, { botOnly: true });
+    } catch (error) {
+      if (target.fork && upstreamAccessFailure(error)) {
+        return { allowed: true, reason: 'upstream-access-unverified' };
+      }
+      throw error;
+    }
     if (typeof evidence?.newPullRequest?.allowed !== 'boolean') {
       throw new Error('Update Kefania to verify PR eligibility against previous starting bases.');
     }
@@ -575,18 +592,31 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     // the read-only GitHub preflight or independent browser drafting continues.
     // Never retarget publication to the current worktree HEAD.
     const branch = options?.branch;
+    const selectedBase = options?.base;
     options = { ...options, base: await resolveStackBase(repository.rootUri.fsPath, branch, options?.base) };
     if (typeof branch !== 'string' || !branch || branch === options.base) {
       throw new Error('Select a branch other than the pull-request base.');
     }
 
     const remote = repository.state.remotes.find(candidate => candidate.name === options.remote);
-    const repositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
-
-    if (!repositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    const sourceRepositoryUrl = githubRepository(remote?.pushUrl || remote?.fetchUrl);
+    if (!sourceRepositoryUrl) throw new Error('The selected remote must identify a GitHub repository.');
+    const target = options.base === selectedBase
+      ? await resolveTarget(vscode, sourceRepositoryUrl, options.base)
+      : { repository: sourceRepositoryUrl.slice('https://github.com/'.length),
+        repositoryUrl: sourceRepositoryUrl, base: options.base };
+    const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, root);
+    if (!waitForCommits) await verifyPublished(repository.rootUri.fsPath, branch, options.remote);
+    const selected = await chooseTarget(vscode, repository.rootUri.fsPath, target, branch, {
+      run, priorDecision: options.forkTargetDecision, skipProbe: Boolean(waitForCommits)
+    });
+    if (!selected) return { cancelled: true };
+    let repositoryUrl = selected.repositoryUrl;
+    options = { ...options, base: selected.base,
+      ...(target.fork ? { forkTargetDecision: selected.fallbackToFork ? 'fork-main' : 'upstream' } : {}) };
     // Recheck at click time, before sharing a conversation or launching a
     // workspace. The picker's cached eligibility can predate PR publication.
-    const existing = await findOpenPR(vscode, repositoryUrl, branch);
+    const existing = await findOpenPR(vscode, repositoryUrl, branch, undefined, selected.headRepository);
     if (existing) {
       await vscode.window.showInformationMessage(`PR #${existing.number} already exists for ${branch}; opening it instead.`);
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(existing.url));
@@ -631,15 +661,33 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       return { launched: true, repositoryUrl, source };
     }
     const instructions = await readInstructions(repository.rootUri.fsPath);
-    const input = { repository: repositoryUrl.slice('https://github.com/'.length), head: branch, base: options.base, source };
-    const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, root);
+    const input = { repository: selected.repository, ...(selected.headRepository ? { headRepository: selected.headRepository } : {}),
+      head: branch, base: options.base, source };
     let evidence, evidenceError;
     const loadEvidence = async () => {
       try {
         await verifyPublished(repository.rootUri.fsPath, branch, options.remote);
         evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
       }
-      catch (error) { evidenceError = error; }
+      catch (error) {
+        // A queued commit may finish after the original click-time probe.
+        // Still require a fresh, explicit choice before changing the base.
+        if (target.fork && !selected.fallbackToFork && upstreamAccessFailure(error)) {
+          const choice = await vscode.window.showWarningMessage(
+            `Kefania cannot access upstream ${target.repository}: ${error.message}. Open the PR against your fork ${target.headRepository}:main instead? No upstream PR will be created.`,
+            { modal: true }, 'Open PR on fork main');
+          if (choice === 'Open PR on fork main') {
+            input.repository = target.headRepository;
+            delete input.headRepository;
+            input.base = 'main';
+            options.base = 'main';
+            repositoryUrl = sourceRepositoryUrl;
+            try {
+              evidence = await run(repository.rootUri.fsPath, { ...input, contextOnly: true }, { botOnly: true });
+            } catch (fallbackError) { evidenceError = fallbackError; }
+          } else evidenceError = new Error('Upstream access failed and fork/main was not approved.');
+        } else evidenceError = error;
+      }
       // Kefania identifies PRs by their head branch, even when they target another base.
       // Reuse the existing PR before initiating independent draft or pony workflows.
       if (evidence?.existingPullRequest) {
