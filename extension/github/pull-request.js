@@ -272,13 +272,15 @@ async function readCodexConversation(vscode) {
 
 // PR creation does not require the originating Codex transcript. An export
 // failure should not prevent drafting, but explicit source-link actions retain
-// readCodexConversation's strict error handling.
+// readCodexConversation's strict error handling. A branch switch may interrupt
+// capture; never attach stale source links or transcript text to another chat.
 async function readOptionalCodexConversation(vscode) {
   try {
     return await readCodexConversation(vscode);
   } catch (error) {
     void vscode.window.showWarningMessage(
-      `${error.message} Continuing without the Codex conversation transcript and source links.`
+      'Continuing without the Codex conversation transcript and source links. '
+        + `PR drafting will continue without its transcript: ${error.message}`
     );
     return undefined;
   }

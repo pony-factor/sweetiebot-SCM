@@ -255,6 +255,23 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     }, from);
     assert.deepEqual(handoffCalls, ['sweetiebot.cancelCodexCapture', 'sweetiebot.codex.prepareWorkspaceHandoff'],
       'Branch switching cancels exports before preparing the same chat and never requests conversation text');
+    const cancellationCalls = [], cancellationWarnings = [];
+    const cancelledPlan = await prepareCodexHandoff({
+      extensions: { getExtension: () => ({ activate: async () => {} }) },
+      window: { showWarningMessage: message => cancellationWarnings.push(message) },
+      commands: {
+        getCommands: async () => ['sweetiebot.cancelCodexCapture', 'sweetiebot.codex.prepareWorkspaceHandoff'],
+        executeCommand: async id => {
+          cancellationCalls.push(id);
+          if (id === 'sweetiebot.cancelCodexCapture') throw Error('Clipboard restore failed');
+          return null;
+        }
+      }
+    }, from);
+    assert.equal(cancelledPlan, null);
+    assert.deepEqual(cancellationCalls, ['sweetiebot.cancelCodexCapture', 'sweetiebot.codex.prepareWorkspaceHandoff'],
+      'A failed copy cancellation must not block the branch handoff or start transcript export');
+    assert.match(cancellationWarnings[0], /continuing the branch switch.*Clipboard restore failed/);
     const attachmentDrafts = { 'new-conversation': {
       imageAttachments:[{id:'image',src:'data:image/png;base64,aGVsbG8=',localPath:'/tmp/image.png'}],
       fileAttachments:[path.join(from,'report.pdf')],
