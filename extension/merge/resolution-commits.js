@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { safePatchPath } = require('./patch');
-const { commitIdentityArgs } = require('../github/app-commit-identity');
+const { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
 // Use only the model number supplied by the web coding assistant's handoff.
 const MODEL_NUMBER = /^[1-9]\d*(?:\.\d+){0,2}$/;
 function assistantCoauthorTrailer(modelNumber) {
@@ -34,7 +34,8 @@ function validateDecisions(value = []) {
 // Build an append-only PR history in an isolated index. main is only a tree
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
-  conflicts, decisions, author, base, assistantModelNumber, onCommit = () => {} }) {
+  conflicts, decisions, author, automationCommitter = null, base, assistantModelNumber, onCommit = () => {},
+  createCommitTree = attributedCommitTree }) {
   decisions = validateDecisions(decisions);
   const trailer = assistantCoauthorTrailer(assistantModelNumber);
   if (decisions.length && !trailer) throw Error('Model-authored conflict decisions require the web generator model number.');
@@ -44,13 +45,13 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
   }
   const messageFile = path.join(directory, '.git', 'sweetiebot-resolution-message');
-  // commit-tree requires -S explicitly; Git supplies the configured signing key.
-  const sign = (await git('config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign')) === 'true';
+  const identity = await commitIdentity(git, author, false, false, automationCommitter);
   const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
-    return git(...commitIdentityArgs(author),
-      'commit-tree', ...(sign ? ['-S'] : []), tree, '-p', parent,
-      ...(incoming ? ['-p', incoming] : []), '-F', messageFile);
+    const sha = await createCommitTree({ directory, tree, parents: incoming ? [parent, incoming] : [parent],
+      messageFile, identity });
+    await verifyLocalCommitIdentity(git, sha, identity);
+    return sha;
   };
   await git('read-tree', headSha);
   let tip = headSha;

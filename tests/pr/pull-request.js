@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { resolveForkPullRequestTarget, chooseForkPullRequestTarget } = require('../../extension/github/fork-pr-target');
 const {
   codexConversationUrl,
   conversationSourceLinks,
@@ -34,6 +35,59 @@ async function run() {
   for (const remote of ['https://github.com.attacker.test/owner/repo', 'https://user:password@github.com/owner/repo', 'file:///local', undefined]) {
     assert.equal(githubRepository(remote), undefined);
   }
+
+
+  const readRepository = async endpoint => {
+    if (endpoint === 'repos/owner/fork') return { full_name: 'owner/fork', fork: true, parent: { full_name: 'upstream/project' } };
+    if (endpoint === 'repos/upstream/project') return { full_name: 'upstream/project', default_branch: 'main' };
+    throw new Error('Unexpected endpoint: ' + endpoint);
+  };
+  const target = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main', readRepository);
+  assert.deepEqual(target, { repository: 'upstream/project',
+    repositoryUrl: 'https://github.com/upstream/project', headRepository: 'owner/fork',
+    base: 'main', fork: true });
+  const unreadable = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main',
+    async endpoint => {
+      if (endpoint === 'repos/owner/fork') return { full_name: 'owner/fork', fork: true,
+        parent: { full_name: 'upstream/project' } };
+      throw new Error('GitHub request failed (HTTP 403)');
+    });
+  assert.equal(unreadable.upstreamAccessError, 'GitHub request failed (HTTP 403)');
+  const ordinary = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main',
+    async () => ({ full_name: 'owner/fork', fork: false }));
+  assert.equal(ordinary.headRepository, undefined);
+  let choices = ['Try upstream', 'Open PR on fork main'];
+  const prompts = [];
+  const fakeVscode = { window: { async showWarningMessage(message, _options, ...actions) {
+    prompts.push({ message, actions });
+    return choices.shift();
+  } } };
+  const fallback = await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork', target, 'topic',
+    { checkApp: async () => false, run: async (_root, input) => {
+      assert.equal(input.repository, 'upstream/project');
+      assert.equal(input.headRepository, 'owner/fork');
+      throw new Error('GitHub request failed (HTTP 403)');
+    } });
+  assert.equal(fallback.repository, 'owner/fork');
+  assert.equal(fallback.base, 'main');
+  assert.equal(fallback.fallbackToFork, true);
+  choices = ['Open PR on fork main'];
+  const unreadableChoice = await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork',
+    unreadable, 'topic', { checkApp: async () => false });
+  assert.equal(unreadableChoice.repository, 'owner/fork');
+  assert.equal(unreadableChoice.fallbackToFork, true);
+  assert.match(prompts[0].message, /upstream/);
+  assert.match(prompts[1].message, /NOT create a PR on upstream/);
+  choices = ['Try upstream', undefined];
+  assert.equal(await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork', target, 'topic',
+    { checkApp: async () => false, run: async () => { throw new Error('GitHub request failed (HTTP 403)'); } }),
+    undefined, 'Declining fork/main must cancel without publishing');
+  choices = ['Try upstream'];
+  let probes = 0;
+  const selected = await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork', target, 'topic',
+    { checkApp: async () => false, run: async () => { probes++; } });
+  assert.equal(selected.repository, 'upstream/project');
+  assert.equal(probes, 1);
 
   assert.equal(
     kefaniaRulesPath('/workspace/project'),
@@ -350,6 +404,7 @@ async function run() {
   let existingPullRequest;
   let repeatedStartingBase = false;
   const informationMessages = [];
+  const warningMessages = [];
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'sweetiebot');
@@ -367,7 +422,7 @@ async function run() {
          assert.match(options.prompt, /included in future PR descriptions/);
          return sharedInput;
        },
-      async showWarningMessage() {},
+      async showWarningMessage(message) { warningMessages.push(message); },
       showErrorMessage() { return new Promise(() => {}); },
     },
     ProgressLocation: { Notification: 1 },
@@ -405,6 +460,9 @@ async function run() {
   } };
   registerPullRequestCommand(vscode, context, {
     findOpenPullRequest: async () => existingPullRequest,
+    resolveForkPullRequestTarget: async (_vscode, repositoryUrl, base) => ({
+      repository: repositoryUrl.slice('https://github.com/'.length), repositoryUrl, base
+    }),
     verifyPublishedBranch: async () => {},
     pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
@@ -489,6 +547,21 @@ async function run() {
   assert.equal(sessionLaunches.at(-1).options.source.sharedUrl, undefined,
     'Opting out must not silently reattach a previously saved public snapshot');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  const beforeCaptureFailure = vscode.commands.executeCommand;
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.readCodexConversation') {
+      throw Error('The active Codex chat changed during capture.');
+    }
+    return beforeCaptureFailure(id, ...args);
+  };
+  const resumedDraft = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(resumedDraft.launched, true, 'An interrupted capture must not block PR drafting');
+  assert.equal(sessionLaunches.at(-1).options.source, undefined,
+    'Never substitute a different chat after a branch switch');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
+    'Do not send a partial or stale transcript');
+  assert.match(warningMessages.at(-1), /PR drafting will continue without its transcript.*active Codex chat changed/);
+  vscode.commands.executeCommand = beforeCaptureFailure;
   autoShareCodexChat = true;
   const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
   assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
