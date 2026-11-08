@@ -22,6 +22,7 @@ for (const initiallyAttached of [false, true]) {
   const singleClasses = new Set();
   const actionContainer = {
     classList: {
+      contains: value => singleClasses.has(value),
       add: value => singleClasses.add(value),
       remove: (...values) => values.forEach(value => singleClasses.delete(value))
     },
@@ -92,6 +93,22 @@ for (const initiallyAttached of [false, true]) {
   assert(singleClasses.has('scm-toolkit-commit-settings'));
   assert(singleClasses.has('scm-toolkit-single-action-settings'));
   assert(!classes.has('scm-toolkit-commit-settings'));
+
+  // Native setButton replaces children before the observer runs. The wand is
+  // detached, but the container still carries Sync's outline classes.
+  button.parentElement = null;
+  singleButton = null;
+  dropdown = makeDropdown();
+  callback();
+  assert.equal(button.parentElement, dropdown);
+  assert(!singleClasses.has('scm-toolkit-single-action-settings'),
+    'Recycled Sync containers must not draw a second border around Commit');
+  assert(!singleClasses.has('scm-toolkit-commit-settings'));
+  callback();
+  assert(!singleClasses.has('scm-toolkit-single-action-settings'));
+  dropdown = null;
+  singleButton = { getClientRects: () => [{}] };
+  callback();
 
   singleButton.getClientRects = () => [];
   callback();

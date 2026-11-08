@@ -651,6 +651,7 @@
     display: flex;
     align-items: stretch;
     box-sizing: border-box;
+    padding-inline: 0;
     border: 1px solid var(--vscode-button-border, transparent);
     border-radius: var(--vscode-cornerRadius-small, 4px);
     background: var(--vscode-button-background);
