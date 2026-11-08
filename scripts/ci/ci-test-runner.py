@@ -15,13 +15,16 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 
 
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
 import py_compile
 import re
+import shutil
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = Path(__file__).resolve().with_name("ci-test-groups.json")
@@ -95,13 +98,46 @@ def browser_needed(spec):
     )
 
 
+def resolve_command(command, env):
+    """Find Node when a macOS GUI-launched extension has a minimal PATH."""
+    if not command or command[0] != "node":
+        return command
+    executable = shutil.which("node", path=env.get("PATH", ""))
+    if not executable and sys.platform == "darwin":
+        home = Path.home()
+        candidates = [Path("/opt/homebrew/bin/node"), Path("/usr/local/bin/node"),
+                      home / ".volta/bin/node", home / ".asdf/shims/node",
+                      home / ".local/share/mise/shims/node"]
+        candidates.extend(sorted((home / ".nvm/versions/node").glob("*/bin/node"), reverse=True))
+        executable = next((str(candidate) for candidate in candidates
+                           if candidate.is_file() and os.access(candidate, os.X_OK)), None)
+    return [executable, *command[1:]] if executable else command
+
+
 def execute(command, env=None):
     print("+", " ".join(map(str, command)), flush=True)
     # Integrated-tree checks also run locally. Personal App identities and
     # formatting preferences must not change fixtures or trigger live auth.
     test_env = dict(os.environ if env is None else env)
     test_env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
-    return subprocess.run(command, cwd=ROOT, env=test_env, check=False).returncode
+    resolved = resolve_command(command, test_env)
+    # Concurrent Lindsey integrations can briefly exhaust macOS process slots
+    # or open descriptors. Retry only transient OS launch failures, never
+    # failing checks or a genuinely missing executable.
+    transient = {errno.EAGAIN, errno.EMFILE, errno.ENFILE, errno.ENOMEM}
+    for attempt in range(4):
+        try:
+            return subprocess.run(resolved, cwd=ROOT, env=test_env, check=False).returncode
+        except OSError as error:
+            if error.errno in transient and attempt < 3:
+                time.sleep(0.25 * (2 ** attempt))
+                continue
+            if error.errno == errno.ENOENT and command[0] == "node":
+                detail = "Node.js executable not found; install Node or add it to PATH."
+            else:
+                detail = f"Could not launch {command[0]}: {error}."
+            print(f"::error::{detail}", file=sys.stderr)
+            return 1
 
 
 def run_group(name, spec):
