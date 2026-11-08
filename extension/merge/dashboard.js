@@ -297,13 +297,17 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const selection = validateSelection(rawSelection);
   // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
   const readFetch = fetchImpl;
+  // Source checkouts and installed extensions keep shared assets in different roots.
+  const sourceArtworkRoot = path.join(__dirname, '../../assets/imgs');
+  const artworkRoot = fs.existsSync(path.join(sourceArtworkRoot, 'bulk-merge-cannon.jpeg'))
+    ? sourceArtworkRoot : path.join(__dirname, '../codex-customizations/assets/imgs');
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
     'Lindsey · Merge progress', viewColumn,
     { enableScripts: true, retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.file(path.join(__dirname, '../../assets/imgs'))] });
+      localResourceRoots: [vscode.Uri.file(artworkRoot)] });
   const nonce = randomBytes(16).toString('hex');
   const celebrationBackgroundUri = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/bulk-merge-cannon.jpeg'))).toString();
+    vscode.Uri.file(path.join(artworkRoot, 'bulk-merge-cannon.jpeg'))).toString();
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
