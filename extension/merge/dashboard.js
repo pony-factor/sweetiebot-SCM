@@ -630,6 +630,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             (SHA.test(pr.currentHead || '') &&
               pr.currentHead !== (batchHeads.get(pr.number) || pr.originalHead)));
           await onRefresh(candidates.map(pr => pr.number));
+          if (latestBatchState) queueAutomaticCiRepair(latestBatchState);
         } catch (failure) {
           error = 'Could not refresh the merge queue: ' + failure.message;
           if (failure.rateLimited) rateLimitedUntil = failure.retryAt || Date.now() + 60000;
@@ -654,7 +655,6 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
       const key = pr.number + ':' + candidate.headSha;
       if (autoCiAttempts.has(key)) continue;
-      autoCiAttempts.add(key);
       launchingActions.add(pr.number);
       publish();
       void (async () => {
@@ -693,6 +693,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const method = vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web';
         const option = manualBlockerActions(snapshot).find(action => action.id === 'fix-checks');
         if (!option) return;
+        autoCiAttempts.add(key);
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, method);
         addEvent(pr, opened === false ? 'updated' : 'action',
           opened === false ? 'Automatic CI repair was not opened'

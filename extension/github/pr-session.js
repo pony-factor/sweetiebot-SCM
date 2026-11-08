@@ -38,8 +38,48 @@ async function launchMergeSession(vscode, context, root, url, selection) {
 }
 
 async function launchBlockerWebSession(vscode, context, root, url, number, selection) {
-  return launchSession(vscode, context, root,
-    { sessionTitle: `Resolve #${number} [${path.basename(root.fsPath)}]`, ...(selection ? { syncOnly: true } : {}) }, url, selection);
+  const runners = require('../merge/runner-layout');
+  if (!selection) return runners.openRepairRunner(vscode, url, { number });
+  const auth = await require('./session').githubSession(vscode);
+  const { githubGet, validateSelection } = require('../merge/dashboard');
+  selection = validateSelection(selection);
+  const target = new URL(url);
+  const prompt = new URLSearchParams(target.hash.slice(1)).get('q') || '';
+  const prefix = 'repos/' + selection.repository;
+  // Keep the repair handoff in this extension host alongside the merge batch.
+  // Its branch-only authority is independent of the batch's merge authority.
+  const repair = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
+    title: 'Preparing Lindsey PR fix #' + number, cancellable: false
+  }, progress => require('../merge/batch').createMergeBatch(selection, {
+    branchOnly: true,
+    destination: target.origin + target.pathname,
+    makePrompt: () => prompt,
+    onProgress: update => progress.report(update),
+    api: endpoint => {
+      if (!endpoint.startsWith(prefix + '/')) throw Error('Repair API request is outside the selected repository.');
+      return githubGet(globalThis.fetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
+    },
+    execute: (input, snapshot) => require('../merge/progress').withMergeProgress(vscode,
+      { numbers: input.results.map(item => item.number), branchOnly: true }, async report => {
+        const result = await require('../merge/resolution').invokeResolutionCLI(input, snapshot,
+          auth.accessToken, undefined, event => {
+            report(event);
+            mergeDashboardController?.recordLocalProgress?.(event);
+          });
+        if (mergePublications) await mergePublications.record(snapshot, input, result);
+        return result;
+      }),
+    onResult: async result => {
+      mergeDashboardController?.recordLocalResult?.(result);
+      await mergeDashboardController?.refresh?.();
+    }
+  }));
+  context.subscriptions?.push(repair);
+  try {
+    // A new callback must open its own chat rather than focus an old repair.
+    return await runners.openRepairRunner(vscode, repair.url,
+      { repository: selection.repository, number, reuse: false });
+  } catch (error) { repair.dispose(); throw error; }
 }
 
 async function launchBlockerCodexSession(vscode, context, root, task) {

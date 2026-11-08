@@ -76,12 +76,12 @@ async function arrangeRunnerPanes(vscode) {
     await moveTab(vscode,dashboard,dashboardColumn);
   } finally { await config.update('closeEmptyGroups',previous,vscode.ConfigurationTarget.Workspace); }
 }
-function openRepairRunner(vscode,url,{repository,number}) {
+function openRepairRunner(vscode,url,{repository,number,reuse=true}) {
   const current = state(vscode);
   const next = current.tail.then(async()=>{
     const id = 'repair:'+repository+'#'+number;
     const existing = state(vscode).runners.get(id);
-    if (existing && await focusTab(vscode,existing)) return true;
+    if (reuse && existing && await focusTab(vscode,existing)) return true;
     // On a restored batch, preserve its existing browser tabs as runners too.
     for (const group of vscode.window.tabGroups?.all || []) for (const tab of group.tabs) {
       if (/ChatGPT|Squash.*merge|Prepare merge handoff|Resolve PR conflicts/i.test(tab.label || '') &&

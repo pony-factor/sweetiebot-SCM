@@ -258,8 +258,8 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       for (const pr of entries.values()) {
         if (merged.some(item => item.number === pr.number) || prepared.some(item => item.number === pr.number)) continue;
         const blocked = deferred.find(item => item.number === pr.number);
-        // Only stale-snapshot deferrals can be cleared by a repaired head.
-        if (blocked && !isSnapshotDeferral(blocked)) continue;
+        // A verified new head can clear stale snapshots or a CI repair stop.
+        if (blocked && blocked.kind !== 'failed_checks' && !isSnapshotDeferral(blocked)) continue;
         const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
         if (fresh.title !== pr.title || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
             fresh.head?.repo?.full_name !== original.repository) continue;

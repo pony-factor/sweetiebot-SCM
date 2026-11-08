@@ -254,7 +254,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   // Unchanged branch-only results must stop rather than repeatedly retrying.
   // Dashboard polling can recover a repaired head without executing an old
   // patch, accepting rewritten history, or retrying a human decision.
-  for (const mode of ['repaired', 'external', 'external-rewritten', 'external-human', 'unchanged', 'rewritten', 'retitled', 'human', 'running']) {
+  for (const mode of ['repaired', 'ci-repaired', 'external', 'external-rewritten', 'external-human', 'unchanged', 'rewritten', 'retitled', 'human', 'running']) {
     let liveHead = a, applied = 0, title = 'Feature 1', release;
     const gate = new Promise(resolve => { release = resolve; });
     const recovery = await createMergeBatch(one, {
@@ -270,6 +270,8 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
         applied++;
         if (mode === 'running') await gate;
         const merged = mode === 'external' || applied > 1;
+        if (mode === 'ci-repaired' && !merged) return { repository: one.repository,
+          results: [{ number: 1, status: 'checks_failed', merged: false, reason: 'CI failed.' }] };
         return { repository: one.repository, results: [{ number: 1, status: merged ? 'merged' : 'blocked',
           merged, sha: e, reason: 'Selected PR head, base or title changed; prepare a fresh handoff.' }] };
       }
@@ -290,7 +292,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
       if (mode === 'retitled') title = 'Different scope';
       const next = await recovery.reconcile([1]);
       if (mode === 'running') { assert.equal(next, null); release(); await pending; }
-      else if (!['repaired', 'external'].includes(mode)) {
+      else if (!['repaired', 'ci-repaired', 'external'].includes(mode)) {
         assert.equal(next, null);
         assert.equal(recovery.state().pullRequests[0].headSha, a);
       } else {
