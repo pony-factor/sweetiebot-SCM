@@ -31,10 +31,8 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
     @staticmethod
     def install_wrapper_fixture(root):
         """Mirror the complete production Git wrapper dependency closure."""
-        files = workspace_search.source_files()
         dependencies = runtime_sources(workspace_search.HERE)
-        for name in dependencies:
-            source = files[Path(name)]
+        for name, source in dependencies.items():
             (root / name).write_bytes(source.read_bytes())
         # Keep the installed import alias finder with the hyphenated modules.
         assert (root / 'importaliases.py').is_file()
