@@ -156,6 +156,12 @@ async function humanSquashMerge(repository, number, {
   const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
+  // Reject an explicitly signed squash before any merge shortcut or Git write.
+  // Signing preferences alone never approve replacing existing PR history.
+  if (requireSignedCommit && operation === 'merge' && !rewriteApproved) {
+    return { merged: false, status: 'blocked', number, headSha: originalSha, base, baseSha,
+      reason: 'A locally signed squash would rewrite the PR branch. No history rewrite was authorized; use the normal squash action or a merge that preserves the PR history.' };
+  }
   if (offerAuthorChoice && operation === 'merge' && !needsResolution && original.mergeable === true && !nativeSquash &&
       !allowHistoryRewrite && !localGitMerge && commits.length > 1) {
     return { merged: false, status: 'blocked', needsAuthorChoice: true, number, base, baseSha,
