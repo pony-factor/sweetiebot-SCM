@@ -394,15 +394,17 @@ async function successiveMerges(checkState, appMode = false) {
    assert.equal(await branch('feature-2'), heads[2], 'A detected conflict does not push a partial tree');
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
    const final = await submit(conflict.continueUrl, 2, patch);
-    assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
-    assert.equal(await branch('feature-2'), final.results[0].sha,
-      'A locally resolved squash replaces only the isolated PR head');
-    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', final.results[0].sha),
-      first.results[0].sha, 'The squash has exactly one parent: the previous main tip');
-    await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
-      heads[2], final.results[0].sha), 'The old PR commits do not enter main ancestry');
-    assert.equal(final.batch.merged.length, 2);
-   assert.deepEqual(final.batch.deferred, []);
+   assert.equal(final.results[0].status, 'published', JSON.stringify(final));
+   assert.equal(final.results[0].merged, false);
+   assert.equal(await branch('feature-2'), heads[2],
+     'A locally resolved squash leaves the source branch untouched');
+   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', final.results[0].sha),
+     first.results[0].sha, 'The new squash has exactly one parent: the previous main tip');
+   await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
+     heads[2], final.results[0].sha), 'Old PR commits must not enter main ancestry');
+   assert.equal(final.batch.merged.length, 1);
+   assert.equal(final.batch.deferred.find(item => item.number === 2)?.kind, 'published_squash',
+     'Do not retry a squash that has landed on main but lacks GitHub PR acknowledgement');
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
@@ -424,7 +426,7 @@ async function successiveMerges(checkState, appMode = false) {
     assert.equal(unchangedThird, heads[3], 'A clean PR must not be synchronized');
     if (checkState === 'success') {
      assert.equal(third.results[0].status, 'merged', 'A clean integration and squash complete in one local execution');
-     assert.equal(third.batch.merged.length, 3);
+     assert.equal(third.batch.merged.length, 2);
      assert.equal(third.continueUrl, undefined, 'No redundant AI round is required');
      assert.equal(await git('--git-dir=' + remote, 'show', 'main:extra.txt'), 'Independent third feature');
      assert.equal(await git('--git-dir=' + remote, 'show', 'main:price.js'), code);
@@ -433,8 +435,8 @@ async function successiveMerges(checkState, appMode = false) {
      assert.equal(third.results[0].status, checkState === 'pending' ? 'waiting' : 'checks_failed');
      assert.equal(third.results[0].sha, heads[3], 'Failed checks cannot advance the source head');
       assert.equal(await branch('main'), beforeThird, 'Pending or failing checks cannot merge');
-      if (checkState === 'failure') assert.equal(third.batch.deferred[0].kind, 'failed_checks');
-      assert.equal(third.batch.merged.length, 2);
+      if (checkState === 'failure') assert.equal(third.batch.deferred.find(item => item.number === 3)?.kind, 'failed_checks');
+      assert.equal(third.batch.merged.length, 1);
    }
    assert.equal(await repo('rev-parse', 'HEAD'), initial);
    assert.equal(await repo('status', '--porcelain'), '');
