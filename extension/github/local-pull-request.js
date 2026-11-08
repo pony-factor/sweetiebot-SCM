@@ -2,7 +2,7 @@
 const { pendingPRCommits } = require('./pr-commit-wait');
 const { runKefania } = require('../codex/kefania-runner');
 const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl,
-  readCodexConversation, stackedPullRequestBase } = require('./pull-request');
+  readOptionalCodexConversation, stackedPullRequestBase } = require('./pull-request');
 const { resolveForkPullRequestTarget, chooseForkPullRequestTarget } = require('./fork-pr-target');
 
 function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
@@ -34,7 +34,7 @@ function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
       run: dependencies.runKefania || runKefania, priorDecision: options.forkTargetDecision
     });
     if (!selected) return { cancelled: true };
-    const suppliedSource = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
+    const suppliedSource = normalizeConversationSource(options.source) || (await readOptionalCodexConversation(vscode))?.source;
     const source = sourceWithSharedConversationUrl(context, suppliedSource);
     const run = dependencies.runKefania || runKefania;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
