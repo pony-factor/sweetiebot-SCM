@@ -421,15 +421,35 @@ async function run() {
     assert(calls.filter(call => call[0] === 'fetch').every(call => call[1].ref === 'main'));
     assert.equal(calls.filter(call => call[0] === 'create').length, 1);
   }
-  for (const failure of ['timeout', 'Authentication failed',
+  for (const failure of ['timeout',
+    'Post "https://api.github.com/graphql": net/http: TLS handshake timeout',
+    'Authentication failed',
     "cannot lock ref 'refs/remotes/origin/main': Unable to create 'main.lock': File exists",
     "cannot lock ref 'refs/remotes/origin/main': is at abcdef but expected fedcba"]) {
     const { repository, calls } = fixture(true);
     let attempts = 0;
+    const notices = [];
     repository.fetch = async () => { attempts++; throw new Error(failure); };
-    await assert.rejects(createBranch(repository, options), error => error.message === failure);
-    assert.equal(attempts, failure === 'timeout' || failure.includes('but expected') ? 3 : 1);
-    assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge' || call[0] === 'push'));
+    const localFallback = /timeout/.test(failure);
+    const work = createBranch(repository, { ...options, onOfflineMain: value => notices.push(value) }, () => 0);
+    if (localFallback) {
+      assert.equal(await work, 'fresh', 'A network outage must not prevent a local main branch');
+      assert.deepEqual(calls.find(call => call[0] === 'create'), ['create', 'fresh', true, 'refs/heads/main']);
+      assert.equal(notices.length, 1, 'Explain when the remote was not synchronized');
+      assert.equal(notices[0].branch, 'fresh');
+    } else {
+      await assert.rejects(work, error => error.message === failure);
+      assert(!calls.some(call => call[0] === 'create' || call[0] === 'merge' || call[0] === 'push'));
+      assert.equal(notices.length, 0);
+    }
+    assert.equal(attempts, localFallback || failure.includes('but expected') ? 3 : 1);
+  }
+  {
+    const { repository, calls } = fixture(true);
+    repository.getBranch = async () => null;
+    repository.fetch = async () => { throw new Error('TLS handshake timeout'); };
+    await assert.rejects(createBranch(repository, options, () => 0), /local "main" is missing or invalid/);
+    assert(!calls.some(call => call[0] === 'create'), 'Never invent an offline base commit');
   }
   {
     const { repository, calls } = fixture(true);
