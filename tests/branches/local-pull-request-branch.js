@@ -54,6 +54,7 @@ async function run() {
     'https://github.com/pony-factor/kefania-PR.git'], { stdio: 'ignore' });
 
   let command, openedUrl;
+  const warnings = [];
   const rootUri = { scheme: 'file', fsPath: repositoryPath };
   const repository = {
     rootUri,
@@ -73,6 +74,7 @@ async function run() {
     },
     extensions: {
       getExtension(id) {
+        if (id === 'openai.chatgpt') return { isActive: true };
         assert.equal(id, 'vscode.git');
         return { async activate() {
           return { getAPI() { return { getRepository() { return repository; } }; } };
@@ -81,7 +83,8 @@ async function run() {
     },
     window: {
       withProgress(_options, action) { return action(); },
-      async showInformationMessage() { assert.fail('Publication must not show a redundant success toast'); }
+      async showInformationMessage() { assert.fail('Publication must not show a redundant success toast'); },
+      async showWarningMessage(message) { warnings.push(message); }
     },
     ProgressLocation: { Notification: 1 },
     commands: {
@@ -90,7 +93,11 @@ async function run() {
         command = handler;
         return { dispose() {} };
       },
+      async getCommands() { return ['sweetiebot.readCodexConversation']; },
       async executeCommand(id, uri) {
+        if (id === 'sweetiebot.readCodexConversation') {
+          throw new Error('The active Codex chat changed during capture.');
+        }
         assert.equal(id, 'vscode.open');
         openedUrl = uri.value;
       }
@@ -114,6 +121,14 @@ async function run() {
   assert.equal(submittedInput.head, 'draft', 'Local fallback publishes the selected branch');
   assert.equal(submittedInput.base, 'main');
   assert.equal(repository.state.HEAD.name, 'other', 'Do not switch the current checkout');
+
+  const fallbackResult = await command({ rootUri }, { branch: 'draft', base: 'main', remote: 'origin' });
+  assert.equal(fallbackResult.number, 3, 'Local PR creation continues after Codex capture fails');
+  assert.equal(submittedInput.source, undefined, 'Do not attach a source from another Codex chat');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Could not copy the originating Codex chat/);
+  assert.match(warnings[0], /Continuing without the Codex conversation transcript/);
+
   await assert.rejects(command({ rootUri }, {
     branch: 'main', base: 'main', remote: 'origin'
   }), /other than/);
