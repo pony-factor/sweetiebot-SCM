@@ -1,7 +1,7 @@
 'use strict';
 const { pendingPRCommits } = require('./pr-commit-wait');
 const { runKefania } = require('../codex/kefania-runner');
-const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl, readCodexConversation } = require('./pull-request');
+const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl, readOptionalCodexConversation } = require('./pull-request');
 
 function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.createLocalPullRequest', async (uri, options) => {
@@ -21,7 +21,7 @@ function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
     if (!url) throw new Error('The selected remote must identify a GitHub repository.');
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
     if (waitForCommits) await waitForCommits();
-    const suppliedSource = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
+    const suppliedSource = normalizeConversationSource(options.source) || (await readOptionalCodexConversation(vscode))?.source;
     const source = sourceWithSharedConversationUrl(context, suppliedSource);
     const run = dependencies.runKefania || runKefania;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
