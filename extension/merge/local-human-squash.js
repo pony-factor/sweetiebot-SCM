@@ -273,9 +273,9 @@ async function humanSquashMerge(repository, number, {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
     if (liveBase !== baseSha) throw refreshBase();
-    const finishSignedSquash = async finalTree => {
-      if (operation !== 'merge' || resolutionPatch !== null || conflicts.length) {
-        throw Error('A signed squash requires a clean, conflict-free PR merge.');
+    const finishLocalSquash = async (finalTree, finalMessage = preparedMessage) => {
+      if (operation !== 'merge') {
+        throw Error('A local squash requires a PR merge operation.');
       }
       const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
       if (finalTree === baseTree) throw Error('Signed squash would make no changes; refusing an empty commit.');
@@ -299,7 +299,7 @@ async function humanSquashMerge(repository, number, {
       }
       if (await readBaseTip() !== baseSha) throw refreshBase();
 
-      const signedIdentity = await commitIdentity(inRepo, author, true, false, automationAuthor);
+      let signedIdentity = await commitIdentity(inRepo, author, requireSignedCommit, true, automationAuthor);
       const originalTree = await inRepo('rev-parse', originalSha + '^{tree}');
       const originalParents = (await inRepo('show', '-s', '--format=%P', originalSha)).trim().split(/\s+/).filter(Boolean);
       const originalIdentity = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce', originalSha)).split('\0');
@@ -307,7 +307,7 @@ async function humanSquashMerge(repository, number, {
         .replace(/\r\n/g, '\n').trimEnd();
       let signedSha;
       if (originalTree === finalTree && originalParents.length === 1 && originalParents[0] === baseSha &&
-          originalMessage === preparedMessage.trimEnd() &&
+          originalMessage === finalMessage.trimEnd() &&
           originalIdentity[0] === signedIdentity.author.name && originalIdentity[1] === signedIdentity.author.email &&
           originalIdentity[2] === signedIdentity.committer.name && originalIdentity[3] === signedIdentity.committer.email &&
           /(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', originalSha))) {
@@ -315,17 +315,24 @@ async function humanSquashMerge(repository, number, {
       }
       if (!signedSha) {
         const messageFile = path.join(temp, '.git', 'sweetiebot-signed-squash-message');
-        await fs.writeFile(messageFile, preparedMessage + '\n', { mode: 0o600 });
-        signedSha = await attributedCommitTree({ directory: temp, tree: finalTree,
+        await fs.writeFile(messageFile, finalMessage + '\n', { mode: 0o600 });
+        const create = () => attributedCommitTree({ directory: temp, tree: finalTree,
           parents: [baseSha], messageFile, identity: signedIdentity });
+        try {
+          signedSha = await create();
+        } catch (error) {
+          if (requireSignedCommit || !signedIdentity.signed) throw error;
+          signedIdentity = { author, committer: automationAuthor || author, signed: false };
+          signedSha = await create();
+        }
         const raw = await inRepo('cat-file', '-p', signedSha);
         const parents = (await inRepo('show', '-s', '--format=%P', signedSha)).trim().split(/\s+/).filter(Boolean);
-        if (!SHA.test(signedSha) || !/(?:^|\n)gpgsig /.test(raw) || parents.length !== 1 ||
+        if (!SHA.test(signedSha) || (signedIdentity.signed && !/(?:^|\n)gpgsig /.test(raw)) || parents.length !== 1 ||
             parents[0] !== baseSha || await inRepo('rev-parse', signedSha + '^{tree}') !== finalTree) {
           throw Error('Local Git did not produce the required signed one-parent squash; no branch was pushed.');
         }
         const [name, email, ...body] = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%B', signedSha)).split('\0');
-        verifyCommit({ commit: { author: { name, email }, message: body.join('\0') } }, preparedMessage, author);
+        verifyCommit({ commit: { author: { name, email }, message: body.join('\0') } }, finalMessage, author);
       }
 
       await verifyLocalCommitIdentity(inRepo, signedSha, signedIdentity);
@@ -372,9 +379,9 @@ async function humanSquashMerge(repository, number, {
         progress('verifying-push', { sha: signedSha, title: prepared.title });
         await verifyPushedPR(signedSha);
         const destination = await api(endpoint + '/commits/' + signedSha);
-        verifyCommit(destination, preparedMessage, author);
+        verifyCommit(destination, finalMessage, author);
         const verification = destination?.commit?.verification;
-        if (verification?.verified !== true) {
+        if (requireSignedCommit && verification?.verified !== true) {
           throw Error('GitHub did not verify the signed squash commit (' +
             (verification?.reason || 'unknown reason') + '); the base was not updated.');
         }
@@ -440,13 +447,14 @@ async function humanSquashMerge(repository, number, {
         if (merged?.merged === true && merged.merge_commit_sha === signedSha &&
             merged.base?.ref === base && merged.head?.sha === signedSha) {
           const destination = await api(endpoint + '/commits/' + signedSha);
-          verifyCommit(destination, preparedMessage, author);
-          if (destination?.commit?.verification?.verified !== true) {
+          verifyCommit(destination, finalMessage, author);
+          if (requireSignedCommit && destination?.commit?.verification?.verified !== true) {
             throw Error('GitHub no longer reports the signed squash as verified; inspect the merged commit.');
           }
           return { merged: true, status: 'merged', sha: signedSha, headSha: signedSha,
             previousHeadSha: originalSha, author, base, baseSha, number,
-            method: 'local-signed-squash', signed: true,
+            method: signedIdentity.signed ? 'local-signed-squash' : 'local-squash', signed: signedIdentity.signed,
+            verified: destination?.commit?.verification?.verified === true,
             url: 'https://github.com/' + repository + '/commit/' + signedSha };
         }
         if (attempt < 11) await (checkOptions.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms))))(1000);
@@ -598,26 +606,20 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
-    const finishLocal = async (sha, finalTree, integratedTree = false) => {
+    const finishLocal = async finalTree => {
       const trailer = conflicts.length
         ? require('./resolution-commits').assistantCoauthorTrailer(assistantModelNumber) : '';
       if (conflicts.length && !trailer) {
         throw Error('Model-authored conflict decisions require the active coding model number.');
       }
-      let mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
+      const mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
         ? preparedMessage.trimEnd() + '\n\n' + trailer : preparedMessage;
-      const humanCredit = `Co-authored-by: ${author.name} <${author.email}>`;
-      if (automationAuthor && !mergeMessage.split('\n').includes(humanCredit)) mergeMessage += '\n\n' + humanCredit;
-      return require('./local-author-merge').localAuthorMerge({
-      repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
-      automationAuthor,
-      message: mergeMessage, git: inRepo, api, directory: temp, checkOptions, integratedTree,
-      expectChecks: initialChecks.hasChecks, onProgress: progress, requireSignedCommit,
-      privateRepository: repositoryInfo.private === true
-    });
+      return finishLocalSquash(finalTree, mergeMessage);
     };
-    // Lindsey merge operations integrate in a disposable index and never update
-    // the source PR head. Sync is a separate, explicit maintainer action.
+    // Squash publication prepares a one-parent commit in a disposable checkout.
+    // Only when native squash cannot retain author/signing, replace the isolated
+    // PR head under an exact lease so GitHub can recognize the squash as merged.
+    // Sync remains a separate append-only maintainer action.
     if (localGitMerge && operation === 'merge' && !requireSignedCommit) {
       const finalTree = await inRepo('write-tree');
       if (nativeSquash && !conflicts.length && !needsResolution) {
@@ -641,12 +643,12 @@ async function humanSquashMerge(repository, number, {
           }
         }
       }
-      return await finishLocal(originalSha, finalTree, finalTree !== headTree);
+      return await finishLocal(finalTree);
     }
-    if (requireSignedCommit) return await finishSignedSquash(await inRepo('write-tree'));
+    if (requireSignedCommit) return await finishLocal(await inRepo('write-tree'));
     if (localGitMerge && operation === 'merge' && !nativeSquash) {
       const finalTree = await inRepo('write-tree');
-      if (finalTree === await inRepo('rev-parse', originalSha + '^{tree}')) return await finishLocal(originalSha, finalTree);
+      if (finalTree === await inRepo('rev-parse', originalSha + '^{tree}')) return await finishLocal(finalTree);
     }
     if (operation === 'sync' || conflicts.length || nativeSquash || localGitMerge || !rewriteApproved) {
       const finalTree = await inRepo('write-tree');
@@ -679,7 +681,7 @@ async function humanSquashMerge(repository, number, {
         pushedSha = prepared.sha;
         return await finish(prepared.sha, preparedMessage, 'squash');
       }
-      if (operation === 'merge' && localGitMerge && !nativeSquash) return await finishLocal(prepared.sha, finalTree);
+      if (operation === 'merge' && localGitMerge && !nativeSquash) return await finishLocal(finalTree);
       return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
         reason: prepared.commits.length
