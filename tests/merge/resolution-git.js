@@ -61,6 +61,7 @@ const run = promisify(execFile);
         { app: { name: 'AWS Amplify' }, status: 'queued', latest_check_runs_count: 0 }
       ] };
       if (endpoint.includes('/status?')) return { statuses: [] };
+      if (endpoint.includes('/rules/branches/')) return [];
       if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
       if (endpoint.includes('/pulls?')) return [];
       if (endpoint.includes('/commits?') && pushed) {
@@ -110,7 +111,7 @@ const run = promisify(execFile);
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
     const webModelNumber = '7.2';
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
-      api, git: localGit, expected, resolutionPatch, decisions, assistantModelNumber: webModelNumber,
+      api, git: localGit, expected, resolutionPatch, decisions, operation: 'sync', assistantModelNumber: webModelNumber,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
     if (!resolving) {
@@ -197,20 +198,18 @@ const run = promisify(execFile);
     assert.equal(await branch('child'), childSha, 'Append-only parent sync does not change its child branch');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
-    const needsApproval = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [] });
-    assert.equal(needsApproval.status, 'blocked');
-    assert.match(needsApproval.reason, /explicit local approval/);
-    assert.equal(await branch('feature'), incremental.sha, 'Attribution alone cannot trigger an automatic rewrite');
-    await assert.rejects(attempt({
-      api: dependentApi, expected: { ...expected, headSha: incremental.sha },
-      resolutionPatch: null, decisions: [], allowHistoryRewrite: true,
-      rewriteReason: 'preserve-human-author'
-    }), /depends on or shares this head branch/, 'Dependent PRs still prohibit destructive rewrites');
-    assert.equal(await branch('feature'), incremental.sha, 'Rejected rewrite leaves parent unchanged');
-    assert.equal(await branch('child'), childSha, 'Rejected rewrite leaves child unchanged');
-    const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null,
-      decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
-    assert.equal(wrongReason.status, 'blocked', 'Convenience does not qualify as rewrite necessity');
+    const unchanged = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [] });
+    assert.equal(unchanged.status, 'synced');
+    assert.equal(unchanged.unchanged, true, 'Already synchronized branches are not rewritten');
+    assert.equal(await branch('feature'), incremental.sha);
+    const dependentSync = await attempt({ api: dependentApi,
+      expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [],
+      allowHistoryRewrite: true, rewriteReason: 'preserve-human-author' });
+    assert.equal(dependentSync.status, 'synced', 'Dependent PRs do not require destructive history operations');
+    assert.equal(await branch('child'), childSha);
+    const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha },
+      resolutionPatch: null, decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
+    assert.equal(wrongReason.status, 'synced', 'Rewrite preferences do not change append-only sync');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, incremental.sha);
     pushed = false;
     const progress = [];
@@ -314,8 +313,8 @@ async function successiveMerges(checkState, appMode = false) {
    const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
    const snapshot = async number => {
     const baseTip = await branch('main');
-    // A locally prepared squash replaces the isolated PR head before it
-    // fast-forwards main. Check the live head, not its pre-squash SHA.
+    // Native and local squashes both preserve the source PR head. A direct
+    // local publication may leave GitHub PR bookkeeping open for review.
     const currentHead = await branch('feature-' + number);
     const landed = merged.has(number) || await git('--git-dir=' + remote,
       'merge-base', '--is-ancestor', currentHead, baseTip).then(() => true).catch(() => false);
