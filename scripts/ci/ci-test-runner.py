@@ -145,8 +145,8 @@ def run_group(name, spec):
     print(f"Running {spec['label']} ({len(spec['tests'])} test files)", flush=True)
     failures = 0
 
-    def checked_execute(command, failure_message):
-        result = execute(command)
+    def checked_execute(command, failure_message, env=None):
+        result = execute(command, env) if env is not None else execute(command)
         if result == EXECUTION_UNAVAILABLE:
             print(f"::error::{name}: Test execution unavailable; aborting without claiming a regression failure.",
                   file=sys.stderr)
@@ -174,7 +174,7 @@ def run_group(name, spec):
         )
         modules = [f"tests.{Path(item).with_suffix('').as_posix().replace('/', '.')}" for item in python_tests]
         failures += checked_execute([sys.executable, "-m", "unittest", "-v", *modules],
-                                    f"::error::{name} Python regressions failed")
+                                    f"::error::{name} Python regressions failed", env)
     for file in javascript_tests:
         failures += checked_execute(["node", f"tests/{file}"],
                                     f"::error file=tests/{file}::JavaScript regression test failed")
