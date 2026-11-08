@@ -564,7 +564,7 @@ async function run() {
     'Never substitute a different chat after a branch switch');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
     'Do not send a partial or stale transcript');
-  assert.match(warningMessages.at(-1), /Could not identify the originating Codex chat.*active Codex chat changed/);
+  assert.match(warningMessages.at(-1), /^⚠️ Could not identify the originating Codex chat.*active Codex chat changed/);
   vscode.commands.executeCommand = beforeCaptureFailure;
   autoShareCodexChat = true;
   const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main',
@@ -573,6 +573,8 @@ async function run() {
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
   assert.equal(sessionLaunches.at(-1).options.source.desktopUrl, codexSource.desktopUrl,
     'A failed Share must not discard a successful native deeplink');
+  assert.match(warningMessages.at(-1), /^⚠️ The chat could not be shared\./,
+    'Share failures must use the caution sign, not an informational icon');
   autoShareCodexChat = false;
 
   // Markdown, deeplink, and public Share must be separately recoverable.
@@ -600,7 +602,8 @@ async function run() {
   assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
     'An unavailable Markdown export cannot be replaced by guessed transcript text');
   assert.equal(captureWarnings.length, 1);
-  assert.match(captureWarnings[0], /Could not copy the originating Codex chat Markdown/);
+  assert.match(captureWarnings[0], /^⚠️ Could not copy the originating Codex chat Markdown/,
+    'Markdown failure must display the caution sign');
 
   // The inverse failure must keep the valid transcript and still try Share.
   vscode.commands.executeCommand = async (id, ...args) => {
@@ -620,7 +623,8 @@ async function run() {
     'Do not fabricate a desktop route after a failed native deeplink');
   assert.equal(sessionLaunches.at(-1).options.source.sharedUrl, share);
   assert.equal(captureWarnings.length, 2);
-  assert.match(captureWarnings[1], /Could not copy the originating Codex deeplink/);
+  assert.match(captureWarnings[1], /^⚠️ Could not copy the originating Codex deeplink/,
+    'Deeplink failure must display the caution sign');
 
   // If identity itself is unverified, none of the copied links may be
   // attributed to a different Codex chat.
@@ -640,7 +644,8 @@ async function run() {
     'Do not attach a source from an unverified thread');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, '');
   assert.equal(captureWarnings.length, 3);
-  assert.match(captureWarnings[2], /Could not identify the originating Codex chat/);
+  assert.match(captureWarnings[2], /^⚠️ Could not identify the originating Codex chat/,
+    'Identity failure must display the caution sign');
   assert.match(captureWarnings[2], /active Codex chat changed during capture/);
   vscode.window.showWarningMessage = originalShowWarning;
   vscode.commands.executeCommand = regularExecute;
