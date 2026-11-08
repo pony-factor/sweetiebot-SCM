@@ -153,7 +153,9 @@ async function humanSquashMerge(repository, number, {
   // squash/rebase that cannot use the configured key. Both merge controllers
   // then use the shared local author/committer implementation.
   const signLocally = requireSignedCommit || await signingEnabled(git);
-  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
+  // App authentication grants transport access, not commit attribution. An App
+  // native squash would name the App as committer even for a human-opened PR.
+  const nativeSquash = !appActor && !signLocally && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
   if (offerAuthorChoice && operation === 'merge' && !needsResolution && original.mergeable === true && !nativeSquash &&
@@ -299,7 +301,9 @@ async function humanSquashMerge(repository, number, {
       }
       if (await readBaseTip() !== baseSha) throw refreshBase();
 
-      let signedIdentity = await commitIdentity(inRepo, author, requireSignedCommit, true, automationAuthor);
+      // Keep both identities human on the final squash. The App remains the
+      // transport actor; fix/sync commits retain their separate App identity.
+      let signedIdentity = await commitIdentity(inRepo, author, requireSignedCommit, true);
       const originalTree = await inRepo('rev-parse', originalSha + '^{tree}');
       const originalParents = (await inRepo('show', '-s', '--format=%P', originalSha)).trim().split(/\s+/).filter(Boolean);
       const originalIdentity = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce', originalSha)).split('\0');
@@ -322,7 +326,7 @@ async function humanSquashMerge(repository, number, {
           signedSha = await create();
         } catch (error) {
           if (requireSignedCommit || !signedIdentity.signed) throw error;
-          signedIdentity = { author, committer: automationAuthor || author, signed: false };
+          signedIdentity = { author, committer: author, signed: false };
           signedSha = await create();
         }
         const raw = await inRepo('cat-file', '-p', signedSha);
@@ -379,7 +383,7 @@ async function humanSquashMerge(repository, number, {
         progress('verifying-push', { sha: signedSha, title: prepared.title });
         await verifyPushedPR(signedSha);
         const destination = await api(endpoint + '/commits/' + signedSha);
-        verifyCommit(destination, finalMessage, author);
+        verifyCommit(destination, finalMessage, author, { committer: signedIdentity.committer });
         const verification = destination?.commit?.verification;
         if (requireSignedCommit && verification?.verified !== true) {
           throw Error('GitHub did not verify the signed squash commit (' +
@@ -447,7 +451,7 @@ async function humanSquashMerge(repository, number, {
         if (merged?.merged === true && merged.merge_commit_sha === signedSha &&
             merged.base?.ref === base && merged.head?.sha === signedSha) {
           const destination = await api(endpoint + '/commits/' + signedSha);
-          verifyCommit(destination, finalMessage, author);
+          verifyCommit(destination, finalMessage, author, { committer: signedIdentity.committer });
           if (requireSignedCommit && destination?.commit?.verification?.verified !== true) {
             throw Error('GitHub no longer reports the signed squash as verified; inspect the merged commit.');
           }

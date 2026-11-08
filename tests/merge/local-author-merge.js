@@ -12,7 +12,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const author={name:'Original Human',email:'human@example.test'};
   const signer={name:'Local Signer',email:'signer@example.test'};
   const bot={name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'};
-  const expectedSigner=appMode?bot:signer;
+  const expectedSigner=signer;
   const git=async(...args)=>(await run('git',['-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false',
     '-c','user.name='+author.name,'-c','user.email='+author.email,...args])).stdout.trim();
   const inWork=(...args)=>git('-C',work,...args);
@@ -58,7 +58,10 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     const branch=name=>inRemote('rev-parse','refs/heads/'+name);
     const pr=async()=>{
       const tip=await branch('main');
-      const merged=tip!==baseSha && !race;
+      // GitHub recognizes a direct push only when the PR head is included.
+      // Pushing an unrelated squash to main must not fake a merged response.
+      const merged=tip!==baseSha && !race &&
+        (humanOpener&&!appMode&&!requireSignedCommit&&!conflict || tip===await branch('feature'));
       return {state:merged?'closed':'open',merged,merged_at:merged?'2026-10-28':null,
         merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:!conflict,mergeable_state:conflict?'dirty':'clean',
         user:humanOpener?{type:'User',login:'human'}:{type:'Bot',login:'automation[bot]'},head:{ref:'feature',sha:await branch('feature'),repo:{full_name:'owner/repo'}},
@@ -151,14 +154,14 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
         assert.equal(result.merged,true,JSON.stringify(result));
-        const localSquash=requireSignedCommit||!humanOpener||conflict;
+        const localSquash=appMode||requireSignedCommit||!humanOpener||conflict;
         if(localSquash) {
           assert.equal(result.method,missingSigningKey?'local-squash':'local-signed-squash');
           assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha,
             'The destination squash has exactly one parent: the selected base');
           assert.equal(await branch('feature'),result.sha,'Prepare the PR head so GitHub recognizes the squash');
           assert.equal(await inRemote('show','-s','--format=%an <%ae>',result.sha),author.name+' <'+author.email+'>');
-          const committer=missingSigningKey?(appMode?bot:author):expectedSigner;
+          const committer=missingSigningKey?author:expectedSigner;
           assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),committer.name+' <'+committer.email+'>');
           assert.equal(result.signed,!missingSigningKey);
           assert.equal(result.verified,!missingSigningKey&&!githubCannotVerifySignature);
@@ -174,7 +177,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
         assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
         if(appMode) {
-          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),`${bot.name} <${bot.email}>`);
+          const committer=missingSigningKey?author:signer;
+          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),`${committer.name} <${committer.email}>`,
+            'App-authenticated squashes retain a human committer');
           assert.deepEqual(result.author,author,'Merge reports the verified human author');
           const message=await inRemote('show','-s','--format=%B',result.sha);
           assert(!message.includes(`Co-authored-by: ${author.name} <${author.email}>`),'The primary author needs no duplicate co-author trailer');
@@ -183,7 +188,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         }
       }
     }
-    if(protectedBase||rules.length||failed||failedOriginalOnly||humanOpener&&!requireSignedCommit&&!conflict)assert.equal(await branch('feature'),headSha,
+    if(protectedBase||rules.length||failed||failedOriginalOnly||humanOpener&&!appMode&&!requireSignedCommit&&!conflict)assert.equal(await branch('feature'),headSha,
       'Blocked and native merges leave the original PR head untouched');
   } finally {
     if(oldGlobalConfig===undefined) delete process.env.GIT_CONFIG_GLOBAL;
@@ -195,6 +200,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
  await fixture({appMode:true});
+ await fixture({appMode:true,humanOpener:true});
  await fixture({protectedHead:true});
  await fixture({dependentPR:true});
  await fixture({appMode:true,missingSigningKey:true});
