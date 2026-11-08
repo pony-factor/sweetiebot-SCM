@@ -330,6 +330,8 @@ async function run() {
   const disposable = host.scmToolkitRegisterCodexSnapshotProvider(provider, hostVscode);
   assert(registered.has('sweetiebot.readCodexContext'));
   assert(registered.has('sweetiebot.readCodexConversation'));
+  assert(registered.has('sweetiebot.readCodexMarkdown'));
+  assert(registered.has('sweetiebot.readCodexDeeplink'));
 
   provider.initializeWebview(webview, 'sidebar', () => {});
   provider.handleMessage(webview, {type: 'scm-toolkit-checkout-visibility-request',
@@ -539,6 +541,38 @@ async function run() {
  nativeListener({type:'scm-toolkit-context-response',id:messages.at(-1).id,conversationId:id,nativeCopy:'deeplink',model:{name:'GPT-6.1'}});
  const snapshot=await result;assert.match(snapshot.text,/historical message/);assert.match(snapshot.text,/Latest user request/);assert(!snapshot.text.includes('AAAAAA'));assert(snapshot.text.length<500);assert.equal(snapshot.source.desktopUrl,`codex://threads/${id}?host=remote`);assert.equal(clipboard,'user clipboard');
 
+ // A Markdown-only capture must finish without attempting to copy a deeplink.
+ const markdownOnly=commands.get('sweetiebot.readCodexMarkdown')(id);
+ await new Promise(setImmediate);
+ const markdownRequest=messages.at(-1);
+ assert.equal(markdownRequest.copyDeepLink,false);
+ assert.equal(markdownRequest.expectedThreadId,id);
+ clipboard='# Native Markdown only';
+ nativeListener({type:'scm-toolkit-context-response',id:markdownRequest.id,conversationId:id,nativeCopy:'markdown'});
+ const markdownResult=await markdownOnly;
+ assert.equal(markdownResult.text,'# Native Markdown only');
+ assert.equal(markdownResult.source.uuid,id);
+ assert.equal(markdownResult.source.desktopUrl,undefined);
+ assert.equal(messages.at(-1),markdownRequest,'Markdown-only capture must not request a deeplink');
+ assert.equal(clipboard,'user clipboard');
+
+ // A failed Markdown operation must release the clipboard and the next
+ // independent deeplink operation must still complete.
+ const failedMarkdown=commands.get('sweetiebot.readCodexMarkdown')(id);
+ await new Promise(setImmediate);
+ nativeListener({type:'scm-toolkit-context-response',id:messages.at(-1).id,error:'Markdown export failed'});
+ await assert.rejects(failedMarkdown,/Markdown export failed/);
+ const deeplinkOnly=commands.get('sweetiebot.readCodexDeeplink')(id);
+ await new Promise(setImmediate);
+ const deeplinkRequest=messages.at(-1);
+ assert.equal(deeplinkRequest.copyDeepLink,true);
+ assert.equal(deeplinkRequest.expectedThreadId,id);
+ clipboard=`codex://threads/${id}?host=remote`;
+ nativeListener({type:'scm-toolkit-context-response',id:deeplinkRequest.id,conversationId:id,nativeCopy:'deeplink'});
+ const deeplinkResult=await deeplinkOnly;
+ assert.equal(deeplinkResult.source.uuid,id);
+ assert.equal(deeplinkResult.source.desktopUrl,`codex://threads/${id}?host=remote`);
+ assert.equal(clipboard,'user clipboard');
   }
   console.log('Read-only Codex snapshot and provenance bridge checks passed.');
 }

@@ -444,11 +444,15 @@ async function run() {
       },
       async getCommands() {
         return browserAvailable
-          ? ['workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow', ...(codexSnapshot ? ['sweetiebot.readCodexConversation'] : [])]
+          ? ['workbench.action.browser.open', 'workbench.action.moveEditorToNewWindow',
+            ...(codexSnapshot ? ['sweetiebot.readCodexConversation', 'sweetiebot.readCodexIdentity',
+              'sweetiebot.readCodexMarkdown', 'sweetiebot.readCodexDeeplink'] : [])]
           : [];
       },
       async executeCommand(id, ...args) {
-        if (id === 'sweetiebot.readCodexConversation') return codexSnapshot;
+        if (id === 'sweetiebot.readCodexConversation' || id === 'sweetiebot.readCodexMarkdown') return codexSnapshot;
+        if (id === 'sweetiebot.readCodexIdentity') return { threadId: codexSnapshot?.source?.uuid };
+        if (id === 'sweetiebot.readCodexDeeplink') return { source: codexSnapshot?.source };
         if (id === 'sweetiebot.shareCodexConversation') { nativeShareCalls++; return { ...codexSnapshot.source, sharedUrl: share }; }
         calls.push({ id, args });
       }
@@ -549,7 +553,7 @@ async function run() {
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
   const beforeCaptureFailure = vscode.commands.executeCommand;
   vscode.commands.executeCommand = async (id, ...args) => {
-    if (id === 'sweetiebot.readCodexConversation') {
+    if (id === 'sweetiebot.readCodexIdentity') {
       throw Error('The active Codex chat changed during capture.');
     }
     return beforeCaptureFailure(id, ...args);
@@ -560,39 +564,92 @@ async function run() {
     'Never substitute a different chat after a branch switch');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
     'Do not send a partial or stale transcript');
-  assert.match(warningMessages.at(-1), /PR drafting will continue without its transcript.*active Codex chat changed/);
+  assert.match(warningMessages.at(-1), /^⚠️ Could not identify the originating Codex chat.*active Codex chat changed/);
   vscode.commands.executeCommand = beforeCaptureFailure;
   autoShareCodexChat = true;
-  const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main',
+    explicitNewPullRequest: true });
   assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  assert.equal(sessionLaunches.at(-1).options.source.desktopUrl, codexSource.desktopUrl,
+    'A failed Share must not discard a successful native deeplink');
+  assert.match(warningMessages.at(-1), /^⚠️ The chat could not be shared\./,
+    'Share failures must use the caution sign, not an informational icon');
   autoShareCodexChat = false;
 
-  // A changed Codex thread must warn, not abandon the New PR workflow or
-  // attach an unrelated conversation to the draft.
+  // Markdown, deeplink, and public Share must be separately recoverable.
   const captureWarnings = [];
   const originalShowWarning = vscode.window.showWarningMessage;
   vscode.window.showWarningMessage = async message => { captureWarnings.push(message); };
+  autoShareCodexChat = true;
   vscode.commands.executeCommand = async (id, ...args) => {
-    if (id === 'sweetiebot.readCodexConversation') {
+    if (id === 'sweetiebot.readCodexMarkdown') {
+      throw new Error('Native Markdown export failed.');
+    }
+    return regularExecute(id, ...args);
+  };
+  const shareBeforeMarkdownFailure = nativeShareCalls;
+  const continuedDraft = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main',
+    explicitNewPullRequest: true });
+  assert.equal(continuedDraft.launched, true, 'Markdown capture failure must not block PR drafting');
+  assert.equal(nativeShareCalls, shareBeforeMarkdownFailure + 1,
+    'Share must still run when Markdown copy fails');
+  assert.equal(sessionLaunches.at(-1).options.source.uuid, codexSource.uuid);
+  assert.equal(sessionLaunches.at(-1).options.source.desktopUrl, codexSource.desktopUrl,
+    'Failed Markdown capture must not suppress the native deeplink');
+  assert.equal(sessionLaunches.at(-1).options.source.sharedUrl, share,
+    'Failed Markdown capture must not suppress public Share');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
+    'An unavailable Markdown export cannot be replaced by guessed transcript text');
+  assert.equal(captureWarnings.length, 1);
+  assert.match(captureWarnings[0], /^⚠️ Could not copy the originating Codex chat Markdown/,
+    'Markdown failure must display the caution sign');
+
+  // The inverse failure must keep the valid transcript and still try Share.
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.readCodexDeeplink') {
+      throw new Error('Native deeplink copy failed.');
+    }
+    return regularExecute(id, ...args);
+  };
+  const shareBeforeDeeplinkFailure = nativeShareCalls;
+  const withoutDeeplink = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main',
+    explicitNewPullRequest: true });
+  assert.equal(withoutDeeplink.launched, true);
+  assert.equal(nativeShareCalls, shareBeforeDeeplinkFailure + 1,
+    'Deeplink copy failure must not suppress the public Share step');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  assert.equal(sessionLaunches.at(-1).options.source.desktopUrl, undefined,
+    'Do not fabricate a desktop route after a failed native deeplink');
+  assert.equal(sessionLaunches.at(-1).options.source.sharedUrl, share);
+  assert.equal(captureWarnings.length, 2);
+  assert.match(captureWarnings[1], /^⚠️ Could not copy the originating Codex deeplink/,
+    'Deeplink failure must display the caution sign');
+
+  // If identity itself is unverified, none of the copied links may be
+  // attributed to a different Codex chat.
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.readCodexIdentity') {
       throw new Error('The active Codex chat changed during capture.');
     }
     return regularExecute(id, ...args);
   };
-  const launchesBeforeCaptureFailure = sessionLaunches.length;
-  const continuedDraft = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
-  assert.equal(continuedDraft.launched, true, 'Codex capture failures must not block PR drafting');
-  assert.equal(sessionLaunches.length, launchesBeforeCaptureFailure + 1);
+  const shareBeforeIdentityFailure = nativeShareCalls;
+  const withoutIdentity = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main',
+    explicitNewPullRequest: true });
+  assert.equal(withoutIdentity.launched, true);
+  assert.equal(nativeShareCalls, shareBeforeIdentityFailure,
+    'Unverified chat identity must not initiate public sharing');
   assert.equal(sessionLaunches.at(-1).options.source, undefined,
-    'Failed capture must not attach source links to the wrong chat');
-  assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
-    'Drafting continues without an unavailable transcript');
-  assert.equal(captureWarnings.length, 1, 'Only one warning is shown for a failed capture');
-  assert.match(captureWarnings[0], /Could not copy the originating Codex chat/);
-  assert.match(captureWarnings[0], /active Codex chat changed during capture/);
-  assert.match(captureWarnings[0], /Continuing without the Codex conversation transcript/);
+    'Do not attach a source from an unverified thread');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, '');
+  assert.equal(captureWarnings.length, 3);
+  assert.match(captureWarnings[2], /^⚠️ Could not identify the originating Codex chat/,
+    'Identity failure must display the caution sign');
+  assert.match(captureWarnings[2], /active Codex chat changed during capture/);
   vscode.window.showWarningMessage = originalShowWarning;
   vscode.commands.executeCommand = regularExecute;
+  autoShareCodexChat = false;
   codexSnapshot = undefined;
   launchInSeparateWorkspace = false;
 
