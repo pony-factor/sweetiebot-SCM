@@ -13,10 +13,13 @@ for _sb_parent in _sb_path(__file__).resolve().parent.parents:
         break
 
 
+import errno
 import importlib.util
+import io
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -52,6 +55,39 @@ assert(result.message.startsWith('- 🐛 Fix'));
                    "CI_FIXTURE_CONTEXT": "preserved"}
             env.pop("SWEETIEBOT_BOT_IDENTITY_MODE", None)
             self.assertEqual(ci.execute(["node", "-e", script], env), 0)
+
+    def test_transient_local_process_launch_retries_without_ignoring_test_failures(self):
+        unavailable = OSError(errno.EAGAIN, "Resource temporarily unavailable")
+        completed = subprocess.CompletedProcess(["node", "--check"], 0)
+        with patch.object(ci.subprocess, "run",
+                          side_effect=[unavailable, completed]) as run, \
+             patch.object(ci.time, "sleep") as sleep:
+            self.assertEqual(ci.execute(["node", "--check", "tests/merge/local-author-merge.js"]), 0)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+        self.assertEqual(run.call_args.kwargs["env"]["GIT_CONFIG_GLOBAL"], os.devnull)
+        self.assertEqual(run.call_args.kwargs["env"]["GIT_CONFIG_NOSYSTEM"], "1")
+        with patch.object(ci.subprocess, "run",
+                          return_value=subprocess.CompletedProcess(["node"], 1)) as run:
+            self.assertEqual(ci.execute(["node", "--check", "broken.js"]), 1)
+        run.assert_called_once()
+
+    def test_missing_node_reports_diagnostic_instead_of_crashing(self):
+        with patch.object(ci.subprocess, "run",
+                          side_effect=FileNotFoundError(errno.ENOENT, "No such file or directory")), \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(ci.execute(["node", "--check", "missing.js"]), 1)
+        self.assertIn("Node.js executable not found", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_mac_node_fallback_when_gui_path_does_not_include_homebrew(self):
+        with patch.object(ci.sys, "platform", "darwin"), \
+             patch.object(ci.shutil, "which", return_value=None), \
+             patch.object(ci.Path, "is_file", return_value=True), \
+             patch.object(ci.os, "access", return_value=True):
+            self.assertEqual(ci.resolve_command(["node", "--check", "example.js"],
+                                                {"PATH": ""}),
+                             ["/opt/homebrew/bin/node", "--check", "example.js"])
 
     def test_commit_button_browser_regression_has_one_owner(self):
         manifest = json.loads(ci.CONFIG.read_text(encoding="utf-8"))
