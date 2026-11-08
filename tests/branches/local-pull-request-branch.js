@@ -130,7 +130,7 @@ async function run() {
   assert.equal(submittedInput.source, undefined, 'Do not attach a source from another Codex chat');
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /Could not copy the originating Codex chat/);
-  assert.match(warnings[0], /Continuing without the Codex conversation transcript/);
+  assert.match(warnings[0], /Continuing without its transcript and source links/);
 
   await assert.rejects(command({ rootUri }, {
     branch: 'main', base: 'main', remote: 'origin'
