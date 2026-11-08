@@ -30,8 +30,14 @@
       || document.querySelector(".scm-toolkit-composer-footer")
       || document.querySelector('[class*="ComposerLayoutFooter_"]');
     if (!footer || !footer.isConnected) return null;
-    const composer = footer.closest("[data-composer-body]") || footer.parentElement;
+    let composer = footer.closest("[data-composer-body]") || footer.parentElement;
     if (!composer) return null;
+    // The utility rail can be a sibling of the input surface.
+    while (!composer.querySelector('button[data-composer-navigation-target="run-location"]')
+      && composer.parentElement && composer.parentElement !== document.body
+      && composer.parentElement.querySelectorAll('[data-composer-body]').length <= 1) {
+      composer = composer.parentElement;
+    }
     const buttons = [...composer.querySelectorAll("button")];
     const find = predicate => buttons.find(predicate);
     const input = footer.querySelector('[class*="AdaptiveFooterInput_"]')
@@ -54,6 +60,7 @@
 
   function slot(node, footer) {
     if (!node) return null;
+    if (node.scmToolkitLayoutSlot?.parentElement === footer) return node.scmToolkitLayoutSlot;
     let candidate = node;
     while (candidate.parentElement && candidate.parentElement !== footer
       && footer.contains(candidate.parentElement)) candidate = candidate.parentElement;
@@ -102,6 +109,10 @@
       const shouldHide = hidden.has(id);
       if (target.classList.contains("scm-toolkit-layout-concealed") !== shouldHide) {
         target.classList.toggle("scm-toolkit-layout-concealed", shouldHide);
+      }
+      if (node.scmToolkitLayoutSlot === target
+        && node.classList.contains("scm-toolkit-layout-concealed") !== shouldHide) {
+        node.classList.toggle("scm-toolkit-layout-concealed", shouldHide);
       }
     }
   }
