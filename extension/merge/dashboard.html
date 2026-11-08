@@ -332,10 +332,11 @@ main{padding:20px 24px 32px}
 
 /* Full-window finish line; preserve the original dashboard for review. */
 #completion[hidden],#show-celebration[hidden]{display:none}
+#reset-completion-image[hidden],#completion-attribution[hidden]{display:none}
 body.celebrating .layout,body.celebrating #merge-progress{display:none}
 body.celebrating{
   background-color:#0b101a;
-  background-image:linear-gradient(180deg,rgba(5,8,18,.5),rgba(5,8,18,.2) 35%,rgba(5,8,18,.68)),url('__CELEBRATION_BACKGROUND__');
+  background-image:linear-gradient(180deg,rgba(5,8,18,.5),rgba(5,8,18,.2) 35%,rgba(5,8,18,.68)),var(--completion-image,url('__CELEBRATION_BACKGROUND__'));
   background-position:center center;
   background-size:cover;
   background-repeat:no-repeat;
@@ -404,7 +405,8 @@ body.celebrating .merge-header .pill{border-color:var(--merge-accent)}
     <h2 id="completion-title">Win</h2>
     <p id="completion-count" class="completion-count"></p>
     <div class="completion-actions"><button id="review-merges" class="action-primary">View merged PRs and activity timeline</button></div>
-    <p class="completion-attribution">Cannon artwork by <a href="https://x.com/fcolumnare/status/1952740544443998252" target="_blank" rel="noopener noreferrer">Cerberus</a>.</p>
+    <div class="completion-actions"><button id="choose-completion-image" class="secondary">Choose image…</button><button id="reset-completion-image" class="secondary" __ARTWORK_RESET_HIDDEN__>Use default image</button></div>
+    <p id="completion-attribution" class="completion-attribution" __ARTWORK_CREDIT_HIDDEN__>Cannon artwork by <a href="https://x.com/fcolumnare/status/1952740544443998252" target="_blank" rel="noopener noreferrer">Cerberus</a>.</p>
   </div>
 </section>
 <div class="layout">
@@ -928,6 +930,12 @@ __RATE_LIMIT_FORMATTER__
     renderDetail();
   }
   window.addEventListener('message', event => {
+    if (event.data?.type === 'completion-artwork') {
+      document.body.style.setProperty('--completion-image', 'url(' + JSON.stringify(event.data.uri) + ')');
+      byId('completion-attribution').hidden = event.data.custom;
+      byId('reset-completion-image').hidden = !event.data.custom;
+      return;
+    }
     if (event.data?.type !== 'state') return;
     const preferences = event.data.layoutPreferences;
     if (preferences && Number.isInteger(preferences.sidebar) && preferences.sidebar >= 15 && preferences.sidebar <= 75 &&
@@ -992,6 +1000,8 @@ __RATE_LIMIT_FORMATTER__
   });
   byId('refresh').addEventListener('click', () => dispatch('refresh'));
   byId('review-merges').addEventListener('click', () => { celebrationDismissed = true; render(); });
+  byId('choose-completion-image').addEventListener('click', () => dispatch('choose-completion-image'));
+  byId('reset-completion-image').addEventListener('click', () => dispatch('reset-completion-image'));
   byId('show-celebration').addEventListener('click', () => { celebrationDismissed = false; render(); });
   setInterval(refreshRelativeEventTimes, 30000);
   setInterval(() => {
