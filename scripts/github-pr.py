@@ -21,6 +21,8 @@ START = '\n/* sweetiebot-github-pr:start */\n'
 END = '\n/* sweetiebot-github-pr:end */\n'
 REFRESH_START = '\n/* sweetiebot-github-pr-refresh:start */\n'
 REFRESH_END = '\n/* sweetiebot-github-pr-refresh:end */\n'
+CHECKOUT_START = '\n/* sweetiebot-github-pr-checkout:start */\n'
+CHECKOUT_END = '\n/* sweetiebot-github-pr-checkout:end */\n'
 DESCRIPTION_START = '\n/* sweetiebot-github-pr-description:start */\n'
 DESCRIPTION_END = '\n/* sweetiebot-github-pr-description:end */\n'
 DESCRIPTION = re.compile(r'async updateItemNow\(([\w$]+)\)\{var ([\w$]+),([\w$]+),([\w$]+);this\._item=\1,')
@@ -162,6 +164,38 @@ def transform_description(source, remove=False):
     return source.replace(original, replacement, 1) + DESCRIPTION_START + '/* edit:' + json.dumps([original, replacement]) + ' */' + DESCRIPTION_END
 
 
+def transform_checkout(source, remove=False):
+    if source.count(CHECKOUT_START) != source.count(CHECKOUT_END) or source.count(CHECKOUT_START) > 1:
+        raise ValueError('Incomplete GitHub PR checkout patch; refusing to overwrite it.')
+    if CHECKOUT_START in source:
+        before, remainder = source.split(CHECKOUT_START)
+        metadata, after = remainder.split(CHECKOUT_END)
+        original, replacement = json.loads(metadata.removeprefix('/* edit:').removesuffix(' */'))
+        source = before + after
+        if source.count(replacement) != 1:
+            raise ValueError('GitHub PR checkout patch changed; refusing to overwrite it.')
+        source = source.replace(replacement, original, 1)
+    if remove:
+        return source
+    # Hook after GitHub has matched the PR's head repository to a local remote.
+    # Both the tree and the PR description use this shared checkout method.
+    pattern = re.compile(r'const ([\w$]+)=([\w$]+)\.head\.ref,([\w$]+)=([\w$]+)\.remoteName;let ([\w$]+),([\w$]+)=\1;')
+    matches = list(pattern.finditer(source))
+    methods = list(re.finditer(r'async fetchAndCheckout\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)', source))
+    vscode = re.search(r'([\w$]+)\.commands\.executeCommand\("pr\.pick"', source)
+    if len(matches) != 1 or len(methods) != 1 or not vscode:
+        raise ValueError('Unsupported GitHub PR checkout build: expected one matching anchor.')
+    match = matches[0]
+    if match.start() < methods[0].end():
+        raise ValueError('Unsupported GitHub PR checkout build: invalid method order.')
+    original = match.group()
+    prefix, suffix = original.split(';', 1)
+    replacement = (prefix + ';if(await ' + vscode[1] + '.commands.executeCommand('
+                   '"sweetiebot.checkoutBranchStrip",' + methods[0][1] + '.rootUri,'
+                   '{branch:' + match[1] + ',existingOnly:true}))return;' + suffix)
+    return source.replace(original, replacement, 1) + CHECKOUT_START + '/* edit:' + json.dumps([original, replacement]) + ' */' + CHECKOUT_END
+
+
 def patch_files(extension_path=None, remove=False):
     candidates = ([Path(extension_path)] if extension_path else
                   sorted((Path.home() / '.vscode/extensions').glob('github.vscode-pull-request-github-*')))
@@ -173,14 +207,14 @@ def patch_files(extension_path=None, remove=False):
             if not path.is_file():
                 continue
             old = path.read_text()
-            markers = (START, REFRESH_START, DESCRIPTION_START, github_pr_reactions.CSP_START, github_pr_reactions.WEBVIEW_START)
+            markers = (CHECKOUT_START, START, REFRESH_START, DESCRIPTION_START, github_pr_reactions.CSP_START, github_pr_reactions.WEBVIEW_START)
             if remove and not any(marker in old for marker in markers):
                 continue
             # Existing guarded patches must always unpatch cleanly. An unrelated
             # optional anchor in a newer build must not suppress tree commands.
             stripped = (github_pr_reactions.transform_csp(old, remove=True) if kind == 'host'
                         else github_pr_reactions.transform_webview(old, remove=True))
-            stripped = transform_description(transform_refresh(stripped, remove=True), remove=True) if kind == 'host' else stripped
+            stripped = transform_checkout(transform_description(transform_refresh(stripped, remove=True), remove=True), remove=True) if kind == 'host' else stripped
             try:
                 new = transform(stripped, kind, remove)
             except ValueError:
@@ -189,6 +223,12 @@ def patch_files(extension_path=None, remove=False):
                 print(f'Warning: unsupported GitHub PR {kind} cleanup in {path.name}; retaining independent tree and reaction repairs.')
                 new = stripped
             if kind == 'host' and not remove:
+                try:
+                    new = transform_checkout(new)
+                except ValueError:
+                    if CHECKOUT_START in old:
+                        raise
+                    print(f'Warning: unsupported GitHub PR checkout in {path.name}; skipping workspace routing.')
                 try:
                     new = transform_description(new)
                 except ValueError:

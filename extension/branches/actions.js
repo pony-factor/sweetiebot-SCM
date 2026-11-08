@@ -1578,6 +1578,7 @@ function registerBranchCommands(vscode, context) {
         return await queueRepositoryOperation(repository, async () => {
           await requireFinalizedCommit(repository, { background: false });
           if (await routeBranch(vscode, repository, options)) return options.branch;
+          if (options.existingOnly) return false;
           return checkoutBranchStrip(repository, {
             ...options,
             onOccupiedWorktree: destination =>
