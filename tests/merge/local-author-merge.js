@@ -10,7 +10,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
+  const signer={name:'Local Signer',email:'signer@example.test'};
   const bot={name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'};
+  const expectedSigner=appMode?bot:signer;
   const git=async(...args)=>(await run('git',['-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false',
     '-c','user.name='+author.name,'-c','user.email='+author.email,...args])).stdout.trim();
   const inWork=(...args)=>git('-C',work,...args);
@@ -22,9 +24,9 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       await run('ssh-keygen',['-q','-t','ed25519','-N','','-C',author.email,'-f',path.join(root,'signing_key')]);
       const publicKey=(await fs.readFile(path.join(root,'signing_key.pub'),'utf8')).trim();
       const allowed=path.join(root,'allowed_signers');
-      await fs.writeFile(allowed,author.email+' '+publicKey+'\n'+bot.email+' '+publicKey+'\n');
+      await fs.writeFile(allowed,[author.email,signer.email,bot.email].map(email=>email+' '+publicKey).join('\n')+'\n');
       const config=path.join(root,'gitconfig');
-      await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
+      await fs.writeFile(config,'[gpg]\n\tformat = ssh\n[gpg "ssh"]\n\tallowedSignersFile = '+allowed+'\n[user]\n\tname = '+signer.name+'\n\temail = '+signer.email+'\n\tsigningkey = '+path.join(root,'signing_key')+'\n');
     }
     // Isolate the fixture from the developer's global Git settings. Without
     // a signer, Lindsey may publish only an explicitly unsigned fallback.
@@ -95,6 +97,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     };
     let competing;
     const localGit=async(...args)=>{
+      if(!missingSigningKey && args.includes('config') && args.at(-1)==='user.name')return signer.name;
+      if(!missingSigningKey && args.includes('config') && args.at(-1)==='user.email')return signer.email;
       if(args[0]==='clone')args[3]=remote;
       if(args.includes('push')){
         pushes.push(args);
@@ -164,7 +168,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
             'Report GitHub verification independently of whether Git signed the commit');
           assert.equal(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),
             !missingSigningKey,'Only the missing-key fallback is unsigned');
-          if(!missingSigningKey) await inRemote('verify-commit',result.sha);
+          if(!missingSigningKey) {
+            await inRemote('verify-commit',result.sha);
+            assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),expectedSigner.name+' <'+expectedSigner.email+'>');
+          } else assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
+            author.name+' <'+author.email+'>','Unsigned fallback retains original committer');
         }
         await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
