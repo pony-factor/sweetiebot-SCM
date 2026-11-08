@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,removeRunner=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,removeRunner=false,runnerUnavailable=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -37,11 +37,14 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await git('init','--quiet','--initial-branch=main',work);
     await inWork('remote','add','origin',remote);
     await fs.writeFile(path.join(work,'file.txt'),'base\n');
-    if(removeRunner){
+    if(removeRunner||runnerUnavailable){
       await fs.mkdir(path.join(work,'scripts','ci'),{recursive:true});
-      await fs.writeFile(path.join(work,'scripts','ci','ci-test-runner.py'),'print("base runner")\n');
+      const script = runnerUnavailable
+        ? 'import sys\nsys.stderr.write("::error::Node process launch failed\\n")\nsys.exit(125)\n'
+        : 'print("base runner")\n';
+      await fs.writeFile(path.join(work,'scripts','ci','ci-test-runner.py'),script);
     }
-    await inWork('add','file.txt',...(removeRunner?['scripts/ci/ci-test-runner.py']:[]));
+    await inWork('add','file.txt',...(removeRunner||runnerUnavailable?['scripts/ci/ci-test-runner.py']:[]));
     await inWork('commit','--quiet','-m','Base');
     let baseSha=await inWork('rev-parse','HEAD');
     await inWork('checkout','--quiet','-b','feature');
@@ -159,11 +162,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(pushes.length,0,'Signed squash must not temporarily replace or roll back the PR head');
         assert.equal(await branch('main'),baseSha);
       }
-      else if(removeRunner){
+      else if(removeRunner||runnerUnavailable){
         assert.equal(result.merged,false);
-        assert.equal(result.status,'blocked');
-        assert.match(result.reason,/test runner was removed/);
-        assert.equal(pushes.length,0,'Removing the runner cannot bypass integrated checks');
+        assert.equal(result.status,removeRunner?'blocked':'checks_failed');
+        assert.match(result.reason,removeRunner?/test runner was removed/:/test infrastructure unavailable/);
+        assert.equal(pushes.length,0,'Failed or missing integrated tests cannot push');
         assert.equal(await branch('main'),baseSha);
       }
       else if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
@@ -216,5 +219,6 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,githubCannotVerifySignature:true});
  await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,missingSigningKey:true});
  await fixture({removeRunner:true});
+ await fixture({advanceBase:true,runnerUnavailable:true});
  console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
