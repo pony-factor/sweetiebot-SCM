@@ -193,7 +193,8 @@ function conversationSourceLinks(source) {
   return normalized.kind === 'codex' ? {
     online,
     local: codexConversationUrl(normalized.uuid),
-    desktop: normalized.desktopUrl,
+    // Local and Desktop address the same thread; native copy is optional.
+    desktop: normalized.desktopUrl || `codex://threads/${normalized.uuid}`,
   } : { online };
 }
 
