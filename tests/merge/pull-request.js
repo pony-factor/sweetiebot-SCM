@@ -192,8 +192,18 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
       return {merged:true,sha:'b'.repeat(40)};
     }});
     assert.equal(autoSignedResult.merged,true);
-    assert.equal(autoSignedOptions.requireSignedCommit,true,
-      'The default Kefania squash action honors local commit.gpgsign=true');
+    assert.equal(autoSignedOptions,undefined,
+      'Local signing configuration leaves a native human squash on its requested route');
+    let botSigningOptions;
+    await squashMergePullRequest(input,signedBotTransport,{
+      repositoryPath:signingRepo,humanMerge:async(repository,number,options)=>{
+        botSigningOptions=options;
+        return {merged:true,sha:'b'.repeat(40)};
+      }
+    });
+    assert.equal(botSigningOptions.requireSignedCommit,false,
+      'A bot-opened PR with commit signing enabled keeps the non-rewriting integration route');
+    assert.equal(botSigningOptions.allowHistoryRewrite,false);
   } finally { await fs.rm(signingRepo,{recursive:true,force:true}); }
   // A human opener differing from the original author uses the same local path.
   let differentAuthorPrepared = false;

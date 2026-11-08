@@ -269,6 +269,9 @@ async function humanSquashMerge(repository, number, {
     }
     if (liveBase !== baseSha) throw refreshBase();
     const finishSignedSquash = async finalTree => {
+      if (!rewriteApproved) return { merged: false, status: 'blocked', number,
+        headSha: originalSha, base, baseSha,
+        reason: 'A locally signed squash would rewrite the PR branch. No history rewrite was authorized; use the normal squash action or a merge that preserves the PR history.' };
       if (operation !== 'merge' || resolutionPatch !== null || conflicts.length) {
         throw Error('A signed squash requires a clean, conflict-free PR merge.');
       }

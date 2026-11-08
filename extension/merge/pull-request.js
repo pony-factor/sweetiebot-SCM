@@ -74,9 +74,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath, onProgress = () => {},
     getAppActor = configuredMergeActor } = {}) {
   if (!['squash', 'merge', 'local-signed-squash'].includes(method)) throw new Error('Unknown merge method.');
-  if (method === 'squash' && repositoryPath && await gitCommitSigningEnabled(repositoryPath)) {
-    method = 'local-signed-squash';
-  }
+  // Git signing preferences do not authorize rewriting a selected PR branch.
+  // Keep the requested squash route; local integration still attempts signing.
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||

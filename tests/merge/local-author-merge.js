@@ -142,20 +142,21 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(pushes.length,1);
         return;
       }
-      if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
+      if(requireSignedCommit) {
+        assert.equal(result.merged,false);
+        assert.equal(result.status,'blocked');
+        assert.match(result.reason,/No history rewrite was authorized/);
+        assert.equal(pushes.length,0,'Signed squash must not temporarily replace or roll back the PR head');
+        assert.equal(await branch('main'),baseSha);
+      }
+      else if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
         assert.equal(result.merged,true,JSON.stringify(result));
-        if(requireSignedCommit) assert.equal(result.method,'local-signed-squash');
-        else if(!humanOpener) assert.equal(result.method,'local-git');
-        assert.equal(pushes.length,requireSignedCommit?2:humanOpener?0:1,
+        if(!humanOpener) assert.equal(result.method,'local-git');
+        assert.equal(pushes.length,humanOpener?0:1,
           'Automatic integration must push the destination only');
         assert.equal(await inRemote('rev-parse',result.sha+'^1'),baseSha);
-        if(requireSignedCommit) {
-          assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha,'A signed squash has only the base as its parent');
-          assert(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),'The published squash carries a real SSH signature');
-          await inRemote('verify-commit',result.sha);
-          assert.equal(await branch('feature'),result.sha,'The PR head is moved to the signed squash commit before the base fast-forward');
-        } else if(!humanOpener) {
+        if(!humanOpener) {
           assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
           assert.equal(result.signed,!missingSigningKey,
             'Lindsey signs when possible and falls back when the signing key is missing');
@@ -165,7 +166,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
             !missingSigningKey,'Only the missing-key fallback is unsigned');
           if(!missingSigningKey) await inRemote('verify-commit',result.sha);
         }
-        if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
+        await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
         assert.equal(await inRemote('show','-s','--format=%an',result.sha),appMode&&!requireSignedCommit&&!humanOpener?bot.name:author.name);
@@ -176,7 +177,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         }
       }
     }
-    if(!requireSignedCommit)assert.equal(await branch('feature'),headSha,
+    assert.equal(await branch('feature'),headSha,
       'The original PR head stays untouched even when main advances or conflicts exist');
   } finally {
     if(oldGlobalConfig===undefined) delete process.env.GIT_CONFIG_GLOBAL;
@@ -191,5 +192,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  await fixture({appMode:true,advanceBase:true,conflict:true});
  await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true});
  await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
+ await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,githubCannotVerifySignature:true});
+ await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,missingSigningKey:true});
  console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
