@@ -116,6 +116,27 @@ assert(result.message.startsWith('- 🐛 Fix'));
                                                 {"PATH": ""}),
                              ["/opt/homebrew/bin/node", "--check", "example.js"])
 
+    def test_python_and_node_descendants_inherit_discovered_node(self):
+        node = ci.resolve_command(["node"], os.environ)[0]
+        with TemporaryDirectory() as temporary:
+            fallback = Path(temporary) / "node"
+            fallback.symlink_to(node)
+            env = {**os.environ, "PATH": os.defpath,
+                   "CI_FIXTURE_CONTEXT": "preserved"}
+            original_env = env.copy()
+            javascript = """
+const assert = require('node:assert/strict');
+assert.equal(process.env.CI_FIXTURE_CONTEXT, 'preserved');
+require('node:child_process').execFileSync('node', ['--check'], {input: 'const valid = 1;'});
+"""
+            python = ("import subprocess; subprocess.run("
+                      + repr(["node", "-e", javascript]) + ", check=True)")
+            # Simulate discovery outside the GUI PATH while exercising real
+            # Python -> Node -> Node subprocesses.
+            with patch.object(ci.shutil, "which", return_value=str(fallback)):
+                self.assertEqual(ci.execute([sys.executable, "-c", python], env), 0)
+            self.assertEqual(env, original_env)
+
     def test_commit_button_browser_regression_has_one_owner(self):
         manifest = json.loads(ci.CONFIG.read_text(encoding="utf-8"))
         owners = [name for name, group in manifest["groups"].items()

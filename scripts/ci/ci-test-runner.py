@@ -121,6 +121,15 @@ def execute(command, env=None):
     # formatting preferences must not change fixtures or trigger live auth.
     test_env = dict(os.environ if env is None else env)
     test_env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    # Python regressions and JavaScript helpers also spawn `node` by name.
+    # Propagate the GUI-path fallback to every descendant, not just direct
+    # Node commands launched by this runner.
+    node = resolve_command(["node"], test_env)[0]
+    if os.path.isabs(node):
+        entries = test_env.get("PATH", "").split(os.pathsep)
+        directory = str(Path(node).parent)
+        if directory not in entries:
+            test_env["PATH"] = os.pathsep.join([directory, *entries])
     resolved = resolve_command(command, test_env)
     # Concurrent Lindsey integrations can briefly exhaust macOS process slots
     # or open descriptors. Retry only transient OS launch failures, never
