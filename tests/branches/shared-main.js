@@ -278,6 +278,25 @@ async function openedRoot(result) {
     assert.equal(git('-C', moved, 'status', '--porcelain'), '', 'Topic-to-topic handoff also moves pending edits');
 
     assert(!moving.commands.calls.some(call => call[0] === 'vscode.openFolder'));
+    // Topic-only committed files can carry pending edits to main without
+    // copying the topic's other commits or automatically staging those files.
+    git('-C', moved, 'switch', '-c', 'topic-only-files');
+    await fs.writeFile(path.join(moved, 'topic-only.txt'), 'topic preimage\n');
+    await fs.writeFile(path.join(moved, 'unrelated-topic.txt'), 'leave behind\n');
+    git('-C', moved, 'add', 'topic-only.txt', 'unrelated-topic.txt');
+    git('-C', moved, 'commit', '-m', 'Topic fixture');
+    await fs.appendFile(path.join(moved, 'topic-only.txt'), 'pending edit\n');
+    const missingEditor = editor(moved);
+    await routeBranch(missingEditor, { rootUri: { fsPath: moved } },
+      { ...options, branch: 'missing-preimage', create: true, start: 'main' });
+    const missing = await openedRoot({ target: missingEditor.commands.calls.at(-1)[1].fsPath });
+    assert.equal(await fs.readFile(path.join(missing, 'topic-only.txt'), 'utf8'), 'topic preimage\npending edit\n');
+    assert.equal(git('-C', missing, 'diff', '--cached'), '');
+    assert.equal(git('-C', missing, 'rev-parse', 'HEAD'), git('-C', root, 'rev-parse', 'main'));
+    await assert.rejects(fs.stat(path.join(missing, 'unrelated-topic.txt')), { code: 'ENOENT' });
+    assert.equal(git('-C', moved, 'status', '--porcelain'), '');
+    git('-C', moved, 'switch', 'moving-task');
+
     const forkScript = path.join(temporary, 'fork_fixture.py');
     await fs.writeFile(forkScript, [
       'import subprocess, sys',

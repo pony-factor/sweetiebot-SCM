@@ -208,7 +208,31 @@ async function backupPendingFiles(root, directory, snapshot) {
   return recovery;
 }
 
+// A dirty file may have been committed only on the source topic. Seed its
+// preimage when main has no such path, so its pending edit can travel alone.
+async function seedMissingPreimages(root, destination, snapshot) {
+  if (!snapshot.tracked.length) return;
+  const staged = new Set((await exec('git', ['-C', root, 'diff', '--cached', '--name-only', '-z', 'HEAD', '--'])).stdout.split('\0').filter(Boolean));
+  for (const name of snapshot.tracked) {
+    const source = (await exec('git', ['-C', root, 'ls-tree', '-z', snapshot.head, '--', name])).stdout;
+    if (!source) continue; // A newly added file already has an addition patch.
+    const target = (await exec('git', ['-C', destination, 'ls-tree', '-z', 'HEAD', '--', name])).stdout;
+    if (target) continue;
+    const match = /^(100644|100755) blob ([0-9a-f]+)\t/.exec(source);
+    if (!match) throw new Error('Cannot transfer a missing non-regular tracked file; source files were preserved.');
+    const file = path.resolve(destination, name);
+    if (!inside(destination, file)) throw new Error('Invalid tracked path during checkout handoff.');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const { stdout } = await exec('git', ['-C', root, 'cat-file', 'blob', match[2]],
+      { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
+    await fs.writeFile(file, stdout, { flag: 'wx', mode: match[1] === '100755' ? 0o755 : 0o644 });
+    // Only paths already staged by the user get a staged preimage.
+    if (staged.has(name)) await exec('git', ['-C', destination, 'update-index', '--add', '--cacheinfo', match[1], match[2], name]);
+  }
+}
+
 async function copyPendingFiles(root, destination, directory, snapshot) {
+  await seedMissingPreimages(root, destination, snapshot);
   for (const { name } of snapshot.files) {
     if (await fs.lstat(path.join(destination, name)).then(() => true, error => {
       if (error.code === 'ENOENT') return false;
