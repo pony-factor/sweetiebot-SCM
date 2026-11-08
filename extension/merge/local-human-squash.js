@@ -604,10 +604,8 @@ async function humanSquashMerge(repository, number, {
       if (conflicts.length && !trailer) {
         throw Error('Model-authored conflict decisions require the active coding model number.');
       }
-      let mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
+      const mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
         ? preparedMessage.trimEnd() + '\n\n' + trailer : preparedMessage;
-      const humanCredit = `Co-authored-by: ${author.name} <${author.email}>`;
-      if (automationAuthor && !mergeMessage.split('\n').includes(humanCredit)) mergeMessage += '\n\n' + humanCredit;
       return require('./local-author-merge').localAuthorMerge({
       repository, number, original, headSha: sha, baseSha, tree: finalTree, author,
       automationAuthor,

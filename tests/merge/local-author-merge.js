@@ -173,15 +173,18 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
             await inRemote('verify-commit',result.sha);
             assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),expectedSigner.name+' <'+expectedSigner.email+'>');
           } else assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
-            author.name+' <'+author.email+'>','Unsigned fallback retains original committer');
+            (appMode?bot:author).name+' <'+(appMode?bot:author).email+'>','Unsigned fallback retains the selected committer');
         }
         if(!requireSignedCommit) await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
-        assert.equal(await inRemote('show','-s','--format=%an',result.sha),appMode&&!requireSignedCommit&&!humanOpener?bot.name:author.name);
+        assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
         if(appMode) {
           assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),`${bot.name} <${bot.email}>`);
-          if(!requireSignedCommit&&!humanOpener)assert((await inRemote('show','-s','--format=%B',result.sha)).includes(`Co-authored-by: ${author.name} <${author.email}>`));
+          assert.deepEqual(result.author,author,'Merge reports the verified human author');
+          const message=await inRemote('show','-s','--format=%B',result.sha);
+          assert(!message.includes(`Co-authored-by: ${author.name} <${author.email}>`),'The primary author needs no duplicate co-author trailer');
+          assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'),'Retain original assistant credit');
           assert.equal(await inRemote('show','-s','--format=%an',headSha),author.name,'Original human commits remain unchanged');
         }
       }
@@ -198,6 +201,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
  await fixture({appMode:true});
+ await fixture({appMode:true,missingSigningKey:true});
  await fixture({appMode:true,advanceBase:true,conflict:true});
  await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true});
  await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
