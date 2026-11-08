@@ -294,7 +294,7 @@ async function readOptionalCodexConversation(vscode) {
       }
     } catch (error) {
       void vscode.window.showWarningMessage(
-        'Could not copy the originating Codex chat Markdown: ' + error.message
+        '⚠️ Could not copy the originating Codex chat Markdown: ' + error.message
         + ' Continuing with the native deeplink and eligible Share step.'
       );
       markdown = undefined;
@@ -307,7 +307,7 @@ async function readOptionalCodexConversation(vscode) {
       }
     } catch (error) {
       void vscode.window.showWarningMessage(
-        'Could not copy the originating Codex deeplink: ' + error.message
+        '⚠️ Could not copy the originating Codex deeplink: ' + error.message
         + ' Continuing with the available transcript and eligible Share step.'
       );
       deeplink = undefined;
@@ -320,7 +320,7 @@ async function readOptionalCodexConversation(vscode) {
     return { source, text, ...(model ? { model } : {}) };
   } catch (error) {
     void vscode.window.showWarningMessage(
-      'Could not identify the originating Codex chat: ' + error.message
+      '⚠️ Could not identify the originating Codex chat: ' + error.message
       + ' Continuing without its transcript and source links.'
     );
     return undefined;
@@ -694,7 +694,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       }
       source = { ...source, sharedUrl: shared.sharedUrl };
       } catch (error) {
-        void vscode.window.showWarningMessage('The chat could not be shared. Kefania will continue with the captured conversation and local chat link. ' + error.message);
+        void vscode.window.showWarningMessage('⚠️ The chat could not be shared. Kefania will continue with the captured conversation and local chat link. ' + error.message);
       }
     }
 
