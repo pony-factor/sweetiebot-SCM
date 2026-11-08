@@ -66,8 +66,8 @@ async function syncPublisher(root, remote, { enabled = separateAppsEnabled, tran
   const repo = githubRepository(url);
   if (!repo) throw Error('Lindsey sync requires a GitHub publishing remote.');
   const auth = transport(repo);
-  await auth.gitToken(); // Fail before creating a commit when App setup is invalid.
-  const author = await identity();
+  const token = await auth.gitToken(); // Fail before creating a commit when App setup is invalid.
+  const author = await identity({ token });
   const publish = async (branch, sha) => {
     const token = await auth.gitToken();
     const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
