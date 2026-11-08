@@ -1453,6 +1453,8 @@ class BackgroundCommitTests(unittest.TestCase):
 import sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
+import importaliases
+importaliases.install()
 import background_commit as worker
 def generate(*args, **kwargs):
     Path(sys.argv[3]).touch()
@@ -1910,6 +1912,8 @@ worker.work(Path(sys.argv[2]))
 import sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
+import importaliases
+importaliases.install()
 import background_commit as worker
 calls = 0
 def generate(*args, **kwargs):
@@ -1952,6 +1956,8 @@ worker.resume(parallel=False)
 import sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
+import importaliases
+importaliases.install()
 import background_commit as worker
 calls = 0
 def generate(*args, **kwargs):
@@ -2064,6 +2070,8 @@ worker.resume(parallel=False)
 import sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
+import importaliases
+importaliases.install()
 import background_commit as worker
 directory, signals = Path(sys.argv[2]), Path(sys.argv[3])
 def generate(*args, **kwargs):
