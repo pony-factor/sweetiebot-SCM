@@ -28,10 +28,18 @@ async function prepareCodexHandoff(vscode, from) {
   if (!extension) return null;
   await extension.activate();
   const commands = await vscode.commands.getCommands(true);
-  if (commands.includes('sweetiebot.cancelCodexCapture')) {
-    await vscode.commands.executeCommand('sweetiebot.cancelCodexCapture');
-  } else if (commands.includes('sweetiebot.cancelCodexShare')) {
-    await vscode.commands.executeCommand('sweetiebot.cancelCodexShare');
+  const cancelCommand = commands.includes('sweetiebot.cancelCodexCapture')
+    ? 'sweetiebot.cancelCodexCapture'
+    : commands.includes('sweetiebot.cancelCodexShare') ? 'sweetiebot.cancelCodexShare' : null;
+  if (cancelCommand) {
+    try {
+      await vscode.commands.executeCommand(cancelCommand);
+    } catch (error) {
+      // A failed transcript-copy cleanup must not veto a Git branch change.
+      // Continue with the independent chat-ID and draft handoff below.
+      void vscode.window?.showWarningMessage?.(
+        'Codex copy cleanup was incomplete; continuing the branch switch. ' + error.message);
+    }
   }
   if (!commands.includes('sweetiebot.codex.prepareWorkspaceHandoff')) {
     throw new Error('Reload this window before switching checkouts so the same Codex chat can follow the branch.');
