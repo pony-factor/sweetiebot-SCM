@@ -28,6 +28,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = Path(__file__).resolve().with_name("ci-test-groups.json")
+EXECUTION_UNAVAILABLE = 125  # Distinguish a failed spawn from a failed test.
 
 
 def inventory(verbose=False):
@@ -137,12 +138,22 @@ def execute(command, env=None):
             else:
                 detail = f"Could not launch {command[0]}: {error}."
             print(f"::error::{detail}", file=sys.stderr)
-            return 1
+            return EXECUTION_UNAVAILABLE
 
 
 def run_group(name, spec):
     print(f"Running {spec['label']} ({len(spec['tests'])} test files)", flush=True)
     failures = 0
+
+    def checked_execute(command, failure_message):
+        result = execute(command)
+        if result == EXECUTION_UNAVAILABLE:
+            print(f"::error::{name}: Test execution unavailable; aborting without claiming a regression failure.",
+                  file=sys.stderr)
+            raise SystemExit(EXECUTION_UNAVAILABLE)
+        if result:
+            print(failure_message, file=sys.stderr)
+        return bool(result)
     python_tests = [item for item in spec["tests"] if item.endswith(".py")]
     javascript_tests = [item for item in spec["tests"] if item.endswith(".js")]
     python_syntax = [item for item in spec.get("syntax", []) if item.endswith(".py")]
@@ -154,23 +165,19 @@ def run_group(name, spec):
             print(f"::error file={file}::{error}", file=sys.stderr)
             failures += 1
     for file in [*(f"tests/{item}" for item in javascript_tests), *js_syntax]:
-        if execute(["node", "--check", file]):
-            print(f"::error file={file}::JavaScript syntax check failed", file=sys.stderr)
-            failures += 1
+        failures += checked_execute(["node", "--check", file],
+                                    f"::error file={file}::JavaScript syntax check failed")
     if python_tests:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(
             [str(ROOT / "scripts"), str(ROOT / "tests"), env.get("PYTHONPATH", "")]
         )
         modules = [f"tests.{Path(item).with_suffix('').as_posix().replace('/', '.')}" for item in python_tests]
-        if execute([sys.executable, "-m", "unittest", "-v", *modules], env):
-            print(f"::error::{name} Python regressions failed", file=sys.stderr)
-            failures += 1
+        failures += checked_execute([sys.executable, "-m", "unittest", "-v", *modules],
+                                    f"::error::{name} Python regressions failed")
     for file in javascript_tests:
-        if execute(["node", f"tests/{file}"]):
-            print(f"::error file=tests/{file}::JavaScript regression test failed",
-                  file=sys.stderr)
-            failures += 1
+        failures += checked_execute(["node", f"tests/{file}"],
+                                    f"::error file=tests/{file}::JavaScript regression test failed")
     if failures:
         print(f"::error::{name}: {failures} test or syntax failures", file=sys.stderr)
         raise SystemExit(1)
