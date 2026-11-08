@@ -166,6 +166,14 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         };
     };
 
+    // Shared sanitization for a Markdown-only export and the legacy combined export.
+    const cleanExport = value => String(value || '')
+        .replace(/^<details><summary>\d+ previous messages?<\/summary>[\s\S]*?^<\/details>/gm,
+            '[Tool activity omitted from drafting context.]')
+        .replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi,
+            'attachment:image-data-omitted')
+        .trim();
+
     provider.handleMessage = function(webview, message) {
         if (message?.type === 'scm-toolkit-read-resume-setting') {
             void sendResumeSetting(webview);
@@ -221,9 +229,11 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 request.copying = true;
                 void (async () => {
                     if (!uuid.test(message.conversationId || '') ||
-                        (request.threadId && request.threadId !== message.conversationId))
+                        (request.threadId && request.threadId !== message.conversationId) ||
+                        (request.expectedThreadId && request.expectedThreadId !== message.conversationId))
                         throw new Error('The active Codex chat changed during capture.');
-                    const expected = request.text === undefined ? 'markdown' : 'deeplink';
+                    const expected = request.copyMode === 'deeplink'
+                        ? 'deeplink' : request.text === undefined ? 'markdown' : 'deeplink';
                     if (message.nativeCopy !== expected) throw new Error('Unexpected Codex copy response.');
                     const until = Date.now() + 15000;
                     let value;
@@ -237,6 +247,14 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     if (expected === 'markdown') {
                         request.text = value;
                         request.threadId = message.conversationId;
+                        if (request.copyMode === 'markdown') {
+                            pending.delete(message.id);
+                            clearTimeout(request.timeout);
+                            await vscode.env.clipboard.writeText(request.clipboard);
+                            request.resolve({ text: cleanExport(request.text),
+                                source: sourceFor(request.threadId), model: message.model });
+                            return;
+                        }
                         request.marker = crypto.randomUUID();
                         await vscode.env.clipboard.writeText(request.marker);
                         if (pending.get(message.id) !== request) return;
@@ -247,7 +265,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     }
                     const link = new URL(value.trim());
                     if (link.protocol !== 'codex:' || link.hostname !== 'threads' ||
-                        link.pathname !== '/' + request.threadId || link.username || link.password || link.port || link.hash)
+                        link.pathname !== '/' + (request.threadId || message.conversationId) ||
+                        link.username || link.password || link.port || link.hash)
                         throw new Error('Codex did not copy a deeplink for the originating chat.');
                     pending.delete(message.id);
                     clearTimeout(request.timeout);
@@ -255,14 +274,11 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     // Native Markdown includes tool activity and inline image data.
                     // Remove those before transport bounding so actual user turns
                     // and assistant replies are not displaced by binary payloads.
-                    const text = request.text
-                        .replace(/^<details><summary>\d+ previous messages?<\/summary>[\s\S]*?^<\/details>/gm,
-                            '[Tool activity omitted from drafting context.]')
-                        .replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi,
-                            'attachment:image-data-omitted')
-                        .trim();
-                    request.resolve(request.includeSource ? { text,
-                        source: { ...sourceFor(request.threadId), desktopUrl: value.trim() }, model: message.model } : text);
+                    const text = cleanExport(request.text);
+                    const source = { ...sourceFor(request.threadId || message.conversationId),
+                        desktopUrl: value.trim() };
+                    request.resolve(request.copyMode === 'deeplink' ? { source, model: message.model }
+                        : request.includeSource ? { text, source, model: message.model } : text);
                 })().catch(async error => {
                     if (pending.get(message.id) !== request) return;
                     pending.delete(message.id);
@@ -357,7 +373,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker, composerFocus) => {
+    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker, composerFocus, copyMode = 'combined', expectedThreadId) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -387,11 +403,12 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                     : 'Codex text capture timed out. Reopen this window after installing the toolkit.'));
                 if (clipboard !== undefined) void vscode.env.clipboard.writeText(clipboard);
             }, shareOnly ? 155000 : (identityOnly || modelOnly || reloadState || composerFocus) ? 5000 : 45000);
-            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, marker: clipboardMarker, composerFocus });
+            pending.set(id, { webview, resolve, reject, timeout, includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, marker: clipboardMarker, composerFocus, copyMode, expectedThreadId });
             const allowHidden = !activePanel && !sidebars.some(view => view.webview === webview && view.visible);
             const type = identityOnly ? 'scm-toolkit-chat-identity-request'
                 : composerFocus ? 'scm-toolkit-composer-focus-request' : 'scm-toolkit-context-request';
-            webview.postMessage({ type, id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState, composerFocus }).then(sent => {
+            webview.postMessage({ type, id, identityOnly, modelOnly, allowHidden, shareOnly, reloadState,
+                composerFocus, copyDeepLink: copyMode === 'deeplink', expectedThreadId }).then(sent => {
                 if (!sent && pending.has(id)) {
                     clearTimeout(timeout);
                     pending.delete(id);
@@ -407,8 +424,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
 
     let copyQueue = Promise.resolve();
     let captureGeneration = 0;
-    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, composerFocus) => {
-        if (identityOnly || modelOnly || reloadState || composerFocus) return captureRaw(includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, undefined, composerFocus);
+    const capture = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, composerFocus, copyMode = 'combined', expectedThreadId) => {
+        if (identityOnly || modelOnly || reloadState || composerFocus) return captureRaw(includeSource, identityOnly, modelOnly, shareOnly, clipboard, reloadState, undefined, composerFocus, copyMode, expectedThreadId);
         const generation = captureGeneration;
         const result = copyQueue.then(async () => {
             if (generation !== captureGeneration) throw new Error('Codex capture stopped because the checkout is changing.');
@@ -421,7 +438,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
                 const marker = crypto.randomUUID();
                 if (generation !== captureGeneration) throw new Error('Codex capture stopped because the checkout is changing.');
                 await vscode.env.clipboard.writeText(marker);
-                return await captureRaw(includeSource, false, false, shareOnly, saved, false, marker);
+                return await captureRaw(includeSource, false, false, shareOnly, saved, false, marker,
+                    undefined, copyMode, expectedThreadId);
             } finally {
                 try { await snapshot?.restore(); }
                 finally {
@@ -442,6 +460,15 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
     const sourceCommand = vscode.commands.registerCommand(
         'sweetiebot.readCodexConversation',
         () => capture(true)
+    );
+    // New PR provenance captures must not depend on one another succeeding.
+    const markdownCommand = vscode.commands.registerCommand(
+        'sweetiebot.readCodexMarkdown',
+        threadId => capture(true, false, false, false, undefined, false, undefined, 'markdown', threadId)
+    );
+    const deeplinkCommand = vscode.commands.registerCommand(
+        'sweetiebot.readCodexDeeplink',
+        threadId => capture(true, false, false, false, undefined, false, undefined, 'deeplink', threadId)
     );
     const reloadCommand = vscode.commands.registerCommand(
         'sweetiebot.preserveCodexConversation',
@@ -492,6 +519,8 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         ++captureGeneration;
         textCommand.dispose();
         sourceCommand.dispose();
+        markdownCommand.dispose();
+        deeplinkCommand.dispose();
         reloadCommand.dispose();
         identityCommand.dispose();
         focusCommand.dispose();
