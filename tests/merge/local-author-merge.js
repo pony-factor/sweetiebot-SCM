@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,removeRunner=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -37,12 +37,18 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await git('init','--quiet','--initial-branch=main',work);
     await inWork('remote','add','origin',remote);
     await fs.writeFile(path.join(work,'file.txt'),'base\n');
-    await inWork('add','file.txt');await inWork('commit','--quiet','-m','Base');
+    if(removeRunner){
+      await fs.mkdir(path.join(work,'scripts','ci'),{recursive:true});
+      await fs.writeFile(path.join(work,'scripts','ci','ci-test-runner.py'),'print("base runner")\n');
+    }
+    await inWork('add','file.txt',...(removeRunner?['scripts/ci/ci-test-runner.py']:[]));
+    await inWork('commit','--quiet','-m','Base');
     let baseSha=await inWork('rev-parse','HEAD');
     await inWork('checkout','--quiet','-b','feature');
     const commits=[];
     for(const [index,text] of ['first feature\n','finished feature\n'].entries()) {
       await fs.writeFile(path.join(work,'file.txt'),text);
+      if(removeRunner&&index===0)await fs.rm(path.join(work,'scripts','ci','ci-test-runner.py'));
       await inWork('commit','--quiet','-am','✨ Feature step '+index+'\n\nCo-authored-by: Codex <noreply@openai.com>');
       const sha=await inWork('rev-parse','HEAD');
       commits.push({sha,author:{type:'User',login:'human'},commit:{author,message:await inWork('show','-s','--format=%B',sha)}});
@@ -153,6 +159,13 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(pushes.length,0,'Signed squash must not temporarily replace or roll back the PR head');
         assert.equal(await branch('main'),baseSha);
       }
+      else if(removeRunner){
+        assert.equal(result.merged,false);
+        assert.equal(result.status,'blocked');
+        assert.match(result.reason,/test runner was removed/);
+        assert.equal(pushes.length,0,'Removing the runner cannot bypass integrated checks');
+        assert.equal(await branch('main'),baseSha);
+      }
       else if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
       else {
         assert.equal(result.merged,true,JSON.stringify(result));
@@ -202,5 +215,6 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
  await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,githubCannotVerifySignature:true});
  await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,missingSigningKey:true});
+ await fixture({removeRunner:true});
  console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
