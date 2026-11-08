@@ -7,7 +7,7 @@
 <title>Lindsey merge progress</title>
 <style>
 __MERGE_HEADER_CSS__
-:root{color-scheme:light dark;--merge-complete-color:#ac11ff}
+:root{color-scheme:light dark;--merge-complete-color:#ac11ff;--merge-accent:var(--vscode-focusBorder,var(--vscode-button-background,#468cdb));--merge-border:var(--merge-accent)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground);font:13px/1.5 var(--vscode-font-family,system-ui)}
 button{font:inherit;cursor:pointer;color:inherit}
@@ -199,7 +199,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .github-post-menu[open] .github-post-trigger{border-color:var(--vscode-focusBorder,#468cdb)}
 .github-post-chevron{width:12px;height:12px;flex:none;transition:transform 120ms ease}
 .github-post-menu[open] .github-post-chevron{transform:rotate(180deg)}
-.github-post-count{padding:1px 7px;border-radius:999px;font-size:11px;background:var(--vscode-badge-background,var(--vscode-input-background));color:var(--vscode-badge-foreground,var(--vscode-descriptionForeground))}
+.github-post-count{padding:1px 7px;border-radius:999px;font-size:11px;background:var(--merge-accent);color:var(--vscode-button-foreground,#fff)}
 .github-post-options{position:absolute;top:calc(100% + 6px);right:0;z-index:20;display:flex;flex-direction:column;gap:2px;min-width:205px;padding:6px;border:1px solid var(--merge-border);border-radius:10px;background:var(--merge-surface);box-shadow:0 8px 24px rgba(0,0,0,.22)}
 .github-post-options .toolbar-option{display:flex;width:100%;min-height:34px;padding:6px 8px;border-radius:7px}
 .github-post-options .toolbar-option:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.12))}
@@ -217,8 +217,8 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
   transition:transform 120ms ease
 }
 .overview input[type="checkbox"]:checked{
-  background:var(--vscode-checkbox-selectBackground,var(--vscode-button-background,#8034de));
-  border-color:var(--vscode-checkbox-selectBorder,var(--vscode-button-background,#8034de))
+  background:var(--merge-accent);
+  border-color:var(--merge-accent);color:var(--vscode-button-foreground,#fff)
 }
 .overview input[type="checkbox"]:checked::after{transform:translateY(-1px) rotate(-45deg) scale(1)}
 .overview input[type="checkbox"]:focus-visible,
@@ -234,14 +234,14 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
   display:inline-flex;align-items:center;gap:10px;margin-left:auto;
   padding:6px 12px;min-height:30px;max-width:100%;
   color:var(--vscode-foreground);font-size:12px;font-weight:600;
-  line-height:1.4;border-color:color-mix(in srgb,var(--merge-success) 45%,var(--merge-border));
-  background:color-mix(in srgb,var(--merge-success) 7%,var(--merge-surface));
+  line-height:1.4;border-color:color-mix(in srgb,var(--merge-accent) 45%,var(--merge-border));
+  background:color-mix(in srgb,var(--merge-accent) 7%,var(--merge-surface));
   white-space:normal
 }
 #progress::before{
   content:"";display:block;flex:0 0 4px;width:4px;height:14px;
-  border-radius:2px;background:var(--merge-success);
-  box-shadow:6px 0 0 -1px var(--merge-success),12px -3px 0 -1px var(--merge-success);
+  border-radius:2px;background:var(--merge-accent);
+  box-shadow:6px 0 0 -1px var(--merge-accent),12px -3px 0 -1px var(--merge-accent);
   margin-right:10px
 }
 .refresh-icon{
@@ -344,19 +344,19 @@ body.celebrating{
 }
 body.celebrating .merge-header{
   color:#fff;background:rgba(5,8,18,.42);
-  border-bottom-color:rgba(255,255,255,.3);backdrop-filter:blur(5px);
+  border-bottom-color:var(--merge-accent);backdrop-filter:blur(5px);
 }
 body.celebrating .merge-header .muted,
 body.celebrating .merge-header .refresh-icon,
 body.celebrating .merge-header .merge-worker{color:rgba(255,255,255,.92)}
-body.celebrating .merge-header .pill{border-color:rgba(255,255,255,.5)}
+body.celebrating .merge-header .pill{border-color:var(--merge-accent)}
 .completion{
   flex:1;min-height:0;overflow:auto;display:grid;place-items:center;
   padding:24px 20px 48px;background:transparent;
 }
 .completion-card{
   position:relative;isolation:isolate;width:min(100%,720px);padding:38px 36px;
-  border:1px solid rgba(255,255,255,.42);border-radius:24px;
+  border:1px solid var(--merge-accent);border-radius:24px;
   background:rgba(5,10,25,.46);box-shadow:0 18px 64px rgba(0,0,0,.32);
   color:#fff;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.8);
 }
