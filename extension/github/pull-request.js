@@ -583,10 +583,18 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     let conversationContext = typeof options.conversationContext === 'string' ? options.conversationContext : '';
     let conversationModel = options.conversationModel;
     if (!source && typeof options.conversationContext !== 'string') {
-      const codex = await readCodexConversation(vscode);
-      source = codex?.source;
-      conversationContext = codex?.text || '';
-      conversationModel = codex?.model;
+      try {
+        const codex = await readCodexConversation(vscode);
+        source = codex?.source;
+        conversationContext = codex?.text || '';
+        conversationModel = codex?.model;
+      } catch (error) {
+        // New Branch may cancel a pending export. Provenance is optional for
+        // drafting: use verified branch evidence, never a different chat.
+        void vscode.window.showWarningMessage(
+          'Could not copy the originating Codex chat. PR drafting will continue without its transcript. '
+            + error.message);
+      }
     }
     // Sharing publishes a public snapshot of the active Codex conversation.
     // Never invoke native Share or reuse cached public links without opt-in.
