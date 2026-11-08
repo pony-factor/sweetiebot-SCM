@@ -297,17 +297,25 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const selection = validateSelection(rawSelection);
   // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
   const readFetch = fetchImpl;
+  // Source checkouts and installed extensions keep shared assets in different roots.
+  const sourceArtworkRoot = path.join(__dirname, '../../assets/imgs');
+  const artworkRoot = fs.existsSync(path.join(sourceArtworkRoot, 'bulk-merge-cannon.jpeg'))
+    ? sourceArtworkRoot : path.join(__dirname, '../codex-customizations/assets/imgs');
+  const artwork = require('./completion-artwork').completionArtwork(vscode, context,
+    path.join(artworkRoot, 'bulk-merge-cannon.jpeg'));
   const panel = vscode.window.createWebviewPanel('sweetiebot.bulkMergeDashboard',
     'Lindsey · Merge progress', viewColumn,
     { enableScripts: true, retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.file(path.join(__dirname, '../../assets/imgs'))] });
+      localResourceRoots: [vscode.Uri.file(artworkRoot), ...artwork.roots] });
   const nonce = randomBytes(16).toString('hex');
   const celebrationBackgroundUri = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(__dirname, '../../assets/imgs/bulk-merge-cannon.jpeg'))).toString();
+    vscode.Uri.file(artwork.current().path)).toString();
   panel.webview.html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8')
     .replaceAll('__NONCE__', nonce)
     .replaceAll('__CSP_SOURCE__', panel.webview.cspSource || '')
     .replace('__CELEBRATION_BACKGROUND__', celebrationBackgroundUri)
+    .replace('__ARTWORK_CREDIT_HIDDEN__', artwork.current().custom ? 'hidden' : '')
+    .replace('__ARTWORK_RESET_HIDDEN__', artwork.current().custom ? '' : 'hidden')
     .replace('__MERGE_CELEBRATION_PREDICATE__', require('./celebration').allPullRequestsMerged.toString())
     .replace('__MERGE_HEADER_CSS__', fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8'))
     .replace('__MARKDOWN_RENDERER__', fs.readFileSync(path.join(__dirname, 'dashboard-markdown.js'), 'utf8'))
@@ -709,6 +717,16 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }
 
   panel.webview.onDidReceiveMessage(async message => {
+    if (message?.type === 'choose-completion-image' || message?.type === 'reset-completion-image') {
+      try {
+        if (await artwork.change(message.type === 'reset-completion-image')) {
+          const current = artwork.current();
+          await panel.webview.postMessage({ type: 'completion-artwork', custom: current.custom,
+            uri: panel.webview.asWebviewUri(vscode.Uri.file(current.path)).toString() + '?v=' + Date.now() });
+        }
+      } catch (error) { void vscode.window.showWarningMessage(error.message); }
+      return;
+    }
     if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
       return onFocusWorker(message.number);
     }

@@ -298,7 +298,10 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
     webview: {
       cspSource: 'vscode-webview://test',
       html: '',
-      asWebviewUri(uri) { return 'vscode-webview://test/' + require('node:path').basename(uri.fsPath); },
+      asWebviewUri(uri) {
+        assert(fs.existsSync(uri.fsPath), 'Dashboard artwork must exist in the runtime layout');
+        return 'vscode-webview://test/' + require('node:path').basename(uri.fsPath);
+      },
       onDidReceiveMessage(fn) { messageHandler = fn; },
       postMessage(msg) { events.push(JSON.parse(JSON.stringify(msg))); return Promise.resolve(true); },
     },
@@ -435,7 +438,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(panel.webview.html.includes('<h1>Lindsey</h1>'), 'Keep the Lindsey identity visible in the header');
   assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Do not restore the bulk merge subtitle');
   assert(!panel.webview.html.includes('id="repository"'), 'Omit the repository logo from the stripped-down header');
-  assert(panel.webview.html.includes('Everypony made it! 🎉'), 'Show pony confirmation on complete merges');
+  assert(panel.webview.html.includes('<h2 id="completion-title">Win</h2>'), 'Show the concise completion heading');
   assert(panel.webview.html.includes('id="completion" class="completion"'), 'Dedicated finish page');
   assert(panel.webview.html.includes('id="review-merges"'), 'Keep PR details and timeline available');
   assert(panel.webview.html.includes('id="show-celebration"'), 'Allow return to finish page');
@@ -446,6 +449,8 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
    assert(!panel.webview.html.includes('<img class="completion-art"'), 'Artwork is not confined to a small inline image');
    assert(panel.webview.html.includes('href="https://x.com/fcolumnare/status/1952740544443998252"'),
      'Artist attribution is linked directly on the confirmation screen');
+  assert(panel.webview.html.includes('>Cerberus</a>'), 'Credit the artist by name');
+  assert(!panel.webview.html.includes('@fcolumnare'), 'Omit the artist handle from visible credits');
   assert(!panel.webview.html.includes('__MERGE_CELEBRATION_PREDICATE__'));
   assert(!panel.webview.html.includes('__CELEBRATION_BACKGROUND__'));
   assert(panel.webview.html.includes('if (!complete) celebrationDismissed = false'));
