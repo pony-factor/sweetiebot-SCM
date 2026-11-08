@@ -387,7 +387,24 @@ jobs:
       # Keep each test as a separate step, even when an earlier test fails.
       - name: Install Electron 43.7.7
         id: electron43
-        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci-43" --no-save electron@43.7.7
+        shell: bash
+        run: |
+          prefix="$RUNNER_TEMP/sweetiebot-native-ci-43"
+          npm install --prefix "$prefix" --no-save electron@43.7.7
+          # The npm package can be present while its runtime download is deferred.
+          # Retry transient GitHub release failures before running either test.
+          for attempt in 1 2 3 4 5; do
+            if node "$prefix/node_modules/electron/install.js" &&
+              node -e 'const fs = require("node:fs"); try { process.exit(fs.existsSync(require(process.argv[1])) ? 0 : 1); } catch { process.exit(1); }' "$prefix/node_modules/electron"; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "::error::Electron 43.7.7 binary unavailable after five attempts"
+              exit 1
+            fi
+            echo "::warning::Retrying Electron 43.7.7 binary download (attempt $attempt)"
+            sleep $((attempt * 5))
+          done
       - name: Electron 43.7.7 sandbox, CSP, prompt and JSON handoff
         if: ${{ !cancelled() && steps.electron43.outcome == 'success' }}
         shell: bash
@@ -401,7 +418,24 @@ jobs:
       - name: Install Electron 45.1.0
         id: electron45
         if: ${{ !cancelled() }}
-        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci-45" --no-save electron@45.1.0
+        shell: bash
+        run: |
+          prefix="$RUNNER_TEMP/sweetiebot-native-ci-45"
+          npm install --prefix "$prefix" --no-save electron@45.1.0
+          # The npm package can be present while its runtime download is deferred.
+          # Retry transient GitHub release failures before running either test.
+          for attempt in 1 2 3 4 5; do
+            if node "$prefix/node_modules/electron/install.js" &&
+              node -e 'const fs = require("node:fs"); try { process.exit(fs.existsSync(require(process.argv[1])) ? 0 : 1); } catch { process.exit(1); }' "$prefix/node_modules/electron"; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "::error::Electron 45.1.0 binary unavailable after five attempts"
+              exit 1
+            fi
+            echo "::warning::Retrying Electron 45.1.0 binary download (attempt $attempt)"
+            sleep $((attempt * 5))
+          done
       - name: Electron 45.1.0 sandbox, CSP, prompt and JSON handoff
         if: ${{ !cancelled() && steps.electron45.outcome == 'success' }}
         shell: bash
