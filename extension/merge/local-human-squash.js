@@ -659,7 +659,8 @@ async function humanSquashMerge(repository, number, {
             const detail = diagnostics.length ? diagnostics.join(' | ')
               : String(error.stderr || error.message).trim().slice(-1800);
             const unavailable = error.code === 125 || error.code === 'ENOENT';
-            return { merged: false, status: 'checks_failed', number,
+            return { merged: false, status: unavailable ? 'blocked' : 'checks_failed', number,
+              ...(unavailable ? { kind: 'capability' } : {}),
               sha: originalSha, previousHeadSha: originalSha, base, baseSha,
               reason: 'Integrated-tree ' + group +
                 (unavailable ? ' test infrastructure unavailable: ' : ' checks failed: ') +
