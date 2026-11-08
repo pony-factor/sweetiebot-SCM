@@ -164,7 +164,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       }
       else if(removeRunner||runnerUnavailable){
         assert.equal(result.merged,false);
-        assert.equal(result.status,removeRunner?'blocked':'checks_failed');
+        assert.equal(result.status,'blocked','Missing runner or unavailable process infrastructure must stop the merge');
+        if(runnerUnavailable)assert.equal(result.kind,'capability','Infrastructure failure must not trigger automated code repair');
         assert.match(result.reason,removeRunner?/test runner was removed/:/test infrastructure unavailable/);
         assert.equal(pushes.length,0,'Failed or missing integrated tests cannot push');
         assert.equal(await branch('main'),baseSha);
