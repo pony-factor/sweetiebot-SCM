@@ -5,6 +5,7 @@ const { createMergeHandoff } = require('./handoff');
 const { validateResolution, validateSyncResolution, resolutionInstructions } = require('./resolution');
 const SHA = /^[a-f0-9]{40}$/i;
 const { orderMergeCandidates } = require('./order');
+const { isSnapshotDeferral } = require('./snapshot-change');
 
 // The beginning of a step is not a heartbeat. Retain it across meaningful
 // updates to the same phase and round; identical snapshots are not updates.
@@ -258,8 +259,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         if (merged.some(item => item.number === pr.number) || prepared.some(item => item.number === pr.number)) continue;
         const blocked = deferred.find(item => item.number === pr.number);
         // Only stale-snapshot deferrals can be cleared by a repaired head.
-        if (blocked && !(blocked.kind === 'snapshot_changed' ||
-            (!blocked.kind && /selected PR (?:head, base or title changed|changed outside this batch)/i.test(blocked.reason)))) continue;
+        if (blocked && !isSnapshotDeferral(blocked)) continue;
         const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
         if (fresh.title !== pr.title || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
             fresh.head?.repo?.full_name !== original.repository) continue;

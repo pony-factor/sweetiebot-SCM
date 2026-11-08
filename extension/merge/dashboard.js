@@ -7,6 +7,7 @@ const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerAct
 const { createReactionChoices } = require('./reaction-choices');
 const { createMergeDashboardPersistence } = require('./dashboard-persistence');
 const { deferredCiRepairCandidate } = require('./auto-ci-repair');
+const { isSnapshotDeferral } = require('./snapshot-change');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -973,8 +974,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const pr = byNumber.get(item.number);
       if (pr) {
         // Recognize older persisted batches as well as typed new deferrals.
-        pr.snapshotDeferred = item.kind === 'snapshot_changed' ||
-          /The selected PR changed (?:outside this batch|while its parallel review)/.test(String(item.reason || ''));
+        pr.snapshotDeferred = isSnapshotDeferral(item);
         pr.snapshotChanged = Boolean(pr.snapshotDeferred || (pr.currentBase && pr.currentBase !== pr.base));
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
         pr.localReview = require('./blocker-report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));

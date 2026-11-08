@@ -254,36 +254,43 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   // Unchanged branch-only results must stop rather than repeatedly retrying.
   // Dashboard polling can recover a repaired head without executing an old
   // patch, accepting rewritten history, or retrying a human decision.
-  for (const mode of ['repaired', 'rewritten', 'retitled', 'human', 'running']) {
+  for (const mode of ['repaired', 'external', 'external-rewritten', 'external-human', 'unchanged', 'rewritten', 'retitled', 'human', 'running']) {
     let liveHead = a, applied = 0, title = 'Feature 1', release;
     const gate = new Promise(resolve => { release = resolve; });
     const recovery = await createMergeBatch(one, {
       destination: 'https://chatgpt.com/',
       api: async endpoint => {
-        if (endpoint.includes('/compare/')) return { status: mode === 'rewritten' ? 'diverged' : 'ahead', merge_base_commit: { sha: a } };
+        if (endpoint.includes('/compare/')) return { status: mode.includes('rewritten') ? 'diverged' : 'ahead', merge_base_commit: { sha: a } };
         if (endpoint.includes('/branches/')) return { commit: { sha: c } };
         return { state: 'open', draft: false, title, mergeable: true,
           head: { ref: 'feature-1', sha: liveHead, repo: { full_name: one.repository } }, base: { ref: 'main' } };
       },
-      execute: async () => {
+      execute: async input => {
+        if (!input.results.length) return { repository: one.repository, results: [] };
         applied++;
         if (mode === 'running') await gate;
-        return { repository: one.repository, results: [{ number: 1, status: applied === 1 ? 'blocked' : 'merged',
-          merged: applied > 1, sha: e, reason: 'Selected PR head, base or title changed; prepare a fresh handoff.' }] };
+        const merged = mode === 'external' || applied > 1;
+        return { repository: one.repository, results: [{ number: 1, status: merged ? 'merged' : 'blocked',
+          merged, sha: e, reason: 'Selected PR head, base or title changed; prepare a fresh handoff.' }] };
       }
     });
     try {
       let pending;
-      if (mode === 'human') await submit(recovery.url, [], [{ number: 1, headSha: a, kind: 'human_review', reason: 'Choose incompatible API behavior.' }]);
+      if (mode.startsWith('external') || mode === 'unchanged') {
+        await submit(recovery.url, [], [{ number: 1, headSha: a,
+          kind: mode === 'external-human' ? 'human_review' : 'capability',
+          reason: `The selected PR head changed externally from ${a} to ${e} during preparation. Base main remains ${c}. No action taken; reselect and confirm the current PR head before merging.` }]);
+      }
+      else if (mode === 'human') await submit(recovery.url, [], [{ number: 1, headSha: a, kind: 'human_review', reason: 'Choose incompatible API behavior.' }]);
       else if (mode === 'running') {
         pending = submit(recovery.url, [item(1, c)]);
         while (!applied) await new Promise(resolve => setImmediate(resolve));
       } else await submit(recovery.url, [item(1, c)]);
-      liveHead = e;
+      liveHead = mode === 'unchanged' ? a : e;
       if (mode === 'retitled') title = 'Different scope';
       const next = await recovery.reconcile([1]);
       if (mode === 'running') { assert.equal(next, null); release(); await pending; }
-      else if (mode !== 'repaired') {
+      else if (!['repaired', 'external'].includes(mode)) {
         assert.equal(next, null);
         assert.equal(recovery.state().pullRequests[0].headSha, a);
       } else {
@@ -295,7 +302,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
         assert.equal(old, null, 'The stale patch endpoint is retired');
         const done = await submit(next.url, [item(1, c, null, e)]);
         assert.equal(done.value.batch.merged.length, 1);
-        assert.equal(applied, 2, 'Only the fresh reviewed handoff reaches execution');
+        assert.equal(applied, mode === 'external' ? 1 : 2, 'Only the fresh reviewed handoff reaches execution');
       }
     } finally { release(); recovery.dispose(); }
   }
