@@ -76,9 +76,23 @@ assert(result.message.startsWith('- 🐛 Fix'));
         with patch.object(ci.subprocess, "run",
                           side_effect=FileNotFoundError(errno.ENOENT, "No such file or directory")), \
              patch("sys.stderr", new_callable=io.StringIO) as stderr:
-            self.assertEqual(ci.execute(["node", "--check", "missing.js"]), 1)
+            self.assertEqual(ci.execute(["node", "--check", "missing.js"]),
+                             ci.EXECUTION_UNAVAILABLE)
         self.assertIn("Node.js executable not found", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_local_launch_failure_stops_the_group_before_other_processes(self):
+        spec = {"label": "Lindsey bulk merge",
+                "tests": ["merge/local-author-merge.js", "merge/dashboard.js"],
+                "syntax": []}
+        with patch.object(ci, "execute", return_value=ci.EXECUTION_UNAVAILABLE) as execute, \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            with self.assertRaises(SystemExit) as stopped:
+                ci.run_group("lindsey", spec)
+        self.assertEqual(stopped.exception.code, ci.EXECUTION_UNAVAILABLE)
+        execute.assert_called_once_with(["node", "--check", "tests/merge/local-author-merge.js"])
+        self.assertIn("Test execution unavailable", stderr.getvalue())
+        self.assertNotIn("JavaScript syntax check failed", stderr.getvalue())
 
     def test_mac_node_fallback_when_gui_path_does_not_include_homebrew(self):
         with patch.object(ci.sys, "platform", "darwin"), \
