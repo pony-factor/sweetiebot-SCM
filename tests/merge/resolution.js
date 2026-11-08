@@ -159,7 +159,10 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
           if (signerFailure && args.includes('-S')) throw Error('signer unavailable');
           return sha;
         }
-        if (args[0] === 'show') return author.name + '\0' + author.email + '\0' + message + '\n';
+        if (args[0] === 'show') {
+          assert.deepEqual(args, ['show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce%x00%B', sha]);
+          return [author.name, author.email, author.name, author.email, message + '\n'].join('\0');
+        }
         if (args[0] === 'cat-file') {
           return !expectedSigned ? 'tree ' + tree + '\n' :
             'tree ' + tree + '\ngpgsig -----BEGIN SSH SIGNATURE-----\n signature-data\n';

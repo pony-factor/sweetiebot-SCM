@@ -3,14 +3,14 @@ const assert = require('node:assert/strict');
 const { squashMergePullRequest } = require('../../extension/merge/pull-request');
 const head = 'a'.repeat(40), base = 'b'.repeat(40), mergedSha = 'c'.repeat(40);
 const input = { repository: 'owner/repo', head: 'feature', base: 'main', result: { number: 4, url: 'https://github.com/owner/repo/pull/4' } };
-function fixture({ checksFail = false, baseMoves = false } = {}) {
+function fixture({ checksFail = false, baseMoves = false, appMode = false } = {}) {
   let merged = false, writes = 0, baseReads = 0;
   const request = async (endpoint, options) => {
     if (options) {
       assert.equal(options.body.merge_method, 'merge'); assert.equal(options.body.sha, head);
       writes++; merged = true; return { merged: true, sha: mergedSha };
     }
-    if (endpoint === 'user') return { login: 'human', type: 'User' };
+    if (endpoint === 'user') { assert(!appMode, 'App merges never request the signed-in user'); return { login: 'human', type: 'User' }; }
     if (endpoint === 'repos/owner/repo') return { allow_merge_commit: true };
     if (endpoint.includes('/branches/')) return { commit: { sha: baseMoves && ++baseReads > 1 ? mergedSha : base } };
     if (endpoint.includes('/commits?')) return [{ sha: head, author: { login: 'human', type: 'User' }, commit: {
@@ -18,7 +18,8 @@ function fixture({ checksFail = false, baseMoves = false } = {}) {
     if (endpoint.includes('/check-runs?')) return { check_runs: checksFail ? [{ status: 'completed', conclusion: 'failure', name: 'tests' }] : [] };
     if (endpoint.includes('/check-suites?')) return { check_suites: [] };
     if (endpoint.includes('/status?')) return { statuses: [] };
-    if (endpoint.endsWith('/commits/' + mergedSha)) return { parents: [{ sha: base }, { sha: head }], author: { login: 'human', type: 'User' } };
+    if (endpoint.endsWith('/commits/' + mergedSha)) return { parents: [{ sha: base }, { sha: head }],
+      author: appMode ? {login:'lindsey-fixture[bot]',type:'Bot'} : { login: 'human', type: 'User' } };
     return { html_url: input.result.url, state: merged ? 'closed' : 'open', merged, merge_commit_sha: merged ? mergedSha : null,
       title: '✨ Add feature', user: { login: 'automation[bot]', type: 'Bot' },
       head: { sha: head, ref: 'feature', repo: { full_name: 'owner/repo' } }, base: { ref: 'main', repo: { full_name: 'owner/repo' } } };
@@ -39,5 +40,16 @@ function fixture({ checksFail = false, baseMoves = false } = {}) {
     merged: false, needsAuthorChoice: true, reason: 'Choose the author-preserving merge route.'
   }) }), error => error.code === 'SQUASH_AUTHOR_CHOICE_REQUIRED');
   assert.equal(defaultAction.writes(), 0, 'The default squash must not silently switch merge methods');
+  const app = fixture({appMode:true});
+  assert((await squashMergePullRequest(input,()=>assert.fail('Never use the personal API'),{
+    method:'merge',getAppActor:async()=>({request:app.request,gitToken:async()=> 'fixture-app-token',
+      author:{name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'}})
+  })).merged);
+  assert.equal(app.writes(),1);
+  let personalReads=0;
+  await assert.rejects(squashMergePullRequest(input,()=>{personalReads++;},{
+    getAppActor:async()=>{throw Error('App unavailable');}
+  }),/App unavailable/);
+  assert.equal(personalReads,0,'An App failure cannot fall back to user credentials');
   console.log('Explicit author-preserving merge, ancestry checks, check failures and base races passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

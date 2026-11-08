@@ -81,6 +81,17 @@ async function main() {
   assert(result.merged && result.sha === mergedSha);
   assert.deepEqual(result.author, originalAuthor);
   assert.equal(approved.calls.filter(c => c.method === 'PUT').length, 1);
+  const app = fixture();
+  assert((await humanSquashMerge('owner/repo', 12, {
+    api: () => assert.fail('The App merge cannot use the personal API'),
+    getAppActor: async () => ({ api: app.api, gitToken: async () => 'fixture-app-token',
+      author: {name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'} })
+  })).merged);
+  assert.equal(app.calls.filter(c => c.method === 'PUT').length, 1);
+  await assert.rejects(humanSquashMerge('owner/repo',12,{
+    api: () => assert.fail('Never fall back after App failure'),
+    getAppActor: async () => { throw Error('App unavailable'); }
+  }), /App unavailable/);
   // A stale PR base, including a later metadata refresh, must not block a stable branch.
   const stale = fixture({ liveBaseSha: 'd'.repeat(40), refreshedBaseSha: 'd'.repeat(40) });
   assert((await humanSquashMerge('owner/repo', 12, {api: stale.api})).merged);

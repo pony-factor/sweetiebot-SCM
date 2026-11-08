@@ -57,6 +57,27 @@ async function run() {
     remoteSha = sha;
     assert.equal(await publishSyncReports(root, { api }), 1);
     assert.equal(posted, 1);
+
+    assert.equal(await queueSyncReport(root, record), true);
+    let appPosts = 0;
+    assert.equal(await publishSyncReports(root, { enabled: () => true, transport: repo => {
+      assert.equal(repo, record.repo || 'pony-factor/test');
+      return { api: async (endpoint, method, fields) => {
+        if (method === 'POST') {
+          appPosts++;
+          assert.deepEqual(fields.slice(0, 1), ['-f']);
+          assert.match(fields[1], /^body=\*\*Sweetiebot routine sync report/);
+          return {};
+        }
+        return endpoint.includes('/git/ref/') ? { object: { sha } } : [];
+      } };
+    } }), 1);
+    assert.equal(appPosts, 1, 'Configured sync comments use the Lindsey transport');
+    assert.equal(await queueSyncReport(root, record), true);
+    assert.equal(await publishSyncReports(root, { enabled: () => true,
+      transport: () => { throw Error('App unavailable'); } }), 0);
+    assert(fs.existsSync(journal), 'Unavailable App retains the report without user fallback');
+    fs.unlinkSync(journal);
     assert(!fs.existsSync(journal), 'successful delivery clears pending journal');
     assert.match(comments[0].body, /inherited from upstream/);
     assert.match(comments[0].body, /sweetiebot-sync-report:/);
@@ -99,6 +120,8 @@ async function run() {
     assert.equal(await reviewSyncConflicts(vscode, repository, review), false);
     choices = ['resolve'];
     assert.equal(await reviewSyncConflicts(vscode, repository, review), true);
+    choices = ['lindsey'];
+    assert.equal(await reviewSyncConflicts(vscode, repository, { ...review, appIdentity: true }), 'lindsey');
     await assert.rejects(reviewSyncConflicts(vscode, repository, { ...review, head: before }),
       /revisions or working files changed/);
   } finally {

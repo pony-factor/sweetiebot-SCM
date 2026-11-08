@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { safePatchPath } = require('./patch');
+const { commitIdentityArgs } = require('../github/app-commit-identity');
 // Use only the model number supplied by the web coding assistant's handoff.
 const MODEL_NUMBER = /^[1-9]\d*(?:\.\d+){0,2}$/;
 function assistantCoauthorTrailer(modelNumber) {
@@ -47,7 +48,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
   const sign = (await git('config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign')) === 'true';
   const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
-    return git('-c', 'user.name=' + author.name, '-c', 'user.email=' + author.email,
+    return git(...commitIdentityArgs(author),
       'commit-tree', ...(sign ? ['-S'] : []), tree, '-p', parent,
       ...(incoming ? ['-p', incoming] : []), '-F', messageFile);
   };
