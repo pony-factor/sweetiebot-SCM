@@ -55,6 +55,11 @@ async function openedRoot(result) {
     const initialIndex = git('-C', root, 'diff', '--cached', '--binary');
     const initialWorktree = git('-C', root, 'diff', '--binary');
 
+    const nativeFallback = editor(root);
+    assert.equal(await routeBranch(nativeFallback, { rootUri: { fsPath: root } },
+      { ...options, branch: 'unoccupied-pr', existingOnly: true }), false);
+    assert.equal(nativeFallback.commands.calls.length, 0, 'Do not switch windows for an unoccupied PR');
+    assert(!git('-C', root, 'branch', '--list', 'unoccupied-pr'), 'Do not create a fallback branch');
     const topicEditor = editor(root);
     assert.equal(await routeBranch(topicEditor, { rootUri: { fsPath: root } },
       { ...options, branch: 'topic', create: true, start: 'main' }), true);
@@ -87,7 +92,7 @@ async function openedRoot(result) {
     assert.equal(await openedRoot({ target: returning.commands.calls.at(-1)[1].fsPath }), root);
     assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'private topic edit\n', 'Returning home preserves private topic edits');
     const reopening = editor(root);
-    await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
+    await routeBranch(reopening, { rootUri: { fsPath: root } }, { ...options, branch: 'topic', existingOnly: true });
     assert.equal(await openedRoot({ target: reopening.commands.calls.at(-1)[1].fsPath }), topic);
 
     // End-to-end integration using the real session publisher rather than a

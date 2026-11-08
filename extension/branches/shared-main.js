@@ -384,6 +384,9 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   // Reopening an existing topic must use its existing files, including edits.
   const worktrees = worktreeLocations(await run(['-C', original, 'worktree', 'list', '--porcelain', '-z']));
   const registeredDestination = worktrees.get(branch);
+  // GitHub retains its normal fetch/checkout flow for branches without a
+  // worktree. An occupied branch must follow this window's handoff instead.
+  if (options.existingOnly && !registeredDestination) return false;
   if (registeredDestination && adoptExisting) throw new Error('The new stacked branch already has a worktree.');
   if (registeredDestination && !create) {
     // Repoint the current window even when another live VS Code window

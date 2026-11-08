@@ -23,6 +23,37 @@ LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick
 
 
 class GitHubPRTests(unittest.TestCase):
+    def test_checkout_routes_occupied_branch_before_native_git(self):
+        source = ('class Checkout { async fetchAndCheckout(repo,remotes,pr,progress){'
+                  'const branch=pr.head.ref,remote=matched.remoteName;let local,name=branch;'
+                  'nativeCalls++;} } const pick=()=>v.commands.executeCommand("pr.pick");')
+        patched = github_pr.transform_checkout(source)
+        self.assertEqual(github_pr.transform_checkout(patched), patched)
+        self.assertEqual(github_pr.transform_checkout(patched, remove=True), source)
+        with self.assertRaises(ValueError):
+            github_pr.transform_checkout(source + source)
+        script = '''
+const assert=require('node:assert/strict');
+let occupied=true,nativeCalls=0;
+const matched={remoteName:'origin'};
+const repo={rootUri:{fsPath:'/selected-window'}};
+const v={commands:{async executeCommand(id,uri,options){
+ assert.equal(id,'sweetiebot.checkoutBranchStrip');
+ assert.equal(uri,repo.rootUri);
+ assert.deepEqual(options,{branch:'topic',existingOnly:true});
+ return occupied?'topic':false;
+}}};
+PATCHED
+(async()=>{
+ await new Checkout().fetchAndCheckout(repo,[],{head:{ref:'topic'}},{});
+ assert.equal(nativeCalls,0,'An occupied branch never reaches native checkout');
+ occupied=false;
+ await new Checkout().fetchAndCheckout(repo,[],{head:{ref:'topic'}},{});
+ assert.equal(nativeCalls,1,'Unoccupied branches retain native fetch/checkout');
+})().catch(error=>{console.error(error);process.exitCode=1});
+'''.replace('PATCHED', patched)
+        subprocess.run(['node', '-e', script], check=True)
+
     def test_refresh_helper_loads_without_sweetiebot_modules_on_host(self):
         script = '''
 const assert = require('node:assert/strict');
