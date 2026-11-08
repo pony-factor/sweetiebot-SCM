@@ -481,16 +481,9 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
-    const finishLocal = async finalTree => {
-      const trailer = conflicts.length
-        ? require('./resolution-commits').assistantCoauthorTrailer(assistantModelNumber) : '';
-      if (conflicts.length && !trailer) {
-        throw Error('Model-authored conflict decisions require the active coding model number.');
-      }
-      const finalMessage = trailer && !preparedMessage.includes('\n' + trailer)
-        ? preparedMessage.trimEnd() + '\n\n' + trailer : preparedMessage;
-      return finishLocalSquash(finalTree, finalMessage);
-    };
+    // Publication uses the source authorship trailers already verified by the
+    // attribution helper; Lindsey does not add model credit for routine work.
+    const finishLocal = async finalTree => finishLocalSquash(finalTree);
     if (operation === 'merge') {
       if (nativeSquash && !conflicts.length && !needsResolution) {
         return await finish(originalSha, preparedMessage, 'squash');
