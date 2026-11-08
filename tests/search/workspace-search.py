@@ -21,12 +21,23 @@ import xml.etree.ElementTree as ET
 
 import toolkit_settings
 import workspace_search
+from wrapper_dependencies import runtime_sources
 
 
 DEFAULTS = dict(toolkit_settings.DEFAULT_SETTINGS)
 
 
 class WorkspaceSearchInstallerTests(unittest.TestCase):
+    @staticmethod
+    def install_wrapper_fixture(root):
+        """Mirror the complete production Git wrapper dependency closure."""
+        dependencies = runtime_sources(workspace_search.HERE)
+        for name, source in dependencies.items():
+            (root / name).write_bytes(source.read_bytes())
+        # Keep the installed import alias finder with the hyphenated modules.
+        assert (root / 'importaliases.py').is_file()
+        assert (root / 'wrapper-dependencies.py').is_file()
+
     def test_pony_publisher_is_bundled_beside_background_worker(self):
         files = workspace_search.source_files()
         self.assertEqual(files[Path('pony-git-publish.js')].read_bytes(),
@@ -35,10 +46,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
     def test_bundled_git_wrapper_can_switch_branches(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            files = workspace_search.source_files()
-            for name in ('ai-commit.py', 'coreml-backend.py', 'background-commit.py', 'sweetiebot-async-commit.py', 'sweetiebot-diagnostics.py', 'merged-branch.py'):
-                relative = Path(name)
-                (root / name).write_bytes(files[relative].read_bytes())
+            self.install_wrapper_fixture(root)
             repo = root / 'repo'
             repo.mkdir()
             subprocess.run(['/usr/bin/git', 'init', '--quiet', str(repo)], check=True)
@@ -52,10 +60,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
     def test_completed_base_command_is_bundled_with_its_worker(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            files = workspace_search.source_files()
-            for name in ('ai-commit.py', 'coreml-backend.py', 'background-commit.py', 'sweetiebot-async-commit.py',
-                         'sweetiebot-diagnostics.py', 'merged-branch.py'):
-                (root / name).write_bytes(files[Path(name)].read_bytes())
+            self.install_wrapper_fixture(root)
             subprocess.run(['/usr/bin/git', 'init', '-q', '-b', 'main', str(root)], check=True)
             subprocess.run(['/usr/bin/git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
                             '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'initial'], cwd=root, check=True)

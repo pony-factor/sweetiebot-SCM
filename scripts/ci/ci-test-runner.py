@@ -15,16 +15,20 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 
 
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
 import py_compile
 import re
+import shutil
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = Path(__file__).resolve().with_name("ci-test-groups.json")
+EXECUTION_UNAVAILABLE = 125  # Distinguish a failed spawn from a failed test.
 
 
 def inventory(verbose=False):
@@ -95,18 +99,61 @@ def browser_needed(spec):
     )
 
 
+def resolve_command(command, env):
+    """Find Node when a macOS GUI-launched extension has a minimal PATH."""
+    if not command or command[0] != "node":
+        return command
+    executable = shutil.which("node", path=env.get("PATH", ""))
+    if not executable and sys.platform == "darwin":
+        home = Path.home()
+        candidates = [Path("/opt/homebrew/bin/node"), Path("/usr/local/bin/node"),
+                      home / ".volta/bin/node", home / ".asdf/shims/node",
+                      home / ".local/share/mise/shims/node"]
+        candidates.extend(sorted((home / ".nvm/versions/node").glob("*/bin/node"), reverse=True))
+        executable = next((str(candidate) for candidate in candidates
+                           if candidate.is_file() and os.access(candidate, os.X_OK)), None)
+    return [executable, *command[1:]] if executable else command
+
+
 def execute(command, env=None):
     print("+", " ".join(map(str, command)), flush=True)
     # Integrated-tree checks also run locally. Personal App identities and
     # formatting preferences must not change fixtures or trigger live auth.
     test_env = dict(os.environ if env is None else env)
     test_env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
-    return subprocess.run(command, cwd=ROOT, env=test_env, check=False).returncode
+    resolved = resolve_command(command, test_env)
+    # Concurrent Lindsey integrations can briefly exhaust macOS process slots
+    # or open descriptors. Retry only transient OS launch failures, never
+    # failing checks or a genuinely missing executable.
+    transient = {errno.EAGAIN, errno.EMFILE, errno.ENFILE, errno.ENOMEM}
+    for attempt in range(4):
+        try:
+            return subprocess.run(resolved, cwd=ROOT, env=test_env, check=False).returncode
+        except OSError as error:
+            if error.errno in transient and attempt < 3:
+                time.sleep(0.25 * (2 ** attempt))
+                continue
+            if error.errno == errno.ENOENT and command[0] == "node":
+                detail = "Node.js executable not found; install Node or add it to PATH."
+            else:
+                detail = f"Could not launch {command[0]}: {error}."
+            print(f"::error::{detail}", file=sys.stderr)
+            return EXECUTION_UNAVAILABLE
 
 
 def run_group(name, spec):
     print(f"Running {spec['label']} ({len(spec['tests'])} test files)", flush=True)
     failures = 0
+
+    def checked_execute(command, failure_message, env=None):
+        result = execute(command, env) if env is not None else execute(command)
+        if result == EXECUTION_UNAVAILABLE:
+            print(f"::error::{name}: Test execution unavailable; aborting without claiming a regression failure.",
+                  file=sys.stderr)
+            raise SystemExit(EXECUTION_UNAVAILABLE)
+        if result:
+            print(failure_message, file=sys.stderr)
+        return bool(result)
     python_tests = [item for item in spec["tests"] if item.endswith(".py")]
     javascript_tests = [item for item in spec["tests"] if item.endswith(".js")]
     python_syntax = [item for item in spec.get("syntax", []) if item.endswith(".py")]
@@ -118,23 +165,19 @@ def run_group(name, spec):
             print(f"::error file={file}::{error}", file=sys.stderr)
             failures += 1
     for file in [*(f"tests/{item}" for item in javascript_tests), *js_syntax]:
-        if execute(["node", "--check", file]):
-            print(f"::error file={file}::JavaScript syntax check failed", file=sys.stderr)
-            failures += 1
+        failures += checked_execute(["node", "--check", file],
+                                    f"::error file={file}::JavaScript syntax check failed")
     if python_tests:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(
             [str(ROOT / "scripts"), str(ROOT / "tests"), env.get("PYTHONPATH", "")]
         )
         modules = [f"tests.{Path(item).with_suffix('').as_posix().replace('/', '.')}" for item in python_tests]
-        if execute([sys.executable, "-m", "unittest", "-v", *modules], env):
-            print(f"::error::{name} Python regressions failed", file=sys.stderr)
-            failures += 1
+        failures += checked_execute([sys.executable, "-m", "unittest", "-v", *modules],
+                                    f"::error::{name} Python regressions failed", env)
     for file in javascript_tests:
-        if execute(["node", f"tests/{file}"]):
-            print(f"::error file=tests/{file}::JavaScript regression test failed",
-                  file=sys.stderr)
-            failures += 1
+        failures += checked_execute(["node", f"tests/{file}"],
+                                    f"::error file=tests/{file}::JavaScript regression test failed")
     if failures:
         print(f"::error::{name}: {failures} test or syntax failures", file=sys.stderr)
         raise SystemExit(1)

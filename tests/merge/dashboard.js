@@ -980,6 +980,9 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12,
     reason: 'The selected PR changed outside this batch; review the new head or PR state.' }] });
   assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'Old persisted snapshot deferrals have the same recovery guidance');
+  dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12, kind: 'capability',
+    reason: 'The selected PR head changed externally during preparation. No action taken; reselect and confirm the current PR head before merging.' }] });
+  assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'External conflict fixes use the same snapshot recovery classification');
   info = { ...info, base: { ...info.base, ref: 'main' } };
   await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].actionPlan.kind, 'snapshot', 'Returning to the original base does not resume a deferred batch');
@@ -991,18 +994,22 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(events.at(-1).autoFixCiMethod, 'codex');
   assert.equal(events.at(-1).autoFixCi, true);
   info = { ...info, state: 'open', merged: false, head: { ...info.head, sha: nextSha },
-    mergeable_state: 'unstable', base: { ...info.base, sha: 'c'.repeat(40) } };
+    mergeable_state: 'clean', base: { ...info.base, sha: 'c'.repeat(40) } };
   inlineCommentsForPr = [];
   commentsForPr = [];
   await dashboard.refresh();
   const repairState = { repository: selection.repository,
     pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'c'.repeat(40) }],
-    history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
-    deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
+    history: [{ number: 12, status: 'blocked', sourceHeadSha: sha }],
+    deferred: [{ number: 12, reason: 'Resolution patch contains an unsafe, secret-bearing or unrelated path.' }] };
   const autoStart = actionLaunches.length;
   dashboard.recordBatchState(repairState);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(actionLaunches.length, autoStart, 'A stopped preparation alone does not establish failed CI');
+  info = { ...info, mergeable_state: 'unstable' };
+  await dashboard.refresh({ force: true });
   await new Promise(resolve => setTimeout(resolve, 25));
-  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when selected integrated-head CI fails');
+  assert.equal(actionLaunches.length, autoStart + 1, 'Fresh failing CI starts repair even after preparation stopped');
   assert.equal(actionLaunches.at(-1)[6], 'codex', 'Auto repair uses the configured method');
   dashboard.recordBatchState(repairState);
   await new Promise(resolve => setTimeout(resolve, 10));

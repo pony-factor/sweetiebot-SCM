@@ -66,6 +66,8 @@ const {openRepairRunner,updateResponsiveRunnerLayout}=require('../../extension/m
   assert.equal(groups[2].tabs.length,2,'Dashboard and unrelated editor remain on the right');
   await openRepairRunner(vscode,url,{repository:'o/r',number:494});
   assert.equal(opens,3,'Repeated action focuses its existing repair chat');
+  await openRepairRunner(vscode,url+'fresh',{repository:'o/r',number:494,reuse:false});
+  assert.equal(opens,4,'A new local handoff opens its fresh callback instead of focusing a stale chat');
   assert(layouts.every(layout=>layout.groups[0].groups.length===2));
   groups.splice(0,groups.length,{viewColumn:1,tabs:[dashboard,draft]});active=0;selected=0;
   await openRepairRunner(vscode,url+'single',{repository:'o/r',number:500});
