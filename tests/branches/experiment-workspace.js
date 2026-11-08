@@ -73,7 +73,7 @@ function editor(root) {
       'sweetiebot.readCodexIdentity', 'vscode.openFolder', 'sweetiebot.codex.sendExperimentDirection'
     ]);
     assert.deepEqual(vscode.calls[2][1], {
-      source: await fs.realpath(original), destination: first.destination,
+      source: await fs.realpath(original), sourceBranch: 'topic', destination: first.destination,
       branch: first.branch, expectedThreadId: 'visible-chat'
     });
     assert.equal(vscode.calls[1][1].fsPath, first.target);
