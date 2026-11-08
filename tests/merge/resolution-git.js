@@ -235,6 +235,11 @@ const run = promisify(execFile);
       assert.equal(await branch('main'), baseSha, 'Resolution preparation only reads main');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', result.sha + '^^'), headSha, 'The original PR history is preserved');
       assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', result.sha + '^'), decisions[0].title);
+      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha + '^')).trim(),
+        decisions[0].title + '\n\n' + decisions[0].description,
+        'Resolution commit contains only the decision title and rationale');
+      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha)).trim(),
+        '🔄 Sync branch to main', 'Synchronization commit carries no procedural body');
       result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
         expected: { ...expected, headSha: result.sha }, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
         temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
@@ -244,7 +249,7 @@ const run = promisify(execFile);
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
-    // Preserve historical Codex authorship and attribute new decisions to the web-supplied model.
+    // Preserve verified historical Codex authorship without attributing Lindsey conflict decisions to ChatGPT.
     const creditedCodex = 'Co-authored-by: Codex <noreply@openai.com>';
     const creditedChatGPT = 'Co-authored-by: ChatGPT ' + webModelNumber + ' <noreply@openai.com>';
     assert(message.includes(creditedCodex),
@@ -254,8 +259,7 @@ const run = promisify(execFile);
     assert(message.includes('\n\n__________\n\n'));
     assert(!message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
       'Never invent an obsolete Web-qualified credit');
-    assert.equal(message.split('\n').filter(line => line === creditedChatGPT).length,
-      resolving ? 1 : 0, 'Credit new resolution work exactly once without changing historical credits');
+    assert(!message.includes(creditedChatGPT), 'Lindsey does not add new ChatGPT co-author trailers');
     assert(!message.includes('Co-authored-by: John Wooten'));
     assert(message.includes('Co-authored-by: codex-pony[bot] <326443430+codex-pony[bot]@users.noreply.github.com>'));
     assert(message.indexOf(creditedCodex) < message.indexOf('Co-authored-by: codex-pony[bot] <'));
@@ -425,9 +429,7 @@ async function successiveMerges(checkState, appMode = false) {
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
    const newCredit = 'Co-authored-by: ChatGPT 6.1 <noreply@openai.com>';
-   assert(message.includes(newCredit), 'Conflict resolution credits ChatGPT 6');
-   assert.equal(message.split('\n').filter(line => line === newCredit).length,
-     1, 'Only one current assistant trailer is emitted');
+   assert(!message.includes(newCredit), 'Lindsey must not add an assistant credit for automatic conflict resolution');
    assert(!message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
      'New resolution commits must not introduce obsolete Web credit');
    const beforeThird = await branch('main');

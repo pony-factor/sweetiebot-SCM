@@ -26,7 +26,7 @@ const { signingEnabled, commitIdentity, attributedCommitTree, verifyLocalCommitI
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
-  localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal, assistantModelNumber,
+  localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-')),
   getAppActor = configuredMergeActor
 } = {}) {
@@ -606,16 +606,7 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
-    const finishLocal = async finalTree => {
-      const trailer = conflicts.length
-        ? require('./resolution-commits').assistantCoauthorTrailer(assistantModelNumber) : '';
-      if (conflicts.length && !trailer) {
-        throw Error('Model-authored conflict decisions require the active coding model number.');
-      }
-      const mergeMessage = trailer && !preparedMessage.includes('\n' + trailer)
-        ? preparedMessage.trimEnd() + '\n\n' + trailer : preparedMessage;
-      return finishLocalSquash(finalTree, mergeMessage);
-    };
+    const finishLocal = async finalTree => finishLocalSquash(finalTree);
     // Squash publication prepares a one-parent commit in a disposable checkout.
     // Only when native squash cannot retain author/signing, replace the isolated
     // PR head under an exact lease so GitHub can recognize the squash as merged.
@@ -654,7 +645,7 @@ async function humanSquashMerge(repository, number, {
       const finalTree = await inRepo('write-tree');
       const prepared = await require('./resolution-commits').createResolutionCommits({
         git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
-        conflicts, decisions, author: automationAuthor || author, automationCommitter: automationAuthor, base, assistantModelNumber,
+        conflicts, decisions, author: automationAuthor || author, automationCommitter: automationAuthor, base,
         onCommit: decision => progress('decision-commit', decision)
       });
       operationCommitTitle = '🔄 Sync branch to ' + base;
