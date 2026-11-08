@@ -429,12 +429,32 @@ async function offerBlockedChangesOptions(vscode, repository, command, retry, st
   return undefined;
 }
 
+function isTransientNetworkFailure(error) {
+  return /timed? out|timeout|tls handshake|connection (?:reset|closed|refused)|could not resolve host|failed to connect|network is unreachable|no route to host|HTTP (?:502|503|504)|requested URL returned error: (?:502|503|504)/i.test(errorText(error));
+}
+
+async function verifiedLocalBranchStart(repository, defaultBranch) {
+  const root = repository.rootUri?.fsPath;
+  if (root && existsSync(path.join(root, '.git'))) {
+    try {
+      const { stdout } = await promisify(execFile)('git', [
+        'rev-parse', '--verify', `refs/heads/${defaultBranch}^{commit}`
+      ], { cwd: root, timeout: 10000 });
+      if (stdout.trim()) return stdout.trim();
+    } catch { /* Offline creation requires a real local base commit. */ }
+  } else if (await repository.getBranch?.(defaultBranch)) {
+    // VS Code's virtual/test repositories have no local Git directory to query.
+    return `refs/heads/${defaultBranch}`;
+  }
+  throw new Error(`Cannot create a branch offline: local "${defaultBranch}" is missing or invalid. Fetch the default branch before retrying.`);
+}
+
 async function retryConnection(operation) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      if (attempt >= 2 || !/timed? out|timeout|connection (?:reset|closed)|could not resolve host|failed to connect|HTTP (?:502|503|504)|requested URL returned error: (?:502|503|504)/i.test(errorText(error))) {
+      if (attempt >= 2 || !isTransientNetworkFailure(error)) {
         throw error;
       }
       await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
@@ -596,7 +616,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
   }
 }
 
-async function createBranch(repository, { defaultBranch, remote, names, isolateBranch, continueFromBranch }, secureRandomInt) {
+async function createBranch(repository, { defaultBranch, remote, names, isolateBranch, continueFromBranch, onOfflineMain }, secureRandomInt) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
   if (repository.state.mergeChanges?.length) {
@@ -649,7 +669,19 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     await saveBranchNameHistory(history.file, selected);
     return branch;
   }
-  const merged = await mergedBranchStatus(repository, remote);
+  let merged = null;
+  let offlineReason = '';
+  // The default branch cannot be a merged topic PR. Do not involve GitHub
+  // GraphQL at all when branching directly from an already checked-out main.
+  if (repository.state.HEAD?.name !== defaultBranch) {
+    try {
+      merged = await mergedBranchStatus(repository, remote);
+    } catch (error) {
+      if (!isTransientNetworkFailure(error)) throw error;
+      // PR metadata is advisory for branch creation; retain the local edits.
+      offlineReason = errorText(error);
+    }
+  }
   if (merged) {
     const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
     const used = new Set(refs.flatMap(ref => [ref.name, ref.name?.replace(`${remote}/`, '')]));
@@ -694,7 +726,15 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
       start = 'HEAD';
     }
   } else {
-    start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
+    try {
+      start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
+    } catch (error) {
+      if (!isTransientNetworkFailure(error)) throw error;
+      // The network may be down, but a verified local main commit remains
+      // usable. Pin its SHA rather than silently changing the source later.
+      start = await verifiedLocalBranchStart(repository, defaultBranch);
+      offlineReason ||= errorText(error);
+    }
   }
   const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
   const used = new Set(refs.flatMap(ref => [
@@ -724,6 +764,10 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     await saveBranchNameHistory(history.file, selected);
   } catch (error) {
     throw new Error(`Created branch "${branch}", but could not save its name history: ${error.message}`, { cause: error });
+  }
+  if (offlineReason) {
+    try { onOfflineMain?.({ branch, defaultBranch, reason: offlineReason }); }
+    catch { /* Notification failure must not invalidate an already-created branch. */ }
   }
   return branch;
 }
@@ -1474,8 +1518,15 @@ function registerBranchCommands(vscode, context) {
           }
           const result = await action(repository, {
             ...options, defaultBranch,
-            ...(command === 'sweetiebot.createBranch' && defaultBranch === 'main' ? {
-              isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork, commitDraftValue })
+            ...(command === 'sweetiebot.createBranch' ? {
+              onOfflineMain: ({ branch, defaultBranch: base }) => {
+                void vscode.window?.showWarningMessage?.(
+                  `Created "${branch}" from local ${base}. GitHub was unreachable during branch preparation; the remote may have newer commits. Sync ${base} when connectivity returns.`
+                );
+              },
+              ...(defaultBranch === 'main' ? {
+                isolateBranch: (branch, start, fork) => routeBranch(vscode, repository, { branch, start, create: true, ...fork, commitDraftValue })
+              } : {})
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
               reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
