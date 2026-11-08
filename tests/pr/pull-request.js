@@ -350,6 +350,7 @@ async function run() {
   let existingPullRequest;
   let repeatedStartingBase = false;
   const informationMessages = [];
+  const warningMessages = [];
   const vscode = {
     workspace: { getConfiguration(section) {
       assert.equal(section, 'sweetiebot');
@@ -367,7 +368,7 @@ async function run() {
          assert.match(options.prompt, /included in future PR descriptions/);
          return sharedInput;
        },
-      async showWarningMessage() {},
+      async showWarningMessage(message) { warningMessages.push(message); },
       showErrorMessage() { return new Promise(() => {}); },
     },
     ProgressLocation: { Notification: 1 },
@@ -489,6 +490,21 @@ async function run() {
   assert.equal(sessionLaunches.at(-1).options.source.sharedUrl, undefined,
     'Opting out must not silently reattach a previously saved public snapshot');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
+  const beforeCaptureFailure = vscode.commands.executeCommand;
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.readCodexConversation') {
+      throw Error('The active Codex chat changed during capture.');
+    }
+    return beforeCaptureFailure(id, ...args);
+  };
+  const resumedDraft = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(resumedDraft.launched, true, 'An interrupted capture must not block PR drafting');
+  assert.equal(sessionLaunches.at(-1).options.source, undefined,
+    'Never substitute a different chat after a branch switch');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
+    'Do not send a partial or stale transcript');
+  assert.match(warningMessages.at(-1), /PR drafting will continue without its transcript.*active Codex chat changed/);
+  vscode.commands.executeCommand = beforeCaptureFailure;
   autoShareCodexChat = true;
   const unshared = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
   assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
