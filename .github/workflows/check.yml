@@ -460,7 +460,25 @@ jobs:
         with:
           node-version: '22'
       - name: Install the native test runtime
-        run: npm install --prefix "$RUNNER_TEMP/sweetiebot-native-ci" --no-save electron@${{ matrix.electron }}
+        shell: bash
+        run: |
+          electron_version="${{ matrix.electron }}"
+          prefix="$RUNNER_TEMP/sweetiebot-native-ci"
+          npm install --prefix "$prefix" --no-save "electron@$electron_version"
+          # Electron's binary may download after npm succeeds; transient 503/504
+          # responses from the release host must not skip native test coverage.
+          for attempt in 1 2 3 4 5; do
+            if node "$prefix/node_modules/electron/install.js" &&
+              node -e 'const fs = require("node:fs"); try { process.exit(fs.existsSync(require(process.argv[1])) ? 0 : 1); } catch { process.exit(1); }' "$prefix/node_modules/electron"; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "::error::Electron $electron_version binary unavailable after five attempts"
+              exit 1
+            fi
+            echo "::warning::Retrying Electron $electron_version binary download (attempt $attempt)"
+            sleep $((attempt * 5))
+          done
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -472,8 +490,7 @@ jobs:
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             # Electron's Chromium sandbox requires a root-owned, setuid helper.
             # Do not disable sandboxing or pass --no-sandbox in this security test.
-            # Some runners defer the Electron binary download until first use.
-            node "$RUNNER_TEMP/sweetiebot-native-ci/node_modules/electron/install.js"
+            # The setup step already downloaded and verified the runtime binary.
             sandbox="$RUNNER_TEMP/sweetiebot-native-ci/node_modules/electron/dist/chrome-sandbox"
             sudo chown root:root "$sandbox"
             sudo chmod 4755 "$sandbox"
