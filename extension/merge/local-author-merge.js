@@ -2,8 +2,8 @@
 
 // Integrate a bot-opened PR locally without replacing any existing commit.
 // The two-parent commit retains the selected head and lets GitHub recognize
-// the original PR as merged. App-enabled integration uses the verified bot;
-// the original human commits remain in the parent chain.
+// the original PR as merged. Preserve the verified human author and use the
+// configured App only as committer; original commits remain in the parent chain.
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { verifyCommit } = require('./human-squash-merge');
@@ -14,8 +14,8 @@ const SHA = /^[a-f0-9]{40}$/i;
 async function localAuthorMerge({ repository, number, original, headSha, baseSha, tree, author, message,
   git, api, directory, checkOptions, expectChecks, onProgress = () => {}, requireSignedCommit = false,
   privateRepository = false, integratedTree = false, createCommitTree = attributedCommitTree, automationAuthor }) {
-  const commitAuthor = automationAuthor || author;
-  const verification = { allowBot: Boolean(automationAuthor), committer: automationAuthor };
+  const commitAuthor = author;
+  const verification = { committer: automationAuthor };
   const root = 'repos/' + repository, prPath = root + '/pulls/' + number;
   const head = original.head.ref, base = original.base.ref;
   const blocked = reason => ({ merged:false,status:'blocked',number,reason,headSha,base,baseSha });
@@ -72,13 +72,13 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
     sha = await create(identity);
   } catch (error) {
     if (requireSignedCommit || !identity.signed) throw error;
-    identity = { author: commitAuthor, committer: commitAuthor, signed: false };
+    identity = { author: commitAuthor, committer: automationAuthor || commitAuthor, signed: false };
     sha = await create(identity);
   }
   if (!SHA.test(sha)) throw Error('Local Git did not produce a merge commit.');
   if (identity.signed && !/(?:^|\n)gpgsig /.test(await git('cat-file','-p',sha))) {
     if (requireSignedCommit) throw Error('The signed merge commit is missing its signature.');
-    identity = { author: commitAuthor, committer: commitAuthor, signed: false };
+    identity = { author: commitAuthor, committer: automationAuthor || commitAuthor, signed: false };
     sha = await create(identity);
     if (!SHA.test(sha)) throw Error('Local Git did not produce an unsigned fallback commit.');
   }

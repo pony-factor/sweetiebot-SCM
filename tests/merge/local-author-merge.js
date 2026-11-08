@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,removeRunner=false,runnerUnavailable=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,removeRunner=false,runnerUnavailable=false,protectedHead=false,dependentPR=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -65,9 +65,10 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     }
     await inWork('push','--quiet','origin','main','feature');
     const branch=name=>inRemote('rev-parse','refs/heads/'+name);
+    let nativeMerged=false;
     const pr=async()=>{
       const tip=await branch('main');
-      const merged=tip!==baseSha && !race;
+      const merged=nativeMerged && tip!==baseSha && !race;
       return {state:merged?'closed':'open',merged,merged_at:merged?'2026-10-28':null,
         merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:!conflict,mergeable_state:conflict?'dirty':'clean',
         user:humanOpener?{type:'User',login:'human'}:{type:'Bot',login:'automation[bot]'},head:{ref:'feature',sha:await branch('feature'),repo:{full_name:'owner/repo'}},
@@ -80,16 +81,16 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         const values=Object.fromEntries(fields.filter((_,i)=>i%2).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)];}));
         assert.equal(values.merge_method,'squash');
         const mergedSha=await inRemote('commit-tree',values.sha+'^{tree}','-p',baseSha,'-m',values.commit_title+'\n\n'+values.commit_message);
-        await inRemote('update-ref','refs/heads/main',mergedSha,baseSha);if(lostAck)throw Error('Merge response was lost');return {merged:true,sha:mergedSha};
+        await inRemote('update-ref','refs/heads/main',mergedSha,baseSha);nativeMerged=true;if(lostAck)throw Error('Merge response was lost');return {merged:true,sha:mergedSha};
       }
       if(endpoint.endsWith('/pulls/1'))return pr();
       if(endpoint.includes('/pulls/1/commits?'))return commits;
-      if(endpoint.includes('/pulls?state=open&per_page=100&page='))return [];
+      if(endpoint.includes('/pulls?state=open&per_page=100&page='))return dependentPR?[{number:2,head:{ref:'child'},base:{ref:'feature'}}]:[];
       if(endpoint.includes('/rules/branches/')){
         if(rulesUnavailable||rulesForbidden)throw Object.assign(Error('HTTP 403'),{status:403,githubMessage:rulesUnavailable?'Upgrade to GitHub Pro or make this repository public to enable this feature.':'Resource not accessible by integration'});
         return rules;
       }
-      if(endpoint.includes('/branches/')){const name=decodeURIComponent(endpoint.split('/').at(-1));return {protected:name==='main'?protectedBase:!advanceBase,commit:{sha:await branch(name)}};}
+      if(endpoint.includes('/branches/')){const name=decodeURIComponent(endpoint.split('/').at(-1));return {protected:name==='main'?protectedBase:protectedHead,commit:{sha:await branch(name)}};}
       if(endpoint.includes('/check-runs?'))return {check_runs:failed||failedOriginalOnly?[{name:'regression',status:'completed',conclusion:failed||endpoint.includes(headSha)?'failure':'success'}]:[]};
       if(endpoint.includes('/check-suites?'))return {check_suites:[]};
       if(endpoint.includes('/status?'))return {statuses:[]};
@@ -131,6 +132,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
     if(rulesForbidden||rulesUnavailable&&!privateRepository){await assert.rejects(action(),/HTTP 403/);assert.equal(pushes.length,0);}
     else if(race){await assert.rejects(action(),/rejected|fetch first|non-fast-forward/);assert.equal(await branch('main'),competing);}
+    else if(protectedBase||rules.length){await assert.rejects(action(),/protected|active branch rules/);assert.equal(pushes.length,0);}
+    else if(requireSignedCommit&&missingSigningKey){await assert.rejects(action(),/sign|key|identity/i);assert.equal(pushes.length,0);}
     else {
       if(conflict){
         const pending=await action();
@@ -155,58 +158,52 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(pushes.length,1);
         return;
       }
-      if(requireSignedCommit) {
+      if(removeRunner||runnerUnavailable){
         assert.equal(result.merged,false);
         assert.equal(result.status,'blocked');
-        assert.match(result.reason,/No history rewrite was authorized/);
-        assert.equal(pushes.length,0,'Signed squash must not temporarily replace or roll back the PR head');
-        assert.equal(await branch('main'),baseSha);
-      }
-      else if(removeRunner||runnerUnavailable){
-        assert.equal(result.merged,false);
-        assert.equal(result.status,'blocked','Missing runner or unavailable process infrastructure must stop the merge');
         if(runnerUnavailable){
-          assert.equal(result.kind,'capability','Infrastructure failure must not trigger automated code repair');
-          assert(result.reason.length<=1900,'Structured test errors must remain size-bounded');
+          assert.equal(result.kind,'capability');
+          assert(result.reason.length<=1900);
         }
         assert.match(result.reason,removeRunner?/test runner was removed/:/test infrastructure unavailable/);
-        assert.equal(pushes.length,0,'Failed or missing integrated tests cannot push');
+        assert.equal(pushes.length,0);
         assert.equal(await branch('main'),baseSha);
-      }
-      else if(protectedBase||rules.length||failed||failedOriginalOnly){assert.equal(result.merged,false);assert.equal(pushes.length,0);assert.equal(await branch('main'),baseSha);}
-      else {
+      }else if(failed||failedOriginalOnly){
+        assert.equal(result.merged,false);
+        assert.equal(pushes.length,0);
+        assert.equal(await branch('main'),baseSha);
+      }else if(humanOpener&&!requireSignedCommit&&!conflict){
         assert.equal(result.merged,true,JSON.stringify(result));
-        if(!humanOpener) assert.equal(result.method,'local-git');
-        assert.equal(pushes.length,humanOpener?0:1,
-          'Automatic integration must push the destination only');
-        assert.equal(await inRemote('rev-parse',result.sha+'^1'),baseSha);
-        if(!humanOpener) {
-          assert.equal(await inRemote('rev-parse',result.sha+'^2'),await branch('feature'));
-          assert.equal(result.signed,!missingSigningKey,
-            'Lindsey signs when possible and falls back when the signing key is missing');
-          assert.equal(result.verified,!missingSigningKey&&!githubCannotVerifySignature,
-            'Report GitHub verification independently of whether Git signed the commit');
-          assert.equal(/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',result.sha)),
-            !missingSigningKey,'Only the missing-key fallback is unsigned');
-          if(!missingSigningKey) {
-            await inRemote('verify-commit',result.sha);
-            assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),expectedSigner.name+' <'+expectedSigner.email+'>');
-          } else assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
-            author.name+' <'+author.email+'>','Unsigned fallback retains original committer');
+        assert.equal(pushes.length,0,'GitHub native squash requires no manual Git pushes');
+        assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha);
+        assert.equal(await branch('main'),result.sha);
+      }else{
+        assert.equal(result.merged,false,'A direct squash must not falsely claim that GitHub marked the PR merged');
+        assert.equal(result.status,'published');
+        assert.equal(pushes.length,1,'Only the selected base is fast-forwarded');
+        assert.equal(await branch('main'),result.sha);
+        assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha,
+          'Squash has exactly one parent: the old main tip');
+        assert.equal(await inRemote('show','-s','--format=%an <%ae>',result.sha),author.name+' <'+author.email+'>');
+        assert.equal(result.signed,!missingSigningKey);
+        assert.equal(result.verified,!missingSigningKey&&!githubCannotVerifySignature);
+        if(!missingSigningKey){
+          await inRemote('verify-commit',result.sha);
+          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
+            expectedSigner.name+' <'+expectedSigner.email+'>');
         }
-        await inRemote('merge-base','--is-ancestor',headSha,await branch('feature'));
+        if(appMode){
+          const message=await inRemote('show','-s','--format=%B',result.sha);
+          assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
+          assert(!message.includes('Co-authored-by: '+author.name+' <'+author.email+'>'),
+            'Do not duplicate the primary human author as a co-author');
+        }
         if(advanceBase&&!conflict)assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
         assert.equal(await inRemote('show',result.sha+':file.txt'),conflict?'combined feature and main':'finished feature');
-        assert.equal(await inRemote('show','-s','--format=%an',result.sha),appMode&&!requireSignedCommit&&!humanOpener?bot.name:author.name);
-        if(appMode) {
-          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),`${bot.name} <${bot.email}>`);
-          if(!requireSignedCommit&&!humanOpener)assert((await inRemote('show','-s','--format=%B',result.sha)).includes(`Co-authored-by: ${author.name} <${author.email}>`));
-          assert.equal(await inRemote('show','-s','--format=%an',headSha),author.name,'Original human commits remain unchanged');
-        }
       }
     }
     assert.equal(await branch('feature'),headSha,
-      'The original PR head stays untouched even when main advances or conflicts exist');
+      'Squash publication must never mutate the source PR branch');
   } finally {
     if(oldGlobalConfig===undefined) delete process.env.GIT_CONFIG_GLOBAL;
     else process.env.GIT_CONFIG_GLOBAL=oldGlobalConfig;
@@ -220,9 +217,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  await fixture({appMode:true,advanceBase:true,conflict:true});
  await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true});
  await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
+ await fixture({protectedHead:true});
+ await fixture({dependentPR:true});
  await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,githubCannotVerifySignature:true});
  await fixture({appMode:true,advanceBase:true,requireSignedCommit:true,missingSigningKey:true});
  await fixture({removeRunner:true});
  await fixture({advanceBase:true,runnerUnavailable:true});
- console.log('Local Git merges sign when possible, fall back to unsigned commits when signing is unavailable, report GitHub verification, and preserve merge safety.');
+ console.log('Squash merges use one base parent, keep the PR head intact, preserve human attribution and signing, and stop after unconfirmed publication.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

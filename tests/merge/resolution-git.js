@@ -235,6 +235,11 @@ const run = promisify(execFile);
       assert.equal(await branch('main'), baseSha, 'Resolution preparation only reads main');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', result.sha + '^^'), headSha, 'The original PR history is preserved');
       assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', result.sha + '^'), decisions[0].title);
+      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha + '^')).trim(),
+        decisions[0].title + '\n\n' + decisions[0].description,
+        'Resolution commit contains only the decision title and rationale');
+      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha)).trim(),
+        '🔄 Sync branch to main', 'Synchronization commit carries no procedural body');
       result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
         expected: { ...expected, headSha: result.sha }, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
         temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
@@ -244,7 +249,7 @@ const run = promisify(execFile);
     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
-    // Preserve historical Codex authorship and attribute new decisions to the web-supplied model.
+    // Preserve verified historical Codex authorship without attributing Lindsey conflict decisions to ChatGPT.
     const creditedCodex = 'Co-authored-by: Codex <noreply@openai.com>';
     const creditedChatGPT = 'Co-authored-by: ChatGPT ' + webModelNumber + ' <noreply@openai.com>';
     assert(message.includes(creditedCodex),
@@ -254,8 +259,7 @@ const run = promisify(execFile);
     assert(message.includes('\n\n__________\n\n'));
     assert(!message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
       'Never invent an obsolete Web-qualified credit');
-    assert.equal(message.split('\n').filter(line => line === creditedChatGPT).length,
-      resolving ? 1 : 0, 'Credit new resolution work exactly once without changing historical credits');
+    assert(!message.includes(creditedChatGPT), 'Lindsey does not add new ChatGPT co-author trailers');
     assert(!message.includes('Co-authored-by: John Wooten'));
     assert(message.includes('Co-authored-by: codex-pony[bot] <326443430+codex-pony[bot]@users.noreply.github.com>'));
     assert(message.indexOf(creditedCodex) < message.indexOf('Co-authored-by: codex-pony[bot] <'));
@@ -310,8 +314,11 @@ async function successiveMerges(checkState, appMode = false) {
    const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
    const snapshot = async number => {
     const baseTip = await branch('main');
+    // A locally prepared squash replaces the isolated PR head before it
+    // fast-forwards main. Check the live head, not its pre-squash SHA.
+    const currentHead = await branch('feature-' + number);
     const landed = merged.has(number) || await git('--git-dir=' + remote,
-      'merge-base', '--is-ancestor', heads[number], baseTip).then(() => true).catch(() => false);
+      'merge-base', '--is-ancestor', currentHead, baseTip).then(() => true).catch(() => false);
     if (landed) merged.add(number);
     return { number, title: title(number), state: landed ? 'closed' : 'open',
       merged: landed, merged_at: landed ? '2026-11-05' : null,
@@ -319,7 +326,7 @@ async function successiveMerges(checkState, appMode = false) {
       user: { type: 'User', login: 'human' },
       mergeable: number === 1 || !merged.has(1),
       mergeable_state: number === 1 || !merged.has(1) ? 'clean' : 'dirty',
-      head: { ref: 'feature-' + number, sha: await branch('feature-' + number), repo: { full_name: 'owner/repo' } },
+      head: { ref: 'feature-' + number, sha: currentHead, repo: { full_name: 'owner/repo' } },
       base: { ref: 'main', sha: baseTip, repo: { full_name: 'owner/repo' } } };
     };
     const commit = async sha => {
@@ -402,16 +409,19 @@ async function successiveMerges(checkState, appMode = false) {
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
    const final = await submit(conflict.continueUrl, 2, patch);
     assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
-    assert.equal(await branch('feature-2'), heads[2], 'A conflict repair leaves the PR head unchanged');
-    assert.equal(await git('--git-dir=' + remote, 'rev-parse', final.results[0].sha + '^1'), first.results[0].sha);
-    assert.equal(await git('--git-dir=' + remote, 'rev-parse', final.results[0].sha + '^2'), heads[2]);
+    assert.equal(await branch('feature-2'), final.results[0].sha,
+      'A locally resolved squash replaces only the isolated PR head');
+    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', final.results[0].sha),
+      first.results[0].sha, 'The squash has exactly one parent: the previous main tip');
+    await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
+      heads[2], final.results[0].sha), 'The old PR commits do not enter main ancestry');
     assert.equal(final.batch.merged.length, 2);
    assert.deepEqual(final.batch.deferred, []);
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
-     appMode ? `${bot.name} <${bot.email}>` : 'John Wooten <human@example.test>');
+     'John Wooten <human@example.test>', 'The original human stays the squash author in App mode');
    if(appMode) {
      assert.equal(await git('--git-dir='+remote,'show','-s','--format=%cn <%ce>','main'),`${bot.name} <${bot.email}>`);
      assert.equal(await git('--git-dir='+remote,'show','-s','--format=%an <%ae>',heads[2]),'John Wooten <human@example.test>');
@@ -419,9 +429,7 @@ async function successiveMerges(checkState, appMode = false) {
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
    const newCredit = 'Co-authored-by: ChatGPT 6.1 <noreply@openai.com>';
-   assert(message.includes(newCredit), 'Conflict resolution credits ChatGPT 6');
-   assert.equal(message.split('\n').filter(line => line === newCredit).length,
-     1, 'Only one current assistant trailer is emitted');
+   assert(!message.includes(newCredit), 'Lindsey must not add an assistant credit for automatic conflict resolution');
    assert(!message.includes('Co-authored-by: Codex (Web) <noreply@openai.com>'),
      'New resolution commits must not introduce obsolete Web credit');
    const beforeThird = await branch('main');

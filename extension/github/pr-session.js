@@ -118,6 +118,8 @@ async function launchSession(vscode, context, root, options, mergeUrl, mergeSele
         // PR drafts and repair sessions open compact; bulk merges start expanded.
         'sweetiebot.startCompactPRSession': options.expandedOnStartup !== true,
         'sweetiebot.startExpandedMergeSession': options.expandedOnStartup === true,
+        ...(mergeUrl ? { 'workbench.editor.showTabs': 'none',
+          'workbench.editor.editorActionsLocation': 'hidden' } : {}),
         'workbench.browser.dataStorage': 'workspace',
         'sweetiebot.chatgptProjectUrl': config.get('chatgptProjectUrl', ''),
         'sweetiebot.autoPublishPullRequests': config.get('autoPublishPullRequests', true),

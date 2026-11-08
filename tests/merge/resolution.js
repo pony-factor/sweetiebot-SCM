@@ -12,7 +12,6 @@ const { validateResolutionHunks, applyResolutionHunks } = require('../../extensi
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const { reviewPublicationInstructions } = require('../../extension/merge/review-policy');
 const { blockerPrompt } = require('../../extension/merge/blocker-actions');
-const { assistantCoauthorTrailer } = require('../../extension/merge/resolution-commits');
 assert(reviewPublicationInstructions().includes('Never create a per-file inline comment'));
 assert(reviewPublicationInstructions().includes('Only tag truly actionable findings'));
 const selection = { repository: 'owner/repo', pullRequests: [{ number: 12,
@@ -27,11 +26,6 @@ const webPrompt = blockerPrompt(selection.repository, selection.pullRequests[0],
 assert(webPrompt.includes('Co-authored-by: ChatGPT MODEL <noreply@openai.com>'));
 assert(webPrompt.includes('replacing MODEL with that actual version number'));
 assert(!webPrompt.includes('Co-authored-by: ChatGPT 6 <noreply@openai.com>'));
-assert.equal(assistantCoauthorTrailer('6.1'), 'Co-authored-by: ChatGPT 6.1 <noreply@openai.com>');
-assert.equal(assistantCoauthorTrailer('7.2'), 'Co-authored-by: ChatGPT 7.2 <noreply@openai.com>');
-assert.equal(assistantCoauthorTrailer(undefined), '');
-for (const invalid of ['Codex Web', 'GPT-6', '6 Med', '6\nOther', '', null, 6])
-  assert.throws(() => assistantCoauthorTrailer(invalid), /Invalid current web coding model number/);
 assert(!webPrompt.includes('Co-authored-by: Codex Web <noreply@openai.com>'));
 const handoffPolicy = resolutionInstructions(selection, 'http://127.0.0.1:12345/return');
 assert(handoffPolicy.includes('GITHUB REVIEW PUBLICATION POLICY'));
@@ -48,11 +42,13 @@ assert(handoffPolicy.includes('SWEETIEBOT_HANDOFF_GZIP_V1'),'No raw diffs in ove
 assert(handoffPolicy.includes('<details>'),'Oversized transport stays collapsed in chat');
 assert.equal(MAX_PATCH_BYTES,32*1024*1024,'Larger complete patches remain accepted');
 assert(handoffPolicy.includes('BULK CONFLICT RESOLUTION'),'Compact per-hunk merge integration is preferred');
-assert(handoffPolicy.includes('MODEL ATTRIBUTION'));
-assert(handoffPolicy.includes('assistantModelNumber'));
+assert(handoffPolicy.includes('LINDSEY COMMIT MESSAGES'));
+assert(!handoffPolicy.includes('MODEL ATTRIBUTION'));
+assert(!handoffPolicy.includes('assistantModelNumber'));
 assert(!handoffPolicy.includes('Co-authored-by: ChatGPT 6 <noreply@openai.com>'));
-assert.throws(() => validateResolution({ ...input, results: [{ ...input.results[0],
-  assistantModelNumber: 'Codex Web' }] }, selection), /Invalid current web coding model number/);
+assert.equal(validateResolution({ ...input, results: [{ ...input.results[0],
+  assistantModelNumber: '7.2' }] }, selection)[0].assistantModelNumber, undefined,
+  'Legacy model metadata is ignored instead of becoming commit attribution');
 assert(handoffPolicy.includes('resolutionHunks'),'Model need not output complete Git diffs');
 
 assert(handoffPolicy.includes('#result_gz='),'Primary Apply link uses gzip Base64URL');
@@ -70,7 +66,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   try {
     await fs.mkdir(path.join(directory, '.git'));
     for (const enabled of [true, false]) {
-      const created = [];
+      const created = [], messages = [];
       const git = async (...args) => {
         if (args[0] === 'config') {
           if (args.at(-1) === 'gpg.format') return 'openpgp';
@@ -84,23 +80,23 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
         if (args[0] === 'verify-commit') return '';
         return base;
       };
-      const createCommitTree = async ({ identity }) => {
+      const createCommitTree = async ({ identity, messageFile }) => {
+        messages.push(await fs.readFile(messageFile, 'utf8'));
         const args = ['commit-tree', ...(identity.signed ? ['-S'] : [])];
         created.push(args);
         return head;
       };
       const options = { git, directory, headSha: head, baseSha: base, finalTree: base,
         createCommitTree, conflicts: ['file.txt'], decisions: [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: 'Keep both changes.' }],
-        author: { name: 'Human', email: 'human@example.test' }, base: 'main', assistantModelNumber: '6.1' };
+        author: { name: 'Human', email: 'human@example.test' }, base: 'main' };
       await require('../../extension/merge/resolution-commits').createResolutionCommits(options);
       assert.equal(created.length, 2, 'Sign both file decisions and the final synchronization');
       assert(created.every(args => args.includes('-S') === enabled));
       assert(created.every(args => !args.includes('commit.gpgsign=false')));
       const syncMessage = await fs.readFile(path.join(directory, '.git', 'sweetiebot-resolution-message'), 'utf8');
-      assert(syncMessage.includes('Co-authored-by: ChatGPT 6.1 <noreply@openai.com>'));
-      await assert.rejects(require('../../extension/merge/resolution-commits').createResolutionCommits({
-        ...options, assistantModelNumber: undefined }), /require the web generator model number/);
-      assert(!syncMessage.includes('Co-authored-by: Codex Web <noreply@openai.com>'));
+      assert.equal(messages[0], '🛠️ Preserve behavior\n\nKeep both changes.\n',
+        'Each resolution commit describes the decision without attribution or procedural metadata');
+      assert.equal(syncMessage, '🔄 Sync branch to main\n', 'Sync messages have no source or file annotations');
 
       if (enabled) {
         await assert.rejects(require('../../extension/merge/resolution-commits').createResolutionCommits({ ...options,
@@ -229,14 +225,14 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   const compactDecision=[{path:'file.txt',title:'🛠️ Keep both sides',description:'Retain the corrected main behavior and PR feature.'}];
   const compactHunks=[{path:'file.txt',hunks:[{index:0,choice:'both-ours-first'}]}];
   const compactInput={...input,results:[{...input.results[0],resolutionHunks:compactHunks,
-    decisions:compactDecision,assistantModelNumber:'7.2'}]};
+    decisions:compactDecision}]};
   assert.equal(validateResolution(compactInput,selection)[0].resolutionHunks[0].hunks[0].choice,'both-ours-first');
   assert.throws(() => validateResolution({...compactInput,results:[{...compactInput.results[0],patch:'patch'}]},selection),/never both/);
   assert.throws(() => validateResolution({...compactInput,results:[{...compactInput.results[0],decisions:[]}]},selection),/concrete/);
   await executeResolution(compactInput,selection,{merge:async(_repo,_number,options)=>{
     assert.equal(options.resolutionPatch,null);
     assert.deepEqual(options.resolutionHunks,compactHunks,'Local executor receives only the small conflict choices');
-    assert.equal(options.assistantModelNumber, '7.2', 'The web generator version reaches the local executor');
+    assert.equal(options.assistantModelNumber, undefined, 'Lindsey does not require assistant metadata');
     return {merged:false,status:'synced'};
   }});
   let calls = 0;

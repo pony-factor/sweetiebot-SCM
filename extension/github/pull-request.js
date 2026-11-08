@@ -193,7 +193,8 @@ function conversationSourceLinks(source) {
   return normalized.kind === 'codex' ? {
     online,
     local: codexConversationUrl(normalized.uuid),
-    desktop: normalized.desktopUrl,
+    // Local and Desktop address the same thread; native copy is optional.
+    desktop: normalized.desktopUrl || `codex://threads/${normalized.uuid}`,
   } : { online };
 }
 
@@ -270,17 +271,58 @@ async function readCodexConversation(vscode) {
   }
 }
 
-// PR creation does not require the originating Codex transcript. An export
-// failure should not prevent drafting, but explicit source-link actions retain
-// readCodexConversation's strict error handling. A branch switch may interrupt
-// capture; never attach stale source links or transcript text to another chat.
+// PR creation treats Markdown export and native deeplink capture independently.
+// Once the active thread is identified, either copy can fail without suppressing
+// the other, and the separately consented Share step can still run.
 async function readOptionalCodexConversation(vscode) {
   try {
-    return await readCodexConversation(vscode);
+    const codex = vscode.extensions.getExtension('openai.chatgpt');
+    if (codex && !codex.isActive) await codex.activate();
+    const commands = await vscode.commands.getCommands(true);
+    const independent = ['sweetiebot.readCodexIdentity', 'sweetiebot.readCodexMarkdown',
+      'sweetiebot.readCodexDeeplink'].every(command => commands.includes(command));
+    // Older Codex host patches still expose the legacy combined operation.
+    if (!independent) return await readCodexConversation(vscode);
+
+    const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
+    const threadId = identity?.threadId;
+    if (!CONVERSATION_UUID.test(threadId || '')) return undefined;
+    let markdown, deeplink;
+    try {
+      markdown = await vscode.commands.executeCommand('sweetiebot.readCodexMarkdown', threadId);
+      if (normalizeConversationSource(markdown?.source)?.uuid !== threadId) {
+        throw new Error('The active Codex chat changed during Markdown capture.');
+      }
+    } catch (error) {
+      void vscode.window.showWarningMessage(
+        '⚠️ Could not copy the originating Codex chat Markdown: ' + error.message
+        + ' Continuing with the native deeplink and eligible Share step.'
+      );
+      markdown = undefined;
+    }
+    try {
+      deeplink = await vscode.commands.executeCommand('sweetiebot.readCodexDeeplink', threadId);
+      const copied = normalizeConversationSource(deeplink?.source);
+      if (copied?.uuid !== threadId || !copied.desktopUrl) {
+        throw new Error('Codex did not copy a verified deeplink for the originating chat.');
+      }
+    } catch (error) {
+      void vscode.window.showWarningMessage(
+        '⚠️ Could not copy the originating Codex deeplink: ' + error.message
+        + ' Continuing with the available transcript and eligible Share step.'
+      );
+      deeplink = undefined;
+    }
+    const source = normalizeConversationSource({ kind: 'codex', uuid: threadId,
+      url: codexConversationUrl(threadId), desktopUrl: deeplink?.source?.desktopUrl });
+    const clipped = typeof markdown?.text === 'string' ? markdown.text.trim().slice(-95000) : '';
+    const text = /^[\uDC00-\uDFFF]/.test(clipped) ? clipped.slice(1) : clipped;
+    const model = markdown?.model || deeplink?.model;
+    return { source, text, ...(model ? { model } : {}) };
   } catch (error) {
     void vscode.window.showWarningMessage(
-      'Continuing without the Codex conversation transcript and source links. '
-        + `PR drafting will continue without its transcript: ${error.message}`
+      '⚠️ Could not identify the originating Codex chat: ' + error.message
+      + ' Continuing without its transcript and source links.'
     );
     return undefined;
   }
@@ -653,7 +695,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       }
       source = { ...source, sharedUrl: shared.sharedUrl };
       } catch (error) {
-        void vscode.window.showWarningMessage('The chat could not be shared. Kefania will continue with the captured conversation and local chat link. ' + error.message);
+        void vscode.window.showWarningMessage('⚠️ The chat could not be shared. Kefania will continue with the captured conversation and local chat link. ' + error.message);
       }
     }
 

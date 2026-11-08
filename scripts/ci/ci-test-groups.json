@@ -247,6 +247,7 @@
         "merge/publication.js",
         "merge/runner-layout.js",
         "merge/auto-ci-repair.js",
+        "merge/completion-artwork.js",
         "merge/batch.js",
         "merge/commit-tree.js",
         "merge/dashboard.js",
