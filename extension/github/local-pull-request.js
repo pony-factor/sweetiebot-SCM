@@ -2,6 +2,7 @@
 const { pendingPRCommits } = require('./pr-commit-wait');
 const { runKefania } = require('../codex/kefania-runner');
 const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl, readCodexConversation } = require('./pull-request');
+const { resolveForkPullRequestTarget, chooseForkPullRequestTarget } = require('./fork-pr-target');
 
 function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.createLocalPullRequest', async (uri, options) => {
@@ -21,13 +22,21 @@ function registerLocalPullRequestCommand(vscode, context, dependencies = {}) {
     if (!url) throw new Error('The selected remote must identify a GitHub repository.');
     const waitForCommits = await (dependencies.pendingPRCommits || pendingPRCommits)(vscode, context, repository.rootUri);
     if (waitForCommits) await waitForCommits();
+    const resolveTarget = dependencies.resolveForkPullRequestTarget || resolveForkPullRequestTarget;
+    const chooseTarget = dependencies.chooseForkPullRequestTarget || chooseForkPullRequestTarget;
+    const target = await resolveTarget(vscode, url, options.base);
+    const selected = await chooseTarget(vscode, repository.rootUri.fsPath, target, options.branch, {
+      run: dependencies.runKefania || runKefania, priorDecision: options.forkTargetDecision
+    });
+    if (!selected) return { cancelled: true };
     const suppliedSource = normalizeConversationSource(options.source) || (await readCodexConversation(vscode))?.source;
     const source = sourceWithSharedConversationUrl(context, suppliedSource);
     const run = dependencies.runKefania || runKefania;
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
       title: 'Creating new pull request with Kefania instructions', cancellable: false }, () =>
-      run(repository.rootUri.fsPath, { repository: url.slice('https://github.com/'.length),
-        head: options.branch, base: options.base, source }, { botOnly: false }));
+      run(repository.rootUri.fsPath, { repository: selected.repository,
+        ...(selected.headRepository ? { headRepository: selected.headRepository } : {}),
+        head: options.branch, base: selected.base, source }, { botOnly: false }));
     if (result?.url) {
       // Opening the result supplies confirmation without a redundant toast
       // in the independent PR workspace.

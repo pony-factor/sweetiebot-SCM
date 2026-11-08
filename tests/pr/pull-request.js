@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { resolveForkPullRequestTarget, chooseForkPullRequestTarget } = require('../../extension/github/fork-pr-target');
 const {
   codexConversationUrl,
   conversationSourceLinks,
@@ -34,6 +35,47 @@ async function run() {
   for (const remote of ['https://github.com.attacker.test/owner/repo', 'https://user:password@github.com/owner/repo', 'file:///local', undefined]) {
     assert.equal(githubRepository(remote), undefined);
   }
+
+
+  const readRepository = async endpoint => {
+    if (endpoint === 'repos/owner/fork') return { full_name: 'owner/fork', fork: true, parent: { full_name: 'upstream/project' } };
+    if (endpoint === 'repos/upstream/project') return { full_name: 'upstream/project', default_branch: 'main' };
+    throw new Error('Unexpected endpoint: ' + endpoint);
+  };
+  const target = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main', readRepository);
+  assert.deepEqual(target, { repository: 'upstream/project',
+    repositoryUrl: 'https://github.com/upstream/project', headRepository: 'owner/fork',
+    base: 'main', fork: true });
+  const ordinary = await resolveForkPullRequestTarget({}, 'https://github.com/owner/fork', 'main',
+    async () => ({ full_name: 'owner/fork', fork: false }));
+  assert.equal(ordinary.headRepository, undefined);
+  let choices = ['Try upstream', 'Open PR on fork main'];
+  const prompts = [];
+  const fakeVscode = { window: { async showWarningMessage(message, _options, ...actions) {
+    prompts.push({ message, actions });
+    return choices.shift();
+  } } };
+  const fallback = await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork', target, 'topic',
+    { checkApp: async () => false, run: async (_root, input) => {
+      assert.equal(input.repository, 'upstream/project');
+      assert.equal(input.headRepository, 'owner/fork');
+      throw new Error('GitHub request failed (HTTP 403)');
+    } });
+  assert.equal(fallback.repository, 'owner/fork');
+  assert.equal(fallback.base, 'main');
+  assert.equal(fallback.fallbackToFork, true);
+  assert.match(prompts[0].message, /upstream/);
+  assert.match(prompts[1].message, /NOT create a PR on upstream/);
+  choices = ['Try upstream', undefined];
+  assert.equal(await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork', target, 'topic',
+    { checkApp: async () => false, run: async () => { throw new Error('GitHub request failed (HTTP 403)'); } }),
+    undefined, 'Declining fork/main must cancel without publishing');
+  choices = ['Try upstream'];
+  let probes = 0;
+  const selected = await chooseForkPullRequestTarget(fakeVscode, '/workspace/fork', target, 'topic',
+    { checkApp: async () => false, run: async () => { probes++; } });
+  assert.equal(selected.repository, 'upstream/project');
+  assert.equal(probes, 1);
 
   assert.equal(
     kefaniaRulesPath('/workspace/project'),
@@ -405,6 +447,9 @@ async function run() {
   } };
   registerPullRequestCommand(vscode, context, {
     findOpenPullRequest: async () => existingPullRequest,
+    resolveForkPullRequestTarget: async (_vscode, repositoryUrl, base) => ({
+      repository: repositoryUrl.slice('https://github.com/'.length), repositoryUrl, base
+    }),
     verifyPublishedBranch: async () => {},
     pendingPRCommits: async () => commitWait,
     readLudicrousMode: async () => ludicrousMode,
