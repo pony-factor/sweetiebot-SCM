@@ -551,6 +551,31 @@ async function run() {
   assert.equal(unshared.launched, true, 'A failed public Share cannot block PR drafting');
   assert.equal(sessionLaunches.at(-1).options.conversationContext, 'Unanswered PR intent');
   autoShareCodexChat = false;
+
+  // A changed Codex thread must warn, not abandon the New PR workflow or
+  // attach an unrelated conversation to the draft.
+  const captureWarnings = [];
+  const originalShowWarning = vscode.window.showWarningMessage;
+  vscode.window.showWarningMessage = async message => { captureWarnings.push(message); };
+  vscode.commands.executeCommand = async (id, ...args) => {
+    if (id === 'sweetiebot.readCodexConversation') {
+      throw new Error('The active Codex chat changed during capture.');
+    }
+    return regularExecute(id, ...args);
+  };
+  const launchesBeforeCaptureFailure = sessionLaunches.length;
+  const continuedDraft = await callback(uri, { branch: 'draft', remote: 'origin', base: 'main' });
+  assert.equal(continuedDraft.launched, true, 'Codex capture failures must not block PR drafting');
+  assert.equal(sessionLaunches.length, launchesBeforeCaptureFailure + 1);
+  assert.equal(sessionLaunches.at(-1).options.source, undefined,
+    'Failed capture must not attach source links to the wrong chat');
+  assert.equal(sessionLaunches.at(-1).options.conversationContext, '',
+    'Drafting continues without an unavailable transcript');
+  assert.equal(captureWarnings.length, 1, 'Only one warning is shown for a failed capture');
+  assert.match(captureWarnings[0], /Could not copy the originating Codex chat/);
+  assert.match(captureWarnings[0], /active Codex chat changed during capture/);
+  assert.match(captureWarnings[0], /Continuing without the Codex conversation transcript/);
+  vscode.window.showWarningMessage = originalShowWarning;
   vscode.commands.executeCommand = regularExecute;
   codexSnapshot = undefined;
   launchInSeparateWorkspace = false;

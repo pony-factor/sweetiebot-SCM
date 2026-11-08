@@ -270,6 +270,20 @@ async function readCodexConversation(vscode) {
   }
 }
 
+// PR creation does not require the originating Codex transcript. An export
+// failure should not prevent drafting, but explicit source-link actions retain
+// readCodexConversation's strict error handling.
+async function readOptionalCodexConversation(vscode) {
+  try {
+    return await readCodexConversation(vscode);
+  } catch (error) {
+    void vscode.window.showWarningMessage(
+      `${error.message} Continuing without the Codex conversation transcript and source links.`
+    );
+    return undefined;
+  }
+}
+
 function pullRequestPrompt({
   branch,
   repositoryPath,
@@ -613,7 +627,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     let conversationContext = typeof options.conversationContext === 'string' ? options.conversationContext : '';
     let conversationModel = options.conversationModel;
     if (!source && typeof options.conversationContext !== 'string') {
-      const codex = await readCodexConversation(vscode);
+      const codex = await readOptionalCodexConversation(vscode);
       source = codex?.source;
       conversationContext = codex?.text || '';
       conversationModel = codex?.model;
@@ -906,6 +920,7 @@ module.exports = {
   readKefaniaInstructions,
   readLudicrousMode,
   readCodexConversation,
+  readOptionalCodexConversation,
   readSweetiebotPony,
   registerPullRequestCommand,
 };
