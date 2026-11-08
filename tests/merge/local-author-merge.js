@@ -40,7 +40,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     if(removeRunner||runnerUnavailable){
       await fs.mkdir(path.join(work,'scripts','ci'),{recursive:true});
       const script = runnerUnavailable
-        ? 'import sys\nsys.stderr.write("::error::Node process launch failed\\n")\nsys.exit(125)\n'
+        ? 'import sys\nsys.stderr.write("::error::Node process launch failed " + "x" * 3000 + "\\n")\nsys.exit(125)\n'
         : 'print("base runner")\n';
       await fs.writeFile(path.join(work,'scripts','ci','ci-test-runner.py'),script);
     }
@@ -165,7 +165,10 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       else if(removeRunner||runnerUnavailable){
         assert.equal(result.merged,false);
         assert.equal(result.status,'blocked','Missing runner or unavailable process infrastructure must stop the merge');
-        if(runnerUnavailable)assert.equal(result.kind,'capability','Infrastructure failure must not trigger automated code repair');
+        if(runnerUnavailable){
+          assert.equal(result.kind,'capability','Infrastructure failure must not trigger automated code repair');
+          assert(result.reason.length<=1900,'Structured test errors must remain size-bounded');
+        }
         assert.match(result.reason,removeRunner?/test runner was removed/:/test infrastructure unavailable/);
         assert.equal(pushes.length,0,'Failed or missing integrated tests cannot push');
         assert.equal(await branch('main'),baseSha);
