@@ -20,6 +20,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -122,6 +123,17 @@ assert(result.message.startsWith('- 🐛 Fix'));
         self.assertEqual(owners, ["browser-ui"])
         self.assertFalse(ci.browser_needed(manifest["groups"]["commit"]))
         self.assertTrue(ci.browser_needed(manifest["groups"]["browser-ui"]))
+
+    def test_python_suite_keeps_its_module_import_path(self):
+        spec = {"label": "Python imports", "tests": ["search/workspace-search.py"],
+                "syntax": []}
+        with patch.object(ci, "execute", return_value=0) as execute:
+            ci.run_group("efs-search", spec)
+        self.assertEqual(execute.call_count, 1)
+        command, env = execute.call_args.args
+        self.assertEqual(command[:4], [sys.executable, "-m", "unittest", "-v"])
+        self.assertIn(str(ci.ROOT / "scripts"), env["PYTHONPATH"].split(os.pathsep))
+        self.assertIn(str(ci.ROOT / "tests"), env["PYTHONPATH"].split(os.pathsep))
 
     def test_browser_test_is_syntax_checked_and_executed(self):
         spec = {"label": "Browser and UI",
