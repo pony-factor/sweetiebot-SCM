@@ -196,7 +196,8 @@ const run = promisify(execFile);
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/child', childSha);
     stalePushReads = 2;
     const incremental = await attempt({ api: dependentApi });
-    assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
+    assert.equal(stalePushReads, resolving ? 0 : 2,
+      resolving ? 'Verify post-push metadata after a real sync' : 'An unchanged sync must not poll post-push metadata');
     if (resolving) {
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':feature-art.png'), await git('--git-dir=' + remote, 'rev-parse', headSha + ':feature-art.png'), 'Text conflict resolution retains the exact clean binary blob');
@@ -204,7 +205,9 @@ const run = promisify(execFile);
       await assert.rejects(git('--git-dir=' + remote, 'show', incremental.sha + ':remove.txt'));
     }
     assert.equal(incremental.status, 'synced', 'Default integration appends commits');
-    assert(!pushes.at(-1).some(arg => arg.startsWith('--force')), 'Incremental updates use an ordinary push');
+    if (resolving) assert(!pushes.at(-1).some(arg => arg.startsWith('--force')),
+      'Incremental updates use an ordinary push');
+    else assert.equal(pushes.length, 0, 'Unchanged synchronization never pushes');
     assert.equal(await branch('child'), childSha, 'Append-only parent sync does not change its child branch');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
