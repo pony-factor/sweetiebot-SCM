@@ -214,38 +214,25 @@ const run = promisify(execFile);
     pushed = false;
     const progress = [];
     stalePushReads = 2;
-    let result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
+    const result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
       onProgress: event => progress.push(event), allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
-      expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch, decisions,
-      assistantModelNumber: webModelNumber,
+      expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' },
+      resolutionPatch, decisions, assistantModelNumber: webModelNumber, operation: 'merge',
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
     assert.equal(progress[0].stage, 'preparing');
-    const pushedIndex = progress.findIndex(event => event.stage === 'pushed');
-    assert(pushedIndex > progress.findIndex(event => event.stage === (resolving ? 'sync-prepared' : 'prepared')));
-    assert.equal(progress[pushedIndex + 1].stage, 'verifying-push');
-    if (resolving) {
-      assert(progress.some(event => event.stage === 'decision-commit' && event.path === 'file.txt' && event.title === decisions[0].title));
-    } else {
-      assert(progress.findIndex(event => event.stage === 'waiting-checks') > pushedIndex);
-      assert(progress.findIndex(event => event.stage === 'merging') > progress.findIndex(event => event.stage === 'checks-passed'));
-    }
-    if (resolving) {
-      assert.equal(result.status, 'synced');
-      assert.equal(await branch('main'), baseSha, 'Resolution preparation only reads main');
-      assert.equal(await git('--git-dir=' + remote, 'rev-parse', result.sha + '^^'), headSha, 'The original PR history is preserved');
-      assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', result.sha + '^'), decisions[0].title);
-      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha + '^')).trim(),
-        decisions[0].title + '\n\n' + decisions[0].description,
-        'Resolution commit contains only the decision title and rationale');
-      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha)).trim(),
-        '🔄 Sync branch to main', 'Synchronization commit carries no procedural body');
-      result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
-        expected: { ...expected, headSha: result.sha }, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
-        temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
-    }
-    assert(result.merged, JSON.stringify(result));
-    assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'), resolving ? 'feature and base update' : 'feature continued');
-    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
+    assert(progress.some(event => event.stage === 'pushing-squash-base'));
+    assert(!progress.some(event => event.stage === 'pushing-signed-squash-head'),
+      'Squash publication must never move the source PR head');
+    assert.equal(result.status, 'published', 'GitHub may not automatically mark a directly published squash merged');
+    assert.equal(result.merged, false);
+    assert.equal(await branch('main'), result.sha);
+    assert.equal(await branch('feature'), headSha, 'The PR branch remains unchanged');
+    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', result.sha),
+      baseSha, 'The squash has one parent, the previous main tip');
+    assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'),
+      resolving ? 'feature and base update' : 'feature continued');
+    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
+      'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
     // Preserve verified historical Codex authorship without attributing Lindsey conflict decisions to ChatGPT.
@@ -265,7 +252,7 @@ const run = promisify(execFile);
     assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('executor-')), [], 'All isolated checkouts are cleaned up');
     assert.equal(await repo('status', '--porcelain'), '', 'Source working tree remains untouched');
     assert.equal(await repo('rev-parse', 'HEAD'), baseSha, 'Source branch does not move');
-    console.log('Real Git resolution patch, isolated checkout, guarded push and human-author squash passed.');
+    console.log('Real Git resolution, append-only synchronization, preserved PR head and single-parent squash passed.');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
  }
  for (const checkState of ['success', 'pending', 'failure']) await successiveMerges(checkState);
