@@ -318,6 +318,9 @@ def run():
             rail.setAttribute('data-composer-rail', '');
             rail.setAttribute('data-composer-rail-placement', 'above');
             rail.style.height = '2px';
+            // Native horizontal scroll fades also mask descendants outside
+            // the rail vertically, even when overflow is made visible.
+            rail.style.maskImage = 'linear-gradient(to right, transparent, black 0px, black 100%, transparent)';
             scope.prepend(rail);
             rail.append(document.getElementById('meter-control'));
             const style = document.createElement('style');
@@ -326,6 +329,7 @@ def run():
         }''')
         meter.evaluate('(el) => el.setAttribute("weekly-percent", "35")')
         page.wait_for_function('getComputedStyle(document.querySelector("[data-composer-rail]")).overflow === "visible"')
+        assert page.eval_on_selector('[data-composer-rail]', 'el => getComputedStyle(el).maskImage') == 'none'
         assert meter.locator('scm-toolkit-usage-pie').is_visible()
         assert bar.get_attribute('aria-valuenow') == '35'
         assert bar.evaluate('el => el.parentElement.id') == 'meter-surface'

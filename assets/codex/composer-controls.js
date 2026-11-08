@@ -21,6 +21,7 @@
       .scm-toolkit-location-slot { display: inline-block; flex: none; align-self: center;
         pointer-events: none; }
       .scm-toolkit-location-overflow { overflow: visible !important;
+        mask-image: none !important; -webkit-mask-image: none !important;
         position: relative !important; z-index: 11 !important; pointer-events: auto !important; }
       :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"].scm-toolkit-location-overflow:has(button[data-composer-navigation-target="run-location"]) {
         overflow: visible !important; }
@@ -79,7 +80,9 @@
             }
             // The native utility rail clips its descendants. The inline button
             // sits outside those bounds, so every intervening wrapper must allow
-            // painting and hit testing and sit above the composer footer. A
+            // painting and hit testing and sit above the composer footer. Native
+            // horizontal fade masks also clip vertically to a collapsed rail,
+            // even with overflow visible, so the wrapper rule clears those. A
             // z-index on the button alone cannot escape a lower stacking context.
             for (let wrapper = location.parentElement; wrapper && wrapper !== composer;
                 wrapper = wrapper.parentElement) {
