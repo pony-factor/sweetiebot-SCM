@@ -32,7 +32,7 @@ async function resolveForkPullRequestTarget(vscode, repositoryUrl, base, request
 function upstreamAccessFailure(error) {
   return [401, 403, 404].includes(error?.status) ||
     error?.code === 'SWEETIEBOT_APP_REPOSITORY_ACCESS' ||
-    /HTTP (?:401|403|404)|\b(?:access denied|not authorized|forbidden|repository access|cannot access|login required)\b|Install [\w-]+ on this repository/i
+    /HTTP (?:401|403|404)|GitHub CLI is unavailable|sign in before starting Kefania|\b(?:access denied|not authorized|forbidden|repository access|cannot access|login required)\b|Install [\w-]+ on this repository/i
       .test(String(error?.message || ''));
 }
 

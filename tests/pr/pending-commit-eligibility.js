@@ -46,6 +46,9 @@ async function run() {
       openChecks++;
       return existing;
     },
+    resolveForkPullRequestTarget: async (_vscode, repositoryUrl, base) => ({
+      repository: 'pony-factor/sweetiebot-SCM', repositoryUrl, base
+    }),
     pendingPRCommits: async () => pending ? async () => {} : undefined,
     stackedPullRequestBase: async (_root, _branch, base) => base,
     verifyPublishedBranch: async (rootPath, branch, remote) => {
@@ -106,6 +109,14 @@ async function run() {
   assert.equal(await findOpenPullRequest(vscode, url, 'feature', async () => [
     { ...pr, head: { ref: 'feature', repo: { full_name: 'someone/fork' } } },
   ]), undefined, 'A fork with the same branch name does not block this repository');
+  const forkPr = { ...pr, head: { ref: 'feature',
+    repo: { full_name: 'author/fork' } } };
+  const upstream = 'https://github.com/pony-factor/sweetiebot-SCM';
+  assert.equal((await findOpenPullRequest(vscode, upstream, 'feature', async endpoint => {
+    const parsed = new URL('https://api.github.com/' + endpoint);
+    assert.equal(parsed.searchParams.get('head'), 'author:feature');
+    return [forkPr];
+  }, 'author/fork')).number, 531, 'Cross-repository PR lookup uses the fork owner and branch');
   await assert.rejects(findOpenPullRequest(vscode, url, 'feature', async () => { throw Error('Read failed'); }),
     /Read failed/, 'Failed lookup cannot authorize duplicate creation');
   console.log('Queued commit PR preflight checks passed.');
