@@ -18,6 +18,8 @@
         gap: 4px !important; }
       .scm-toolkit-inline-location { position: absolute !important; margin: 0 !important;
         z-index: 2; pointer-events: auto !important; }
+      .scm-toolkit-location-slot { display: inline-block; flex: none; align-self: center;
+        pointer-events: none; }
       .scm-toolkit-location-overflow { overflow: visible !important;
         position: relative !important; z-index: 11 !important; pointer-events: auto !important; }
       :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"].scm-toolkit-location-overflow:has(button[data-composer-navigation-target="run-location"]) {
@@ -30,6 +32,10 @@
         if (element.style[property] !== value) element.style[property] = value;
     }
     function scan() {
+        for (const [location, slot] of slots) if (!location.isConnected) {
+            slot.remove();
+            slots.delete(location);
+        }
         document.querySelectorAll('button[data-composer-navigation-target="run-location"]').forEach(location => {
             // Limit the search to the nearest shared composer ancestor.
             let composer = location.parentElement;
@@ -38,6 +44,25 @@
             }
             if (!composer || composer === document.body || composer === document.documentElement) return;
             const access = composer.querySelector('button[data-composer-navigation-target="permissions"]');
+            const footer = access.closest('[class*="ComposerLayoutFooter_"]');
+            // Reserve a custom-layout slot while preserving the native React
+            // node in its utility rail. Hidden access is not a placement anchor.
+            if (footer && globalThis.scmToolkitCodexComposerLayout && !footer.contains(location)) {
+                if (location.scmToolkitLayoutSlot?.parentElement !== footer) {
+                    location.scmToolkitLayoutSlot?.remove();
+                    const slot = document.createElement('span');
+                    slot.className = 'scm-toolkit-location-slot';
+                    slot.setAttribute('aria-hidden', 'true');
+                    footer.append(slot);
+                    location.scmToolkitLayoutSlot = slot;
+                    slots.set(location, slot);
+                }
+                if (!location.classList.contains('scm-toolkit-layout-concealed')) {
+                    const bounds = location.getBoundingClientRect();
+                    set(location.scmToolkitLayoutSlot, 'width', `${bounds.width}px`);
+                    set(location.scmToolkitLayoutSlot, 'height', `${bounds.height}px`);
+                }
+            }
             if (location.classList.contains('scm-toolkit-usage-replaced')
                 || location.closest('.scm-toolkit-layout-concealed')) {
                 const margin = margins.get(access);
@@ -49,7 +74,6 @@
             }
             // Absolute positioning preserves React's menu ownership, but its
             // width still needs a place in the native footer's layout.
-            const footer = access.closest('[class*="ComposerLayoutFooter_"]');
             if (footer && !footer.classList.contains('scm-toolkit-composer-footer')) {
                 footer.classList.add('scm-toolkit-composer-footer');
             }
@@ -78,14 +102,15 @@
                 start:access.style.marginInlineStart, end:access.style.marginInlineEnd,
             });
             const usageOnly = location.disabled && location.querySelector('scm-toolkit-usage-meter');
+            const layoutSlot = location.scmToolkitLayoutSlot;
             const margin = margins.get(access);
-            set(access, 'marginInlineStart', usageOnly ? `${location.getBoundingClientRect().width + 8}px` : margin.start);
-            set(access, 'marginInlineEnd', usageOnly ? margin.end : `${location.getBoundingClientRect().width + 8}px`);
+            set(access, 'marginInlineStart', layoutSlot ? margin.start : usageOnly ? `${location.getBoundingClientRect().width + 8}px` : margin.start);
+            set(access, 'marginInlineEnd', layoutSlot || usageOnly ? margin.end : `${location.getBoundingClientRect().width + 8}px`);
             const parent = location.offsetParent;
             if (!parent) return;
             const origin = parent.getBoundingClientRect();
-            const target = access.getBoundingClientRect();
-            const left = usageOnly ? target.left - location.getBoundingClientRect().width - 4 : target.right + 4;
+            const target = (layoutSlot || access).getBoundingClientRect();
+            const left = layoutSlot ? target.left : usageOnly ? target.left - location.getBoundingClientRect().width - 4 : target.right + 4;
             set(location, 'left', `${left - origin.left - parent.clientLeft + parent.scrollLeft}px`);
             set(location, 'top', `${target.top - origin.top - parent.clientTop + parent.scrollTop}px`);
         });
@@ -93,6 +118,7 @@
     let pending = false;
     let enabled = true;
     const margins = new Map();
+    const slots = new Map();
     function safeScan() {
         if (!enabled) return;
         try { scan(); } catch {

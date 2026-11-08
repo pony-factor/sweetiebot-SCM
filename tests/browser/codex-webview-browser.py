@@ -331,9 +331,46 @@ def run():
         assert bar.evaluate('el => el.parentElement.id') == 'meter-surface'
         bounds, outer = bar.bounding_box(), surface.bounding_box()
         assert abs(bounds['y'] + bounds['height'] - outer['y'] - outer['height']) < 1
+        # Custom layouts must find sibling-rail usage and position it even when
+        # access is hidden. Test actual painting, not just nonzero DOM bounds.
+        page.evaluate('''() => {
+            document.documentElement.dataset.codexWindowType = 'extension';
+            document.getElementById('compact-footer').remove();
+            const footer = document.querySelector('.ComposerLayoutFooter_fixture');
+            footer.style.right = '8px';
+            footer.append(document.getElementById('add-files'));
+            window.usageLayout = {left:['location','input','attachments'],
+                right:['clipboard','send'], hidden:['access']};
+            window.originalUsageParent = document.getElementById('meter-control').parentElement;
+        }''')
+        page.add_script_tag(content=(ASSETS / 'composer-layout.js').read_text().replace(
+            '__SCM_TOOLKIT_COMPOSER_LAYOUT__', 'window.usageLayout'))
+        page.wait_for_function('document.querySelector(".scm-toolkit-location-slot")')
+        page.wait_for_function('document.getElementById("access-control").classList.contains("scm-toolkit-layout-concealed")')
+        for width in (260, 640, 280):
+            surface.evaluate('(el,width) => el.style.width=width+"px"', width)
+            page.wait_for_function('''() => {
+                const pie = document.querySelector('#meter-control scm-toolkit-usage-pie');
+                const r = pie.getBoundingClientRect();
+                return document.elementsFromPoint(r.x+r.width/2,r.y+r.height/2).includes(pie);
+            }''')
+            bounds, outer = meter.bounding_box(), surface.bounding_box()
+            assert outer['x'] <= bounds['x'] < outer['x'] + outer['width']
+            assert page.locator('#access-control').evaluate('el => getComputedStyle(el).opacity') == '0'
+            assert attachments.is_visible()
+            assert page.evaluate('document.getElementById("meter-control").parentElement === originalUsageParent')
+        page.evaluate('''() => {
+            usageLayout.left = ['input','attachments'];
+            usageLayout.right = ['location','clipboard','send'];
+            document.getElementById('meter-control').classList.add('rescan-layout');
+        }''')
+        page.wait_for_function('document.querySelector(".scm-toolkit-location-slot").classList.contains("scm-toolkit-layout-right-start")')
+        assert meter.bounding_box()['x'] > attachments.bounding_box()['x']
         meter.evaluate('(el) => el.removeAttribute("percent")')
         meter.evaluate('el => el.remove()')
         assert page.locator('.scm-toolkit-usage-bar').count() == 0
+        page.locator('#meter-control').evaluate('el => el.remove()')
+        page.wait_for_function('!document.querySelector(".scm-toolkit-location-slot")')
         # Promotion hiding removes the exhausted-messages upsell without hiding
         # the actual error or composer sharing its outer container.
         page.set_content("""<main>
