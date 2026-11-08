@@ -152,7 +152,7 @@ async function openExperimentWorkspace(vscode, {
     if (noticeThread) {
       try {
         directionSent = await vscode.commands.executeCommand('sweetiebot.codex.sendExperimentDirection', {
-          source: root, destination: folder, branch, expectedThreadId: noticeThread
+          source: root, sourceBranch: snapshot.branch || null, destination: folder, branch, expectedThreadId: noticeThread
         }) === true;
         if (!directionSent) throw new Error('The original Codex chat did not confirm the notice.');
       } catch {

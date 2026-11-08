@@ -110,7 +110,7 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
 
     // Inform the visible chat about the isolated test clone. Unlike branch
     // switching, this deliberately does not migrate its cwd or interrupt work.
-    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, destination, branch, expectedThreadId }) => {
+    subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.sendExperimentDirection', async ({ source, sourceBranch, destination, branch, expectedThreadId }) => {
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
         if (expectedThreadId && identity?.threadId !== expectedThreadId) {
             throw new Error('The original Codex chat changed; the trial notice was not sent to another chat.');
@@ -129,14 +129,21 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
         }
         const direction = 'A separate, disposable Sweetiebot experiment is now open in another VS Code window.\n' +
             'Original checkout: ' + JSON.stringify(original) + '\n' +
+            'Original branch: ' + JSON.stringify(sourceBranch || null) + '\n' +
             'Experimental checkout: ' + JSON.stringify(sandbox) + '\n' +
             'Copied branch: ' + JSON.stringify(branch) + '\n\n' +
             'Run tests, builds, destructive resets, trial edits, and other experimental commands ONLY in the experimental checkout. ' +
             'Use that exact directory as the working directory and check pwd before running destructive commands. ' +
-            'Keep this original checkout, its index, working files, and current Codex conversation unchanged. ' +
+            'During experimentation, preserve the original checkout, its index, working files, and current Codex conversation. ' +
             'The experiment contains a snapshot of committed, staged, unstaged, and non-ignored untracked files. ' +
             'Do not run git reset/clean/checkout against the original repository. ' +
-            'Do not publish experimental commits or copy experimental edits back without explicit permission. ' +
+            'After validating the solution in the experimental checkout, apply the final intended code changes to the original checkout and original branch above as part of this task; no additional request to copy them back is needed. ' +
+            'Before applying them, verify the original checkout and branch identity and inspect its current changes. ' +
+            'Transfer only the changes made for this task relative to the initial experiment snapshot, including intended new files and deletions; do not replay copied pre-existing edits or unrelated trial changes. ' +
+            'Preserve existing user edits and staging, and reconcile overlapping edits without overwriting user work. Do not stage, commit, push, or rewrite history unless separately requested. ' +
+            'Verify that the final changes are present in the original checkout before reporting completion. Work left only in the trial checkout is not completion. ' +
+            'Keep the experimental checkout and its work intact until the transfer is verified; if access or a conflict prevents transfer, preserve the work and report the exact blocker. ' +
+            'Do not publish experimental commits. ' +
             'The separate window is available for its own Codex session if sandbox permissions prevent access from this one.';
         const input = [{ type: 'text', text: direction, text_elements: [] }];
         if (thread.status?.type === 'active') {
