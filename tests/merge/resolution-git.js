@@ -314,8 +314,11 @@ async function successiveMerges(checkState, appMode = false) {
    const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
    const snapshot = async number => {
     const baseTip = await branch('main');
+    // A locally prepared squash replaces the isolated PR head before it
+    // fast-forwards main. Check the live head, not its pre-squash SHA.
+    const currentHead = await branch('feature-' + number);
     const landed = merged.has(number) || await git('--git-dir=' + remote,
-      'merge-base', '--is-ancestor', heads[number], baseTip).then(() => true).catch(() => false);
+      'merge-base', '--is-ancestor', currentHead, baseTip).then(() => true).catch(() => false);
     if (landed) merged.add(number);
     return { number, title: title(number), state: landed ? 'closed' : 'open',
       merged: landed, merged_at: landed ? '2026-11-05' : null,
@@ -323,7 +326,7 @@ async function successiveMerges(checkState, appMode = false) {
       user: { type: 'User', login: 'human' },
       mergeable: number === 1 || !merged.has(1),
       mergeable_state: number === 1 || !merged.has(1) ? 'clean' : 'dirty',
-      head: { ref: 'feature-' + number, sha: await branch('feature-' + number), repo: { full_name: 'owner/repo' } },
+      head: { ref: 'feature-' + number, sha: currentHead, repo: { full_name: 'owner/repo' } },
       base: { ref: 'main', sha: baseTip, repo: { full_name: 'owner/repo' } } };
     };
     const commit = async sha => {
@@ -406,16 +409,19 @@ async function successiveMerges(checkState, appMode = false) {
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
    const final = await submit(conflict.continueUrl, 2, patch);
     assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
-    assert.equal(await branch('feature-2'), heads[2], 'A conflict repair leaves the PR head unchanged');
-    assert.equal(await git('--git-dir=' + remote, 'rev-parse', final.results[0].sha + '^1'), first.results[0].sha);
-    assert.equal(await git('--git-dir=' + remote, 'rev-parse', final.results[0].sha + '^2'), heads[2]);
+    assert.equal(await branch('feature-2'), final.results[0].sha,
+      'A locally resolved squash replaces only the isolated PR head');
+    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', final.results[0].sha),
+      first.results[0].sha, 'The squash has exactly one parent: the previous main tip');
+    await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
+      heads[2], final.results[0].sha), 'The old PR commits do not enter main ancestry');
     assert.equal(final.batch.merged.length, 2);
    assert.deepEqual(final.batch.deferred, []);
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
-     appMode ? `${bot.name} <${bot.email}>` : 'John Wooten <human@example.test>');
+     'John Wooten <human@example.test>', 'The original human stays the squash author in App mode');
    if(appMode) {
      assert.equal(await git('--git-dir='+remote,'show','-s','--format=%cn <%ce>','main'),`${bot.name} <${bot.email}>`);
      assert.equal(await git('--git-dir='+remote,'show','-s','--format=%an <%ae>',heads[2]),'John Wooten <human@example.test>');
