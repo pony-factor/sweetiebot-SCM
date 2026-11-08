@@ -499,6 +499,12 @@ function scmToolkitAttachCommitSettings(widget, button) {
         }
         const dropdown = action?.dropdown;
         const singleAction = action?.single ? action.container : undefined;
+        // VS Code can replace Sync's children, detaching Settings before this
+        // observer runs. Clear the old outer outline when Commit returns even
+        // when the wand no longer has its previous parent.
+        if (dropdown && action.container.classList.contains('scm-toolkit-single-action-settings')) {
+            action.container.classList.remove('scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings');
+        }
         const destination = dropdown || singleAction || widget.element;
         if (button.parentElement === destination) return;
         button.parentElement?.classList.remove(
