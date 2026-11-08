@@ -975,6 +975,9 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12,
     reason: 'The selected PR changed outside this batch; review the new head or PR state.' }] });
   assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'Old persisted snapshot deferrals have the same recovery guidance');
+  dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12, kind: 'capability',
+    reason: 'The selected PR head changed externally during preparation. No action taken; reselect and confirm the current PR head before merging.' }] });
+  assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'External conflict fixes use the same snapshot recovery classification');
   info = { ...info, base: { ...info.base, ref: 'main' } };
   await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].actionPlan.kind, 'snapshot', 'Returning to the original base does not resume a deferred batch');
