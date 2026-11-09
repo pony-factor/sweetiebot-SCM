@@ -712,6 +712,7 @@ class SubmissionTests(unittest.TestCase):
             "sweetiebot.promptForIndependentWorkspaceTrust",
             "sweetiebot.mergePostStatusUpdates",
             "sweetiebot.mergeAutoFixCi",
+            "sweetiebot.mergeAutoFixConflicts",
             "sweetiebot.mergeAutoFixCiMethod",
         })
         self.assertFalse(exposed - properties)
