@@ -19,7 +19,9 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 import argparse
 import json
 import os
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from toolkit_settings import load_settings, VSCODE_SETTINGS
@@ -144,6 +146,25 @@ def transform_view_manifest(source, settings):
     return json.dumps(package, indent=2) + '\n'
 
 
+def build_revision_bytes(source: Path) -> bytes:
+    """Use the archived revision, or capture HEAD from the local source checkout."""
+    if source.name == "build-revision.json":
+        return source.read_bytes()
+    root = source.parent.parent
+    revision = ""
+    if (root / ".git").exists():
+        try:
+            revision = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+                check=True, capture_output=True, text=True, timeout=5,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision):
+        revision = ""
+    return (json.dumps({"commit": revision}) + "\n").encode("utf-8")
+
+
 def source_files(root: Path | None = None) -> dict[Path, Path]:
     here = root / "scripts" if root is not None else HERE
     source_root = root / "extension" if root is not None else SOURCE
@@ -154,6 +175,9 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     # runtime_files includes extension/README.md with its third-party credits.
     files[Path("prune-merged-branches.py")] = here / "prune-merged-branches.py"
     files[Path("configurator.py")] = here / "configurator.py"
+    # The installed extension has no .git directory; retain its exact build SHA.
+    marker = here / "build-revision.json"
+    files[Path("build-revision.json")] = marker if marker.is_file() else here / "configurator.py"
     files[Path("welcome-tour.py")] = here / "welcome-tour.py"
     files[Path("importaliases.py")] = here / "importaliases.py"
     files[Path("github-apps.py")] = here / "github-apps.py"
@@ -200,6 +224,8 @@ def expected_bytes(
 ) -> bytes:
     if relative == Path("package.json"):
         return (json.dumps(render_package(settings), indent=2) + "\n").encode()
+    if relative == Path("build-revision.json"):
+        return build_revision_bytes(source)
     return source.read_bytes()
 
 
@@ -301,7 +327,7 @@ def sync_extension(
     for relative, source in source_files().items():
         if relative.parent != Path("."):
             (temp / relative.parent).mkdir(parents=True, exist_ok=True)
-        if relative == Path("package.json"):
+        if relative in (Path("package.json"), Path("build-revision.json")):
             (temp / relative).write_bytes(expected_bytes(relative, source, settings))
         else:
             shutil.copy2(source, temp / relative)
