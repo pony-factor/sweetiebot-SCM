@@ -984,6 +984,19 @@ def _local_setup_controls() -> str:
         '</div></div>'
     )
 
+BUILD_REVISION_FILE = Path(__file__).with_name("build-revision.json")
+
+
+def read_build_revision() -> str:
+    """Read the commit captured when this copy of Sweetiebot was installed."""
+    try:
+        payload = json.loads(BUILD_REVISION_FILE.read_text())
+    except (OSError, ValueError, TypeError):
+        return ""
+    revision = payload.get("commit") if isinstance(payload, dict) else None
+    return revision if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision) else ""
+
+
 SIDEBAR_CATEGORIES = (
     ("Source Control & Commits", ("Message bar", "Source control", "Commits")),
     ("Branches & Workspaces", ("Branch names",)),
@@ -1006,6 +1019,7 @@ def render_form(
     server_instance: str = "",
     commit_hotkey: str | None = None,
     codex_commit_hotkey: str | None = None,
+    build_revision: str | None = None,
 ) -> str:
     current = dict(current)
     if current.get("kefaniaShowCloseButton") is False:
@@ -1208,6 +1222,14 @@ def render_form(
     instance_json = json.dumps(server_instance).replace("<", "\\u003c")
     submit_label = action_label
     submit_hidden = "" if finish_on_save else " hidden"
+    revision = read_build_revision() if build_revision is None else build_revision
+    revision_pill = (
+        f'<span class="settings-build-revision" '
+        f'title="Built from commit {revision}" '
+        f'aria-label="Built from commit {revision}">{revision[:8]}</span>'
+        if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision)
+        else ""
+    )
     logo_url = "data:image/png;base64," + base64.b64encode(codex_button_icon.BUNDLED_ICON.read_bytes()).decode("ascii")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1215,7 +1237,8 @@ def render_form(
 :root{{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#f0f6fc;--muted:#8b949e;--accent:#2f81f7;--danger:#f85149}}
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}.settings-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}}.settings-header>div:first-child{{min-width:0}}.rebuild-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:160px}}.rebuild-actions output{{font-size:12px;max-width:290px;text-align:right;color:var(--muted)}}.rebuild-actions output.error-state{{color:#ffb3ad}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
-.settings-brand{{display:flex;align-items:center;gap:12px}}.settings-brand img{{width:48px;height:48px;object-fit:contain;flex:none}}
+.settings-brand{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}.settings-brand img{{width:48px;height:48px;object-fit:contain;flex:none}}
+.settings-build-revision{{display:inline-flex;align-items:center;flex:none;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font:600 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .settings-group h3{{font-size:14px;margin:14px 0 4px;color:var(--muted)}}.settings-group+.settings-group{{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}}
 .sticker-actions{{display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:55%}}.sticker-actions input{{max-width:100%;font:inherit}}.sticker-actions output{{font-size:12px;color:var(--muted)}}.sticker-setting{{align-items:flex-start}}
@@ -1243,7 +1266,7 @@ main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-
 .pack-picker{{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:10px;min-width:0}}.pack-picker legend{{font-weight:600;padding:0 6px}}.pack-picker>p{{margin:0 0 12px;color:var(--muted)}}.pack-toolbar{{display:flex;align-items:center;gap:12px;margin-bottom:12px}}.pack-toolbar input{{width:100%;min-width:0;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--text);font:inherit}}.pack-toolbar output{{white-space:nowrap;color:var(--muted);font-size:12px}}.pack-tabs{{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}}.pack-tab{{display:inline-flex;align-items:center;gap:7px;min-width:max-content;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--muted);white-space:nowrap}}.pack-tab strong{{font-size:13px;color:var(--text)}}.pack-tab small{{font-size:11px;color:var(--muted)}}.pack-tab::before{{content:"";width:7px;height:7px;border-radius:50%;background:#484f58;flex:none}}.pack-tab.is-enabled::before{{background:var(--accent)}}.pack-tab[aria-selected="true"]{{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--bg));color:var(--text)}}.pack-tab:focus-visible{{outline:2px solid var(--accent);outline-offset:1px}}.pack-tab[hidden]{{display:none}}.pack-panels{{margin-top:4px}}.pack-panel{{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}}.pack-panel[hidden]{{display:none}}.pack-panel-head{{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}}.pack-panel-head>span{{min-width:0}}.pack-panel-head strong{{display:block;font-size:14px}}.pack-panel-head small{{display:block;margin-top:4px;color:var(--muted);line-height:1.4}}.pack-enable{{display:flex;align-items:center;gap:7px;flex:none;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}}.pack-enable:has(input:checked){{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--bg))}}.pack-enable input{{accent-color:var(--accent);width:15px;height:15px;margin:0}}.pack-name-heading{{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:12px 0 8px}}.pack-name-heading>span{{font-size:12px;font-weight:600}}.pack-name-heading small{{color:var(--muted);font-size:11px}}.pack-names{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:250px;overflow:auto;padding:2px}}.pack-name{{display:block;overflow:hidden;text-overflow:ellipsis;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}}#pack-empty{{margin-top:10px}}
 @media(max-width:760px){{.settings-header{{flex-wrap:wrap}}.rebuild-actions{{align-items:flex-start}}.rebuild-actions output{{text-align:left}}main{{width:min(100% - 20px,1120px);margin-top:20px}}.settings-layout{{grid-template-columns:1fr}}.settings-tabs{{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;overflow:visible}}.settings-tab-group+.settings-tab-group{{padding-top:0;border-top:0}}.field-row,.textarea-row{{align-items:flex-start;flex-direction:column;gap:8px}}.model-picker{{width:100%}}.field-row input,.field-row select,.textarea-row textarea,.signing-actions{{width:100%}}}}
 @media(max-width:460px){{.settings-tabs{{grid-template-columns:1fr}}}}
-</style></head><body><main><header class="settings-header"><div><h1 class="settings-brand"><img src="{logo_url}" alt="" width="48" height="48">Sweetiebot</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></div><div class="rebuild-actions"><button type="button" id="rebuild-app" title="Manually update and restore Sweetiebot app customizations">Rebuild app</button><output id="rebuild-status" role="status" aria-live="polite"></output></div></header>
+</style></head><body><main><header class="settings-header"><div><h1 class="settings-brand"><img src="{logo_url}" alt="" width="48" height="48">Sweetiebot{revision_pill}</h1><p>Configure locally. Settings stay in global Git config or Sweetiebot local files, and signing secrets never enter this page.</p></div><div class="rebuild-actions"><button type="button" id="rebuild-app" title="Manually update and restore Sweetiebot app customizations">Rebuild app</button><output id="rebuild-status" role="status" aria-live="polite"></output></div></header>
 {WELCOME_MARKUP}
 {error_html}<form method="post" action="{action}"><div class="settings-layout">
 <nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings categories">{''.join(tabs)}</nav>

@@ -274,6 +274,26 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
         self.assertRegex(browser, r"python -m pip install playwright(?:==[0-9.]+)?")
         self.assertIn("python -m playwright install --with-deps chromium", browser)
 
+    def test_build_revision_records_local_head_or_archived_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            scripts = root / "scripts"
+            scripts.mkdir()
+            config = scripts / "configurator.py"
+            config.write_text("# local build")
+            from unittest.mock import patch
+            with patch.object(workspace_search.subprocess, "run") as run:
+                run.return_value.stdout = "c" * 40 + "\n"
+                self.assertEqual(
+                    json.loads(workspace_search.build_revision_bytes(config)),
+                    {"commit": "c" * 40},
+                )
+                run.assert_called_once()
+            marker = scripts / "build-revision.json"
+            marker.write_text(json.dumps({"commit": "d" * 40}) + "\n")
+            self.assertEqual(workspace_search.build_revision_bytes(marker), marker.read_bytes())
+
     def test_installs_exact_extension_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -300,6 +320,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                 )
             )
             self.assertTrue((destination / "configurator.py").is_file())
+            self.assertTrue((destination / "build-revision.json").is_file())
             self.assertTrue((destination / "codex-sticker.py").is_file())
             self.assertTrue((destination / "codex-button-icon.py").is_file())
             self.assertTrue((destination / "commit-hotkey.py").is_file())

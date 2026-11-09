@@ -67,6 +67,33 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("field.dispatchEvent(new Event('input', {bubbles: true}))", page)
         self.assertIn("queueAutosave()", page)
 
+    def test_header_build_pill_shows_short_installed_commit(self):
+        revision = "a" * 40
+        page = configurator.render_form(
+            dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save",
+            build_revision=revision,
+        )
+        self.assertIn(
+            'class="settings-build-revision" title="Built from commit ' + revision + '"',
+            page,
+        )
+        self.assertIn('aria-label="Built from commit ' + revision + '">aaaaaaaa</span>', page)
+        self.assertIn(".settings-build-revision{display:inline-flex", page)
+        self.assertNotIn('class="settings-build-revision" title=', configurator.render_form(
+            dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save",
+            build_revision="not-a-commit",
+        ))
+
+    def test_build_revision_reads_bundled_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "build-revision.json"
+            with patch.object(configurator, "BUILD_REVISION_FILE", marker):
+                self.assertEqual(configurator.read_build_revision(), "")
+                marker.write_text(json.dumps({"commit": "b" * 40}) + "\n")
+                self.assertEqual(configurator.read_build_revision(), "b" * 40)
+                marker.write_text('{"commit": "malformed"}')
+                self.assertEqual(configurator.read_build_revision(), "")
+
     def test_sidebar_centers_pill_headings_and_tabs(self):
         page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
         styles = page.split("<style>", 1)[1].split("</style>", 1)[0]
@@ -1689,7 +1716,7 @@ class ServerTests(unittest.TestCase):
                 self.assertIn("img-src data:", response.headers["Content-Security-Policy"])
             self.assertIn("<title>Sweetiebot</title>", page)
             self.assertIn('<h1 class="settings-brand"><img src="data:image/png;base64,', page)
-            self.assertIn('height="48">Sweetiebot</h1>', page)
+            self.assertIn('height="48">Sweetiebot', page)
             setup_url = urllib.parse.urlsplit(captured["url"])
             def endpoint(path):
                 return urllib.parse.urlunsplit((setup_url.scheme, setup_url.netloc, path, setup_url.query, ""))

@@ -147,6 +147,10 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
         shutil.rmtree(candidate)
     candidate.mkdir()
     extract_sources(git(repository, "archive", revision, *FORMATS), candidate)
+    # Git archives have no .git metadata. Record FETCH_HEAD before installation.
+    (candidate / "scripts/build-revision.json").write_text(
+        json.dumps({"commit": revision}) + "\n"
+    )
     # Do not downgrade the bootstrap to a release that cannot update itself.
     if not all((candidate / "scripts" / name).is_file()
                for name in ("update.py", "repair.py", "install.py")):
