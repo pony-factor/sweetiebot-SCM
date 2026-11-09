@@ -14,6 +14,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 import re
 import json
 import io
+import tempfile
 import threading
 import urllib.error
 import urllib.parse
