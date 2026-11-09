@@ -106,7 +106,6 @@ for (const [percent, color] of [
     [11, 'currentColor'],
     [10, 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'],
     [1, 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'],
-    [0, 'var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))'],
     [50, 'currentColor'],
 ]) {
     indicator.setAttribute('percent', percent);
@@ -114,7 +113,28 @@ for (const [percent, color] of [
     assert.ok(indicator.style.background.includes(`, ${color} `), `${percent}% foreground`);
     assert.equal(indicator.getAttribute('aria-label'), `${percent}% Codex usage remaining`);
 }
+// An exhausted allowance remains a hollow pie with a centered warning mark.
+indicator.setAttribute('percent', 0);
+indicator.update();
+assert.equal(indicator.style.background, 'transparent');
+assert.equal(indicator.style.border, '1px solid var(--vscode-button-hoverBackground, var(--vscode-focusBorder, #ffb900))');
+assert.equal(indicator.style.display, 'inline-grid');
+assert.equal(indicator.style.placeItems, 'center');
+assert.equal(indicator.textContent, '!');
+assert.equal(indicator.getAttribute('aria-label'), 'Rate limited — 0% Codex usage remaining');
+assert.equal(indicator.getAttribute('title'), 'Rate limited');
+indicator.setAttribute('percent', 50);
+indicator.update();
+assert.equal(indicator.style.display, 'inline-block');
+assert.equal(indicator.style.border, '');
+assert.equal(indicator.textContent, '');
+// Reset-time pies must not display the rate-limit warning at zero.
 indicator.setAttribute('kind', 'reset');
+indicator.setAttribute('percent', 0);
+indicator.update();
+assert.equal(indicator.textContent, '');
+assert.match(indicator.style.background, /^conic-gradient/);
+assert.equal(indicator.getAttribute('aria-label'), '0% of Codex reset interval remaining');
 indicator.setAttribute('percent', 50);
 indicator.update();
 assert.equal(indicator.getAttribute('aria-label'), '50% of Codex reset interval remaining');
@@ -122,8 +142,8 @@ indicator.removeAttribute('kind');
 indicator.setAttribute('percent', 'unavailable');
 indicator.update();
 assert.equal(indicator.style.background, 'transparent');
-// Usage and attachments must remain separate controls. At zero allowance the
-// dedicated meter shows a plain rate-limit label instead of a misleading pie.
+// Usage and attachments remain separate controls. An exhausted usage meter
+// keeps the pie visible instead of substituting a rate-limit text label.
 const Meter = components.get('scm-toolkit-usage-meter');
 const meter = new Meter();
 meter.closest = () => null;
@@ -134,14 +154,17 @@ assert.equal(meter.pie.style.display, 'inline-block');
 assert.equal(meter.limitLabel, undefined);
 meter.setAttribute('percent', 0);
 meter.update();
-assert.equal(meter.pie.style.display, 'none');
-assert.equal(meter.limitLabel.textContent, 'Rate limited');
-assert.equal(meter.limitLabel.getAttribute('role'), 'status');
+assert.equal(meter.pie.style.display, 'inline-grid');
+assert.equal(meter.limitLabel, undefined);
+meter.pie.update();
+assert.equal(meter.pie.textContent, '!');
+assert.equal(meter.pie.getAttribute('aria-label'), 'Rate limited — 0% Codex usage remaining');
 meter.setAttribute('percent', 75);
 meter.update();
 assert.equal(meter.pie.style.display, 'inline-block');
-assert.equal(meter.limitLabel.style.display, 'none');
-assert.equal(meter.limitLabel.textContent, '');
+assert.equal(meter.limitLabel, undefined);
+meter.pie.update();
+assert.equal(meter.pie.textContent, '');
 const usageSource = fs.readFileSync(path.join(__dirname, '../../assets/codex/usage.js'), 'utf8');
 assert.doesNotMatch(usageSource, /scm-toolkit-usage-add-button|scm-toolkit-usage-replaced|attachToAddButton/);
 assert.doesNotMatch(usageSource, /button\[aria-label="Add files and more"\]/);

@@ -209,11 +209,31 @@ function scmToolkitKeepUsageFresh(refetch) {
         attributeChangedCallback() { this.update(); }
         update() {
             const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
+            const exhausted = percent === 0 && this.getAttribute('kind') !== 'reset';
+            const warningColor = scmToolkitUsageColor(0);
+            this.style.boxSizing = 'border-box';
+            this.style.display = exhausted ? 'inline-grid' : 'inline-block';
+            this.style.placeItems = exhausted ? 'center' : '';
+            this.style.border = exhausted ? '1px solid ' + warningColor : '';
+            this.style.color = exhausted ? warningColor : '';
+            this.style.fontSize = exhausted ? '10px' : '';
+            this.style.fontWeight = exhausted ? '700' : '';
+            this.style.lineHeight = exhausted ? '1' : '';
+            if (this.textContent !== (exhausted ? '!' : '')) {
+                this.textContent = exhausted ? '!' : '';
+            }
             if (percent == null) {
                 this.style.background = 'transparent';
                 this.removeAttribute('role');
                 this.removeAttribute('aria-label');
                 this.removeAttribute('title');
+                return;
+            }
+            if (exhausted) {
+                this.style.background = 'transparent';
+                this.setAttribute('role', 'img');
+                this.setAttribute('aria-label', 'Rate limited — 0% Codex usage remaining');
+                this.setAttribute('title', 'Rate limited');
                 return;
             }
             const degrees = (100 - percent) * 3.6;
@@ -275,19 +295,9 @@ function scmToolkitKeepUsageFresh(refetch) {
         update() {
             const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
             this.pie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
-            // A depleted allowance is a status, not an attachment action.
-            // Keep it on the dedicated usage control and show only its label.
-            if (this.pie) this.pie.style.display = percent === 0 ? 'none' : 'inline-block';
-            if (percent === 0 && !this.limitLabel) {
-                this.limitLabel = document.createElement('span');
-                this.limitLabel.setAttribute('role', 'status');
-                this.limitLabel.setAttribute('data-scm-toolkit-rate-limit-label', 'true');
-                this.append(this.limitLabel);
-            }
-            if (this.limitLabel) {
-                this.limitLabel.textContent = percent === 0 ? 'Rate limited' : '';
-                this.limitLabel.style.display = percent === 0 ? 'inline' : 'none';
-            }
+            // The exhausted allowance remains a hollow usage pie with a centered
+            // exclamation mark, instead of replacing the pie with a text label.
+            if (this.pie) this.pie.style.display = percent === 0 ? 'inline-grid' : 'inline-block';
             if (!this.bar) return;
             const weekly = this.hasAttribute('weekly-percent');
             const barPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : percent;
@@ -372,9 +382,6 @@ function scmToolkitKeepUsageFresh(refetch) {
       button[data-composer-navigation-target="run-location"]
       [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
-      }
-      scm-toolkit-usage-meter > [data-scm-toolkit-rate-limit-label] {
-        white-space:nowrap; font-size:12px;
       }
       scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; }
       .scm-toolkit-usage-surface { position:relative; }
