@@ -292,8 +292,14 @@ def run():
         attachments = page.get_by_role('button', name='Add files and more', exact=True)
         assert attachments.locator('svg').is_visible(), 'Attachment icon must remain visible'
         assert attachments.locator('scm-toolkit-usage-pie').count() == 0, 'Usage never replaces attachments'
-        assert meter.locator('[data-scm-toolkit-rate-limit-label]').inner_text() == 'Rate limited'
-        assert not meter.locator('scm-toolkit-usage-pie').is_visible(), 'Depleted usage is text-only'
+        pie = meter.locator('scm-toolkit-usage-pie')
+        assert pie.is_visible(), 'Exhausted usage keeps its warning pie visible'
+        assert pie.inner_text() == '!', 'The hollow warning pie displays a centered exclamation mark'
+        assert pie.get_attribute('aria-label') == 'Rate limited — 0% Codex usage remaining'
+        assert pie.get_attribute('title') == 'Rate limited'
+        assert pie.evaluate('(el) => getComputedStyle(el).borderStyle') == 'solid'
+        assert pie.evaluate('(el) => getComputedStyle(el).backgroundImage') == 'none'
+        assert meter.locator('[data-scm-toolkit-rate-limit-label]').count() == 0
         page.wait_for_function('document.getElementById("meter-control").getAttribute("aria-label") === "Rate limited"')
         attachments.click()
         assert page.evaluate('attachmentClicks') == 1
@@ -303,7 +309,9 @@ def run():
         meter.evaluate('(el) => el.setAttribute("percent", "80")')
         assert meter.locator('scm-toolkit-usage-pie').is_visible(), 'Usage indicator returns after replenishment'
         assert meter.locator('scm-toolkit-usage-pie').get_attribute('percent') == '80'
-        assert not meter.locator('[data-scm-toolkit-rate-limit-label]').is_visible()
+        assert pie.inner_text() == '', 'The warning disappears when allowance recovers'
+        assert pie.get_attribute('aria-label') == '80% Codex usage remaining'
+        assert meter.locator('[data-scm-toolkit-rate-limit-label]').count() == 0
         assert attachments.locator('svg').is_visible(), 'Attachments stay intact as usage changes'
         assert attachments.locator('scm-toolkit-usage-pie').count() == 0
         assert bar.get_attribute('aria-valuenow') == '35', 'Weekly progress is independent of five-hour allowance'
