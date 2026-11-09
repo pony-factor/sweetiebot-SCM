@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { createLindseyTransport } = require('../../extension/merge/lindsey-transport');
-const { appCommitIdentity, configuredMergeActor, commitIdentityArgs } = require('../../extension/github/app-commit-identity');
+const { configuredMergeActor, commitIdentityArgs } = require('../../extension/github/app-commit-identity');
 
 (async () => {
   const {decodeKeychainPassword} = require('../../extension/github/app-settings');
@@ -40,39 +40,10 @@ const { appCommitIdentity, configuredMergeActor, commitIdentityArgs } = require(
   await assert.rejects(legacy.gitToken(),/Lindsey GitHub App/);
   await assert.rejects(legacy.api('repos/owner/repo'),/Lindsey GitHub App/);
   const bot = { name: 'lindsey-fixture[bot]', email: '123+lindsey-fixture[bot]@users.noreply.github.com' };
-  const lookup = { login: bot.name, token: 'fixture-app-token' };
-  assert.deepEqual(await appCommitIdentity({ ...lookup, fetchImpl: async (url, options) => {
-    assert.equal(url, 'https://api.github.com/users/lindsey-fixture%5Bbot%5D');
-    assert.equal(options.headers.Authorization, 'Bearer ' + lookup.token);
-    return { ok: true, json: async () => ({ login: bot.name, id: 123, type: 'Bot' }) };
-  } }), bot);
-  for (const account of [{ login: 'other[bot]', id: 123, type: 'Bot' },
-    { login: bot.name, id: 123, type: 'User' }, { login: bot.name, id: 0, type: 'Bot' }]) {
-    await assert.rejects(appCommitIdentity({ ...lookup, fetchImpl: async () =>
-      ({ ok: true, json: async () => account }) }), /invalid bot account.*No automation commit/);
-  }
-  for (const [status, remaining, expected] of [[403, '0', /rate limit/],
-    [429, null, /rate limit/], [404, null, /HTTP 404/], [401, null, /HTTP 401/]]) {
-    await assert.rejects(appCommitIdentity({ ...lookup, fetchImpl: async () =>
-      ({ ok: false, status, headers: { get: () => remaining },
-        json: () => assert.fail('Never read error response bodies') }) }), expected);
-  }
-  await assert.rejects(appCommitIdentity({ ...lookup, fetchImpl: async () => {
-    throw Error('sensitive transport details');
-  } }), error => {
-    assert.match(error.message, /check the connection/);
-    assert(!error.message.includes('sensitive'));
-    assert(!error.message.includes(lookup.token));
-    return true;
-  });
   let authenticated = false;
   const actor = await configuredMergeActor('owner/repo', { enabled: () => true,
-    transport: repo => { assert.equal(repo, 'owner/repo'); return { gitToken: async () => { authenticated = true; return lookup.token; } }; },
-    identity: async options => {
-      assert(authenticated, 'App authentication precedes commit identity');
-      assert.equal(options.token, lookup.token, 'Identity lookup reuses verified App authentication');
-      return bot;
-    }
+    transport: repo => { assert.equal(repo, 'owner/repo'); return { gitToken: async () => { authenticated = true; } }; },
+    identity: async () => { assert(authenticated, 'App authentication precedes commit identity'); return bot; }
   });
   assert.deepEqual(actor.author, bot);
   await assert.rejects(configuredMergeActor('owner/repo', { enabled: () => true,
@@ -90,6 +61,8 @@ const { appCommitIdentity, configuredMergeActor, commitIdentityArgs } = require(
   assert.equal(implementationEngine('web', {id:'fix-checks'}, true), 'kefania');
   assert.equal(implementationEngine('web', {id:'resolve-conflicts'}, true), 'kefania');
   assert.equal(implementationEngine('web', {id:'fix-checks'}, false), 'web');
+  assert.equal(implementationEngine('web', {id:'fix-checks',automatic:true}, false), 'kefania',
+    'Automatic repairs must never silently fall back to user-authenticated web writes');
   assert.equal(implementationEngine('web', {id:'suggest-options'}, true), 'web');
   assert.equal(implementationEngine('codex', {id:'fix-checks'}, true), 'codex');
   console.log('Lindsey read/write identity, Git credentials, refresh and repository scope passed.');

@@ -69,9 +69,9 @@ async function publishMergeSummaries({ enabled, postStatusUpdates = false, selec
         if (comments.length < 100) break;
         if (page >= 20) throw Error('Existing summary history is incomplete.');
       }
-      const body = marker + (merged ? '\n### AI merge summary\n\n' : '\n### Lindsey integration status\n\n') +
+      const body = marker + (merged ? '\n\n' : '\n### Lindsey integration status\n\n') +
         prepared.explanation.trim().slice(0, 4000) + (merged
-          ? '\n\nVerified merge into ' + selected.base + ' · commit ' + item.sha.slice(0, 12) + '.'
+          ? ''
           : '\n\n' + (item.status === 'checks_failed' ? 'Integrated-head checks failed; PR remains open.'
             : item.status === 'waiting' ? 'Waiting for integrated-head checks; PR remains open.' : 'PR branch prepared; PR remains open.') +
             '\nhttps://github.com/' + selection.repository + '/pull/' + item.number + '/changes/' + item.sha);

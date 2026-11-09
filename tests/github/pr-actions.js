@@ -34,13 +34,45 @@ const quickPoll = { preferLocalGit: false, wait: async () => {}, pollAttempts: 2
 async function main() {
   const local = mockMerge();
   let delegated=false;
-  const localResult=await squashMergePullRequest(url,local.execute,undefined,{humanMerge:async(repo,number,options)=>{
+  const localResult=await squashMergePullRequest(url,local.execute,undefined,{preferLocalGit:true,humanMerge:async(repo,number,options)=>{
     delegated=true;assert.equal(repo,'owner/repo');assert.equal(number,12);
     assert.deepEqual(options,{allowHistoryRewrite:false,localGitMerge:true,expected:{headSha:open.headRefOid,head:open.headRefName,base:open.baseRefName,title:open.title}});
     return {merged:true,sha:'c'.repeat(40)};
   }});
   assert(localResult.merged&&delegated,'The sidebar defaults to its verified local Git executor');
   assert(!local.calls.some(args=>args.includes('--method')),'The sidebar does not submit an async merge before local checks');
+  const localClosed = mockMerge({views:[open,open,open,{...open,state:'MERGED'}]});
+  let retries=0;
+  const retried = await squashMergePullRequest(url,localClosed.execute,undefined,{
+    preferLocalGit:true,humanMerge:async()=>{
+      if(retries++===0)throw Object.assign(Error('Base advanced'),{code:'MERGE_BASE_CHANGED'});
+      return {merged:true,sha:'c'.repeat(40),githubMerged:true};
+    }
+  });
+  assert.equal(retries,2,'The same click retries a pre-publication base race');
+  assert.equal(retried.pr.state,'MERGED','Success requires a genuine merged PR');
+  const closedOnly=mockMerge({views:[open,open,{...open,state:'CLOSED'}]});
+  await assert.rejects(squashMergePullRequest(url,closedOnly.execute,undefined,{preferLocalGit:true,
+    humanMerge:async()=>({merged:true,sha:'c'.repeat(40),githubMerged:false,prClosed:true})}),/closed PR is not/);
+  const movedHead = mockMerge({views:[open,open,{...open,headRefOid:'b'.repeat(40)}]});
+  let headAttempts=0;
+  await assert.rejects(squashMergePullRequest(url,movedHead.execute,undefined,{
+    preferLocalGit:true,humanMerge:async()=>{headAttempts++;throw Object.assign(Error('Base advanced'),{code:'MERGE_BASE_CHANGED'});}
+  }),/changed while refreshing/);
+  assert.equal(headAttempts,1,'A changed PR head prevents a retry');
+  const repeatedRace = mockMerge({views:[open]});
+  let raceAttempts=0;
+  await assert.rejects(squashMergePullRequest(url,repeatedRace.execute,undefined,{
+    preferLocalGit:true,humanMerge:async()=>{raceAttempts++;throw Object.assign(Error('Base advanced'),{code:'MERGE_BASE_CHANGED'});}
+  }),/Base advanced/);
+  assert.equal(raceAttempts,3,'Base-race retries are bounded');
+  const alreadyPublished = mockMerge();
+  let publishAttempts=0;
+  await assert.rejects(squashMergePullRequest(url,alreadyPublished.execute,undefined,{
+    preferLocalGit:true,humanMerge:async()=>{publishAttempts++;throw Object.assign(Error('Published; closure pending'),
+      {code:'MERGE_BASE_CHANGED',publishedSha:'c'.repeat(40)});}
+  }),/closure pending/);
+  assert.equal(publishAttempts,1,'A published squash is never automatically resubmitted');
   // A protected base cannot accept local integration pushes. Retry using
   // GitHub's native squash only when the verified human author is the opener.
   const protectedHuman = mockMerge();
@@ -154,9 +186,15 @@ async function main() {
     '--method', 'PUT', asyncPath, '-f', `sha=${open.headRefOid}`,
     '-f', 'merge_method=squash', '-f', 'merge_action=direct_merge',
     '-f', 'commit_title=🐛 Correct caching (#12)',
-    '-f', `commit_message=- Change\n\n__________\n\nCo-authored-by: John Wooten <noreply@wooten.link>\nCo-authored-by: Codex <noreply@openai.com>`]);
+    '-f', `commit_message=- Change\n\n__________\n\nCo-authored-by: Codex <noreply@openai.com>`]);
   assert.deepEqual(happy.calls[5], ['api', '-H', 'X-GitHub-Api-Version: 2026-03-10',
     `${asyncPath}/${requestId}`]);
+  const submittedMessage=happy.calls.find(args=>args.includes('--method'))
+    .find(value=>value.startsWith('commit_message='));
+  assert(!submittedMessage.includes('Co-authored-by: John Wooten'),
+    'The PR-list squash excludes the verified primary author from co-author trailers');
+  assert(submittedMessage.includes('Co-authored-by: Codex <noreply@openai.com>'),
+    'Removing duplicate human credit preserves the assistant credit');
   assert.deepEqual(happy.calls.map(args => args[0]), ['pr', 'pr', 'api', 'api', 'api', 'api', 'pr']);
 
   // A bot-created PR keeps its opener but must never enter GitHub's native
@@ -341,7 +379,7 @@ async function main() {
     const stalled = mockMerge({ views: [clean, clean, clean, mergedPr], submissionError: matchingError, responses: [pending] });
     let recovered = false;
     const originals = [{ author: { login: 'JFWooten4', type: 'User' }, commit: { author: { name: 'John Wooten', email: 'noreply@wooten.link' }, committer: { name: 'GitHub', email: 'noreply@github.com' }, message: 'Change\n\nCo-authored-by: Codex <noreply@openai.com>' } }];
-    const expected = squashMessage(open.title, 12, originals);
+    const expected = squashMessage(open.title, 12, originals, {primaryAuthor:{name:'John Wooten',email:'noreply@wooten.link'}});
     const execute = async args => {
       if (args.includes('repos/owner/repo/pulls/12/merge')) {
         assert(args.includes('sha=' + open.headRefOid));
@@ -361,7 +399,7 @@ async function main() {
   const resumed = mockMerge({ submissionError: matchingError });
   const commitArgs = ['repos/owner/repo/pulls/12/commits?per_page=100&page=1'];
   const originals = JSON.parse((await resumed.execute(['api', ...commitArgs])).stdout);
-  const message = squashMessage(open.title, 12, originals);
+  const message = squashMessage(open.title, 12, originals, {primaryAuthor:{name:'John Wooten',email:'noreply@wooten.link'}});
   const resumeExecute = async (args, actualMessage = `${message.title}\n\n${message.message}`) => {
     if (args.includes('repos/owner/repo/pulls/12') && resumed.calls.some(call => call.includes('--method'))) {
       return { stdout: JSON.stringify({ merged: true, merge_commit_sha: 'c'.repeat(40) }) };

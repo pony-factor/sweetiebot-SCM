@@ -84,10 +84,16 @@ async function main() {
   const app = fixture();
   assert((await humanSquashMerge('owner/repo', 12, {
     api: () => assert.fail('The App merge cannot use the personal API'),
+    localMerge: async (repository,number,options) => {
+      assert.equal(options.api,app.api);
+      assert.equal(options.localGitMerge,true);
+      assert.equal(options.allowHistoryRewrite,false);
+      return {merged:true,sha:mergedSha,githubMerged:false,prClosed:true};
+    },
     getAppActor: async () => ({ api: app.api, gitToken: async () => 'fixture-app-token',
       author: {name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'} })
   })).merged);
-  assert.equal(app.calls.filter(c => c.method === 'PUT').length, 1);
+  assert.equal(app.calls.filter(c => c.method === 'PUT').length, 0,'App merges use the human-attributed local squash executor');
   await assert.rejects(humanSquashMerge('owner/repo',12,{
     api: () => assert.fail('Never fall back after App failure'),
     getAppActor: async () => { throw Error('App unavailable'); }
@@ -107,9 +113,9 @@ async function main() {
     assert.equal(repo, 'owner/repo');
     assert.equal(number, 12);
     assert.equal(options.api, guarded.api);
-    assert.equal(options.allowHistoryRewrite, true);
-    assert.equal(options.rewriteReason, 'preserve-human-author');
-    assert.deepEqual(options.expected, { headSha: oldSha, baseSha, head: 'bot-topic',
+    assert.equal(options.allowHistoryRewrite, false);
+    assert.equal(options.localGitMerge, true);
+        assert.deepEqual(options.expected, { headSha: oldSha, baseSha, head: 'bot-topic',
       base: 'main', title: '🐛 Fix placement' });
     return { merged: true, sha: mergedSha };
   };

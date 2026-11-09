@@ -784,6 +784,7 @@
 .notification-list-item.scm-toolkit-sharing-chat .notification-list-item-icon::before,
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-preparing-lindsey .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-merged .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-pr-queued .notification-list-item-icon.codicon-info::before,
 .notification-list-item.scm-toolkit-branch-squash-synced .notification-list-item-icon.codicon-info::before,
@@ -805,7 +806,8 @@
 .notification-list-item.scm-toolkit-making-pr .notification-list-item-icon.codicon-info::before {
     content: '🫧';
 }
-.notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before {
+.notification-list-item.scm-toolkit-pr-opened .notification-list-item-icon.codicon-info::before,
+.notification-list-item.scm-toolkit-preparing-lindsey .notification-list-item-icon.codicon-info::before {
     content: '🦄';
 }
 .notification-list-item.scm-toolkit-operation-failed .notification-list-item-icon.codicon-error::before {

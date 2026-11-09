@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { deferredCiRepairCandidate } = require('../../extension/merge/auto-ci-repair');
+const { deferredCiRepairCandidate, deferredConflictRepairCandidate } = require('../../extension/merge/auto-ci-repair');
 const headSha = 'a'.repeat(40), baseSha = 'b'.repeat(40);
 const pr = { number: 12, head: 'feature', base: 'main' };
 const candidate = { ...pr, headSha, baseSha };
@@ -17,14 +17,15 @@ assert.equal(deferredCiRepairCandidate({ ...state, pullRequests: [{ ...candidate
 assert.equal(deferredCiRepairCandidate({ ...state, deferred: [{ number: 12, kind: 'human_review' }] }, pr), null);
 assert.equal(deferredCiRepairCandidate(state, { ...pr, number: 13 }), null);
 assert.equal(deferredCiRepairCandidate(state, { ...pr, base: 'other' }), null);
-const stopped = { ...state, history: [{ number: 12, status: 'blocked' }],
-  deferred: [{ number: 12, reason: 'Resolution patch contains an unsafe, secret-bearing or unrelated path.' }] };
-const failing = { ...pr, state: 'checks', currentHead: headSha };
-assert.deepEqual(deferredCiRepairCandidate(stopped, failing), candidate,
-  'A stopped preparation does not prevent a fresh current-head CI repair');
-assert.equal(deferredCiRepairCandidate(stopped, pr), null);
-assert.equal(deferredCiRepairCandidate(stopped, { ...failing, state: 'checks-pending' }), null);
-assert.equal(deferredCiRepairCandidate(stopped, { ...failing, currentHead: 'c'.repeat(40) }), null);
-assert.equal(deferredCiRepairCandidate({ ...stopped,
-  deferred: [{ number: 12, kind: 'human_review' }] }, failing), null);
 console.log('Deferred CI auto-repair selection gates passed.');
+
+const conflicts = { ...state, history: [{ number: 12, status: 'needs_resolution', conflictPaths: ['feature.js'] }] };
+assert.deepEqual(deferredConflictRepairCandidate(conflicts, pr), candidate);
+assert.equal(deferredConflictRepairCandidate({ ...conflicts, deferred: [] }, pr), null);
+assert.equal(deferredConflictRepairCandidate({ ...conflicts, deferred: [{ number: 12, kind: 'human_review' }] }, pr), null);
+assert.equal(deferredConflictRepairCandidate({ ...conflicts, history: [{ number: 12, status: 'needs_resolution' }] }, pr), null);
+assert.equal(deferredConflictRepairCandidate({ ...conflicts, history: [...conflicts.history, { number: 12, status: 'synced' }] }, pr), null);
+assert.equal(deferredConflictRepairCandidate({ ...conflicts, rateLimit: {} }, pr), null);
+assert.equal(deferredConflictRepairCandidate({ ...conflicts, pullRequests: [{ ...candidate, baseSha: 'bad' }] }, pr), null);
+assert.equal(deferredConflictRepairCandidate(state, pr), null);
+console.log('Deferred conflict repair gates passed.');

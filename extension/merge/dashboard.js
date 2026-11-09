@@ -6,8 +6,7 @@ const { randomBytes } = require('node:crypto');
 const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerActions, dashboardActionPlan, launchBlockerAction } = require('./blocker-actions');
 const { createReactionChoices } = require('./reaction-choices');
 const { createMergeDashboardPersistence } = require('./dashboard-persistence');
-const { deferredCiRepairCandidate } = require('./auto-ci-repair');
-const { isSnapshotDeferral } = require('./snapshot-change');
+const { deferredCiRepairCandidate, deferredConflictRepairCandidate } = require('./auto-ci-repair');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -164,8 +163,9 @@ function normalizeInlineReviewComments(comments) {
 }
 
 function mergePhase(pr, previous, checkResults = null) {
-  if (pr.merged || pr.merged_at || previous.state === 'merged') return 'merged';
+  if (pr.merged || pr.merged_at) return 'merged';
   if (pr.state === 'closed') return 'closed';
+  if (previous.state === 'merged' && previous.githubMerged === true) return 'merged';
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
   if (previous.review) return 'review';
@@ -294,7 +294,7 @@ function postedReviewActivity(notes) {
 // successful conflict resolution from an AI assertion or stale snapshot.
 function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
-  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, onViewportChange = async () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
+  context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, onViewportChange = async () => {}, onClose = () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
   // Merge-dashboard reads belong to the authenticated local handoff, not Lindsey's App.
   const readFetch = fetchImpl;
@@ -335,6 +335,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
   let workers = [];
+  const repairWorkers = new Map();
   let disposed = false;
   let working = false;
   let activeRefresh = null;
@@ -348,7 +349,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   const inlineComments = new Map();
   const observedReviewActivity = new Map();
   const reportedDeferrals = new Set();
-  const autoCiAttempts = new Set();
+  const autoRepairAttempts = new Set();
   let latestBatchState = null;
   const reactionChoices = createReactionChoices({ repository: selection.repository, token, fetchImpl,
     storageDirectory: context?.globalStorageUri?.fsPath,
@@ -397,7 +398,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       type: 'state', repository: selection.repository,
       // Lane and overall totals must use the same verified PR states. Runner
       // snapshots can lag after a merge is confirmed by GitHub or local execution.
-      workers: workers.map(worker => ({ ...worker,
+      workers: [...workers,...repairWorkers.values()].map(worker => ({ ...worker,
         merged: worker.numbers.filter(number => byNumber.get(number)?.state === 'merged').length })),
       rateLimitRetryAt: rateLimitedUntil,
       prs: prs.map(pr => ({ ...pr, blockerOptions: blockerOptions(pr), manualActions: manualBlockerActions(pr), actionPlan: dashboardActionPlan(pr), actionPending: launchingActions.has(pr.number) })),
@@ -405,6 +406,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       postStatusUpdates: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostStatusUpdates', false) === true,
       postSummaries: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergePostSummaries', false) === true,
       autoFixCi: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) === true,
+      autoFixConflicts: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixConflicts', false) === true,
       autoFixCiMethod: vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web',
       selectedNumber: persistence.selectedNumber(),
       timestampMode: configuredTimelineMode(vscode),
@@ -448,9 +450,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
   }
 
-  function confirmMerge(item, sha, mergedAt) {
+  function confirmMerge(item, sha, mergedAt, githubMerged = true) {
     item.state = 'merged';
-    item.statusMessage = 'GitHub confirms the pull request was merged';
+    item.githubMerged = githubMerged;
+    item.statusMessage = githubMerged ? 'GitHub confirms the pull request was merged'
+      : 'Human-attributed squash published; original PR closed with its branch history intact';
     if (SHA.test(sha || '')) item.mergeCommit = sha;
     if (mergedAt) item.mergedAt = mergedAt;
   }
@@ -473,7 +477,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     // Publish authoritative merge status before optional files/comments can fail.
     // A late open response cannot undo a merge already verified by the executor.
-    if (item.state === 'merged' && !info.merged && !info.merged_at) return;
+    if (item.state === 'merged' && item.githubMerged === true && info.state === 'open' && !info.merged && !info.merged_at) return;
     if (info.merged || info.merged_at) {
       const wasMerged = item.state === 'merged';
       confirmMerge(item, info.merge_commit_sha, info.merged_at);
@@ -638,7 +642,6 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             (SHA.test(pr.currentHead || '') &&
               pr.currentHead !== (batchHeads.get(pr.number) || pr.originalHead)));
           await onRefresh(candidates.map(pr => pr.number));
-          if (latestBatchState) queueAutomaticCiRepair(latestBatchState);
         } catch (failure) {
           error = 'Could not refresh the merge queue: ' + failure.message;
           if (failure.rateLimited) rateLimitedUntil = failure.retryAt || Date.now() + 60000;
@@ -655,14 +658,19 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
 
   // Let the existing in-batch integrated-head repair finish before opening a
   // separate runner. A task never grants permission to merge or waive checks.
-  function queueAutomaticCiRepair(state) {
-    if (disposed || !state || state.repository !== selection.repository || state.rateLimit ||
-        vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) !== true) return;
+  function queueAutomaticRepair(state) {
+    if (disposed || !state || state.repository !== selection.repository || state.rateLimit) return;
+    const config = vscode.workspace?.getConfiguration('sweetiebot');
     for (const pr of prs) {
-      const candidate = deferredCiRepairCandidate(state, pr);
+      const ci = config?.get('mergeAutoFixCi', true) === true && deferredCiRepairCandidate(state, pr);
+      const conflict = config?.get('mergeAutoFixConflicts', false) === true && deferredConflictRepairCandidate(state, pr);
+      const candidate = ci || conflict;
       if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
-      const key = pr.number + ':' + candidate.headSha;
-      if (autoCiAttempts.has(key)) continue;
+      const kind = ci ? 'CI' : 'conflict';
+      const preference = ci ? 'mergeAutoFixCi' : 'mergeAutoFixConflicts';
+      const key = kind + ':' + pr.number + ':' + candidate.headSha + (ci ? '' : ':' + candidate.baseSha);
+      if (autoRepairAttempts.has(key)) continue;
+      autoRepairAttempts.add(key);
       launchingActions.add(pr.number);
       publish();
       void (async () => {
@@ -671,8 +679,16 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             fresh.merged_at || fresh.number !== pr.number || fresh.html_url !== pr.url ||
             fresh.head?.repo?.full_name !== selection.repository ||
             fresh.head?.ref !== candidate.head || fresh.head?.sha !== candidate.headSha ||
-            fresh.base?.ref !== candidate.base || fresh.base?.sha !== candidate.baseSha) {
-          addEvent(pr, 'updated', 'Automatic CI repair skipped · PR head, base or state changed');
+            fresh.base?.ref !== candidate.base) {
+          addEvent(pr, 'updated', 'Automatic ' + kind + ' repair skipped · PR head, base or state changed');
+          return;
+        }
+        // PR base.sha can be the last common snapshot rather than today's tip.
+        // Bind the repair to the branch endpoint, just like the Git executor.
+        const baseTip=await githubGet(readFetch,token,selection.repository,
+          '/branches/'+encodeURIComponent(candidate.base));
+        if(disposed || baseTip.commit?.sha!==candidate.baseSha){
+          addEvent(pr,'updated','Automatic '+kind+' repair skipped · current base branch advanced');
           return;
         }
         const checkApi = endpoint => {
@@ -680,36 +696,40 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');
           return githubGet(readFetch, token, selection.repository, endpoint.slice(prefix.length));
         };
-        const checks = await require('./checks').readMergeChecks(
-          checkApi, selection.repository, candidate.headSha);
-        if (checks.state !== 'failed') {
+        const checks = ci ? await require('./checks').readMergeChecks(
+          checkApi, selection.repository, candidate.headSha) : null;
+        if (ci && checks.state !== 'failed') {
           addEvent(pr, 'updated', 'Automatic CI repair skipped · current checks are ' + checks.state);
+          return;
+        }
+        if (conflict && (fresh.mergeable !== false || fresh.mergeable_state !== 'dirty')) {
+          addEvent(pr, 'updated', 'Automatic conflict repair skipped · conflicts are no longer confirmed');
           return;
         }
         const notes = await readReports(readFetch, token, selection.repository, pr.number, 3,
           { headSha: candidate.headSha, baseSha: candidate.baseSha });
-        const snapshot = { ...pr, ...candidate, ...notes, state: 'blocked',
+        const snapshot = { ...pr, ...candidate, ...notes, state: conflict ? 'conflict' : 'blocked',
           currentHead: candidate.headSha, mergeableState: fresh.mergeable_state };
         if (notes.review || blockerOptions(snapshot).length >= 2) {
-          addEvent(pr, 'blocked', 'Automatic CI repair skipped · a human implementation choice is pending');
+          addEvent(pr, 'blocked', 'Automatic ' + kind + ' repair skipped · a human implementation choice is pending');
           return;
         }
-        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCi', true) !== true) {
-          addEvent(pr, 'updated', 'Automatic CI repair canceled · preference disabled');
+        if (disposed || vscode.workspace?.getConfiguration('sweetiebot')?.get(preference, ci ? true : false) !== true) {
+          addEvent(pr, 'updated', 'Automatic ' + kind + ' repair canceled · preference disabled');
           return;
         }
         const method = vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web';
-        const option = manualBlockerActions(snapshot).find(action => action.id === 'fix-checks');
+        const option = manualBlockerActions(snapshot).find(action => action.id === (ci ? 'fix-checks' : 'resolve-conflicts'));
         if (!option) return;
-        autoCiAttempts.add(key);
-        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, method);
+        const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot,
+          {...option,automatic:true},method);
         addEvent(pr, opened === false ? 'updated' : 'action',
-          opened === false ? 'Automatic CI repair was not opened'
-            : 'Automatic CI repair opened with ' + (method === 'codex' ? 'Codex' : 'ChatGPT') +
+          opened === false ? 'Automatic ' + kind + ' repair was not opened'
+            : 'Automatic ' + kind + ' repair opened with ' + (method === 'codex' ? 'Codex' : 'ChatGPT') +
               ' · merge remains blocked until checks pass',
-          checks.names.join(', ').slice(0, 1000));
+          ci ? checks.names.join(', ').slice(0, 1000) : 'Resolve compatible intentions from the PR and current base.');
       })().catch(failure => {
-        if (!disposed) addEvent(pr, 'error', 'Automatic CI repair could not start',
+        if (!disposed) addEvent(pr, 'error', 'Automatic ' + kind + ' repair could not start',
           String(failure.message || failure).slice(0, 1000));
       }).finally(() => {
         launchingActions.delete(pr.number);
@@ -729,7 +749,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       } catch (error) { void vscode.window.showWarningMessage(error.message); }
       return;
     }
-    if (message?.type === 'focus-worker' && workers.some(worker => worker.id === message.number)) {
+    if (message?.type === 'focus-worker' && [...workers,...repairWorkers.values()].some(worker => worker.id === message.number)) {
       return onFocusWorker(message.number);
     }
     if (message?.type === 'dashboard-viewport') {
@@ -743,19 +763,19 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (Number.isSafeInteger(message.number) && byNumber.has(message.number)) persistence.select(message.number);
       return;
     }
-    if (message?.type === 'auto-fix-ci' || message?.type === 'auto-fix-ci-method') {
-      const enabled = message.type === 'auto-fix-ci';
+    if (['auto-fix-ci', 'auto-fix-conflicts', 'auto-fix-ci-method'].includes(message?.type)) {
+      const enabled = message.type !== 'auto-fix-ci-method';
       if (enabled ? typeof message.enabled !== 'boolean'
         : !['web', 'codex'].includes(message.method)) return;
       try {
         await vscode.workspace.getConfiguration('sweetiebot').update(
-          enabled ? 'mergeAutoFixCi' : 'mergeAutoFixCiMethod',
+          enabled ? (message.type === 'auto-fix-conflicts' ? 'mergeAutoFixConflicts' : 'mergeAutoFixCi') : 'mergeAutoFixCiMethod',
           enabled ? message.enabled : message.method, vscode.ConfigurationTarget.Global);
       } catch (failure) {
-        error = 'Could not save automatic CI repair preference: ' + failure.message;
+        error = 'Could not save automatic fixing preference: ' + failure.message;
       }
       publish();
-      if (latestBatchState) queueAutomaticCiRepair(latestBatchState);
+      if (latestBatchState) queueAutomaticRepair(latestBatchState);
       return;
     }
     if (['post-summaries', 'post-status-updates'].includes(message?.type)) {
@@ -794,7 +814,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       let target;
       try { target = new URL(message.url); } catch { return; }
       if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) return;
-      return require('../github/pr-workflows').openWorkflow(vscode, target.href, { openToSide: true });
+      return vscode.env.openExternal(vscode.Uri.parse(target.href));
     }
     if (!Number.isSafeInteger(message?.number)) return;
     const pr = byNumber.get(message.number);
@@ -857,12 +877,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     }
     if (message.type === 'open-commit') {
       if (!pr.commits?.some(commit => commit.sha === message.url)) return;
-      return require('../github/pr-workflows').openWorkflow(vscode,
-        'https://github.com/' + selection.repository + '/commit/' + message.url, { openToSide: true });
+      return vscode.env.openExternal(vscode.Uri.parse(
+        'https://github.com/' + selection.repository + '/commit/' + message.url));
     }
     if (message.type === 'open-pr' || message.type === 'open-diff') {
       const target = pr.url + (message.type === 'open-diff' ? '/files' : '');
-      await require('../github/pr-workflows').openWorkflow(vscode, target, { openToSide: true });
+      await vscode.env.openExternal(vscode.Uri.parse(target));
     }
   });
   const config = () => vscode.workspace?.getConfiguration('sweetiebot');
@@ -877,13 +897,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       clearTimer(timer); actualInterval = refreshInterval();
       timer = setTimer(() => { void refresh(); }, actualInterval);
     }
-    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod', 'mergeTimelineTimestampMode', 'mergeShowPrCommits', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
+    if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixConflicts', 'mergeAutoFixCiMethod', 'mergeTimelineTimestampMode', 'mergeShowPrCommits', 'mergeSidebarWidthPercent', 'mergeTimelineHeightPercent']
       .some(key => event.affectsConfiguration('sweetiebot.' + key))) publish();
   });
   panel.onDidDispose(() => {
     disposed = true;
     clearTimer(timer);
     configurationListener?.dispose(); visibilityListener?.dispose(); focusListener?.dispose();
+    onClose();
   });
   publish();
   void refresh();
@@ -993,7 +1014,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const pr = byNumber.get(item.number);
       if (pr) {
         // Recognize older persisted batches as well as typed new deferrals.
-        pr.snapshotDeferred = isSnapshotDeferral(item);
+        pr.snapshotDeferred = item.kind === 'snapshot_changed' ||
+          /The selected PR changed (?:outside this batch|while its parallel review)/.test(String(item.reason || ''));
         pr.snapshotChanged = Boolean(pr.snapshotDeferred || (pr.currentBase && pr.currentBase !== pr.base));
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
         pr.localReview = require('./blocker-report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));
@@ -1017,7 +1039,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       addEvent(pr, 'blocked', 'Deferred for this batch · other selected PRs can continue', String(item.reason || '').slice(0, 4000));
     }
     publish();
-    queueAutomaticCiRepair(state);
+    queueAutomaticRepair(state);
+  }, recordRepairWorker(id, worker) {
+    if (!Number.isInteger(id) || id < 4 || id > 6) return;
+    if (worker) repairWorkers.set(id,{...worker,id,kind:'repair'});
+    else repairWorkers.delete(id);
+    publish();
   }, recordLocalResult(result) {
     if (result?.repository !== selection.repository || !Array.isArray(result.results)) return;
     for (const failure of result.summaryErrors || []) {
@@ -1027,12 +1054,12 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
-      const merged = item.status === 'merged' && item.merged === true && SHA.test(item.sha || '');
-      if (merged) confirmMerge(pr, item.sha);
+      const merged = item.status === 'merged' && item.merged === true && item.githubMerged === true && SHA.test(item.sha || '');
+      if (merged) confirmMerge(pr, item.sha, undefined, item.githubMerged !== false);
       if (typeof item.reason === 'string') pr.localResultReason = item.reason.slice(0, 4000);
       const continuing = ['synced', 'needs_resolution', 'needs_refresh', 'waiting'].includes(item.status);
       const pushed = SHA.test(item.preparedHead || '') ? item.preparedHead : pr.lastPushedHead;
-      const message = merged ? 'Merge confirmed · destination commit ' + item.sha?.slice(0, 12)
+      const message = merged ? (item.githubMerged === false ? 'Local squash published · PR closed · destination commit ' : 'Merge confirmed · destination commit ') + item.sha?.slice(0, 12)
         : item.status === 'synced' ? item.sha === item.previousHeadSha
           ? 'PR branch already up to date · no commit or push needed'
           : 'PR branch synchronized with incremental commits · existing history retained'
@@ -1040,10 +1067,11 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         : item.status === 'needs_refresh' ? 'Main advanced; automatically refreshing the integration.'
         : item.status === 'waiting' ? 'Checks still pending · prepared PR remains unmerged'
         : item.status === 'checks_failed' ? 'Integrated-head checks failed · PR remains unmerged'
+        : SHA.test(item.publishedSha || '') ? 'Local squash published · original PR closure requires retry'
         : pushed ? 'Stopped after pushing the prepared PR branch · merge not confirmed'
         : 'Local preparation stopped · merge not confirmed';
       const commitSha = merged
-        ? item.sha : pushed;
+        ? item.sha : SHA.test(item.publishedSha || '') ? item.publishedSha : pushed;
       const location = require('./progress').stageLocation(item.status);
       pr.activity = { phase: item.status, message, location, at: new Date().toISOString() };
       addEvent(pr, merged ? 'merged' : continuing ? 'updated' : 'blocked',

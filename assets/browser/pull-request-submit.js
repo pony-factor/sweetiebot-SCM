@@ -427,6 +427,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   const stop = () => {
     stopped = true;
     clearTimeout(timer);
+    try { window.sessionStorage?.removeItem('sweetiebot.merge.pendingLaunch'); } catch {}
     globalThis.sweetiebotEnsureMaximumThinking?.cancel?.();
     document.removeEventListener('input', onInput, true);
     document.removeEventListener('click', onClick, true);
@@ -442,8 +443,9 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   const attempt = () => {
     if (stopped) return;
     if (Date.now() >= deadline || window.location.pathname !== launch.pathname) return stop();
-    const composer = document.querySelector('#prompt-textarea')
-      || document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
+    const primaryComposer = document.querySelector('#prompt-textarea');
+    const composer = primaryComposer?.getClientRects().length ? primaryComposer
+      : document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
     if (composerIsolated && composer && text && !samePreparedText(text) && !inserted && composer.getClientRects().length) {
       // Hydration can read its saved draft before preload isolation runs.
@@ -477,9 +479,10 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       timer = setTimeout(attempt, 250);
       return;
     }
-    const button = document.querySelector(
-      'button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]'
-    );
+    const sendSelector='button#composer-submit-button, button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send"]';
+    let button = document.querySelector(sendSelector);
+    if(button&&!button.getClientRects().length)
+      button=[...document.querySelectorAll(sendSelector)].find(node=>node.getClientRects().length&&!node.disabled);
     const label = button?.getAttribute('aria-label') || '';
     if (composer && samePreparedText(text) && button && !button.disabled
         && button.getAttribute('aria-disabled') !== 'true'

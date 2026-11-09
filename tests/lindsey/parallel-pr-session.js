@@ -16,7 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const moduleRoot = path.resolve(__dirname, process.env.LINDSEY_MODULE_ROOT || '../../extension');
-const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr-session');
+const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require(moduleRoot + '/github/pr-session');
 
 (async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'parallel-pr-session-'));
@@ -33,24 +33,29 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr
       number: index + 1, title: 'Feature ' + (index + 1), url: 'https://github.com/owner/repo/pull/' + (index + 1),
       head: 'feature-' + (index + 1), headSha: 'a'.repeat(40), base: 'main'
     })) };
-    const calls = [], tabs = [];
-    let workspace, dashboardOptions, recorded;
+    const calls = [], tabs = [], tabListeners=new Set();
+    let maximumTabs=0;
+    let workspace, dashboardOptions, recorded, dashboardCount=0;
     const config = () => ({ get: (key, fallback) => fallback, inspect:()=>({}), update:async()=>{} });
     const vscode = { Uri: { file }, ConfigurationTarget:{Workspace:2}, ProgressLocation: { Notification: 15 }, ViewColumn: { One: 1, Two: 2 },
       workspace: { getConfiguration: config, onDidChangeConfiguration: () => ({ dispose() {} }), workspaceFolders: [{ uri: file(root) }] },
-      window: { tabGroups: { all: [{ viewColumn: 1, tabs }] },
+      window: { tabGroups: { all: [{ viewColumn: 1, tabs }],
+        close:async tab=>{const index=tabs.indexOf(tab);if(index>=0)tabs.splice(index,1);for(const fn of tabListeners)fn();return true;},
+        onDidChangeTabs:fn=>{tabListeners.add(fn);return {dispose:()=>tabListeners.delete(fn)};}
+      },
         withProgress: async (options, task) => task({ report() {} }) },
       authentication: { getSession: async () => ({ accessToken: 'fixture-token' }) },
       commands: { executeCommand: async (command, options) => {
         calls.push([command, options]);
         if (command === 'vscode.openFolder') workspace = options;
-        if (command === 'workbench.action.browser.open') tabs.push({ label: 'GPT review ' + (tabs.length + 1) });
+        if (command === 'workbench.action.browser.open') {tabs.push({ label: 'GPT review ' + (tabs.length + 1) });maximumTabs=Math.max(maximumTabs,tabs.length);}
       } }
     };
     require.cache[dashboardPath] = { ...dashboardModule, exports: { ...dashboardExports,
       startMergeDashboard(host, selected, token, options) {
+        dashboardCount++;
         assert.equal(selected.pullRequests.length, 11); dashboardOptions = options;
-        return { recordBatchState(state) { recorded = state; } };
+        return { recordBatchState(state) { recorded = state; },recordRepairWorker() {},recordLocalResult() {} };
       } } };
     globalThis.fetch = async address => {
       const pathname = new URL(address).pathname;
@@ -96,11 +101,35 @@ const { launchMergeSession, resumePRSession } = require(moduleRoot + '/github/pr
     await resumePRSession(vscode, context);
     assert.equal(calls.filter(([command]) => command === 'workbench.action.browser.open').length, 3,
       'Restoring a dashboard does not resubmit the three merge chats');
+    const repairLaunches=Array.from({length:4},(_,index)=>launchBlockerWebSession(vscode,context,file(root),
+      'https://chatgpt.com/#sweetiebot_merge=1&q=Resolve+compatible+conflicts',index+1,
+      {...selection,pullRequests:[selection.pullRequests[index]]}));
+    const handles=await Promise.all(repairLaunches.slice(0,3));
+    assert.equal(tabs.length,6,'Three conflict chats run alongside the three reviewers');
+    assert.equal(calls.filter(([command])=>command==='vscode.openFolder').length,1,
+      'Parallel conflict repairs stay in the existing bulk window');
+    for(const [,options] of calls.filter(([command])=>command==='workbench.action.browser.open').slice(3)) {
+      const prompt=await localPrompt(options.url);
+      assert(prompt.includes('BRANCH-ONLY EXECUTION'),'A repair chat cannot merge or close its PR');
+    }
+    await vscode.window.tabGroups.close(handles[0].tab,true);
+    handles.push(await repairLaunches[3]);
+    assert.equal(maximumTabs,6,'A fourth repair waits for a free chat slot');
+    for(const handle of handles)handle.dispose();
+    await Promise.all(handles.map(handle=>handle.done));
+    assert.equal(tabs.length,3,'Finishing repairs retains all three review chats');
+    const openedBeforeRestore=calls.filter(([command])=>command==='workbench.action.browser.open').length;
+    dashboardOptions.onClose();
+    await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(dashboardCount,2,'Closing the report restores one persistent dashboard');
+    assert.equal(calls.filter(([command])=>command==='workbench.action.browser.open').length,openedBeforeRestore,
+      'Restoring the center report never relaunches or replays chats');
     console.log('Three independent GPT tabs, dashboard status, tab focus and restore checks passed.');
   } finally {
     globalThis.fetch = originalFetch;
     require.cache[dashboardPath] = dashboardModule;
     for (const item of context.subscriptions) item.dispose();
+    require('../../extension/merge/handoff-proxy').shutdownHandoffProxy();
     await fs.rm(temporary, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

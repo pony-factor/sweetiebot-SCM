@@ -189,7 +189,6 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
   color:var(--vscode-foreground);font-size:12px;white-space:nowrap
 }
 .overview .toolbar-option{cursor:pointer}
-.overview .ci-repair-controls{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
 .github-post-menu{position:relative;flex:0 0 auto;font-size:12px}
 .github-post-trigger{display:inline-flex;align-items:center;gap:8px;min-height:30px;padding:4px 9px;border:1px solid var(--vscode-dropdown-border,var(--merge-border));border-radius:9px;background:var(--vscode-dropdown-background,var(--vscode-input-background));color:var(--vscode-dropdown-foreground,var(--vscode-foreground));white-space:nowrap;cursor:pointer;user-select:none}
 .github-post-trigger::-webkit-details-marker{display:none}
@@ -204,6 +203,7 @@ pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-b
 .github-post-options .toolbar-option{display:flex;width:100%;min-height:34px;padding:6px 8px;border-radius:7px}
 .github-post-options .toolbar-option:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.12))}
 .method-control .muted{font-size:12px;cursor:pointer}
+#auto-fix-menu .method-control{justify-content:center}
 .overview input[type="checkbox"]{
   appearance:none;display:inline-grid;place-items:center;flex:0 0 16px;
   width:16px;height:16px;margin:0;border:1px solid var(--vscode-checkbox-border,var(--merge-border));
@@ -386,7 +386,14 @@ body.celebrating .merge-header .pill{border-color:var(--merge-accent)}
 <body>
 <header class="merge-header">
 <div class="dashboard-brand"><h1>Lindsey</h1><nav id="merge-workers" class="merge-workers" aria-label="GPT review sessions" hidden></nav><span id="conflicts-cleared" class="cleared-counter" role="status" aria-label="Conflicts cleared" title="Conflicts cleared">0 cleared</span></div>
-<div class="overview" role="group" aria-label="Bulk merge preferences"><span class="ci-repair-controls"><label class="toolbar-option" title="After a verified CI failure, open one targeted repair task per failing PR head. On by default; turn off to disable automatic repair. Merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> Auto-fix failing CI</label><span class="method-control"><label class="muted" for="auto-fix-ci-method">using</label><select id="auto-fix-ci-method" aria-label="Automatic CI repair method" title="Also selects the manual Fix failing checks runner"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span></span><details class="github-post-menu" id="github-post-menu">
+<div class="overview" role="group" aria-label="Bulk merge preferences"><details class="github-post-menu" id="auto-fix-menu">
+  <summary class="github-post-trigger">Automatic fixing <span id="auto-fix-count" class="github-post-count">Off</span><svg class="github-post-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg></summary>
+  <div class="github-post-options" role="group" aria-label="Automatic fixing options">
+    <label class="toolbar-option" title="After a verified CI failure, open one targeted repair task per failing PR head. On by default; turn off to disable automatic repair. Merges still require passing checks."><input type="checkbox" id="auto-fix-ci"> CI failures</label>
+    <label class="toolbar-option" title="After the merge runner defers confirmed conflicts, open a repair task preserving both intentions. Human implementation choices remain manual."><input type="checkbox" id="auto-fix-conflicts"> Conflicts</label>
+    <span class="method-control"><label class="muted" for="auto-fix-ci-method">using</label><select id="auto-fix-ci-method" aria-label="Automatic fixing method" title="Runner for automatic fixing and manual repair actions"><option value="web">ChatGPT</option><option value="codex">Codex</option></select></span>
+  </div>
+</details><details class="github-post-menu" id="github-post-menu">
   <summary class="github-post-trigger">Post to GitHub <span id="github-post-count" class="github-post-count">Off</span><svg class="github-post-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg></summary>
   <div class="github-post-options" role="group" aria-label="GitHub posting options">
     <label class="toolbar-option" title="Applies immediately to verified completed merges and upcoming handoffs. Local explanations are always shown."><input type="checkbox" id="post-summaries"> AI summaries</label>
@@ -813,7 +820,7 @@ __RATE_LIMIT_FORMATTER__
     workerList.replaceChildren();
     workerList.hidden = !model.workers?.length;
     for (const worker of model.workers || []) {
-      const button = show('button', 'merge-worker', worker.label + ' · ' + worker.phase + ' · ' + worker.merged + '/' + worker.total + ' merged', workerList);
+      const button = show('button', 'merge-worker', worker.label.replace(/\s+first$/i, '') + ' · ' + worker.phase + (worker.kind === 'repair' ? '' : ' · ' + worker.merged + '/' + worker.total + ' merged'), workerList);
       button.title = 'GPT session ' + worker.id + ' · ' + worker.numbers.map(number => '#' + number).join(', ');
       button.addEventListener('click', () => dispatch('focus-worker', worker.id));
     }
@@ -879,6 +886,8 @@ __RATE_LIMIT_FORMATTER__
     byId('post-summaries').checked = model.postSummaries === true;
     updateGitHubPostingCount();
     byId('auto-fix-ci').checked = model.autoFixCi === true;
+    byId('auto-fix-conflicts').checked = model.autoFixConflicts === true;
+    updateAutomaticFixingCount();
     byId('auto-fix-ci-method').value = model.autoFixCiMethod === 'codex' ? 'codex' : 'web';
     const eventScroll = events.scrollTop;
     events.replaceChildren();
@@ -980,22 +989,35 @@ __RATE_LIMIT_FORMATTER__
     updateGitHubPostingCount();
     vscode.postMessage({ type: 'post-status-updates', enabled: event.target.checked });
   });
-  byId('auto-fix-ci').addEventListener('change', event => vscode.postMessage({ type: 'auto-fix-ci', enabled: event.target.checked }));
+  function updateAutomaticFixingCount() {
+    const enabled = Number(byId('auto-fix-ci').checked) + Number(byId('auto-fix-conflicts').checked);
+    byId('auto-fix-count').textContent = enabled === 0 ? 'Off' : enabled + ' enabled';
+  }
+  for (const id of ['auto-fix-ci', 'auto-fix-conflicts']) {
+    byId(id).addEventListener('change', event => {
+      updateAutomaticFixingCount();
+      vscode.postMessage({ type: id, enabled: event.target.checked });
+    });
+  }
   byId('auto-fix-ci-method').addEventListener('change', event => vscode.postMessage({ type: 'auto-fix-ci-method', method: event.target.value }));
   byId('post-summaries').addEventListener('change', event => {
     updateGitHubPostingCount();
     vscode.postMessage({ type: 'post-summaries', enabled: event.target.checked });
   });
   document.addEventListener('pointerdown', event => {
-    const menu = byId('github-post-menu');
-    if (menu.open && !menu.contains(event.target)) menu.open = false;
+    for (const id of ['github-post-menu', 'auto-fix-menu']) {
+      const menu = byId(id);
+      if (menu.open && !menu.contains(event.target)) menu.open = false;
+    }
   });
   document.addEventListener('keydown', event => {
-    const menu = byId('github-post-menu');
-    if (event.key === 'Escape' && menu.open) {
-      menu.open = false;
-      menu.querySelector('summary').focus();
-      event.preventDefault();
+    for (const id of ['github-post-menu', 'auto-fix-menu']) {
+      const menu = byId(id);
+      if (event.key === 'Escape' && menu.open) {
+        menu.open = false;
+        menu.querySelector('summary').focus();
+        event.preventDefault();
+      }
     }
   });
   byId('refresh').addEventListener('click', () => dispatch('refresh'));

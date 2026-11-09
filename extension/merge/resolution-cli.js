@@ -12,8 +12,10 @@ async function main() {
   const { input, selection } = JSON.parse(await fs.readFile(file, 'utf8'));
   const result = await executeResolution(input, validateSelection(selection), {
     ...require('./lindsey-transport').createLindseyTransport(selection.repository),
-    // This local entrypoint executes an already-authorized selected merge.
-    // Only the helper's last-resort human-author path may rewrite; web JSON cannot grant it.
+    // Use the already-granted human session for native merge finalization.
+    // App-authenticated reads and branch-only repairs remain separate.
+    nativeAPI: process.env.GH_TOKEN ? require('../github/user-api').legacyAPI(
+      require('../github/user-api').githubUserAPI(process.env.GH_TOKEN)) : undefined,
     authorHandoff: true,
     onProgress: event => process.stderr.write('LINDSEY_PROGRESS ' + JSON.stringify(event) + '\n')
   });

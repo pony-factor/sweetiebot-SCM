@@ -59,7 +59,7 @@ function validateSyncResolution(input, selection) {
   return items;
 }
 
-async function executeResolution(input, selection, { merge = humanSquashMerge, api, git, gitToken, onProgress, authorHandoff = false } = {}) {
+async function executeResolution(input, selection, { merge = humanSquashMerge, api, nativeAPI, git, gitToken, onProgress, authorHandoff = false } = {}) {
   // Validate the entire batch before any PR can be changed.
   const items = validateResolution(input, selection);
   const results = [];
@@ -68,17 +68,20 @@ async function executeResolution(input, selection, { merge = humanSquashMerge, a
     if (rateLimit) { results.push({number:item.number,status:'waiting',...rateLimit}); continue; }
     try {
       const result = await merge(selection.repository, item.number, {
-        api, git, gitToken, expected: item, onProgress,
+        api, nativeAPI, git, gitToken, expected: item, onProgress,
         resolutionPatch: item.patch, resolutionHunks: item.resolutionHunks, repairChecks: item.repairChecks,
         decisions: item.decisions, operation: item.operation, commitProposal: item.commitProposal,
         localGitMerge: item.operation === 'merge'
       });
+      if (result.merged && result.githubMerged === false) throw Error('GitHub did not confirm this PR as merged; closure alone is insufficient.');
       results.push({ number: item.number, status: result.merged ? 'merged' : result.status || 'blocked', ...result });
     } catch (error) {
       if (error.rateLimited) rateLimit = {rateLimited:true,retryAt:error.retryAt,configured:error.configured,reason:error.message};
       results.push({ number: item.number, status: error.rateLimited ? 'waiting' : error.code === 'MERGE_BASE_CHANGED' ? 'needs_refresh' : 'blocked',
         ...(rateLimit || {}),
-        reason: error.message, ...(SHA.test(error.preparedHead || '') ?
+        reason: error.message, ...(SHA.test(error.publishedSha || '') ?
+          { publishedSha: error.publishedSha, originalHead: error.originalHead, prHeadUnchanged: true } : {}),
+        ...(SHA.test(error.preparedHead || '') ?
           { preparedHead: error.preparedHead, originalHead: error.originalHead } : {}),
         ...(error.code === 'MERGE_BASE_CHANGED' && error.sha ?
           { sha: error.sha, previousHeadSha: error.previousHeadSha } : {}) });
@@ -138,7 +141,7 @@ function resolutionInstructions(selection, callback) {
     'LINDSEY COMMIT MESSAGES: Explain substantive resolution decisions with their titles and descriptions only. Do not append model or assistant co-author trailers to local Lindsey commits, and do not add File:, Incoming main:, Source:, or similar procedural annotations. Preserve independently verified historical contributors when forming the final PR squash message.',
     'PROPOSED COMMIT MESSAGE: Include commitTitle and commitMessage for every merge result. Use the exact selected PR title with its (#number) suffix once, chronological original-commit bullets with four-space-indented wrapped bodies, exactly ten underscores and the ordered verified co-author trailers. The local runner checks your proposal against the original commits and corrects formatting or omitted credits; it never lets proposed prose discard contributor history.\n',
     'RESOLUTION PAYLOAD: Internally prepare the complete versioned JSON object {"version":1,"repository":' + JSON.stringify(selection.repository) + ',"results":[{"number":123,"headSha":"40 hexadecimal characters","baseSha":"40 hexadecimal characters","patch":null,"resolutionHunks":[],"decisions":[],"commitTitle":"Exact selected PR title (#123)","commitMessage":"Original commit summary and ordered credits","explanation":"what changed and why, including any resolution"}]}. Prefer patch:null and omit resolutionHunks for routine clean integration. BULK CONFLICT RESOLUTION: Prefer compact resolutionHunks for actual conflicting files instead of a huge unified diff: set patch:null, resolutionHunks:[{"path":"verified relative file","hunks":[{"index":0,"choice":"ours|theirs|both-ours-first|both-theirs-first|custom","resolved":"only for custom"}]}], plus one decision per conflicted file. Indexes are zero-based ordered Git conflict regions; ours is current BASE and theirs is the PR HEAD. Use custom to specify just the complete replacement for that region. Optionally include exact ours and theirs to verify a hunk; NEVER guess. The isolated Git executor performs the actual three-way merge locally, preserves nonconflicting edits, applies every specified conflict resolution, rejects missing or changed hunks, and validates the full integrated tree. No entire diff is required. Full unified diff patches remain available where a compact hunk cannot express the change. These two forms are mutually exclusive. Never truncate any patch or hunk; a 32 MiB text patch safety bound does not require the diff to appear in chat. No raw JSON is output unless the browser requests its second and final fallback.',
-    'BOT-OPENED PR ATTRIBUTION: For bot-opened PRs, the trusted local handoff can prepare a human-authored integration commit preserving both original parents, make an ordinary fast-forward destination push, and verify GitHub marks the original PR merged. Never rewrite the original PR head, force-push a base branch, or bypass branch-protection rules. Preserve checks and reviews before merging.',
+    'BOT-OPENED PR ATTRIBUTION: For bot-opened PRs, delegate to the local Lindsey handoff to verify whether a genuine native merge can preserve the required human Git author. If it cannot, leave the PR open with the exact limitation. Never publish an integration commit directly to main or close a PR as a substitute for a GitHub-confirmed merge. Branch-only conflict and CI repair commits are authored and committed by the Lindsey App. Never rewrite the original PR head, force-push a base branch, or bypass branch-protection rules. Preserve checks and reviews before merging.',
     reviewPublicationInstructions(),
     reportOptionsInstructions(),
     'HANDOFF DELIVERY: The PRIMARY and mandatory final result is exactly one clickable Markdown link labeled "Apply with Lindsey", targeting the authorized callback with #result_gz= followed by URL-safe unpadded Base64 of gzip-compressed UTF-8 JSON.stringify of the complete versioned resolution object. Use a Python or JavaScript execution tool to serialize, gzip and Base64URL-encode the actual JSON bytes; never attempt to invent compressed bytes. Serialize and compress only once; build the full encoded link without hand-escaping or splitting the bytes, and let the local receiver independently verify and decode the payload. Wrap the complete Markdown destination in angle brackets. Return a short explanation beside the link, but DO NOT render a JSON block or raw diff in the normal response. If the button cannot be formed completely, do not truncate it; the Sweetiebot browser will request one automatic retry. Only after that retry fails may the browser request a complete fenced json block as a last-resort fallback. Always preserve full patches; the local runner validates and applies them. The callback is scoped, temporary and single-use.',
