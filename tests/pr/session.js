@@ -253,54 +253,60 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     runners.openRepairRunner=async(host,url,selected)=>{
       assert.equal(host,source);assert.equal(selected.number,12);embeddedUrl=url;return true;
     };
+    const directMode = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+    process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'legacy';
     try {await launchBlockerAction(source,context,root,selection.repository,pr,option,'web');}
-    finally {runners.openRepairRunner=previousRunner;}
+    finally {
+      runners.openRepairRunner=previousRunner;
+      if (directMode === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+      else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = directMode;
+    }
     const directPrompt=new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).get('q');
     assert(directPrompt.includes('DIRECT WEB REPAIR'));
     assert(directPrompt.includes('Implement the selected repair directly'));
     assert(directPrompt.includes('Do not bury conflict decisions'));
     assert(directPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
     assert(!new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).has('return_to'),'Direct web repairs have no local apply callback');
-    // App-enabled web repairs launch the same branch-only executor route.
+    // App-enabled ChatGPT repair stays in this window, with its own branch-only handoff.
     const localOption = manualBlockerActions({ ...pr, state: 'conflict' }).find(item => item.id === 'resolve-conflicts-local');
     const modeBeforeRepair = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+    const inlineHost = { ...instrumented, workspace: { ...instrumented.workspace,
+      getConfiguration: source.workspace.getConfiguration } };
+    let inlineUrl;
+    runners.openRepairRunner = async (host, url, selected) => {
+      assert.equal(host, inlineHost, 'Repair opens in the initiating merge window');
+      assert.equal(selected.number, 12);
+      assert.equal(selected.reuse, false, 'A fresh handoff cannot focus a stale repair chat');
+      inlineUrl = url;
+      return true;
+    };
+    const windowsBeforeRepair = calls.filter(call => call[0] === 'vscode.openFolder').length;
     process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'separate-apps';
-    try { await launchBlockerAction(source, context, root, selection.repository, pr, localOption, 'web'); }
-    finally {
-      if (modeBeforeRepair === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
-      else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = modeBeforeRepair;
-    }
-    const actionWorkspace = calls.at(-1)[1];
-    const actionDirectory = path.dirname(actionWorkspace.fsPath);
-    assert.equal(path.basename(actionWorkspace.fsPath), 'Resolve #12 [repository].code-workspace');
-    const repairSettings = JSON.parse(await fs.readFile(actionWorkspace.fsPath, 'utf8')).settings;
-    assert.equal(repairSettings['sweetiebot.startCompactPRSession'], true,
-      'Individual PR repair windows remain compact');
-    assert.equal(repairSettings['sweetiebot.startExpandedMergeSession'], false);
-    const actionRequest = JSON.parse(await fs.readFile(path.join(actionDirectory, 'request.json'), 'utf8'));
-    const actionPrompt = new URLSearchParams(new URL(actionRequest.mergeUrl).hash.slice(1)).get('q');
-    assert(actionPrompt.includes('LOCAL KEFANIA REPAIR'));
-    assert(actionPrompt.includes('one explanatory commit per actual conflicted file'));
-    assert(!actionPrompt.includes('DIRECT WEB REPAIR'));
-    assert(actionPrompt.includes('does not authorize merging or closing'));
-    assert.equal(actionRequest.options.syncOnly, true, 'Implementation follow-ups receive only branch synchronization authority');
-    const branchSelection = JSON.parse(await fs.readFile(path.join(actionDirectory, 'merge-selection.json'), 'utf8'));
-    assert.deepEqual(branchSelection.pullRequests.map(item => item.number), [12]);
     globalThis.fetch = fixtureFetch;
     try {
-      await resumePRSession({ ...instrumented,
-        workspace: { workspaceFile: actionWorkspace, workspaceFolders: [{ uri: root }] } }, context);
-      const branchLaunch = new URLSearchParams(new URL(dashboardCalls.at(-1)[1].url).hash.slice(1));
-      assert((await localPrompt(dashboardCalls.at(-1)[1].url)).includes('BRANCH-ONLY EXECUTION'));
-      const callback = branchLaunch.get('return_to');
+      await launchBlockerAction(inlineHost, context, root, selection.repository, pr, localOption, 'web');
+      assert.equal(calls.filter(call => call[0] === 'vscode.openFolder').length, windowsBeforeRepair,
+        'ChatGPT conflict repair never opens another workspace');
+      const actionPrompt = await localPrompt(inlineUrl);
+      assert(actionPrompt.includes('LOCAL KEFANIA REPAIR'));
+      assert(actionPrompt.includes('BRANCH-ONLY EXECUTION'));
+      assert(actionPrompt.includes('one explanatory commit per actual conflicted file'));
+      assert(actionPrompt.includes('does not authorize merging or closing'));
+      const callback = new URLSearchParams(new URL(inlineUrl).hash.slice(1)).get('return_to');
       const rejected = await priorFetch(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
           version: 1, repository: selection.repository, results: [{ number: 12,
             headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), operation: 'merge', patch: null,
             explanation: 'Attempt to merge from a branch-only task.' }] }) });
-      assert.equal(rejected.status, 400, 'Branch-only handoffs reject merging before the Git executor can run');
+      assert.equal(rejected.status, 400, 'Inline branch-only handoffs reject merges before Git execution');
       assert((await rejected.json()).error.includes('merging is not authorized'));
-    } finally { globalThis.fetch=priorFetch; for (const disposable of context.subscriptions) disposable.dispose(); }
+    } finally {
+      runners.openRepairRunner = previousRunner;
+      globalThis.fetch = priorFetch;
+      if (modeBeforeRepair === undefined) delete process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
+      else process.env.SWEETIEBOT_BOT_IDENTITY_MODE = modeBeforeRepair;
+      for (const disposable of context.subscriptions) disposable.dispose();
+    }
 
     // Exercise an actual independent clone and verify the task resumes only
     // in its selected branch, leaving the source checkout unchanged.

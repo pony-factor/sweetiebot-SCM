@@ -61,6 +61,7 @@ const run = promisify(execFile);
         { app: { name: 'AWS Amplify' }, status: 'queued', latest_check_runs_count: 0 }
       ] };
       if (endpoint.includes('/status?')) return { statuses: [] };
+      if (endpoint.includes('/rules/branches/')) return [];
       if (endpoint.includes('/branches/')) return { protected: false, commit: { sha: await branch(endpoint.split('/').at(-1)) } };
       if (endpoint.includes('/pulls?')) return [];
       if (endpoint.includes('/commits?') && pushed) {
@@ -110,7 +111,7 @@ const run = promisify(execFile);
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
     const webModelNumber = '7.2';
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
-      api, git: localGit, expected, resolutionPatch, decisions, assistantModelNumber: webModelNumber,
+      api, git: localGit, expected, resolutionPatch, decisions, operation: 'sync', assistantModelNumber: webModelNumber,
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
     if (!resolving) {
@@ -171,12 +172,22 @@ const run = promisify(execFile);
     assert.equal(await branch('main'), baseSha, 'Every blocked preflight leaves main unchanged');
     // An ordinary fast-forward push must preserve a competing branch update.
     const competing = await git('--git-dir=' + remote, 'commit-tree', headSha + '^{tree}', '-p', headSha, '-m', 'Competing fixture update');
-    await assert.rejects(attempt({ git: async (...args) => {
-      if (args.includes('push')) await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', competing, headSha);
-      return localGit(...args);
-    } }), /stale info|rejected/);
-    assert.equal(await branch('feature'), competing, 'A normal push preserves the competing head');
-    await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
+    if (resolving) {
+      await assert.rejects(attempt({ git: async (...args) => {
+        if (args.includes('push')) await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', competing, headSha);
+        return localGit(...args);
+      } }), /stale info|rejected/);
+      assert.equal(await branch('feature'), competing, 'A competing update blocks a real synchronization push');
+      await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, competing);
+    } else {
+      const clean = await attempt({ git: async (...args) => {
+        assert(!args.includes('push'), 'A clean sync must not push at all');
+        return localGit(...args);
+      } });
+      assert.equal(clean.status, 'synced');
+      assert.equal(clean.unchanged, true);
+      assert.equal(await branch('feature'), headSha);
+    }
     pushed = false;
     // A child PR built from the parent must remain untouched while the parent
     // accepts a normal append-only synchronization commit.
@@ -185,7 +196,8 @@ const run = promisify(execFile);
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/child', childSha);
     stalePushReads = 2;
     const incremental = await attempt({ api: dependentApi });
-    assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
+    assert.equal(stalePushReads, resolving ? 0 : 2,
+      resolving ? 'Verify post-push metadata after a real sync' : 'An unchanged sync must not poll post-push metadata');
     if (resolving) {
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':feature-art.png'), await git('--git-dir=' + remote, 'rev-parse', headSha + ':feature-art.png'), 'Text conflict resolution retains the exact clean binary blob');
@@ -193,60 +205,47 @@ const run = promisify(execFile);
       await assert.rejects(git('--git-dir=' + remote, 'show', incremental.sha + ':remove.txt'));
     }
     assert.equal(incremental.status, 'synced', 'Default integration appends commits');
-    assert(!pushes.at(-1).some(arg => arg.startsWith('--force')), 'Incremental updates use an ordinary push');
+    if (resolving) assert(!pushes.at(-1).some(arg => arg.startsWith('--force')),
+      'Incremental updates use an ordinary push');
+    else assert.equal(pushes.length, 0, 'Unchanged synchronization never pushes');
     assert.equal(await branch('child'), childSha, 'Append-only parent sync does not change its child branch');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
-    const needsApproval = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [] });
-    assert.equal(needsApproval.status, 'blocked');
-    assert.match(needsApproval.reason, /explicit local approval/);
-    assert.equal(await branch('feature'), incremental.sha, 'Attribution alone cannot trigger an automatic rewrite');
-    await assert.rejects(attempt({
-      api: dependentApi, expected: { ...expected, headSha: incremental.sha },
-      resolutionPatch: null, decisions: [], allowHistoryRewrite: true,
-      rewriteReason: 'preserve-human-author'
-    }), /depends on or shares this head branch/, 'Dependent PRs still prohibit destructive rewrites');
-    assert.equal(await branch('feature'), incremental.sha, 'Rejected rewrite leaves parent unchanged');
-    assert.equal(await branch('child'), childSha, 'Rejected rewrite leaves child unchanged');
-    const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null,
-      decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
-    assert.equal(wrongReason.status, 'blocked', 'Convenience does not qualify as rewrite necessity');
+    const unchanged = await attempt({ expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [] });
+    assert.equal(unchanged.status, 'synced');
+    assert.equal(unchanged.unchanged, true, 'Already synchronized branches are not rewritten');
+    assert.equal(await branch('feature'), incremental.sha);
+    const dependentSync = await attempt({ api: dependentApi,
+      expected: { ...expected, headSha: incremental.sha }, resolutionPatch: null, decisions: [],
+      allowHistoryRewrite: true, rewriteReason: 'preserve-human-author' });
+    assert.equal(dependentSync.status, 'synced', 'Dependent PRs do not require destructive history operations');
+    assert.equal(await branch('child'), childSha);
+    const wrongReason = await attempt({ expected: { ...expected, headSha: incremental.sha },
+      resolutionPatch: null, decisions: [], allowHistoryRewrite: true, rewriteReason: 'simplify-squash' });
+    assert.equal(wrongReason.status, 'synced', 'Rewrite preferences do not change append-only sync');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, incremental.sha);
     pushed = false;
     const progress = [];
     stalePushReads = 2;
-    let result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
+    const result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
       onProgress: event => progress.push(event), allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
-      expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' }, resolutionPatch, decisions,
-      assistantModelNumber: webModelNumber,
+      expected: { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' },
+      resolutionPatch, decisions, assistantModelNumber: webModelNumber, operation: 'merge',
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
     assert.equal(progress[0].stage, 'preparing');
-    const pushedIndex = progress.findIndex(event => event.stage === 'pushed');
-    assert(pushedIndex > progress.findIndex(event => event.stage === (resolving ? 'sync-prepared' : 'prepared')));
-    assert.equal(progress[pushedIndex + 1].stage, 'verifying-push');
-    if (resolving) {
-      assert(progress.some(event => event.stage === 'decision-commit' && event.path === 'file.txt' && event.title === decisions[0].title));
-    } else {
-      assert(progress.findIndex(event => event.stage === 'waiting-checks') > pushedIndex);
-      assert(progress.findIndex(event => event.stage === 'merging') > progress.findIndex(event => event.stage === 'checks-passed'));
-    }
-    if (resolving) {
-      assert.equal(result.status, 'synced');
-      assert.equal(await branch('main'), baseSha, 'Resolution preparation only reads main');
-      assert.equal(await git('--git-dir=' + remote, 'rev-parse', result.sha + '^^'), headSha, 'The original PR history is preserved');
-      assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', result.sha + '^'), decisions[0].title);
-      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha + '^')).trim(),
-        decisions[0].title + '\n\n' + decisions[0].description,
-        'Resolution commit contains only the decision title and rationale');
-      assert.equal((await git('--git-dir=' + remote, 'show', '-s', '--format=%B', result.sha)).trim(),
-        '🔄 Sync branch to main', 'Synchronization commit carries no procedural body');
-      result = await humanSquashMerge('owner/repo', 12, { api, git: localGit,
-        expected: { ...expected, headSha: result.sha }, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author',
-        temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) });
-    }
-    assert(result.merged, JSON.stringify(result));
-    assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'), resolving ? 'feature and base update' : 'feature continued');
-    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'), 'John Wooten <human@example.test>');
+    assert(progress.some(event => event.stage === 'pushing-squash-base'));
+    assert(!progress.some(event => event.stage === 'pushing-signed-squash-head'),
+      'Squash publication must never move the source PR head');
+    assert.equal(result.status, 'published', 'GitHub may not automatically mark a directly published squash merged');
+    assert.equal(result.merged, false);
+    assert.equal(await branch('main'), result.sha);
+    assert.equal(await branch('feature'), headSha, 'The PR branch remains unchanged');
+    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', result.sha),
+      baseSha, 'The squash has one parent, the previous main tip');
+    assert.equal(await git('--git-dir=' + remote, 'show', 'main:file.txt'),
+      resolving ? 'feature and base update' : 'feature continued');
+    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
+      'John Wooten <human@example.test>');
     const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
     assert(message.startsWith('🐛 Resolve feature (#12)\n'));
     // Preserve verified historical Codex authorship without attributing Lindsey conflict decisions to ChatGPT.
@@ -266,7 +265,7 @@ const run = promisify(execFile);
     assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('executor-')), [], 'All isolated checkouts are cleaned up');
     assert.equal(await repo('status', '--porcelain'), '', 'Source working tree remains untouched');
     assert.equal(await repo('rev-parse', 'HEAD'), baseSha, 'Source branch does not move');
-    console.log('Real Git resolution patch, isolated checkout, guarded push and human-author squash passed.');
+    console.log('Real Git resolution, append-only synchronization, preserved PR head and single-parent squash passed.');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
  }
  for (const checkState of ['success', 'pending', 'failure']) await successiveMerges(checkState);
@@ -314,8 +313,8 @@ async function successiveMerges(checkState, appMode = false) {
    const title = number => number === 1 ? '🐛 Correct the multiplier' : number === 2 ? '✨ Add optional tax' : '✨ Add independent feature';
    const snapshot = async number => {
     const baseTip = await branch('main');
-    // A locally prepared squash replaces the isolated PR head before it
-    // fast-forwards main. Check the live head, not its pre-squash SHA.
+    // Native and local squashes both preserve the source PR head. A direct
+    // local publication may leave GitHub PR bookkeeping open for review.
     const currentHead = await branch('feature-' + number);
     const landed = merged.has(number) || await git('--git-dir=' + remote,
       'merge-base', '--is-ancestor', currentHead, baseTip).then(() => true).catch(() => false);
@@ -408,15 +407,17 @@ async function successiveMerges(checkState, appMode = false) {
    assert.equal(await branch('feature-2'), heads[2], 'A detected conflict does not push a partial tree');
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
    const final = await submit(conflict.continueUrl, 2, patch);
-    assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
-    assert.equal(await branch('feature-2'), final.results[0].sha,
-      'A locally resolved squash replaces only the isolated PR head');
-    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', final.results[0].sha),
-      first.results[0].sha, 'The squash has exactly one parent: the previous main tip');
-    await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
-      heads[2], final.results[0].sha), 'The old PR commits do not enter main ancestry');
-    assert.equal(final.batch.merged.length, 2);
-   assert.deepEqual(final.batch.deferred, []);
+   assert.equal(final.results[0].status, 'published', JSON.stringify(final));
+   assert.equal(final.results[0].merged, false);
+   assert.equal(await branch('feature-2'), heads[2],
+     'A locally resolved squash leaves the source branch untouched');
+   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', final.results[0].sha),
+     first.results[0].sha, 'The new squash has exactly one parent: the previous main tip');
+   await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
+     heads[2], final.results[0].sha), 'Old PR commits must not enter main ancestry');
+   assert.equal(final.batch.merged.length, 1);
+   assert.equal(final.batch.deferred.find(item => item.number === 2)?.kind, 'published_squash',
+     'Do not retry a squash that has landed on main but lacks GitHub PR acknowledgement');
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
@@ -438,7 +439,7 @@ async function successiveMerges(checkState, appMode = false) {
     assert.equal(unchangedThird, heads[3], 'A clean PR must not be synchronized');
     if (checkState === 'success') {
      assert.equal(third.results[0].status, 'merged', 'A clean integration and squash complete in one local execution');
-     assert.equal(third.batch.merged.length, 3);
+     assert.equal(third.batch.merged.length, 2);
      assert.equal(third.continueUrl, undefined, 'No redundant AI round is required');
      assert.equal(await git('--git-dir=' + remote, 'show', 'main:extra.txt'), 'Independent third feature');
      assert.equal(await git('--git-dir=' + remote, 'show', 'main:price.js'), code);
@@ -447,8 +448,8 @@ async function successiveMerges(checkState, appMode = false) {
      assert.equal(third.results[0].status, checkState === 'pending' ? 'waiting' : 'checks_failed');
      assert.equal(third.results[0].sha, heads[3], 'Failed checks cannot advance the source head');
       assert.equal(await branch('main'), beforeThird, 'Pending or failing checks cannot merge');
-      if (checkState === 'failure') assert.equal(third.batch.deferred[0].kind, 'failed_checks');
-      assert.equal(third.batch.merged.length, 2);
+      if (checkState === 'failure') assert.equal(third.batch.deferred.find(item => item.number === 3)?.kind, 'failed_checks');
+      assert.equal(third.batch.merged.length, 1);
    }
    assert.equal(await repo('rev-parse', 'HEAD'), initial);
    assert.equal(await repo('status', '--porcelain'), '');

@@ -13,10 +13,14 @@ for _sb_parent in _sb_path(__file__).resolve().parent.parents:
         break
 
 
+import errno
 import importlib.util
+import io
 import json
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -53,6 +57,86 @@ assert(result.message.startsWith('- 🐛 Fix'));
             env.pop("SWEETIEBOT_BOT_IDENTITY_MODE", None)
             self.assertEqual(ci.execute(["node", "-e", script], env), 0)
 
+    def test_transient_local_process_launch_retries_without_ignoring_test_failures(self):
+        unavailable = OSError(errno.EAGAIN, "Resource temporarily unavailable")
+        completed = subprocess.CompletedProcess(["node", "--check"], 0)
+        with patch.object(ci.subprocess, "run",
+                          side_effect=[unavailable, completed]) as run, \
+             patch.object(ci.time, "sleep") as sleep:
+            self.assertEqual(ci.execute(["node", "--check", "tests/merge/local-author-merge.js"]), 0)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+        self.assertEqual(run.call_args.kwargs["env"]["GIT_CONFIG_GLOBAL"], os.devnull)
+        self.assertEqual(run.call_args.kwargs["env"]["GIT_CONFIG_NOSYSTEM"], "1")
+        with patch.object(ci.subprocess, "run",
+                          return_value=subprocess.CompletedProcess(["node"], 1)) as run:
+            self.assertEqual(ci.execute(["node", "--check", "broken.js"]), 1)
+        run.assert_called_once()
+
+    def test_missing_node_reports_diagnostic_instead_of_crashing(self):
+        with patch.object(ci.subprocess, "run",
+                          side_effect=FileNotFoundError(errno.ENOENT, "No such file or directory")), \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(ci.execute(["node", "--check", "missing.js"]),
+                             ci.EXECUTION_UNAVAILABLE)
+        self.assertIn("Node.js executable not found", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_repeated_process_exhaustion_fails_after_bounded_retries(self):
+        unavailable = OSError(errno.EAGAIN, "Resource temporarily unavailable")
+        with patch.object(ci.subprocess, "run", side_effect=unavailable) as run, \
+             patch.object(ci.time, "sleep") as sleep, \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(ci.execute(["node", "--check", "broken.js"]),
+                             ci.EXECUTION_UNAVAILABLE)
+        self.assertEqual(run.call_count, 4)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],
+                         [0.25, 0.5, 1.0])
+        self.assertIn("Resource temporarily unavailable", stderr.getvalue())
+
+    def test_local_launch_failure_stops_the_group_before_other_processes(self):
+        spec = {"label": "Lindsey bulk merge",
+                "tests": ["merge/local-author-merge.js", "merge/dashboard.js"],
+                "syntax": []}
+        with patch.object(ci, "execute", return_value=ci.EXECUTION_UNAVAILABLE) as execute, \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            with self.assertRaises(SystemExit) as stopped:
+                ci.run_group("lindsey", spec)
+        self.assertEqual(stopped.exception.code, ci.EXECUTION_UNAVAILABLE)
+        execute.assert_called_once_with(["node", "--check", "tests/merge/local-author-merge.js"])
+        self.assertIn("Test execution unavailable", stderr.getvalue())
+        self.assertNotIn("JavaScript syntax check failed", stderr.getvalue())
+
+    def test_mac_node_fallback_when_gui_path_does_not_include_homebrew(self):
+        with patch.object(ci.sys, "platform", "darwin"), \
+             patch.object(ci.shutil, "which", return_value=None), \
+             patch.object(ci.Path, "is_file", return_value=True), \
+             patch.object(ci.os, "access", return_value=True):
+            self.assertEqual(ci.resolve_command(["node", "--check", "example.js"],
+                                                {"PATH": ""}),
+                             ["/opt/homebrew/bin/node", "--check", "example.js"])
+
+    def test_python_and_node_descendants_inherit_discovered_node(self):
+        node = ci.resolve_command(["node"], os.environ)[0]
+        with TemporaryDirectory() as temporary:
+            fallback = Path(temporary) / "node"
+            fallback.symlink_to(node)
+            env = {**os.environ, "PATH": os.defpath,
+                   "CI_FIXTURE_CONTEXT": "preserved"}
+            original_env = env.copy()
+            javascript = """
+const assert = require('node:assert/strict');
+assert.equal(process.env.CI_FIXTURE_CONTEXT, 'preserved');
+require('node:child_process').execFileSync('node', ['--check'], {input: 'const valid = 1;'});
+"""
+            python = ("import subprocess; subprocess.run("
+                      + repr(["node", "-e", javascript]) + ", check=True)")
+            # Simulate discovery outside the GUI PATH while exercising real
+            # Python -> Node -> Node subprocesses.
+            with patch.object(ci.shutil, "which", return_value=str(fallback)):
+                self.assertEqual(ci.execute([sys.executable, "-c", python], env), 0)
+            self.assertEqual(env, original_env)
+
     def test_commit_button_browser_regression_has_one_owner(self):
         manifest = json.loads(ci.CONFIG.read_text(encoding="utf-8"))
         owners = [name for name, group in manifest["groups"].items()
@@ -60,6 +144,17 @@ assert(result.message.startsWith('- 🐛 Fix'));
         self.assertEqual(owners, ["browser-ui"])
         self.assertFalse(ci.browser_needed(manifest["groups"]["commit"]))
         self.assertTrue(ci.browser_needed(manifest["groups"]["browser-ui"]))
+
+    def test_python_suite_keeps_its_module_import_path(self):
+        spec = {"label": "Python imports", "tests": ["search/workspace-search.py"],
+                "syntax": []}
+        with patch.object(ci, "execute", return_value=0) as execute:
+            ci.run_group("efs-search", spec)
+        self.assertEqual(execute.call_count, 1)
+        command, env = execute.call_args.args
+        self.assertEqual(command[:4], [sys.executable, "-m", "unittest", "-v"])
+        self.assertIn(str(ci.ROOT / "scripts"), env["PYTHONPATH"].split(os.pathsep))
+        self.assertIn(str(ci.ROOT / "tests"), env["PYTHONPATH"].split(os.pathsep))
 
     def test_browser_test_is_syntax_checked_and_executed(self):
         spec = {"label": "Browser and UI",

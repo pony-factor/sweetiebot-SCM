@@ -5,6 +5,7 @@ const { createMergeHandoff } = require('./handoff');
 const { validateResolution, validateSyncResolution, resolutionInstructions } = require('./resolution');
 const SHA = /^[a-f0-9]{40}$/i;
 const { orderMergeCandidates } = require('./order');
+const { isSnapshotDeferral } = require('./snapshot-change');
 
 // The beginning of a step is not a heartbeat. Retain it across meaningful
 // updates to the same phase and round; identical snapshots are not updates.
@@ -178,7 +179,8 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             needs_refresh: 'Base advanced · regenerating the integration handoff',
             checks_failed: 'Integrated-head checks failed · assessing repair',
             waiting: 'Waiting for integrated-head checks', synced: 'PR branch synchronization finished',
-            blocked: 'Local execution stopped · attention required'
+            blocked: 'Local execution stopped · attention required',
+            published: 'Squash published to base · GitHub PR state unconfirmed'
           }[item.status] || 'Local execution finished'));
           if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt,configured:item.configured}; continue; }
           // A parallel lane can advance the base before any local work starts.
@@ -199,7 +201,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           if (branchOnly && item.status === 'synced') prepared.push(detail);
           if (!branchOnly && item.status === 'synced' && item.unchanged === true) deferred.push({ number: pr.number,
             reason: item.reason || 'Nothing needed synchronization; do not retry the unchanged branch.' });
-          if (item.status === 'checks_failed') {
+          if (item.status === 'published') deferred.push({ number: pr.number, kind: 'published_squash',
+            reason: item.reason || 'Squash reached the base but GitHub has not marked the PR merged. Do not retry.' });
+          else if (item.status === 'checks_failed') {
             pr.checkFailures = (pr.checkFailures || 0) + 1;
             // A deterministic CI failure is not a reason to synchronize main again.
             // A dedicated check-repair task can act on this verified failing head.
@@ -257,9 +261,8 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       for (const pr of entries.values()) {
         if (merged.some(item => item.number === pr.number) || prepared.some(item => item.number === pr.number)) continue;
         const blocked = deferred.find(item => item.number === pr.number);
-        // Only stale-snapshot deferrals can be cleared by a repaired head.
-        if (blocked && !(blocked.kind === 'snapshot_changed' ||
-            (!blocked.kind && /selected PR (?:head, base or title changed|changed outside this batch)/i.test(blocked.reason)))) continue;
+        // A verified new head can clear stale snapshots or a CI repair stop.
+        if (blocked && blocked.kind !== 'failed_checks' && !isSnapshotDeferral(blocked)) continue;
         const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
         if (fresh.title !== pr.title || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
             fresh.head?.repo?.full_name !== original.repository) continue;

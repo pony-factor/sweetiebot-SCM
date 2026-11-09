@@ -17,4 +17,14 @@ assert.equal(deferredCiRepairCandidate({ ...state, pullRequests: [{ ...candidate
 assert.equal(deferredCiRepairCandidate({ ...state, deferred: [{ number: 12, kind: 'human_review' }] }, pr), null);
 assert.equal(deferredCiRepairCandidate(state, { ...pr, number: 13 }), null);
 assert.equal(deferredCiRepairCandidate(state, { ...pr, base: 'other' }), null);
+const stopped = { ...state, history: [{ number: 12, status: 'blocked' }],
+  deferred: [{ number: 12, reason: 'Resolution patch contains an unsafe, secret-bearing or unrelated path.' }] };
+const failing = { ...pr, state: 'checks', currentHead: headSha };
+assert.deepEqual(deferredCiRepairCandidate(stopped, failing), candidate,
+  'A stopped preparation does not prevent a fresh current-head CI repair');
+assert.equal(deferredCiRepairCandidate(stopped, pr), null);
+assert.equal(deferredCiRepairCandidate(stopped, { ...failing, state: 'checks-pending' }), null);
+assert.equal(deferredCiRepairCandidate(stopped, { ...failing, currentHead: 'c'.repeat(40) }), null);
+assert.equal(deferredCiRepairCandidate({ ...stopped,
+  deferred: [{ number: 12, kind: 'human_review' }] }, failing), null);
 console.log('Deferred CI auto-repair selection gates passed.');

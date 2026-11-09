@@ -7,6 +7,7 @@ const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerAct
 const { createReactionChoices } = require('./reaction-choices');
 const { createMergeDashboardPersistence } = require('./dashboard-persistence');
 const { deferredCiRepairCandidate } = require('./auto-ci-repair');
+const { isSnapshotDeferral } = require('./snapshot-change');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
@@ -637,6 +638,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
             (SHA.test(pr.currentHead || '') &&
               pr.currentHead !== (batchHeads.get(pr.number) || pr.originalHead)));
           await onRefresh(candidates.map(pr => pr.number));
+          if (latestBatchState) queueAutomaticCiRepair(latestBatchState);
         } catch (failure) {
           error = 'Could not refresh the merge queue: ' + failure.message;
           if (failure.rateLimited) rateLimitedUntil = failure.retryAt || Date.now() + 60000;
@@ -661,7 +663,6 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (!candidate || pr.review || launchingActions.has(pr.number)) continue;
       const key = pr.number + ':' + candidate.headSha;
       if (autoCiAttempts.has(key)) continue;
-      autoCiAttempts.add(key);
       launchingActions.add(pr.number);
       publish();
       void (async () => {
@@ -700,6 +701,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const method = vscode.workspace?.getConfiguration('sweetiebot')?.get('mergeAutoFixCiMethod', 'web') === 'codex' ? 'codex' : 'web';
         const option = manualBlockerActions(snapshot).find(action => action.id === 'fix-checks');
         if (!option) return;
+        autoCiAttempts.add(key);
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot, option, method);
         addEvent(pr, opened === false ? 'updated' : 'action',
           opened === false ? 'Automatic CI repair was not opened'
@@ -991,8 +993,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       const pr = byNumber.get(item.number);
       if (pr) {
         // Recognize older persisted batches as well as typed new deferrals.
-        pr.snapshotDeferred = item.kind === 'snapshot_changed' ||
-          /The selected PR changed (?:outside this batch|while its parallel review)/.test(String(item.reason || ''));
+        pr.snapshotDeferred = isSnapshotDeferral(item);
         pr.snapshotChanged = Boolean(pr.snapshotDeferred || (pr.currentBase && pr.currentBase !== pr.base));
         const paths = (state.history || []).filter(entry => entry.number === item.number).flatMap(entry => entry.conflictPaths || []);
         pr.localReview = require('./blocker-report').blockerReport(pr, String(item.reason || 'Local integration stopped.'), paths, '', Object.values(pr.localDecisions || {}));

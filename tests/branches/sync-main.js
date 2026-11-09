@@ -80,7 +80,10 @@ async function run() {
   let writes = 0, tokens = 0, commits = 0;
   const publish = await syncPublisher('/fixture', 'origin', {
     enabled: () => true,
-    identity: async () => bot,
+    identity: async options => {
+      assert.equal(options.token, 'fixture-token', 'Sync identity reuses App authentication');
+      return bot;
+    },
     transport: repo => {
       assert.equal(repo, 'owner/fork');
       return { async gitToken() { tokens++; return 'fixture-token'; } };
