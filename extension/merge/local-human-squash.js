@@ -22,7 +22,7 @@ const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh
 
 const { verifiedHumanAuthor, verifyCommit } = require('./human-squash-merge');
 const { configuredMergeActor, commitIdentityArgs } = require('../github/app-commit-identity');
-const { signingEnabled, commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
+const { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
 
 async function humanSquashMerge(repository, number, {
   api, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
@@ -149,20 +149,12 @@ async function humanSquashMerge(repository, number, {
   }
   const verifiedAuthor = verifiedHumanAuthor(commits);
   const author = { name: verifiedAuthor.name, email: verifiedAuthor.email };
-  // An enabled local signer must not be silently bypassed by a GitHub-native
-  // squash/rebase that cannot use the configured key. Both merge controllers
-  // then use the shared local author/committer implementation.
-  const signLocally = requireSignedCommit || await signingEnabled(git);
-  // App authentication grants transport access, not commit attribution. An App
-  // native squash would name the App as committer even for a human-opened PR.
-  const nativeSquash = !appActor && !signLocally && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
+  // Signing preferences never authorize PR-history changes. The matching
+  // human opener can use GitHub's native, branch-preserving squash even when
+  // commit.gpgsign is enabled; explicit local signing uses a local squash.
+  // The App authenticates transport, but a human squash must not inherit its identity.
+  const nativeSquash = !appActor && !requireSignedCommit && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
-  const rewriteApproved = allowHistoryRewrite === true && rewriteReason === 'preserve-human-author' && !nativeSquash;
-  if (offerAuthorChoice && operation === 'merge' && !needsResolution && original.mergeable === true && !nativeSquash &&
-      !allowHistoryRewrite && !localGitMerge && commits.length > 1) {
-    return { merged: false, status: 'blocked', needsAuthorChoice: true, number, base, baseSha,
-      reason: 'This PR has no merge conflict. It was opened by a bot or a different account, so GitHub’s native squash would assign the wrong Git author. Choose Merge preserving commits to retain the original commits without rebasing or rewriting history. A single human-authored squash would require a separately approved history rewrite.' };
-  }
   decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
   const prepared = require('./commit-proposal').validateCommitProposal(commitProposal, squashMessage(original.title, number, commits, { primaryAuthor: author }));
@@ -242,7 +234,7 @@ async function humanSquashMerge(repository, number, {
   if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && !needsResolution && !signLocally) {
+  if (operation === 'merge' && alreadyPrepared && !needsResolution && !appActor && !requireSignedCommit) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
@@ -275,195 +267,83 @@ async function humanSquashMerge(repository, number, {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
     if (liveBase !== baseSha) throw refreshBase();
+    // A true squash has exactly one parent (the previous base tip). Neither
+    // signing nor author preservation permits a temporary PR-head rewrite.
     const finishLocalSquash = async (finalTree, finalMessage = preparedMessage) => {
-      if (operation !== 'merge') {
-        throw Error('A local squash requires a PR merge operation.');
+      if (operation !== 'merge') throw Error('A local squash requires a PR merge operation.');
+      if (finalTree === await inRepo('rev-parse', liveBase + '^{tree}')) {
+        throw Error('Squash would make no changes; refusing an empty commit.');
       }
-      const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
-      if (finalTree === baseTree) throw Error('Signed squash would make no changes; refusing an empty commit.');
       progress('waiting-checks', { sha: originalSha, title: prepared.title });
-      const sourceChecks = await waitForMergeChecks(api, repository, originalSha, {
+      const checks = await waitForMergeChecks(api, repository, originalSha, {
         ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
         onPoll: checks => progress('checks-polled', { sha: originalSha, ...checks })
       });
-      if (sourceChecks.state !== 'passed') {
-        return { merged: false, status: sourceChecks.state === 'pending' ? 'waiting' : 'checks_failed',
-          sha: originalSha, previousHeadSha: originalSha, base, baseSha, number, author,
-          reason: sourceChecks.state === 'pending' ? 'Waiting for checks before preparing the signed squash'
-            : 'Checks failed on the selected PR head: ' + sourceChecks.names.join(', ') };
+      if (checks.state !== 'passed') return { merged: false, number,
+        status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
+        sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+        reason: checks.state === 'pending' ? 'Waiting for PR-head checks before publication.'
+          : 'Checks failed on the selected PR head: ' + checks.names.join(', ') };
+      await checkBaseWritable();
+      const samePR = current => current?.state === 'open' && !current.draft && !current.merged_at &&
+        !current.stack && current.title === original.title && current.head?.sha === originalSha &&
+        current.head?.ref === head && current.base?.ref === base;
+      if (!samePR(await api(prPath)) || await readBaseTip() !== baseSha) {
+        throw Error('Selected PR or base changed before local squash preparation; no branch was modified.');
+      }
+      // Preserve the configured human signer, independently of App authentication.
+      let identity = await commitIdentity(inRepo, author, requireSignedCommit, true);
+      const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
+      await fs.writeFile(messageFile, finalMessage + '\n', { mode: 0o600 });
+      const create = () => attributedCommitTree({ directory: temp, tree: finalTree,
+        parents: [baseSha], messageFile, identity });
+      let sha;
+      try { sha = await create(); }
+      catch (error) {
+        if (requireSignedCommit || !identity.signed) throw error;
+        identity = { author, committer: author, signed: false };
+        sha = await create();
+      }
+      const parents = (await inRepo('show', '-s', '--format=%P', sha)).trim().split(/\s+/).filter(Boolean);
+      const raw = await inRepo('cat-file', '-p', sha);
+      if (!SHA.test(sha) || parents.length !== 1 || parents[0] !== baseSha ||
+          await inRepo('rev-parse', sha + '^{tree}') !== finalTree ||
+          (identity.signed && !/(?:^|\n)gpgsig /.test(raw))) {
+        throw Error('Local Git did not create a valid one-parent squash; nothing was pushed.');
+      }
+      await verifyLocalCommitIdentity(inRepo, sha, identity);
+      const [name, email, ...body] = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%B', sha)).split('\0');
+      verifyCommit({ commit: { author: { name, email }, message: body.join('\0') } }, finalMessage, author);
+      if (!samePR(await api(prPath)) || await readBaseTip() !== baseSha) {
+        throw Error('Selected PR or base changed before local squash publication; nothing was pushed.');
       }
       await checkBaseWritable();
-      await checkHeadRewriteSafety();
-      const selected = await api(prPath);
-      if (selected?.state !== 'open' || selected.draft || selected.merged_at || selected.title !== original.title ||
-          selected.head?.sha !== originalSha || selected.head?.ref !== head || selected.base?.ref !== base || selected.stack) {
-        throw Error('PR changed before signed squash preparation; no branch was modified.');
-      }
-      if (await readBaseTip() !== baseSha) throw refreshBase();
-
-      // Keep both identities human on the final squash. The App remains the
-      // transport actor; fix/sync commits retain their separate App identity.
-      let signedIdentity = await commitIdentity(inRepo, author, requireSignedCommit, true);
-      const originalTree = await inRepo('rev-parse', originalSha + '^{tree}');
-      const originalParents = (await inRepo('show', '-s', '--format=%P', originalSha)).trim().split(/\s+/).filter(Boolean);
-      const originalIdentity = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce', originalSha)).split('\0');
-      const originalMessage = (await inRepo('show', '-s', '--format=%B', originalSha))
-        .replace(/\r\n/g, '\n').trimEnd();
-      let signedSha;
-      if (originalTree === finalTree && originalParents.length === 1 && originalParents[0] === baseSha &&
-          originalMessage === finalMessage.trimEnd() &&
-          originalIdentity[0] === signedIdentity.author.name && originalIdentity[1] === signedIdentity.author.email &&
-          originalIdentity[2] === signedIdentity.committer.name && originalIdentity[3] === signedIdentity.committer.email &&
-          /(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', originalSha))) {
-        signedSha = originalSha;
-      }
-      if (!signedSha) {
-        const messageFile = path.join(temp, '.git', 'sweetiebot-signed-squash-message');
-        await fs.writeFile(messageFile, finalMessage + '\n', { mode: 0o600 });
-        const create = () => attributedCommitTree({ directory: temp, tree: finalTree,
-          parents: [baseSha], messageFile, identity: signedIdentity });
-        try {
-          signedSha = await create();
-        } catch (error) {
-          if (requireSignedCommit || !signedIdentity.signed) throw error;
-          signedIdentity = { author, committer: author, signed: false };
-          signedSha = await create();
-        }
-        const raw = await inRepo('cat-file', '-p', signedSha);
-        const parents = (await inRepo('show', '-s', '--format=%P', signedSha)).trim().split(/\s+/).filter(Boolean);
-        if (!SHA.test(signedSha) || (signedIdentity.signed && !/(?:^|\n)gpgsig /.test(raw)) || parents.length !== 1 ||
-            parents[0] !== baseSha || await inRepo('rev-parse', signedSha + '^{tree}') !== finalTree) {
-          throw Error('Local Git did not produce the required signed one-parent squash; no branch was pushed.');
-        }
-        const [name, email, ...body] = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%B', signedSha)).split('\0');
-        verifyCommit({ commit: { author: { name, email }, message: body.join('\0') } }, finalMessage, author);
-      }
-
-      await verifyLocalCommitIdentity(inRepo, signedSha, signedIdentity);
-      const newHeadPushed = signedSha !== originalSha;
-      const rollbackHead = async () => {
-        if (!newHeadPushed) return true;
-        try {
-          if (await readBaseTip() !== baseSha) return false;
-          const current = await api(prPath);
-          if (current?.state !== 'open' || current.head?.sha !== signedSha ||
-              current.head?.ref !== head || current.base?.ref !== base) return false;
-          await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + signedSha,
-            'origin', originalSha + ':refs/heads/' + head);
-          pushedSha = undefined;
-          return true;
-        } catch { return false; }
-      };
-      if (newHeadPushed) {
-        const fresh = await api(prPath);
-        if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title ||
-            fresh.head?.sha !== originalSha || fresh.head?.ref !== head || fresh.base?.ref !== base || fresh.stack) {
-          throw Error('PR changed before signed squash push; no branch was modified.');
-        }
-        if (await readBaseTip() !== baseSha) throw refreshBase();
-        await checkBaseWritable();
-        await checkHeadRewriteSafety();
-        progress('pushing-signed-squash-head', { sha: signedSha, title: prepared.title });
-        try {
-          await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
-            'origin', signedSha + ':refs/heads/' + head);
-          pushedSha = signedSha;
-        } catch (error) {
-          let remoteHead;
-          try {
-            const lines = (await inRepo('ls-remote', '--refs', 'origin', 'refs/heads/' + head)).split('\n');
-            remoteHead = lines.find(line => line.split(/\s+/)[1] === 'refs/heads/' + head)?.split(/\s+/)[0];
-          } catch {}
-          if (remoteHead !== signedSha) throw error;
-          pushedSha = signedSha;
-        }
-      }
-
-      try {
-        progress('verifying-push', { sha: signedSha, title: prepared.title });
-        await verifyPushedPR(signedSha);
-        const destination = await api(endpoint + '/commits/' + signedSha);
-        verifyCommit(destination, finalMessage, author, { committer: signedIdentity.committer });
-        const verification = destination?.commit?.verification;
-        if (requireSignedCommit && verification?.verified !== true) {
-          throw Error('GitHub did not verify the signed squash commit (' +
-            (verification?.reason || 'unknown reason') + '); the base was not updated.');
-        }
-      } catch (error) {
-        const restored = await rollbackHead();
-        if (!restored && newHeadPushed) Object.assign(error, { preparedHead: signedSha, originalHead: originalSha });
-        throw error;
-      }
-      pushedSha = signedSha;
-
-      if (finalTree !== originalTree) {
-        progress('waiting-checks', { sha: signedSha, title: prepared.title });
-        const integratedChecks = await waitForMergeChecks(api, repository, signedSha, {
-          ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
-          onPoll: checks => progress('checks-polled', { sha: signedSha, ...checks })
-        });
-        if (integratedChecks.state !== 'passed') {
-          return { merged: false, status: integratedChecks.state === 'pending' ? 'waiting' : 'checks_failed',
-            sha: signedSha, previousHeadSha: originalSha, base, baseSha, number, author,
-            reason: integratedChecks.state === 'pending' ? 'Waiting for checks on the signed squash commit'
-              : 'Checks failed on the signed squash commit: ' + integratedChecks.names.join(', ') };
-        }
-      }
-
-      try {
-        const fresh = await api(prPath);
-        if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title ||
-            fresh.head?.sha !== signedSha || fresh.head?.ref !== head || fresh.base?.ref !== base || fresh.stack) {
-          throw Error('PR changed before signed squash publication; the base was not updated.');
-        }
-        if (await readBaseTip() !== baseSha) throw refreshBase();
-        await checkBaseWritable();
-      } catch (error) {
-        const restored = await rollbackHead();
-        if (!restored && newHeadPushed) Object.assign(error, { preparedHead: signedSha, originalHead: originalSha });
-        throw error;
-      }
-
-      progress('pushing-signed-squash-base', { sha: signedSha, title: prepared.title });
-      try {
-        await inRepo('push', 'origin', signedSha + ':refs/heads/' + base);
-      } catch (error) {
-        // A lost push acknowledgement is resolved by checking whether the exact
-        // signed commit reached the base. Otherwise preserve the PR for recovery.
-        try {
-          await inRepo('fetch', '--quiet', 'origin', 'refs/heads/' + base);
-          const remoteBase = await inRepo('rev-parse', 'refs/remotes/origin/' + base);
-          await inRepo('merge-base', '--is-ancestor', signedSha, remoteBase);
-        } catch {
-          const restored = await rollbackHead();
-          if (!restored && newHeadPushed) Object.assign(error, { preparedHead: signedSha, originalHead: originalSha });
-          throw error;
-        }
-      }
+      progress('pushing-squash-base', { sha, title: prepared.title });
+      // Ordinary fast-forward only. The source PR head is never pushed or rolled back.
+      await inRepo('push', 'origin', sha + ':refs/heads/' + base);
+      pushedSha = sha;
       await inRepo('fetch', '--quiet', 'origin', 'refs/heads/' + base);
-      const remoteBase = await inRepo('rev-parse', 'refs/remotes/origin/' + base);
-      try { await inRepo('merge-base', '--is-ancestor', signedSha, remoteBase); }
-      catch { throw Error('The signed squash did not reach the base branch; inspect the remote before retrying.'); }
-
-      progress('verifying-signed-squash', { sha: signedSha, title: prepared.title });
-      for (let attempt = 0; attempt < 12; attempt++) {
-        const merged = await api(prPath);
-        if (merged?.merged === true && merged.merge_commit_sha === signedSha &&
-            merged.base?.ref === base && merged.head?.sha === signedSha) {
-          const destination = await api(endpoint + '/commits/' + signedSha);
-          verifyCommit(destination, finalMessage, author, { committer: signedIdentity.committer });
-          if (requireSignedCommit && destination?.commit?.verification?.verified !== true) {
-            throw Error('GitHub no longer reports the signed squash as verified; inspect the merged commit.');
-          }
-          return { merged: true, status: 'merged', sha: signedSha, headSha: signedSha,
-            previousHeadSha: originalSha, author, base, baseSha, number,
-            method: signedIdentity.signed ? 'local-signed-squash' : 'local-squash', signed: signedIdentity.signed,
-            verified: destination?.commit?.verification?.verified === true,
-            url: 'https://github.com/' + repository + '/commit/' + signedSha };
-        }
-        if (attempt < 11) await (checkOptions.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms))))(1000);
+      await inRepo('merge-base', '--is-ancestor', sha,
+        await inRepo('rev-parse', 'refs/remotes/origin/' + base));
+      const destination = await api(endpoint + '/commits/' + sha);
+      verifyCommit(destination, finalMessage, author, { committer: identity.committer });
+      const current = await api(prPath);
+      if (current?.head?.sha !== originalSha || current.head?.ref !== head) {
+        throw Error('Squash reached the base but the PR head changed externally; inspect the PR.');
       }
-      throw Error('The signed squash reached the base, but GitHub has not confirmed the PR as merged; do not repeat the merge.');
+      const verified = destination?.commit?.verification?.verified === true;
+      const merged = current?.merged === true && current.merge_commit_sha === sha && current.base?.ref === base;
+      if (merged) {
+        // Recheck the human identities when GitHub confirms the merge.
+        const confirmed = await api(endpoint + '/commits/' + sha);
+        verifyCommit(confirmed, finalMessage, author, { committer: identity.committer });
+      }
+      return { merged, status: merged ? 'merged' : 'published', sha, number, base, baseSha,
+        headSha: originalSha, previousHeadSha: originalSha, author,
+        method: identity.signed ? 'local-signed-squash' : 'local-squash',
+        signed: identity.signed, verified,
+        ...(!merged ? { reason: 'The one-parent squash reached the base without changing the PR branch, but GitHub has not marked this PR merged. Do not publish a duplicate; review and close the PR separately.' } : {}),
+        url: 'https://github.com/' + repository + '/commit/' + sha };
     };
     progress('inspecting-files');
     const mergeBase = await inRepo('merge-base', liveBase, liveHead);
@@ -478,8 +358,6 @@ async function humanSquashMerge(repository, number, {
         sha: originalSha, previousHeadSha: originalSha, base, baseSha, unchanged: true,
         reason: 'PR branch already contains the current base; no incremental commit or push was needed.' };
       if (nativeSquash) return finish(originalSha, preparedMessage, 'squash');
-      if (!rewriteApproved && !localGitMerge) return { merged: false, status: 'blocked', number,
-        needsAuthorChoice: true, reason: 'Squash is blocked by Git-author attribution, not merge conflicts. GitHub would credit the bot or different PR opener. Choose Merge preserving commits for a merge commit without rebasing or rewriting the PR branch; a human-authored single squash requires explicit local approval.' };
     }
     const treeEntries = new Map();
     for (const tree of [liveBase, liveHead]) {
@@ -610,121 +488,77 @@ async function humanSquashMerge(repository, number, {
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
+    // Publication uses the source authorship trailers already verified by the
+    // attribution helper; Lindsey does not add model credit for routine work.
     const finishLocal = async finalTree => finishLocalSquash(finalTree);
-    // Squash publication prepares a one-parent commit in a disposable checkout.
-    // Only when native squash cannot retain author/signing, replace the isolated
-    // PR head under an exact lease so GitHub can recognize the squash as merged.
-    // Sync remains a separate append-only maintainer action.
-    if (localGitMerge && operation === 'merge' && !requireSignedCommit) {
-      const finalTree = await inRepo('write-tree');
+    if (operation === 'merge') {
       if (nativeSquash && !conflicts.length && !needsResolution) {
         return await finish(originalSha, preparedMessage, 'squash');
       }
+      const finalTree = await inRepo('write-tree');
       const headTree = await inRepo('rev-parse', originalSha + '^{tree}');
-      if (finalTree !== headTree && await fs.stat(path.join(temp,
-        'scripts', 'ci', 'ci-test-runner.py')).then(s => s.isFile()).catch(() => false)) {
-        // Exercise the integrated tree's regression suites when this repository
-        // provides them; a failure must stop publication before any push.
+      const runnerPath = 'scripts/ci/ci-test-runner.py';
+      // Validate the runner against the base rather than accidentally skipping
+      // testing when a PR deletes or replaces its integrated copy.
+      const baseHasRunner = await inRepo('cat-file', '-e', liveBase + ':' + runnerPath)
+        .then(() => true, () => false);
+      const integratedHasRunner = await fs.stat(path.join(temp, runnerPath))
+        .then(stat => stat.isFile(), () => false);
+      if (baseHasRunner && !integratedHasRunner) {
+        return { merged: false, status: 'blocked', number,
+          sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+          reason: 'Integrated-tree test runner was removed or is not a regular file; refusing to skip required regression suites.' };
+      }
+      if (finalTree !== headTree && baseHasRunner) {
         for (const group of ['lindsey', 'github-pr']) {
           progress('testing-integration', { description: group });
           try {
-            await exec('python3', ['scripts/ci/ci-test-runner.py', 'run', group],
+            await exec('python3', [runnerPath, 'run', group],
               { cwd: temp, timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
           } catch (error) {
-            return { merged: false, status: 'checks_failed', number,
+            const diagnostics = String(error.stderr || '').split(/\r?\n/)
+              .filter(line => /^::error(?:\s|::)/.test(line)).slice(-4);
+            const detail = (diagnostics.length ? diagnostics.join(' | ')
+              : String(error.stderr || error.message).trim()).slice(-1800);
+            const unavailable = error.code === 125 || error.code === 'ENOENT' ||
+              error.killed === true || error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+            return { merged: false, status: unavailable ? 'blocked' : 'checks_failed', number,
+              ...(unavailable ? { kind: 'capability' } : {}),
               sha: originalSha, previousHeadSha: originalSha, base, baseSha,
-              reason: 'Integrated-tree ' + group + ' checks failed: ' +
-                String(error.stderr || error.message).slice(-1800) };
+              reason: 'Integrated-tree ' + group +
+                (unavailable ? ' test infrastructure unavailable: ' : ' checks failed: ') + detail };
           }
         }
       }
       return await finishLocal(finalTree);
     }
-    if (requireSignedCommit) return await finishLocal(await inRepo('write-tree'));
-    if (localGitMerge && operation === 'merge' && !nativeSquash) {
-      const finalTree = await inRepo('write-tree');
-      if (finalTree === await inRepo('rev-parse', originalSha + '^{tree}')) return await finishLocal(finalTree);
-    }
-    if (operation === 'sync' || conflicts.length || nativeSquash || localGitMerge || !rewriteApproved) {
-      const finalTree = await inRepo('write-tree');
-      const prepared = await require('./resolution-commits').createResolutionCommits({
-        git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
-        conflicts, decisions, author: automationAuthor || author, automationCommitter: automationAuthor, base,
-        onCommit: decision => progress('decision-commit', decision)
-      });
-      operationCommitTitle = '🔄 Sync branch to ' + base;
-      progress('sync-prepared', { sha: prepared.sha, title: operationCommitTitle });
-      // The PR history is append-only. No reference on main is updated here.
-      await inRepo('merge-base', '--is-ancestor', originalSha, prepared.sha);
-      const fresh = await api(prPath);
-      if (fresh.state !== 'open' || fresh.draft || fresh.head?.sha !== originalSha || fresh.title !== original.title ||
-          fresh.head?.ref !== head || fresh.base?.ref !== base) throw Error('PR changed before branch synchronization.');
-      if (await readBaseTip() !== baseSha) throw refreshBase();
-      await checkHeadWritable();
-      // An exact-head lease plus the ancestry check above guarantees this is
-      // an append-only update, including if someone rewinds the remote ref.
-      progress('pushing', { sha: prepared.sha, title: operationCommitTitle });
-      await inRepo('push', 'origin', prepared.sha + ':refs/heads/' + head);
-      pushedSha = prepared.sha;
-      progress('pushed', { sha: prepared.sha, title: operationCommitTitle });
-      progress('verifying-push', { sha: prepared.sha, title: operationCommitTitle });
-      await verifyPushedPR(prepared.sha);
-      // A conflict-free merge request already authorizes this integration.
-      // Keep the check, identity and live-base gates in finish(), without an
-      // extra AI round and clone just to merge the head we have verified.
-      if (operation === 'merge' && nativeSquash && !conflicts.length) {
-        pushedSha = prepared.sha;
-        return await finish(prepared.sha, preparedMessage, 'squash');
-      }
-      if (operation === 'merge' && localGitMerge && !nativeSquash) return await finishLocal(finalTree);
-      return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
-        base, baseSha, resolutionCommits: prepared.commits,
-        reason: prepared.commits.length
-          ? 'Appended per-file conflict decisions followed by the remaining base synchronization; existing PR history was retained.'
-          : 'Appended a base synchronization commit with a normal fast-forward push; existing PR history was retained.' };
-    }
-    if (!rewriteApproved || repositoryInfo.allow_rebase_merge !== true) {
-      throw Error('A history rewrite requires explicit local approval and a verified human-author necessity.');
-    }
-    // Rewriting any parent head would orphan or invalidate dependent PRs.
-    // Even explicit rewrite approval cannot override an open PR dependency.
-    await checkHeadRewriteSafety();
-    progress('rewrite-approved', { description: 'Explicit local approval to preserve the original human author; incremental integration cannot produce the required squash.' });
-    const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
-    await fs.writeFile(messageFile, message + '\n');
-    const identity = await commitIdentity(inRepo, author, requireSignedCommit, false, automationAuthor);
-    await inRepo(...commitIdentityArgs(identity.author, identity.committer),
-      'commit', ...(identity.signed ? ['-S'] : []), '--author=' + author.name + ' <' + author.email + '>', '-F', messageFile);
-    await verifyLocalCommitIdentity(inRepo, 'HEAD', identity);
-    if (requireSignedCommit && !/(?:^|\n)gpgsig /.test(await inRepo('cat-file', '-p', 'HEAD'))) {
-      throw Error('The local Git signer did not attach a commit signature; no branch was pushed.');
-    }
-    const preparedSha = await inRepo('rev-parse', 'HEAD');
-    const baseTree = await inRepo('rev-parse', liveBase + '^{tree}');
-    const newTree = await inRepo('rev-parse', 'HEAD^{tree}');
-    if (!SHA.test(preparedSha) || newTree === baseTree) throw Error('No new verified squash tree.');
-    operationCommitTitle = prepared.title;
-    progress('prepared', { sha: preparedSha, title: operationCommitTitle });
-    // Re-read GitHub before the ONLY force-with-lease, scoped strictly to the selected head.
+    // Synchronization remains separate and append-only. A squash never
+    // updates or force-pushes the original PR head.
+    const finalTree = await inRepo('write-tree');
+    const sync = await require('./resolution-commits').createResolutionCommits({
+      git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
+      conflicts, decisions, author: automationAuthor || author, automationCommitter: automationAuthor, base,
+      onCommit: decision => progress('decision-commit', decision)
+    });
+    operationCommitTitle = '🔄 Sync branch to ' + base;
+    progress('sync-prepared', { sha: sync.sha, title: operationCommitTitle });
+    await inRepo('merge-base', '--is-ancestor', originalSha, sync.sha);
     const fresh = await api(prPath);
-    if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title || fresh.head?.sha !== originalSha ||
-        fresh.base?.ref !== base ||
-        fresh.head?.ref !== head || fresh.stack) {
-      throw Error('PR changed before guarded push; no branch was modified.');
-    }
+    if (fresh.state !== 'open' || fresh.draft || fresh.head?.sha !== originalSha || fresh.title !== original.title ||
+        fresh.head?.ref !== head || fresh.base?.ref !== base) throw Error('PR changed before branch synchronization.');
     if (await readBaseTip() !== baseSha) throw refreshBase();
-    // Close the PR-dependency race immediately before the only destructive push.
-    await checkHeadRewriteSafety();
-    progress('pushing', { sha: preparedSha, title: operationCommitTitle });
-    await inRepo('push', '--force-with-lease=refs/heads/' + head + ':' + originalSha,
-      'origin', preparedSha + ':refs/heads/' + head);
-    pushedSha = preparedSha;
-    progress('pushed', { sha: preparedSha, title: operationCommitTitle });
-    progress('verifying-push', { sha: preparedSha, title: operationCommitTitle });
-    await verifyPushedPR(preparedSha);
-    if (await readBaseTip() !== baseSha) throw refreshBase();
-    // Native GitHub rebase merge records the same bot-opened PR as merged.
-    return await finish(preparedSha, message);
+    await checkHeadWritable();
+    progress('pushing', { sha: sync.sha, title: operationCommitTitle });
+    await inRepo('push', 'origin', sync.sha + ':refs/heads/' + head);
+    pushedSha = sync.sha;
+    progress('pushed', { sha: sync.sha, title: operationCommitTitle });
+    progress('verifying-push', { sha: sync.sha, title: operationCommitTitle });
+    await verifyPushedPR(sync.sha);
+    return { merged: false, status: 'synced', number, sha: sync.sha, previousHeadSha: originalSha,
+      base, baseSha, resolutionCommits: sync.commits,
+      reason: sync.commits.length
+        ? 'Appended per-file conflict decisions followed by remaining base synchronization; existing PR history was retained.'
+        : 'Appended a base synchronization commit with a normal fast-forward push; existing PR history was retained.' };
   } catch (error) {
     if (error.code === 'INVALID_RESOLUTION_PATCH' && !pushedSha) {
       return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
@@ -735,7 +569,7 @@ async function humanSquashMerge(repository, number, {
       if (pushedSha) Object.assign(error, { sha: pushedSha, previousHeadSha: originalSha });
       throw error;
     }
-    if (pushedSha) throw Object.assign(error, { preparedHead: pushedSha, originalHead: originalSha });
+    if (pushedSha) throw Object.assign(error, { publishedSha: pushedSha, originalHead: originalSha });
     throw error;
   } finally {
     if (temp) await fs.rm(temp, { recursive: true, force: true });
