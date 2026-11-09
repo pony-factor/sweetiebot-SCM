@@ -99,6 +99,8 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
     assert(options.body.commit_message.includes('\n\n__________\n\n'));
     assert(!options.body.commit_message.includes('---------'));
     assert(!options.body.commit_message.includes('Sync brach to main'));
+    assert(!options.body.commit_message.includes('Co-authored-by: John Wooten'),
+      'The primary Git author must not receive a duplicate co-author trailer');
     return {merged:true,sha:'b'.repeat(40)};
   };
   const progressStages=[];
@@ -106,6 +108,14 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
   assert.deepEqual(progressStages,['reading-pr','checking-base','reading-history','merging','verifying-merge'],
     'Native squash reports real stages without changing its GitHub API requests');
   assert.equal(calls.length,7, 'PR and live base snapshots, history, merge, and landed commit');
+  let appWrites=0;
+  assert.equal((await squashMergePullRequest(input,()=>assert.fail('Never switch to the human account in App mode'),{
+    getAppActor:async()=>({request:async(endpoint,options)=>{
+      if(options?.method==='PUT')appWrites++;
+      return api(endpoint,options);
+    },gitToken:async()=>'fixture-app-token'})
+  })).merged,true);
+  assert.equal(appWrites,1,'Lindsey performs the one native squash write');
   // Bot-opened PRs use the local commit preparation path with an exact snapshot.
   const botPR = {...pr, user:{login:'codex-pony[bot]',type:'Bot'}};
   const localCalls = [];
@@ -114,6 +124,19 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
     if (endpoint === 'repos/owner/repo/pulls/12' && !options) return botPR;
     return api(endpoint, options);
   };
+  let localBase='d'.repeat(40), localAttempts=0;
+  const raceProgress=[];
+  const afterRace=await squashMergePullRequest(input,async(endpoint,options)=>{
+    if(endpoint==='repos/owner/repo/branches/main')return {commit:{sha:localBase}};
+    return localRequest(endpoint,options);
+  },{onProgress:event=>raceProgress.push(event.stage),humanMerge:async(_repo,_number,options)=>{
+    if(localAttempts++===0){localBase='f'.repeat(40);throw Object.assign(Error('Base advanced'),{code:'MERGE_BASE_CHANGED'});}
+    assert.equal(options.expected.baseSha,localBase,'Retry uses the refreshed base SHA');
+    return {merged:true,sha:'b'.repeat(40),githubMerged:true};
+  }});
+  assert.equal(afterRace.merged,true);
+  assert.equal(localAttempts,2);
+  assert(raceProgress.includes('refreshing-base'));
   let prepared = 0;
   const humanMerge = async (repository, number, options) => {
     prepared++;
@@ -193,17 +216,7 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
     }});
     assert.equal(autoSignedResult.merged,true);
     assert.equal(autoSignedOptions,undefined,
-      'Local signing configuration leaves a native human squash on its requested route');
-    let botSigningOptions;
-    await squashMergePullRequest(input,signedBotTransport,{
-      repositoryPath:signingRepo,humanMerge:async(repository,number,options)=>{
-        botSigningOptions=options;
-        return {merged:true,sha:'b'.repeat(40)};
-      }
-    });
-    assert.equal(botSigningOptions.requireSignedCommit,false,
-      'A bot-opened PR with commit signing enabled keeps the non-rewriting integration route');
-    assert.equal(botSigningOptions.allowHistoryRewrite,false);
+      'Local commit.gpgsign must not turn native squash into an unsupported local-signer operation');
   } finally { await fs.rm(signingRepo,{recursive:true,force:true}); }
   // A human opener differing from the original author uses the same local path.
   let differentAuthorPrepared = false;

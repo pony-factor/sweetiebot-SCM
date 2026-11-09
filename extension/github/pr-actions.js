@@ -6,6 +6,7 @@ const path = require('node:path');
 const { pullRequestFromTreeNode } = require('./pr-refresh');
 const { squashMessage, readCommits } = require('../merge/squash-attribution');
 const { humanSquashMerge, verifiedHumanAuthor } = require('../merge/human-squash-merge');
+const { retryBaseAdvance } = require('../merge/pull-request');
 const { promisify } = require('node:util');
 
 const run = promisify(execFile);
@@ -27,7 +28,7 @@ const protectedLocalBase = reason => [
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
   { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000,
-    humanMerge = humanSquashMerge, readAPI, preferLocalGit = true, confirmPreserveCommits } = {}) {
+    humanMerge = humanSquashMerge, readAPI, preferLocalGit = false, confirmPreserveCommits } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -56,6 +57,24 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     throw new Error(`PR #${number} changed since selection. Refresh and try again.`);
   }
   if (latest.mergeable === 'CONFLICTING') throw conflict();
+  const localMerge = options => retryBaseAdvance(() => humanMerge(repo, Number(number), options), {
+    refresh: async () => {
+      const fresh = await read();
+      if (fresh.state !== 'OPEN' || fresh.isDraft || fresh.baseRefName !== pr.baseRefName ||
+          fresh.headRefName !== pr.headRefName || fresh.headRefOid !== pr.headRefOid || fresh.title !== pr.title)
+        throw Error(`PR #${number} changed while refreshing its base; no merge was retried.`);
+      if (fresh.mergeable === 'CONFLICTING') throw conflict();
+    }
+  });
+  const verifyLocalCompletion = async landed => {
+    const finished = await read();
+    if (landed.githubMerged === false || finished.state !== 'MERGED' ||
+        finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName ||
+        finished.headRefOid !== pr.headRefOid || finished.title !== pr.title)
+      throw Error('GitHub has not confirmed the selected PR as merged. A closed PR is not a completed merge.');
+    return { merged: true, repo, number, base: pr.baseRefName, pr: finished,
+      sha: landed.sha, author: landed.author };
+  };
 
   const endpoint = `repos/${repo}/pulls/${number}/merge-async`;
   const versionHeader = ['-H', 'X-GitHub-Api-Version: 2026-03-10'];
@@ -87,7 +106,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   if (preferLocalGit && !pr.isCrossRepository) {
     let landed;
     try {
-      landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true,
+      landed = await localMerge({ allowHistoryRewrite: false, localGitMerge: true,
         expected: { headSha: pr.headRefOid, head: pr.headRefName, base: pr.baseRefName, title: pr.title } });
     } catch (error) {
       if (!protectedLocalBase(error)) throw error;
@@ -97,11 +116,7 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
     if (!protectedBase) {
       if (landed.status === 'waiting') return { merged: false, pending: true, repo, number, base: pr.baseRefName };
       if (!landed.merged) throw new Error(landed.reason || 'The local Git merge did not complete.');
-      const finished = await read();
-      if (finished.state !== 'MERGED' || finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
-        throw new Error('Local Git merge landed but its GitHub PR state could not be verified.');
-      }
-      return { merged: true, repo, number, base: pr.baseRefName, pr: finished, sha: landed.sha, author: landed.author };
+      return verifyLocalCompletion(landed);
     }
     // GitHub alone enforces the protected base's merge policy. Its native
     // squash path is safe only when the opener matches the original Git author.
@@ -152,15 +167,9 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   };
   if (metadata.user.type === 'Bot' || /\[bot\]$/i.test(metadata.user.login)) {
     if (protectedBase) return mergeProtectedPreservingCommits();
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
+    const landed = await localMerge({ allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
-    const finished = await read();
-    if (!landed.merged || finished.state !== 'MERGED' ||
-        finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
-      throw new Error('Human-authored squash landed but its GitHub PR state could not be verified.');
-    }
-    return { merged: true, repo, number, base: pr.baseRefName, pr: finished,
-      sha: landed.sha, author: landed.author };
+    return verifyLocalCompletion(landed);
   }
   if (!pr.title || (metadata?.title && metadata.title !== pr.title)) {
     throw new Error(`PR #${number} title is unavailable or changed; merge blocked.`);
@@ -171,17 +180,11 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   const human = verifiedHumanAuthor(commits);
   if (human.login.toLowerCase() !== metadata.user.login.toLowerCase()) {
     if (protectedBase) return mergeProtectedPreservingCommits();
-    const landed = await humanMerge(repo, Number(number), { allowHistoryRewrite: false, localGitMerge: true });
+    const landed = await localMerge({ allowHistoryRewrite: false, localGitMerge: true });
     if (!landed.merged) throw new Error(landed.reason || 'The PR remains open; its guarded squash merge is not complete.');
-    const finished = await read();
-    if (!landed.merged || finished.state !== 'MERGED' ||
-        finished.baseRefName !== pr.baseRefName || finished.headRefName !== pr.headRefName) {
-      throw new Error('Original human Git author was not verified after the guarded merge.');
-    }
-    return { merged: true, repo, number, base: pr.baseRefName, pr: finished,
-      sha: landed.sha, author: landed.author };
+    return verifyLocalCompletion(landed);
   }
-  const squash = squashMessage(pr.title, Number(number), commits);
+  const squash = squashMessage(pr.title, Number(number), commits, {primaryAuthor:human});
   let outcome;
   let resumed = false;
   try {
@@ -440,7 +443,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         // The sidebar merge button must never authorize history rewrites, even if a
         // future caller accidentally requests one. Explicit author-handoff is separate.
         humanMerge: (repo, number, options) => humanSquashMerge(repo, number,
-          { ...options, allowHistoryRewrite: false, api: humanAPI, gitToken: session.accessToken })
+          { ...options, allowHistoryRewrite: false, api: humanAPI, nativeAPI: humanAPI, gitToken: session.accessToken })
       });
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
@@ -450,7 +453,9 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         vscode.window.showInformationMessage(`PR #${result.number} ${status}${base !== 'main' ? ` into \`${base}\`` : ''}.`);
         return { state: result.pending ? 'pending' : 'queued' };
       }
-      vscode.window.showInformationMessage(`PR #${result.number} merged into ${base}.`);
+      vscode.window.showInformationMessage(result.locallySquashed
+        ? `PR #${result.number} squashed into ${base} and closed; branch history preserved.`
+        : `PR #${result.number} merged into ${base}.`);
       // Close only this merged PR's open overview, even when it is not the
       // active editor. Closing the tab must not affect successful merging.
       try {
@@ -459,7 +464,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         vscode.window.showWarningMessage(`PR #${result.number} merged, but its tab could not be closed: ${error.message}`);
       }
       try {
-        await deleteMergedRemoteBranch(result, execute);
+        if (!result.locallySquashed) await deleteMergedRemoteBranch(result, execute);
       } catch (error) {
         vscode.window.showWarningMessage(`PR #${result.number} merged, but remote branch cleanup failed: ${error.stderr?.trim() || error.message}`);
       }
@@ -470,7 +475,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
           [remote.fetchUrl, remote.pushUrl].some(value => value &&
             require('./pull-request').githubRepository(value) === `https://github.com/${result.repo}`)));
         // Default-branch cleanup must not infer that a non-main merge reached main.
-        if (repository && base === 'main' && !result.pr.isCrossRepository && result.pr.headRefName !== 'main') {
+        if (!result.locallySquashed && repository && base === 'main' && !result.pr.isCrossRepository && result.pr.headRefName !== 'main') {
           const installed = path.join(__dirname, '../prune-merged-branches.py');
           const script = existsSync(installed) ? installed : path.join(__dirname, '../../scripts/prune-merged-branches.py');
           await run(process.platform === 'win32' ? 'python' : 'python3', [script, '--force', '--repo',

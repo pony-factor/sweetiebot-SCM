@@ -150,7 +150,7 @@ const workerContext = {
 };
 vm.runInNewContext(workerScript, workerContext);
 assert.equal(workerList.hidden, false);
-assert.equal(workerList.children[0].text, 'Oldest first · Applying · 1/3 merged');
+assert.equal(workerList.children[0].text, 'Oldest · Applying · 1/3 merged');
 workerList.children[0].click();
 assert.deepEqual(workerActions, [['focus-worker', 1]]);
 workerContext.model.workers = [];

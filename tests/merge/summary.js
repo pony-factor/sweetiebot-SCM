@@ -49,7 +49,8 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   assert.equal(writes[0].method, 'POST');
   assert(writes[0].body.startsWith(MARKER));
   assert(writes[0].body.includes(input.results[0].explanation));
-  assert(writes[0].body.includes('Verified merge into main · commit ' + sha.slice(0, 12) + '.'));
+  assert.equal(writes[0].body, MARKER + '\n\n' + input.results[0].explanation,
+    'The visible merge comment contains only the PR explanation');
   assert(!writes[0].body.includes('`' + sha.slice(0, 12) + '`'), 'Main commit SHA must not use code formatting');
   assert(!writes[0].body.includes('/commit/' + sha), 'Main commit SHA must not be an explicit link');
   const references = require('../../extension/merge/review-policy').reviewPublicationInstructions();
@@ -111,5 +112,21 @@ const result = { results: [{ number: 12, merged: true, status: 'merged', sha }] 
   assert.deepEqual(await publishMergeSummaries({...statusOptions,
     result:{results:[{number:12,status:'synced',sha,previousHeadSha:sha}]},
     identity:()=>assert.fail('No-op sync must not authenticate or post')}),[]);
+  const localResult={results:[{number:12,status:'merged',merged:true,githubMerged:false,prClosed:true,
+    sha,headSha:'c'.repeat(40)}]};
+  let destinationStatus='ahead', localWrites=0;
+  const localOptions={...options,result:localResult,enabled:true,now:()=>nowMs,
+    identity:async()=>({token:'test-token',login:'test-user'}),
+    fetchImpl:async(url,request)=>{
+      if(request.method!=='GET'){localWrites++;return {ok:true,json:async()=>({id:100})};}
+      return {ok:true,json:async()=>url.includes('/compare/')?{status:destinationStatus}:
+        url.endsWith('/pulls/12')?{state:'closed',merged:false,closed_at:new Date(nowMs-hour).toISOString(),
+          head:{ref:'feature',sha:'c'.repeat(40)},base:{ref:'main'}}:[]};
+    }};
+  assert.match((await publishMergeSummaries(localOptions))[0].error,/not confirmed/);
+  assert.equal(localWrites,0,'A closed PR without a genuine GitHub merge cannot publish a merge summary');
+  destinationStatus='diverged';
+  assert.match((await publishMergeSummaries(localOptions))[0].error,/not confirmed/);
+  assert.equal(localWrites,0,'Closed state alone must not authorize a squash summary');
   console.log('Opt-in summary gates, 24-hour expiry, verified merge checks, deduplication and publication failures passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

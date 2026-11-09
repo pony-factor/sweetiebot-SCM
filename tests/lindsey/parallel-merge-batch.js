@@ -65,7 +65,7 @@ async function submit(url, body) {
       executions.push(number); active++; maximumActive = Math.max(maximumActive, active);
       if (number === 1) { started(); await firstGate; }
       merged.add(number); base = nextBase; active--;
-      return { repository: selection.repository, results: [{ number, status: 'merged', merged: true, sha: base }],
+      return { repository: selection.repository, results: [{ number, status: 'merged', merged: true, githubMerged: true, sha: base }],
         summaryErrors: [{ number, error: 'Optional summary unavailable' }] };
     } });
   try {

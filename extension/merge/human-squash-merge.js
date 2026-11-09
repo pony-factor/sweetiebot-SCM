@@ -52,7 +52,7 @@ function verifyCommit(commit, expected, author, { allowBot = false, committer } 
 }
 
 
-async function humanSquashMerge(repository, number, { api, gitToken, allowHistoryRewrite = false, localGitMerge = false, expected: selected, localMerge, trailerSeparatorStyle,
+async function humanSquashMerge(repository, number, { api, nativeAPI, gitToken, allowHistoryRewrite = false, localGitMerge = false, expected: selected, localMerge, trailerSeparatorStyle,
   getAppActor = require('../github/app-commit-identity').configuredMergeActor } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
@@ -91,25 +91,23 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
 
   const commits = await readCommits(async ([endpoint]) => api(endpoint), repository, number);
   const author = humanAuthor(commits);
-  if (localGitMerge) {
+  if (localGitMerge || appActor) {
     localMerge ||= require('./local-human-squash').humanSquashMerge;
     return localMerge(repository, number, {
-      api, gitToken, localGitMerge: true, allowHistoryRewrite: false, getAppActor: async () => appActor,
+      api, nativeAPI, gitToken, localGitMerge: true, allowHistoryRewrite: false, getAppActor: async () => appActor,
       expected: { headSha, baseSha, head, base, title: original.title }
     });
   }
-  const prepareSquash = async () => {
-    // Only the local one-PR merge action opts into this last resort. The local
-    // executor independently verifies necessity, branch isolation, live tips,
-    // human attribution, and checks before its exact-head leased push.
+  const publishLocalSquash = () => {
     localMerge ||= require('./local-human-squash').humanSquashMerge;
     return localMerge(repository, number, {
-      api, gitToken, allowHistoryRewrite: true, rewriteReason: 'preserve-human-author', getAppActor: async () => appActor,
+      api, nativeAPI, gitToken, localGitMerge: true, allowHistoryRewrite: false,
+      getAppActor: async () => appActor,
       expected: { headSha, baseSha, head, base, title: original.title }
     });
   };
   if (commits.length !== 1) {
-    if (allowHistoryRewrite) return prepareSquash();
+    if (allowHistoryRewrite) return publishLocalSquash();
     throw Error('No-force-push policy: cannot squash multiple original PR commits under a verified human author without rewriting the PR branch. No push was attempted. Use Merge preserving commits to retain the original history.');
   }
   const originalCommit = commits[0];
@@ -123,7 +121,7 @@ async function humanSquashMerge(repository, number, { api, gitToken, allowHistor
     ? sections[1].split('\n').every(line => /^Co-authored-by: .+ <[^<>\s]+@[^<>\s]+>$/.test(line))
     : sections.length === 1 && !existing.split('\n').some(line => /^Co-authored-by:/i.test(line));
   if (existing.split('\n', 1)[0] !== expectedTitle || !validTrailers) {
-    if (allowHistoryRewrite) return prepareSquash();
+    if (allowHistoryRewrite) return publishLocalSquash();
     throw Error('No-force-push policy: the single original human-authored commit is not already prepared with the exact PR title and valid configured co-author separator/trailers. No push was attempted. Use Merge preserving commits rather than rewriting this PR branch.');
   }
   const repositoryInfo = await api(root);

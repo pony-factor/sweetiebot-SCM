@@ -70,12 +70,24 @@ function githubApi(endpoint, { method = 'GET', body } = {}, spawnProcess = spawn
   });
 }
 
+// Retry only a pre-publication destination race. Revalidate the selected PR
+// before every retry; a published squash or changed head is never resubmitted.
+async function retryBaseAdvance(operation, { refresh, onRetry = () => {}, attempts = 3 }) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await operation(); }
+    catch (error) {
+      if (error.code !== 'MERGE_BASE_CHANGED' || error.publishedSha || error.preparedHead ||
+          error.sha || attempt >= attempts - 1) throw error;
+      await refresh();
+      onRetry(attempt + 1);
+    }
+  }
+}
+
 async function squashMergePullRequest({ repository, head, base, result }, request = githubApi,
   { humanMerge = humanSquashMerge, method = 'squash', gitToken, repositoryPath, onProgress = () => {},
     getAppActor = configuredMergeActor } = {}) {
   if (!['squash', 'merge', 'local-signed-squash'].includes(method)) throw new Error('Unknown merge method.');
-  // Git signing preferences do not authorize rewriting a selected PR branch.
-  // Keep the requested squash route; local integration still attempts signing.
   if (typeof repository !== 'string' || !REPOSITORY.test(repository) ||
       typeof head !== 'string' || !REF.test(head) ||
       typeof base !== 'string' || !REF.test(base) ||
@@ -83,6 +95,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       result.url !== `https://github.com/${repository}/pull/${result.number}`) {
     throw new Error('Invalid published pull-request identity; refusing to merge.');
   }
+  const originalRequest = request;
   const appActor = await getAppActor(repository);
   if (appActor) { request = appActor.request; gitToken = appActor.gitToken; }
   const endpoint = `repos/${repository}/pulls/${result.number}`;
@@ -106,7 +119,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     return branch.commit.sha;
   };
   onProgress({ stage: 'checking-base' });
-  const baseSha = await readBaseTip();
+  let baseSha = await readBaseTip();
   if (method === 'merge') {
     onProgress({ stage: 'reading-history' });
     const info = await request('repos/' + repository);
@@ -156,16 +169,28 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       return request(endpoint, { method, body });
     };
     onProgress({ stage: 'preparing-local' });
-    const landed = await humanMerge(repository, result.number, { api, gitToken, onProgress, localGitMerge: true, offerAuthorChoice: false,
+    const landed = await retryBaseAdvance(() => humanMerge(repository, result.number, { api, gitToken, onProgress, localGitMerge: true, offerAuthorChoice: false,
+      nativeAPI: require('../github/user-api').legacyAPI(originalRequest),
       getAppActor: async () => appActor,
       allowHistoryRewrite: false, rewriteReason: '', requireSignedCommit: signLocally,
-      expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } });
-    if (landed?.merged !== true || !SHA.test(landed.sha || '')) {
+      expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } }), {
+      refresh: async () => {
+        const fresh = await request(endpoint);
+        if (fresh.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== pr.title ||
+            fresh.head?.sha !== pr.head.sha || fresh.head?.ref !== head || fresh.base?.ref !== base)
+          throw Error('PR changed while refreshing the destination; no merge was retried.');
+        baseSha = await readBaseTip();
+      },
+      onRetry: () => onProgress({ stage: 'refreshing-base' })
+    });
+    if (landed?.merged !== true || landed.githubMerged === false || !SHA.test(landed.sha || '')) {
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
         landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' } : {});
     }
     return { merged: true, sha: landed.sha, url: result.url,
       number: result.number, base, author: landed.author,
+      githubMerged: landed.githubMerged, prClosed: landed.prClosed,
+      headSha: landed.headSha, previousHeadSha: landed.previousHeadSha, baseSha: landed.baseSha,
       ...(landed.method ? { method: landed.method } : {}),
       ...(landed.signed ? { signed: true } : {}) };
   };
@@ -182,7 +207,9 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (human.login.toLowerCase() !== pr.user.login.toLowerCase()) {
     return mergeWithHumanAuthor();
   }
-  const prepared = squashMessage(pr.title, result.number, originalCommits);
+  // Lindsey remains the authenticated merge actor. The human PR author and
+  // GitHub-generated commit identity are independent of who calls the API.
+  const prepared = squashMessage(pr.title, result.number, originalCommits, {primaryAuthor:human});
   const fresh = await request(endpoint);
   if (fresh.state !== 'open' || fresh.draft || fresh.merged_at ||
       fresh.title !== pr.title || fresh.head?.ref !== pr.head.ref ||
@@ -203,4 +230,4 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }
 
-module.exports = { squashMergePullRequest, githubApi, gitCommitSigningEnabled };
+module.exports = { squashMergePullRequest, githubApi, gitCommitSigningEnabled, retryBaseAdvance };

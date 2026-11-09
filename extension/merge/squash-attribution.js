@@ -118,7 +118,7 @@ function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummarie
    }
  }
  // The actual squash Git author is never repeated as a Co-authored-by trailer.
- const trailers=[...names.values()].filter(p=>!primaryAuthor || !(p.name.toLowerCase()===primaryAuthor.name.toLowerCase() || (isCodex(p.name,p.email) && isCodex(primaryAuthor.name,primaryAuthor.email))))
+ const trailers=[...names.values()].filter(p=>!primaryAuthor || !(p.name.toLowerCase()===primaryAuthor.name.toLowerCase() || p.email.toLowerCase()===primaryAuthor.email.toLowerCase() || (isCodex(p.name,p.email) && isCodex(primaryAuthor.name,primaryAuthor.email))))
    // Keep human authors and co-authors in first-seen order, before bot tiers.
    .sort((a,b)=>(a.tier<=1?0:a.tier)-(b.tier<=1?0:b.tier)||a.appearance-b.appearance)
    .map(p=>'Co-authored-by: '+p.name+' <'+p.email+'>');

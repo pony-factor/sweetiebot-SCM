@@ -3016,6 +3016,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             text === 'Sweetiebot update ready');
         row.classList.toggle('scm-toolkit-lindsey-notice',
             /^(?:(?:Merging|Applying PR fix|Verifying and squash-merging selected PRs)(?::| ·|$)|Bulk merge: \d+ merged,)/.test(text));
+        row.classList.toggle('scm-toolkit-preparing-lindsey',
+            /^Preparing Lindsey merge queue(?::| ·|$)/.test(text));
         row.classList.toggle('scm-toolkit-pr-merged',
             /^PR #[1-9]\d* merged into main\.$/.test(text));
         row.classList.toggle('scm-toolkit-pr-queued',

@@ -2,7 +2,9 @@
 const { githubResponseError } = require('./rate-limit');
 function githubUserAPI(token, fetchImpl = globalThis.fetch, { sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now } = {}) {
   return async (endpoint, { method = 'GET', body } = {}) => {
-    if (!/^(?:repos\/[\w.-]+\/[\w.-]+(?:$|\/)|user$)/.test(endpoint)) throw Error('Invalid GitHub user API endpoint.');
+    if (!/^(?:repos\/[\w.-]+\/[\w.-]+(?:$|\/)|user$)/.test(endpoint) &&
+        !(endpoint === 'graphql' && method === 'POST' && typeof body?.query === 'string'))
+      throw Error('Invalid GitHub user API endpoint.');
     let response;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -30,7 +32,10 @@ function githubUserAPI(token, fetchImpl = globalThis.fetch, { sleep = ms => new 
         + (error.githubMessage ? ': ' + error.githubMessage : '');
       throw error;
     }
-    return response.status === 204 ? null : response.json();
+    const result = response.status === 204 ? null : await response.json();
+    if (endpoint === 'graphql' && result?.errors?.length)
+      throw Error('GitHub GraphQL: ' + result.errors.map(error => error.message).join('; '));
+    return result;
   };
 }
 function legacyAPI(request) {

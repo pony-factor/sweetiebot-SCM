@@ -390,5 +390,28 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     assert.deepEqual(await (await post(input)).json(), result, 'Replay returns the recorded result');
     assert.equal(executions, 1);
   } finally { bridge.dispose(); }
+  const durable=await createMergeHandoff(selection,{persistent:true,execute:async()=>result});
+  const durableURL=new URL(durable.url);
+  assert.equal((await fetch(durable.url,{method:'POST',headers:{Origin:durableURL.origin,'Content-Type':'application/json'},body:JSON.stringify(input)})).status,200);
+  durable.dispose();
+  assert.equal((await fetch(durable.url)).status,200,'A disposed executor leaves its result page readable');
+  assert.equal((await (await fetch(durable.url+'/status')).json()).phase,'finished','An observed receipt survives executor disposal');
+  require('../../extension/merge/handoff-proxy').shutdownHandoffProxy();
+  const {fork}=require('node:child_process');
+  const receiver=fork(require.resolve('../../extension/merge/handoff-proxy'),[],{stdio:['ignore','ignore','ignore','ipc']});
+  try {
+    const port=await new Promise(resolve=>receiver.once('message',message=>resolve(message.port)));
+    const route='/lindsey-merge/11111111-1111-1111-1111-111111111111';
+    const registered=new Promise(resolve=>receiver.once('message',resolve));
+    receiver.send({type:'register',id:'fixture',route,backendPort:1,page:'Recovered page',ttlMs:60000});
+    await registered;receiver.disconnect();
+    const url='http://127.0.0.1:'+port+route;
+    assert.equal(await (await fetch(url)).text(),'Recovered page','The page survives its parent IPC connection closing');
+    const stopped=await (await fetch(url+'/status')).json();
+    assert.equal(stopped.phase,'failed');assert.match(stopped.error,/cannot execute or replay/);
+    assert.equal((await fetch(url,{method:'POST',headers:{Origin:new URL(url).origin,'Content-Type':'application/json'},body:JSON.stringify(input)})).status,409,
+      'A stopped host cannot replay a resolution');
+    assert.equal((await fetch(url,{method:'POST',headers:{Origin:'https://evil.test','Content-Type':'application/json'},body:'{}'})).status,403);
+  } finally {receiver.kill();}
   console.log('Selected-patch validation, local CLI intake, origin guards, replay and credential transport checks passed.');
-})().catch(error => { console.error(error); process.exitCode = 1; });
+})().catch(error => { require('../../extension/merge/handoff-proxy').shutdownHandoffProxy();console.error(error); process.exitCode = 1; });

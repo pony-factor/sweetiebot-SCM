@@ -9,7 +9,7 @@ const { validateSelection } = require('./dashboard');
 const { validateResolution, executeResolution } = require('./resolution');
 
 async function createMergeHandoff(rawSelection, { execute = executeResolution, validate = validateResolution,
-  onResult = () => {}, ttlMs = 6 * 3600000 } = {}) {
+  onResult = () => {}, ttlMs = 6 * 3600000, persistent = false } = {}) {
   const selection = validateSelection(rawSelection);
   const route = '/lindsey-merge/' + randomUUID();
   const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8')
@@ -103,6 +103,8 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   server.unref();
+  const receiver=persistent ? await require('./handoff-proxy').persistentHandoff({
+    route,backendPort:server.address().port,page,ttlMs}).catch(error=>{server.close();throw error;}) : null;
   // An accepted local operation must remain observable until it finishes.
   const expire = () => {
     if (!running) { server.close(); return; }
@@ -111,14 +113,14 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
   };
   let expiry = setTimeout(expire, ttlMs);
   expiry.unref();
-  return { url: 'http://127.0.0.1:' + server.address().port + route,
+  return { url: receiver?.url || 'http://127.0.0.1:' + server.address().port + route,
     setPrompt(value) {
       if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(JSON.stringify({ prompt: value })) > 100000) {
         throw Error('The merge prompt exceeds the local transport budget.');
       }
       prompt = value;
     },
-    dispose() { clearTimeout(expiry); server.close(); } };
+    dispose() { receiver?.retire();clearTimeout(expiry); server.close(); } };
 }
 
 module.exports = { createMergeHandoff };

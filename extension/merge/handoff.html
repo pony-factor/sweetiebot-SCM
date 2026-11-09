@@ -67,6 +67,7 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
     <div class="eyebrow">Lindsey merge workflow</div>
     <h2 id="report-title">Local Git results</h2>
     <p id="status" role="status" aria-live="polite">Receiving the prepared resolution…</p>
+    <a id="saved-handoff" hidden download="lindsey-handoff-url.txt">Save original handoff link</a>
     <div id="results" class="result-list" aria-label="Pull request outcomes"></div>
   </section>
 </main>
@@ -79,6 +80,17 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
   const raw = fragment.get('result');
   const compressed = fragment.get('result_gz');
   const stagedId = fragment.get('result_id');
+  // Keep the original payload locally before removing it from the address bar.
+  // This is recovery material, never an instruction to resubmit on reload.
+  try {
+    const key='lindsey.handoff:'+location.pathname;
+    if(location.hash)sessionStorage.setItem(key,location.hash);
+    const saved=sessionStorage.getItem(key), link=document.getElementById('saved-handoff');
+    if(saved&&link){
+      link.href='data:text/plain;charset=utf-8,'+encodeURIComponent(location.origin+location.pathname+saved);
+      link.hidden=false;
+    }
+  } catch { /* Storage limits must not prevent execution or status recovery. */ }
   history.replaceState(null, '', location.pathname);
   let finished = false, timer, postPending = false;
   async function readCompressed(value) {

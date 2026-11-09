@@ -171,10 +171,10 @@ async function createParallelMergeBatch(rawSelection, options = {}) {
       batches.push(batch);
       if (batch.url) launches.push({ id: lane.id, label: lane.label, url: batch.url });
     }
-    return { launches, state, async reconcile(numbers) {
+    return { launches, state, async reconcile(numbers, refreshOptions) {
       const refreshed = [];
       for (const [index, batch] of batches.entries()) {
-        const next = await batch.reconcile(numbers);
+        const next = await batch.reconcile(numbers, refreshOptions);
         if (next?.url) refreshed.push({ id: lanes[index].id, label: lanes[index].label, url: next.url });
       }
       return { launches: refreshed };

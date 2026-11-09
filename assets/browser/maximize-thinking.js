@@ -150,7 +150,7 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
         wantPlainModel: /^(select chatgpt model|select model)$/i.test(label(selector))
           && !plainSix(selector),
         before: new Set(document.querySelectorAll('[role="menu"], [role="listbox"]'))};
-      key(selector, 'ArrowDown');
+      selector.click();
       mark('Selecting maximum thinking before sending…');
       return false;
     }

@@ -753,6 +753,12 @@
           "scope": "application",
           "description": "Open one dedicated repair task per verified failing PR head after merge-time integration is blocked by CI. Enabled by default; turn off to prevent automatic repair. Never bypasses checks, approvals or merge policies."
         },
+        "sweetiebot.mergeAutoFixConflicts": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Open one repair task per confirmed conflicting PR head and base after the merge runner defers it. Preserve both intended behaviors and leave human implementation choices manual."
+        },
         "sweetiebot.mergeAutoFixCiMethod": {
           "type": "string",
           "enum": [
@@ -765,7 +771,7 @@
           ],
           "default": "web",
           "scope": "application",
-          "description": "Runner for automatic CI repair during Lindsey bulk merges; also selected by dashboard manual runner buttons."
+          "description": "Runner for automatic CI and conflict repair during Lindsey bulk merges; also selected by dashboard manual runner buttons."
         }
       }
     }

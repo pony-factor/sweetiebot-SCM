@@ -5,7 +5,6 @@ const { createMergeHandoff } = require('./handoff');
 const { validateResolution, validateSyncResolution, resolutionInstructions } = require('./resolution');
 const SHA = /^[a-f0-9]{40}$/i;
 const { orderMergeCandidates } = require('./order');
-const { isSnapshotDeferral } = require('./snapshot-change');
 
 // The beginning of a step is not a heartbeat. Retain it across meaningful
 // updates to the same phase and round; identical snapshots are not updates.
@@ -18,12 +17,13 @@ function recordBatchActivity(activities, number, phase, message, round, now = ne
 }
 
 async function createMergeBatch(rawSelection, { api, execute, makePrompt, destination,
-  onResult = async () => {}, onState = async () => {}, onProgress = () => {}, reviewOrder = 'Oldest first', branchOnly = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
+  onResult = async () => {}, onState = async () => {}, onProgress = () => {}, reviewOrder = 'Oldest first', branchOnly = false, parallelConflicts = false, persistentHandoffs = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
   const original = validateSelection(rawSelection);
   const entries = new Map(original.pullRequests.map(pr => [pr.number, { ...pr, attempts: 0 }]));
   const merged = [], prepared = [], deferred = [], history = [], bridges = [];
   let round = 0, emptyRounds = 0, disposed = false, rateLimit, executing = false, reconciling = false;
   let generation = 0;
+  let executionIdle = Promise.resolve(), finishExecution = () => {}, reconcileTail = Promise.resolve();
   const activities = {};
   const activity = (number, phase, message) => recordBatchActivity(activities, number, phase, message, round);
 
@@ -141,12 +141,14 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
     for (const pr of snapshots) activity(pr.number, 'reviewing', 'Review round ' + round + ' · waiting for GPT to return a current-base handoff');
     let submitted;
     const bridge = await createMergeHandoff(selection, {
+      persistent:persistentHandoffs,
       validate: (input, selected) => {
         if (disposed || reconciling || currentGeneration !== generation) throw Error('This handoff is stale; use the refreshed merge review.');
         validateRound(input, selected);
       },
       execute: async (input, selected) => {
         executing = true;
+        executionIdle = new Promise(resolve => { finishExecution = resolve; });
         submitted = input;
         try {
           for (const item of input.results) activity(item.number, 'applying', 'Handoff received · waiting for local execution');
@@ -154,6 +156,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           return await execute(input, selected);
         } catch (error) {
           executing = false;
+          finishExecution();
           for (const item of input.results) activity(item.number, 'blocked', 'Local execution failed; inspect the handoff error');
           try { await onState(state()); } catch { /* Preserve the execution error. */ }
           throw error;
@@ -161,6 +164,12 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       },
       onResult: async result => {
         try {
+        // Old workers could report a direct squash plus PR closure as merged.
+        // Reject that legacy result before publishing it or advancing the queue.
+        result.results = result.results.map(item => item.merged === true && item.githubMerged !== true
+          ? { ...item, merged: false, status: 'blocked',
+              reason: 'GitHub merge confirmation is missing. A closed PR or published commit is not a completed merge; the worker must use the current native merge executor.' }
+          : item);
         // Dashboard rendering must not prevent a verified Git result from
         // advancing the coordinator (for example, after its panel is closed).
         try { await onResult(result); } catch { /* State below remains authoritative. */ }
@@ -174,13 +183,12 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           const pr = entries.get(item.number);
           const input = submitted.results.find(entry => entry.number === item.number);
           if (!pr || !input) throw Error('Local result does not match the submitted round.');
-          activity(item.number, item.status, item.merged ? 'GitHub merge confirmed' : ({
+          activity(item.number, item.status, item.merged ? (item.githubMerged === false ? 'Local squash published · original PR closed' : 'GitHub merge confirmed') : ({
             needs_resolution: 'Conflict found · preparing a fresh resolution review',
             needs_refresh: 'Base advanced · regenerating the integration handoff',
             checks_failed: 'Integrated-head checks failed · assessing repair',
             waiting: 'Waiting for integrated-head checks', synced: 'PR branch synchronization finished',
-            blocked: 'Local execution stopped · attention required',
-            published: 'Squash published to base · GitHub PR state unconfirmed'
+            blocked: 'Local execution stopped · attention required'
           }[item.status] || 'Local execution finished'));
           if (item.rateLimited) { rateLimit = {message:item.reason,retryAt:item.retryAt,configured:item.configured}; continue; }
           // A parallel lane can advance the base before any local work starts.
@@ -188,12 +196,12 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           // than consuming the PR's budget for actual integration failures.
           if (!(item.status === 'needs_refresh' && item.retryableBaseAdvance === true)) pr.attempts++;
           const detail = { number: item.number, title: pr.title, base: pr.base,
-            status: item.status, explanation: input.explanation, decisions: require('./resolution-commits').validateDecisions(input.decisions), reason: item.reason || '',
+            status: item.status, githubMerged: item.githubMerged, prClosed: item.prClosed, method: item.method, explanation: input.explanation, decisions: require('./resolution-commits').validateDecisions(input.decisions), reason: item.reason || '',
             sourceHeadSha: input.headSha, destinationSha: item.merged ? item.sha : undefined,
             sha: item.sha, previousHeadSha: item.previousHeadSha, repairChecks: input.repairChecks === true,
             conflictPaths: item.conflictPaths || [], baseSha: item.baseSha || pr.baseSha };
           history.push(detail);
-          if (item.merged === true && item.status === 'merged') merged.push(detail);
+          if (item.merged === true && item.githubMerged === true && item.status === 'merged') merged.push(detail);
           else if (['synced', 'waiting', 'checks_failed', 'needs_refresh'].includes(item.status) && item.previousHeadSha === pr.headSha && SHA.test(item.sha || '')) {
             // Only our verified executor can refresh an authorized head.
             pr.headSha = item.sha;
@@ -201,8 +209,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           if (branchOnly && item.status === 'synced') prepared.push(detail);
           if (!branchOnly && item.status === 'synced' && item.unchanged === true) deferred.push({ number: pr.number,
             reason: item.reason || 'Nothing needed synchronization; do not retry the unchanged branch.' });
-          if (item.status === 'published') deferred.push({ number: pr.number, kind: 'published_squash',
-            reason: item.reason || 'Squash reached the base but GitHub has not marked the PR merged. Do not retry.' });
+          if ((typeof parallelConflicts === 'function' ? parallelConflicts() : parallelConflicts) && !branchOnly && item.status === 'needs_resolution') {
+            deferred.push({number:pr.number,kind:'conflict',reason:'Conflict resolution moved to the parallel repair queue.'});
+          }
           else if (item.status === 'checks_failed') {
             pr.checkFailures = (pr.checkFailures || 0) + 1;
             // A deterministic CI failure is not a reason to synchronize main again.
@@ -219,7 +228,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
         await onState(state());
         const next = await startRound();
         return { batch: state(), ...(next ? { continueUrl: next.url } : {}) };
-        } finally { executing = false; }
+        } finally { executing = false; finishExecution(); }
       }
     });
     bridges.push(bridge);
@@ -252,8 +261,19 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
   }
 
   const first = await startRound();
-  async function reconcile(repairedNumbers = []) {
-    if (disposed || rateLimit || executing || reconciling) return null;
+  function reconcile(repairedNumbers = [], { waitForIdle = false } = {}) {
+    // Dashboard refreshes can run inside onResult. Waiting there would await
+    // the very callback that called us. Completed repair tasks may opt in.
+    if (!waitForIdle && (executing || reconciling)) return Promise.resolve(null);
+    const next = reconcileTail.then(() => reconcileWhenIdle(repairedNumbers));
+    reconcileTail = next.catch(() => {});
+    return next;
+  }
+  async function reconcileWhenIdle(repairedNumbers) {
+    // Parallel repairs can finish during another result's application. Keep
+    // their verified-head refresh rather than dropping a busy-lane request.
+    await executionIdle;
+    if (disposed || rateLimit) return null;
     reconciling = true;
     let changed = false;
     const updates = [];
@@ -261,8 +281,11 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       for (const pr of entries.values()) {
         if (merged.some(item => item.number === pr.number) || prepared.some(item => item.number === pr.number)) continue;
         const blocked = deferred.find(item => item.number === pr.number);
-        // A verified new head can clear stale snapshots or a CI repair stop.
-        if (blocked && blocked.kind !== 'failed_checks' && !isSnapshotDeferral(blocked)) continue;
+        // A completed parallel repair may also resume a CI/conflict deferral.
+        // Human-review decisions remain deferred until explicitly resolved.
+        if (blocked && !(blocked.kind === 'snapshot_changed' ||
+            (repairedNumbers.includes(pr.number) && ['conflict','failed_checks'].includes(blocked.kind)) ||
+            (!blocked.kind && /selected PR (?:head, base or title changed|changed outside this batch)/i.test(blocked.reason)))) continue;
         const fresh = await api('repos/' + original.repository + '/pulls/' + pr.number);
         if (fresh.title !== pr.title || fresh.head?.ref !== pr.head || fresh.base?.ref !== pr.base ||
             fresh.head?.repo?.full_name !== original.repository) continue;

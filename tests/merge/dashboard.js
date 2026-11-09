@@ -151,6 +151,12 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert(localPrompt.includes('LOCAL KEFANIA REPAIR'));
   assert(localPrompt.includes('Use operation:"sync" only'));
   assert(!localPrompt.includes('DIRECT WEB REPAIR'));
+  assert(localPrompt.includes('AUTOMATIC LINDSEY PUBLICATION'));
+  assert(localPrompt.includes('local Lindsey GitHub App publisher'));
+  assert(!localPrompt.includes('never Lindsey or any bot account'),
+    'Automatic branch-only repairs must not inherit personal-review authorization');
+  assert(localPrompt.includes('AUTOMATIC LINDSEY REVIEW'),
+    'Unresolved automatic repair choices go to the local App publisher');
   const alternativesPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'suggest-options'));
   assert(alternativesPrompt.includes('never invent choices for compatible integrations'));
@@ -224,6 +230,10 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(reviewComments[2].title, 'Code review comment');
   assert.equal(mergePhase({ state: 'open', mergeable: false }, {}), 'conflict');
   assert.equal(mergePhase({ state: 'closed', merged: false, mergeable: false }, {}), 'closed');
+  assert.equal(mergePhase({state:'closed',merged:false},{state:'merged',githubMerged:true}),'closed',
+    'An explicit closed-without-merge response overrides an earlier success label');
+  assert.equal(mergePhase({state:'open',mergeable:true},{state:'merged',githubMerged:false}),'waiting',
+    'Legacy local publication is not authoritative native merge evidence');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {},
     { state: 'pending' }), 'checks-pending', 'Unfinished checks are not failures');
   assert.equal(mergePhase({ state: 'open', mergeable: true, mergeable_state: 'unstable' }, {},
@@ -317,7 +327,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   const configuration = {
     get(key, fallback) { return key === 'mergeTimelineTimestampMode' ? savedTimelineMode : layoutConfig[key] ?? fallback; },
     async update(key, mode, target) {
-      if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixCiMethod', 'mergeShowPrCommits'].includes(key)) {
+      if (['mergePostSummaries', 'mergePostStatusUpdates', 'mergeAutoFixCi', 'mergeAutoFixConflicts', 'mergeAutoFixCiMethod', 'mergeShowPrCommits'].includes(key)) {
         assert.equal(target, 1); layoutConfig[key] = mode; return;
       }
       assert.equal(key, 'mergeTimelineTimestampMode');
@@ -344,7 +354,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
     } },
     Uri: { parse: value => value, file: fsPath => ({ fsPath }) },
     commands: { async executeCommand(command, options) { assert.equal(command, 'workbench.action.browser.open'); assert.equal(options.openToSide, true); openings.push(options.url); } },
-    env: { async openExternal() { assert.fail('Dashboard links must never open the external browser'); } }
+    env: { async openExternal(url) { openings.push(url); return true; } }
   };
   let info = {
     number: 12, base: { ref: 'main', sha: 'c'.repeat(40) }, head: { sha, ref: 'feature', repo: { full_name: 'pony-factor/example' } }, html_url: url,
@@ -380,6 +390,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
     else if (pathname.endsWith('/pulls/comments/90/reactions')) result = reactionVotes;
     else if (pathname.endsWith('/pulls/comments/90')) result = inlineCommentsForPr[0];
     else if (pathname.endsWith('/pulls/12')) result = info;
+    else if (pathname.includes('/branches/')) result = {commit:{sha:'c'.repeat(40)}};
     else if (pathname.endsWith('/commits')) {
       commitFetches++;
       result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
@@ -488,10 +499,11 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(extensionSettings.contributes.configuration.properties['sweetiebot.mergeAutoFixCi'].default, true,
     'Automatic CI repair is enabled for installations without a saved preference');
   assert(panel.webview.html.includes('id="auto-fix-ci-method"'), 'Select an explicit auto-repair runner');
-  assert(panel.webview.html.includes('class="ci-repair-controls"'),
-    'Keep the CI auto-fix checkbox and method picker grouped');
-  assert(panel.webview.html.includes('.overview .ci-repair-controls{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 6px}'),
-    'Use a six-pixel horizontal gap between auto-fix and the using selector');
+  assert(panel.webview.html.includes('id="auto-fix-menu"'),
+    'Automatic fixing uses the same dropdown as GitHub posting');
+  assert(panel.webview.html.includes('role="group" aria-label="Automatic fixing options"'));
+  assert(panel.webview.html.includes('id="auto-fix-conflicts"> Conflicts</label>'));
+  assert.equal(extensionSettings.contributes.configuration.properties['sweetiebot.mergeAutoFixConflicts'].default, false);
   assert(panel.webview.html.includes('for="auto-fix-ci-method">using</label>'),
     'Keep the inline method label lowercase');
   assert(!panel.webview.html.includes('for="auto-fix-ci-method">Using</label>'),
@@ -712,7 +724,13 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   await messageHandler({ type: 'open-link', url: 'file:///private/secret' });
   await messageHandler({ type: 'open-link', url: 'https://example.org/' + 'x'.repeat(5000) });
   assert.deepEqual(openings, [url, url + '/files', url + '#issuecomment-123', 'https://example.org/reference'],
-    'Validated comment links open once in the integrated browser with their comment fragment preserved');
+    'Validated comment links open once in the default browser with their comment fragment preserved');
+  await messageHandler({type:'open-commit',number:12,url:sha});
+  assert.equal(openings.at(-1),'https://github.com/pony-factor/example/commit/'+sha,
+    'Commit links use the default browser too');
+  const beforeInvalidCommit=openings.length;
+  await messageHandler({type:'open-commit',number:12,url:'f'.repeat(40)});
+  assert.equal(openings.length,beforeInvalidCommit,'Only known PR commits may be opened');
   commentsForPr = [{ id: 16, body: REPORT_MARKER + '\nChoose API compatibility.\n' + optionsBlock }];
   info = { ...info, mergeable_state: 'unstable' };
   checkConclusion = null;
@@ -980,9 +998,6 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12,
     reason: 'The selected PR changed outside this batch; review the new head or PR state.' }] });
   assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'Old persisted snapshot deferrals have the same recovery guidance');
-  dashboard.recordBatchState({ repository: selection.repository, deferred: [{ number: 12, kind: 'capability',
-    reason: 'The selected PR head changed externally during preparation. No action taken; reselect and confirm the current PR head before merging.' }] });
-  assert.equal(events.at(-1).prs[0].snapshotDeferred, true, 'External conflict fixes use the same snapshot recovery classification');
   info = { ...info, base: { ...info.base, ref: 'main' } };
   await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].actionPlan.kind, 'snapshot', 'Returning to the original base does not resume a deferred batch');
@@ -994,28 +1009,44 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(events.at(-1).autoFixCiMethod, 'codex');
   assert.equal(events.at(-1).autoFixCi, true);
   info = { ...info, state: 'open', merged: false, head: { ...info.head, sha: nextSha },
-    mergeable_state: 'clean', base: { ...info.base, sha: 'c'.repeat(40) } };
+    mergeable_state: 'unstable', base: { ...info.base, sha: 'c'.repeat(40) } };
   inlineCommentsForPr = [];
   commentsForPr = [];
   await dashboard.refresh();
   const repairState = { repository: selection.repository,
     pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'c'.repeat(40) }],
-    history: [{ number: 12, status: 'blocked', sourceHeadSha: sha }],
-    deferred: [{ number: 12, reason: 'Resolution patch contains an unsafe, secret-bearing or unrelated path.' }] };
+    history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
+    deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
   const autoStart = actionLaunches.length;
   dashboard.recordBatchState(repairState);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(actionLaunches.length, autoStart, 'A stopped preparation alone does not establish failed CI');
-  info = { ...info, mergeable_state: 'unstable' };
-  await dashboard.refresh({ force: true });
   await new Promise(resolve => setTimeout(resolve, 25));
-  assert.equal(actionLaunches.length, autoStart + 1, 'Fresh failing CI starts repair even after preparation stopped');
+  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when selected integrated-head CI fails');
   assert.equal(actionLaunches.at(-1)[6], 'codex', 'Auto repair uses the configured method');
   dashboard.recordBatchState(repairState);
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(actionLaunches.length, autoStart + 1, 'Polling cannot duplicate an auto-repair');
   await messageHandler({ type: 'auto-fix-ci', enabled: false });
   assert.equal(events.at(-1).autoFixCi, false);
+  info = { ...info, mergeable: false, mergeable_state: 'dirty',base:{...info.base,sha:'d'.repeat(40)} };
+  const conflictState = { ...repairState,
+    history: [{ number: 12, status: 'needs_resolution', conflictPaths: ['feature.js'] }] };
+  const beforeConflicts = actionLaunches.length;
+  dashboard.recordBatchState(conflictState);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(actionLaunches.length, beforeConflicts, 'Conflict repair starts disabled');
+  await messageHandler({ type: 'auto-fix-conflicts', enabled: true });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(events.at(-1).autoFixConflicts, true);
+  assert.equal(actionLaunches.length, beforeConflicts + 1, 'Confirmed deferred conflicts open a repair task');
+  assert.equal(actionLaunches.at(-1)[4].baseSha,'c'.repeat(40),
+    'An older PR base.sha cannot suppress a repair bound to the actual branch tip');
+  assert.equal(actionLaunches.at(-1)[5].id, 'resolve-conflicts');
+  assert.equal(actionLaunches.at(-1)[6], 'codex');
+  dashboard.recordBatchState(conflictState);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(actionLaunches.length, beforeConflicts + 1, 'Polling cannot duplicate a conflict repair');
+  await messageHandler({ type: 'auto-fix-conflicts', enabled: false });
+  assert.equal(events.at(-1).autoFixConflicts, false);
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
   await dashboard.refresh({ force: true });
   const failedFetch = events.at(-1).events.at(-1);
@@ -1045,7 +1076,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   dashboard.recordBatchState(laggingWorkerState);
   assert.equal(events.at(-1).workers[0].merged, 0);
   dashboard.recordLocalResult({ repository: selection.repository,
-    results: [{ number: 12, status: 'merged', merged: true, sha: 'c'.repeat(40) }] });
+    results: [{ number: 12, status: 'merged', merged: true, githubMerged: true, sha: 'c'.repeat(40) }] });
   assert.equal(events.at(-1).prs[0].state, 'merged', 'Verified merge results update the badge before polling');
   assert.equal(events.at(-1).workers[0].merged, 1,
     'Lane count uses verified PR state, not the lagging runner snapshot');
@@ -1066,6 +1097,9 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   requestFault = undefined;
   await dashboard.refresh({ force: true });
   assert.equal(events.at(-1).prs[0].state, 'merged', 'A stale GitHub open response cannot undo a verified merge');
+  info={...info,state:'closed',merged:false,merged_at:null};
+  await dashboard.refresh({force:true});
+  assert.equal(events.at(-1).prs[0].state,'closed','Explicit GitHub closure clears a stale merged badge');
   panel.visible = true;
   reportFault = new TypeError('comments unavailable');
   info = { ...info, state: 'closed', merged: true, merged_at: '2026-10-20T12:00:00Z',

@@ -1,6 +1,58 @@
 'use strict';
 const windows = new WeakMap();
 const names = ['First','Second','Third','Fourth','Fifth','Sixth','Seventh','Eighth','Ninth'];
+
+// Reviews have three reserved chats. Repairs use three additional slots;
+// waiting jobs do not open another chat, and a PR cannot occupy two slots.
+function createRepairPool() {
+  const jobs = new Map(), pending = [], active = new Map();
+  let disposed = false;
+  function drain() {
+    while (!disposed && pending.length && active.size < 3) {
+      const job = pending.shift();
+      const slot = [4,5,6].find(id => !active.has(id));
+      active.set(slot, job);
+      const release = () => {
+        if (active.get(slot) !== job) return;
+        active.delete(slot); jobs.delete(job.key); drain();
+      };
+      Promise.resolve().then(() => {
+        if (disposed) throw Error('The bulk repair queue was closed.');
+        return job.start(slot);
+      }).then(handle => {
+        if (disposed) {handle?.dispose?.();job.reject(Error('The bulk repair queue was closed.'));release();return;}
+        job.handle = handle;
+        job.resolve(handle);
+        Promise.resolve(handle?.done).catch(() => {}).finally(release);
+      }, error => { job.reject(error); release(); });
+    }
+  }
+  return {
+    run(key, start) {
+      if (disposed) return Promise.reject(Error('The bulk repair queue was closed.'));
+      if (jobs.has(key)) return jobs.get(key).promise;
+      let resolve, reject;
+      const promise = new Promise((yes,no) => {resolve=yes;reject=no;});
+      const job = {key,start,promise,resolve,reject};
+      jobs.set(key,job);pending.push(job);drain();
+      return promise;
+    },
+    dispose() {
+      disposed=true;
+      for (const job of pending.splice(0)) {jobs.delete(job.key);job.reject(Error('The bulk repair queue was closed.'));}
+      for (const job of active.values()) job.handle?.dispose?.();
+    }
+  };
+}
+
+function createExecutionQueue() {
+  let tail = Promise.resolve();
+  return task => {
+    const next = tail.then(task);
+    tail = next.catch(() => {});
+    return next;
+  };
+}
 function state(vscode) {
   let current = windows.get(vscode.window);
   if (!current) { current = {runners:new Map(),tail:Promise.resolve(),compact:false}; windows.set(vscode.window,current); }
@@ -27,29 +79,27 @@ async function moveTab(vscode,tab,column) {
   await focusTab(vscode,tab);
   await vscode.commands.executeCommand('moveActiveEditor',{to:'position',by:'group',value:column});
 }
-function runnerLayout(compact,stacked) {
-  const left=compact?0.5:0.2;
+function runnerLayout(compact) {
+  const center=compact?0.6:0.44;
+  const side=(1-center)/2;
   return {orientation:0,groups:[
-    stacked?{size:left,groups:[{size:0.5},{size:0.5}]}:{size:left},
-    {size:1-left}
+    {size:side,groups:[{size:0.5},{size:0.5}]},
+    {size:center},
+    {size:side,groups:[{size:0.5},{size:0.5}]}
   ]};
 }
-// Restored windows can have the dashboard in either left-hand group. Returning
-// to 20/80 must leave it wider than the compact-entry threshold on that side.
+// Keep the report in the center and preserve all four corner groups. Width
+// changes only adjust the center share, with hysteresis to avoid oscillation.
 async function updateResponsiveRunnerLayout(vscode,dashboardWidth) {
   if (!Number.isInteger(dashboardWidth) || dashboardWidth<160 || dashboardWidth>20000) return false;
   const current=state(vscode);
   const groups=vscode.window.tabGroups?.all || [];
-  const dashboardGroup=groups.find(group=>group.tabs.some(tab=>tab.label==='Lindsey · Merge progress'));
-  if (!dashboardGroup || !groups.some(group=>group!==dashboardGroup && group.tabs.length)) return false;
-  const dashboardOnLeft=groups.indexOf(dashboardGroup)<groups.length-1;
-  const expandedShare=dashboardOnLeft?0.2:0.8;
-  const restoreWidth=Math.max(690,860*0.5/expandedShare);
-  const compact=current.compact ? dashboardWidth<=restoreWidth : dashboardWidth<820;
+  if (!groups.some(group=>group.tabs.some(tab=>tab.label==='Lindsey · Merge progress'))) return false;
+  const compact=current.compact ? dashboardWidth<=920 : dashboardWidth<640;
   if (compact===current.compact) return false;
   current.compact=compact;
   try {
-    await vscode.commands.executeCommand('vscode.setEditorLayout',runnerLayout(compact,groups.length>2));
+    await vscode.commands.executeCommand('vscode.setEditorLayout',runnerLayout(compact));
   } catch (error) {
     current.compact=!compact;
     throw error;
@@ -57,12 +107,18 @@ async function updateResponsiveRunnerLayout(vscode,dashboardWidth) {
   return true;
 }
 async function arrangeRunnerPanes(vscode) {
-  const runners = [...state(vscode).runners.values()];
+  const current=state(vscode);
   const dashboard = (vscode.window.tabGroups?.all || []).flatMap(group=>group.tabs)
     .find(tab=>tab.label==='Lindsey · Merge progress');
-  if (!runners.length || !dashboard) return;
-  const stacked = runners.length>1;
-  const dashboardColumn = stacked?3:2;
+  if (!dashboard) return;
+  // A window reload retains its editors but loses the in-memory runner map.
+  for (const group of vscode.window.tabGroups.all) for (const tab of group.tabs) {
+    if (/ChatGPT|Squash.*merge|Prepare merge handoff|Resolve PR conflicts|Lindsey · Local merge/i.test(tab.label || '') &&
+        ![...current.runners.values()].includes(tab)) current.runners.set(tab,tab);
+  }
+  const runners=[...current.runners.values()];
+  const dashboardColumn = 3;
+  const cornerColumns = [1,2,4,5];
   const others = vscode.window.tabGroups.all.flatMap(group=>group.tabs).filter(tab=>!runners.includes(tab) && tab!==dashboard);
   const config = vscode.workspace.getConfiguration('workbench.editor');
   const previous = config.inspect('closeEmptyGroups')?.workspaceValue;
@@ -70,18 +126,20 @@ async function arrangeRunnerPanes(vscode) {
   // the user's setting after every move; no tab is closed or reloaded.
   await config.update('closeEmptyGroups',false,vscode.ConfigurationTarget.Workspace);
   try {
-    await vscode.commands.executeCommand('vscode.setEditorLayout',runnerLayout(state(vscode).compact,stacked));
-    for (let index=0;index<runners.length;index++) await moveTab(vscode,runners[index],index%2+1);
+    await vscode.commands.executeCommand('vscode.setEditorLayout',runnerLayout(state(vscode).compact));
+    for (let index=0;index<runners.length;index++) await moveTab(vscode,runners[index],cornerColumns[index%cornerColumns.length]);
     for (const tab of others) await moveTab(vscode,tab,dashboardColumn);
     await moveTab(vscode,dashboard,dashboardColumn);
+    await focusTab(vscode,dashboard);
+    await vscode.commands.executeCommand('workbench.action.keepEditor');
   } finally { await config.update('closeEmptyGroups',previous,vscode.ConfigurationTarget.Workspace); }
 }
-function openRepairRunner(vscode,url,{repository,number,reuse=true}) {
+function openRepairRunner(vscode,url,{repository,number}) {
   const current = state(vscode);
   const next = current.tail.then(async()=>{
     const id = 'repair:'+repository+'#'+number;
     const existing = state(vscode).runners.get(id);
-    if (reuse && existing && await focusTab(vscode,existing)) return true;
+    if (existing && await focusTab(vscode,existing)) return true;
     // On a restored batch, preserve its existing browser tabs as runners too.
     for (const group of vscode.window.tabGroups?.all || []) for (const tab of group.tabs) {
       if (/ChatGPT|Squash.*merge|Prepare merge handoff|Resolve PR conflicts/i.test(tab.label || '') &&
@@ -97,4 +155,16 @@ function openRepairRunner(vscode,url,{repository,number,reuse=true}) {
   current.tail=next.catch(()=>{});
   return next;
 }
-module.exports={registerMergeRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,openRepairRunner};
+function openInlineRepairRunner(vscode,url,id) {
+  const current=state(vscode);
+  const next=current.tail.then(async()=>{
+    await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+    const close=await require('../github/pr-workflows').openWorkflow(vscode,url);
+    registerMergeRunner(vscode,id,close.tab);
+    await arrangeRunnerPanes(vscode);
+    return close;
+  });
+  current.tail=next.catch(()=>{});
+  return next;
+}
+module.exports={registerMergeRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,openRepairRunner,openInlineRepairRunner,createRepairPool,createExecutionQueue};

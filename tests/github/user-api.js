@@ -26,6 +26,19 @@ test('GitHub cooldown handling remains intact', async () => {
   await assert.rejects(api('repos/owner/repo'), error => error.rateLimited === true && error.retryAt > Date.now());
 });
 
+test('GraphQL merges use the human transport and surface HTTP 200 mutation errors without replay', async () => {
+  const calls=[];
+  const api=legacyAPI(githubUserAPI('fixture-token',async(url,options)=>{
+    calls.push({url,...options});
+    return {ok:true,status:200,json:async()=>({errors:[{message:'Invalid email address'}]})};
+  }));
+  await assert.rejects(api('graphql','POST',['-f','query=mutation { mergePullRequest(input:{}) { clientMutationId } }']),/Invalid email address/);
+  assert.equal(calls.length,1,'A merge mutation must never be retried automatically');
+  assert.equal(calls[0].url,'https://api.github.com/graphql');
+  assert.equal(calls[0].headers.Authorization,'Bearer fixture-token');
+  await assert.rejects(api('graphql'),/Invalid GitHub user API endpoint/);
+});
+
 
 test('transient reads retry with a bound, while writes and long server pauses never replay', async () => {
   for (const [method, retryAfter, expectedCalls, expectedDelay] of [['GET',null,2,500],['GET','2',2,2000],['GET','3600',1,null],['PUT',null,1,null]]) {
