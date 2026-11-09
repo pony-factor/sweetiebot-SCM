@@ -84,9 +84,17 @@ const run = promisify(execFile);
         merged = true;
         return { merged: true, sha: head };
       }
-      if (endpoint.includes('/commits/')) return { commit: {
-        author, message: await git('--git-dir=' + remote, 'show', '-s', '--format=%B', await branch('main'))
-      } };
+      if (endpoint.includes('/commits/')) {
+        const sha = endpoint.split('/').at(-1);
+        const [name, email, committerName, committerEmail, ...message] =
+          (await git('--git-dir=' + remote, 'show', '-s',
+            '--format=%an%x00%ae%x00%cn%x00%ce%x00%B', sha)).split('\0');
+        return { commit: {
+          author: { name, email },
+          committer: { name: committerName, email: committerEmail },
+          message: message.join('\0')
+        } };
+      }
       if (endpoint.endsWith('/pulls/12')) return {
         state: merged ? 'closed' : 'open', merged, merged_at: merged ? '2026-10-21' : null,
         title: '🐛 Resolve feature', mergeable: !resolving || pushed, user: { type: 'Bot', login: 'codex-pony[bot]' },
