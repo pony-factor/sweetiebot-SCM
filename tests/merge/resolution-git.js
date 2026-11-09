@@ -84,9 +84,17 @@ const run = promisify(execFile);
         merged = true;
         return { merged: true, sha: head };
       }
-      if (endpoint.includes('/commits/')) return { commit: {
-        author, message: await git('--git-dir=' + remote, 'show', '-s', '--format=%B', await branch('main'))
-      } };
+      if (endpoint.includes('/commits/')) {
+        const sha = endpoint.split('/').at(-1);
+        const [name, email, committerName, committerEmail, ...message] =
+          (await git('--git-dir=' + remote, 'show', '-s',
+            '--format=%an%x00%ae%x00%cn%x00%ce%x00%B', sha)).split('\0');
+        return { commit: {
+          author: { name, email },
+          committer: { name: committerName, email: committerEmail },
+          message: message.join('\0')
+        } };
+      }
       if (endpoint.endsWith('/pulls/12')) return {
         state: merged ? 'closed' : 'open', merged, merged_at: merged ? '2026-10-21' : null,
         title: '🐛 Resolve feature', mergeable: !resolving || pushed, user: { type: 'Bot', login: 'codex-pony[bot]' },
@@ -399,6 +407,27 @@ async function successiveMerges(checkState, appMode = false) {
      return response.json();
    };
    const first = await submit(batch.url, 1);
+   if (appMode) {
+     // An App-authenticated squash is published directly rather than passed
+     // through GitHub's native squash API. The original PR head is not part of
+     // the single-parent commit, so the PR must remain unconfirmed.
+     assert.equal(first.results[0].status, 'published');
+     assert.equal(first.results[0].merged, false);
+     assert.equal(first.batch.merged.length, 0, 'An unconfirmed squash is not a completed PR merge');
+     assert.equal(first.batch.deferred.find(item => item.number === 1)?.kind, 'published_squash');
+     assert.equal(await branch('feature-1'), heads[1], 'The source PR branch remains untouched');
+     assert.equal(await branch('main'), first.results[0].sha, 'The one-parent squash reached the base');
+     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%P', first.results[0].sha), initial);
+     await assert.rejects(git('--git-dir=' + remote, 'merge-base', '--is-ancestor',
+       heads[1], first.results[0].sha), 'The original PR head is not in the squash ancestry');
+     assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%cn <%ce>', 'main'),
+       'John Wooten <human@example.test>', 'App transport must not become the final squash committer');
+     assert.equal(await repo('rev-parse', 'HEAD'), initial);
+     assert.equal(await repo('status', '--porcelain'), '');
+     assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('executor-')), []);
+     console.log('App-authenticated squash preserves human identity and does not claim an unconfirmed PR merge.');
+     return;
+   }
    assert.equal(first.results[0].status, 'merged');
    assert.equal(await branch('feature-1'), heads[1], 'Native squash leaves the original PR branch unchanged');
    const conflict = await submit(first.continueUrl, 2);
@@ -423,10 +452,8 @@ async function successiveMerges(checkState, appMode = false) {
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
      'John Wooten <human@example.test>', 'The original human stays the squash author in App mode');
-   if(appMode) {
-     assert.equal(await git('--git-dir='+remote,'show','-s','--format=%cn <%ce>','main'),`${bot.name} <${bot.email}>`);
-     assert.equal(await git('--git-dir='+remote,'show','-s','--format=%an <%ae>',heads[2]),'John Wooten <human@example.test>');
-   }
+   assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%cn <%ce>', 'main'),
+     'John Wooten <human@example.test>', 'Unsigned local squashes keep the human committer');
    const message = await git('--git-dir=' + remote, 'show', '-s', '--format=%B', 'main');
    assert(message.startsWith(title(2) + ' (#2)\n'));
    const newCredit = 'Co-authored-by: ChatGPT 6.1 <noreply@openai.com>';

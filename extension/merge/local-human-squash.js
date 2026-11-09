@@ -152,7 +152,8 @@ async function humanSquashMerge(repository, number, {
   // Signing preferences never authorize PR-history changes. The matching
   // human opener can use GitHub's native, branch-preserving squash even when
   // commit.gpgsign is enabled; explicit local signing uses a local squash.
-  const nativeSquash = !requireSignedCommit && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
+  // The App authenticates transport, but a human squash must not inherit its identity.
+  const nativeSquash = !appActor && !requireSignedCommit && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
@@ -233,7 +234,7 @@ async function humanSquashMerge(repository, number, {
   if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && !needsResolution && !signLocally) {
+  if (operation === 'merge' && alreadyPrepared && !needsResolution && !appActor && !requireSignedCommit) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
@@ -290,7 +291,8 @@ async function humanSquashMerge(repository, number, {
       if (!samePR(await api(prPath)) || await readBaseTip() !== baseSha) {
         throw Error('Selected PR or base changed before local squash preparation; no branch was modified.');
       }
-      let identity = await commitIdentity(inRepo, author, requireSignedCommit, true, automationAuthor);
+      // Preserve the configured human signer, independently of App authentication.
+      let identity = await commitIdentity(inRepo, author, requireSignedCommit, true);
       const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
       await fs.writeFile(messageFile, finalMessage + '\n', { mode: 0o600 });
       const create = () => attributedCommitTree({ directory: temp, tree: finalTree,
@@ -299,7 +301,7 @@ async function humanSquashMerge(repository, number, {
       try { sha = await create(); }
       catch (error) {
         if (requireSignedCommit || !identity.signed) throw error;
-        identity = { author, committer: automationAuthor || author, signed: false };
+        identity = { author, committer: author, signed: false };
         sha = await create();
       }
       const parents = (await inRepo('show', '-s', '--format=%P', sha)).trim().split(/\s+/).filter(Boolean);
@@ -324,13 +326,18 @@ async function humanSquashMerge(repository, number, {
       await inRepo('merge-base', '--is-ancestor', sha,
         await inRepo('rev-parse', 'refs/remotes/origin/' + base));
       const destination = await api(endpoint + '/commits/' + sha);
-      verifyCommit(destination, finalMessage, author);
+      verifyCommit(destination, finalMessage, author, { committer: identity.committer });
       const current = await api(prPath);
       if (current?.head?.sha !== originalSha || current.head?.ref !== head) {
         throw Error('Squash reached the base but the PR head changed externally; inspect the PR.');
       }
       const verified = destination?.commit?.verification?.verified === true;
       const merged = current?.merged === true && current.merge_commit_sha === sha && current.base?.ref === base;
+      if (merged) {
+        // Recheck the human identities when GitHub confirms the merge.
+        const confirmed = await api(endpoint + '/commits/' + sha);
+        verifyCommit(confirmed, finalMessage, author, { committer: identity.committer });
+      }
       return { merged, status: merged ? 'merged' : 'published', sha, number, base, baseSha,
         headSha: originalSha, previousHeadSha: originalSha, author,
         method: identity.signed ? 'local-signed-squash' : 'local-squash',

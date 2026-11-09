@@ -12,7 +12,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
   const author={name:'Original Human',email:'human@example.test'};
   const signer={name:'Local Signer',email:'signer@example.test'};
   const bot={name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'};
-  const expectedSigner=appMode?bot:signer;
+  const expectedSigner=signer;
   const git=async(...args)=>(await run('git',['-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false',
     '-c','user.name='+author.name,'-c','user.email='+author.email,...args])).stdout.trim();
   const inWork=(...args)=>git('-C',work,...args);
@@ -77,7 +77,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     const api=async (endpoint,method,fields=[])=>{
       if(endpoint==='repos/owner/repo')return {default_branch:'main',allow_squash_merge:true,allow_rebase_merge:true,private:privateRepository};
       if(endpoint.endsWith('/pulls/1/merge')&&method==='PUT'){
-        assert(humanOpener,'Only a matching human opener uses native squash');
+        assert(humanOpener&&!appMode,'Only a matching human opener without App transport uses native squash');
         const values=Object.fromEntries(fields.filter((_,i)=>i%2).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)];}));
         assert.equal(values.merge_method,'squash');
         const mergedSha=await inRemote('commit-tree',values.sha+'^{tree}','-p',baseSha,'-m',values.commit_title+'\n\n'+values.commit_message);
@@ -172,7 +172,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(result.merged,false);
         assert.equal(pushes.length,0);
         assert.equal(await branch('main'),baseSha);
-      }else if(humanOpener&&!requireSignedCommit&&!conflict){
+      }else if(humanOpener&&!appMode&&!requireSignedCommit&&!conflict){
         assert.equal(result.merged,true,JSON.stringify(result));
         assert.equal(pushes.length,0,'GitHub native squash requires no manual Git pushes');
         assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha);
@@ -187,11 +187,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(await inRemote('show','-s','--format=%an <%ae>',result.sha),author.name+' <'+author.email+'>');
         assert.equal(result.signed,!missingSigningKey);
         assert.equal(result.verified,!missingSigningKey&&!githubCannotVerifySignature);
-        if(!missingSigningKey){
-          await inRemote('verify-commit',result.sha);
-          assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
-            expectedSigner.name+' <'+expectedSigner.email+'>');
-        }
+        const committer=missingSigningKey?author:expectedSigner;
+        assert.equal(await inRemote('show','-s','--format=%cn <%ce>',result.sha),
+          committer.name+' <'+committer.email+'>',
+          'App authentication must not turn the final squash committer into a bot');
+        if(!missingSigningKey)await inRemote('verify-commit',result.sha);
         if(appMode){
           const message=await inRemote('show','-s','--format=%B',result.sha);
           assert(message.includes('Co-authored-by: Codex <noreply@openai.com>'));
@@ -214,6 +214,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
  await fixture({appMode:true});
+  await fixture({appMode:true,humanOpener:true});
  await fixture({appMode:true,advanceBase:true,conflict:true});
  await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true});
  await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
