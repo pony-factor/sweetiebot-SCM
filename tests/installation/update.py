@@ -12,6 +12,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
         break
 
 import io
+import json
 from pathlib import Path
 import tarfile
 import tempfile
@@ -282,6 +283,10 @@ class UpdateTests(unittest.TestCase):
                     return update.prepare_update(cache, extensions, force=force)
 
             self.assertIsNotNone(prepare())
+            self.assertEqual(
+                json.loads((cache / "candidate/scripts/build-revision.json").read_text()),
+                {"commit": "abc"},
+            )
             update.extract_sources(archive(payload), installed)
             # Matching bundle metadata is insufficient without active runtime files.
             self.assertIsNotNone(prepare())
