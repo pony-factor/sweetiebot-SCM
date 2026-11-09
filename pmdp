@@ -1,0 +1,2 @@
+gap in the repair queue: it marks a repair as attempted before checking the live PR and base. If main advances, it skips the launch but leaves that attempt recorded, so the batch can finish without opening a repair worker. I’m checking the handoff path as well before patching it.
+fix on viwer bulk merug
