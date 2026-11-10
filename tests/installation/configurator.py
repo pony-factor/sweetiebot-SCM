@@ -49,6 +49,27 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_kefania_setup_button_is_in_settings_and_uses_authenticated_route(self):
+        page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
+        self.assertIn('id="kefania-open-setup"', page)
+        self.assertIn("'/kefania-setup/open' + location.search", page)
+        self.assertIn('GitHub account and Kefania setup', page)
+
+    def test_kefania_setup_launcher_accepts_only_local_service_urls(self):
+        def launch(url):
+            return SimpleNamespace(returncode=0, stdout=json.dumps({"url": url, "reused": True}), stderr="")
+        with patch.object(configurator.shutil, "which", return_value="/usr/local/bin/node"), \
+             patch.object(configurator.subprocess, "run", return_value=launch("http://127.0.0.1:8766/")) as run:
+            self.assertEqual(configurator._open_kefania_setup(), {
+                "url": "http://127.0.0.1:8766/", "reused": True,
+            })
+            self.assertEqual(run.call_args.args[0][0], "/usr/local/bin/node")
+            self.assertIn("kefania-setup.js", run.call_args.args[0][1])
+        with patch.object(configurator.shutil, "which", return_value="/usr/local/bin/node"), \
+             patch.object(configurator.subprocess, "run", return_value=launch("https://example.com/")):
+            with self.assertRaisesRegex(RuntimeError, "invalid local setup URL"):
+                configurator._open_kefania_setup()
+
     def test_welcome_tour_reuses_real_settings_controls(self):
         page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
         self.assertIn('id="welcome-tour"', page)
