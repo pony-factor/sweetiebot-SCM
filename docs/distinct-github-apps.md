@@ -55,6 +55,26 @@ autosave. Environment variables take precedence over saved configuration.
 The Keychain import UI currently requires macOS; other platforms can use the
 environment configuration below. Hosted services still require their own setup.
 
+### Lindsey comment connection
+
+In **Magic Settings → Lindsey**, click **Configure Lindsey comments** to jump
+to the Lindsey App card under **Apps**. Select the repository to check, provide
+the Lindsey App ID, slug, and a PEM key only if they have not already been saved,
+and use **Check comment permissions** to verify the saved installation. This
+check covers Issues and Pull requests write access alongside the existing
+read-only checks, and does not post a comment, submit a review, or merge code.
+
+The connection is still the **Lindsey GitHub App**: its installation token is the
+author of automated review and merge comments, not the GitHub user signed in to
+Sweetiebot. The shortcut does not introduce a second credential store or a
+separate local website. New actions use the configured App after the
+**Separate Kefania and Lindsey Apps** identity mode is enabled. Already stored
+macOS Keychain credentials stay in place.
+
+For the *hosted* Lindsey Sync reviewer, local Settings is not a deployment
+console: [Lindsey Sync](https://github.com/pony-factor/lindsey-sync) requires its
+own configured webhook host and credentials.
+
 ## Environment configuration
 
 Alternatively, set the following in the **Sweetiebot extension host's environment**, then
