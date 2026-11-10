@@ -14,6 +14,12 @@ Open **Source Control → gear at the right of the commit message** for **Sweeti
 
 Magic Settings → Message bar → **Codex co-author button icon** uses `assets/imgs/sweetiebot.png` by default. You can upload a local PNG, JPEG, GIF or WebP (up to 2 MB), or reset to Sweetiebot. Uploaded artwork remains in private local app data and is never written to the repository or Git settings. Click **Rebuild app** after changes to update the SCM button. The co-author commit behavior and trailer remain unchanged.
 
+## Kefania account connection and advanced setup
+
+In **Sweetiebot Settings → GitHub & Pull Requests → Apps**, click **Open Kefania setup**. This starts Kefania's existing local setup server when necessary and opens its page without typing a terminal command or localhost address. If the setup service is already running, the button reuses it. GitHub user and App credentials stored in macOS Keychain remain in place; simply opening the page does not reauthorize or reset them.
+
+The separate Kefania page handles GitHub user authorization and reconnection, repository selection, local PR integration checks/repair, drafting preferences, and optional Ollama fallback. Sweetiebot Settings retains its ordinary PR and App identity preferences. If Kefania is not installed or its dependencies are missing, Settings displays a useful error instead of opening an unrelated localhost service.
+
 ## Sidebar navigation
 
 Magic Settings organizes its existing pages under **Source Control & Commits**, **Branches & Workspaces**, **AI & Spellcheck**, **GitHub & Pull Requests**, **Interface & Customization**, and **System & Diagnostics**. Group headings are centered, softly accented pills; page links use centered pill buttons with a distinct selected state. Longer labels wrap naturally rather than being cut off. These visual changes do not alter settings or saved preferences, and individual pages remain keyboard navigable with scrolling and a responsive layout for smaller windows.
