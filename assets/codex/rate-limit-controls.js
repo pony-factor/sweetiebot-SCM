@@ -429,8 +429,9 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
 // Codex's native banner can be compacted by hide-reset-times.js into a
 // [data-scm-toolkit-rate-limited] span while keeping the full outer <aside>.
 // In that layout the generic "rich" notice branch would add a companion pony
-// without removing the original green border. Replace the entire presentation
-// only for the uniquely identified banner in the live composer.
+// inside the original green card. Replace that presentation only for the
+// uniquely identified banner in the live composer, and drop the card frame
+// once the picture is showing.
 function scmToolkitCollapsedNativeRateLimitBanner(root) {
     const banners = new Set();
     const hasEditor = [...root.querySelectorAll(scmToolkitCodexEditorSelector)].some(editor =>
@@ -445,14 +446,53 @@ function scmToolkitCollapsedNativeRateLimitBanner(root) {
     }
     return banners.size === 1 ? [...banners][0] : null;
 }
-// The native green card is the desired frame. Only suppress a redundant
-// short caption after the illustration loads; do not change native quota data.
+// The picture is the frame once it loads. Hide the native card's outer border
+// and any empty wrapper around it, while leaving the illustration's own border.
+// Only suppress a redundant short caption; do not change native quota data.
 function scmToolkitHideNativeRateLimitCaption(banner) {
     for (const label of banner.querySelectorAll?.('strong, h1, h2, h3, span, p, [role="status"]') || []) {
         if (!scmToolkitIsShortRateLimit(label.textContent)
             || label.querySelector?.('a, button, input, [role="button"]')) continue;
         if (label.getAttribute?.('data-scm-toolkit-sticker-redundant') !== 'true')
             label.setAttribute?.('data-scm-toolkit-sticker-redundant', 'true');
+    }
+}
+const scmToolkitNativeRateLimitFrame = [
+    ['border-width', '0'],
+    ['border-style', 'none'],
+    ['outline', 'none'],
+    ['box-shadow', 'none'],
+    ['background', 'transparent'],
+    ['background-image', 'none'],
+];
+// The dashed status card, and a border-only wrapper between it and the
+// composer, is the outside box in the screenshot. Stop before any ancestor
+// that also contains the prompt.
+function scmToolkitNativeRateLimitFrameNodes(banner) {
+    const nodes = [];
+    const composer = banner?.closest?.('[data-codex-composer-root]');
+    // Portal-owned banners have no composer ancestor: never strip app or page frames.
+    if (!composer) return banner ? [banner] : [];
+    for (let node = banner; node && node !== composer; node = node.parentElement) {
+        if (node !== banner && node.querySelector?.('textarea, input, [contenteditable="true"]')) break;
+        nodes.push(node);
+    }
+    return nodes;
+}
+function scmToolkitHideNativeRateLimitFrame(banner) {
+    for (const node of scmToolkitNativeRateLimitFrameNodes(banner)) {
+        node.setAttribute?.('data-scm-toolkit-native-rate-limit-frame', 'true');
+        if (!node.style?.setProperty) continue;
+        for (const [property, value] of scmToolkitNativeRateLimitFrame)
+            node.style.setProperty(property, value, 'important');
+    }
+}
+function scmToolkitRestoreNativeRateLimitFrame(banner) {
+    for (const node of scmToolkitNativeRateLimitFrameNodes(banner)) {
+        if (node.getAttribute?.('data-scm-toolkit-native-rate-limit-frame') !== 'true') continue;
+        node.removeAttribute?.('data-scm-toolkit-native-rate-limit-frame');
+        for (const [property] of scmToolkitNativeRateLimitFrame)
+            node.style?.removeProperty?.(property);
     }
 }
 function scmToolkitRestoreNativeRateLimitBanner(banner) {
@@ -462,6 +502,7 @@ function scmToolkitRestoreNativeRateLimitBanner(banner) {
         banner.style?.removeProperty?.('display');
         banner.removeAttribute?.('data-scm-toolkit-rate-limit-native-hidden');
     }
+    scmToolkitRestoreNativeRateLimitFrame(banner);
     banner.removeAttribute?.('data-scm-toolkit-native-rate-limit-banner');
     for (const label of banner.querySelectorAll?.('[data-scm-toolkit-sticker-redundant="true"]') || [])
         label.removeAttribute?.('data-scm-toolkit-sticker-redundant');
@@ -508,7 +549,10 @@ function scmToolkitSyncCollapsedNativeRateLimitPony(root) {
     }
     scmToolkitCleanNativeRateLimitStickers(root, banner);
     if (banner.querySelector?.('[data-scm-toolkit-native-rate-limit-pony]')) {
-        // Native React rerenders can replace the compacted caption in place.
+        // Native React rerenders can replace the compacted caption in place
+        // and put the dashed card border back around the picture.
+        banner.setAttribute?.('data-scm-toolkit-native-rate-limit-banner', 'true');
+        scmToolkitHideNativeRateLimitFrame(banner);
         scmToolkitHideNativeRateLimitCaption(banner);
         scmToolkitHideEmptyRateLimitRail(banner);
         return true;
@@ -558,6 +602,7 @@ function scmToolkitSyncCollapsedNativeRateLimitPony(root) {
         sticker.append(image);
         banner.append(sticker);
         banner.setAttribute('data-scm-toolkit-native-rate-limit-banner', 'true');
+        scmToolkitHideNativeRateLimitFrame(banner);
         scmToolkitHideNativeRateLimitCaption(banner);
         scmToolkitHideEmptyRateLimitRail(banner);
     });
@@ -677,7 +722,7 @@ function scmToolkitSyncRateLimitPony(root) {
     if (globalThis.scmToolkitResetShortcutInstalled) return;
     globalThis.scmToolkitResetShortcutInstalled = true;
     const style = document.createElement('style');
-    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;max-width:100%!important;padding:0!important;margin-inline:auto!important;align-self:center!important;overflow:hidden!important}[data-scm-toolkit-native-rate-limit-pony="true"]{width:100%!important;align-self:stretch!important;justify-content:center!important;overflow:visible!important}[data-scm-toolkit-sticker-redundant="true"],[data-scm-toolkit-hidden-blank-rail="true"]{display:none!important}';
+    style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;max-width:100%!important;padding:0!important;margin-inline:auto!important;align-self:center!important;overflow:hidden!important}[data-scm-toolkit-native-rate-limit-pony="true"]{width:100%!important;align-self:stretch!important;justify-content:center!important;overflow:visible!important}[data-scm-toolkit-native-rate-limit-banner="true"],[data-scm-toolkit-native-rate-limit-frame="true"]{border-width:0!important;border-style:none!important;outline:none!important;box-shadow:none!important;background:transparent!important;background-image:none!important}[data-scm-toolkit-sticker-redundant="true"],[data-scm-toolkit-hidden-blank-rail="true"]{display:none!important}';
     (document.head || document.documentElement).appendChild(style);
     let queued = false;
     const sync = () => {
