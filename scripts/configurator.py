@@ -1143,6 +1143,16 @@ def render_form(
                 '</span></div>'
             )
             controls += _local_setup_controls()
+        if section == "Lindsey":
+            controls = (
+                '<div class="setting"><span><strong>Lindsey review comments</strong>'
+                '<small>Configure the Lindsey GitHub App that signs automatic review and '
+                'merge comments. The App, not your personal GitHub user, is the comment author. '
+                'Use Check comment permissions to verify repository access without posting '
+                'anything.</small></span>'
+                '<button type="button" id="lindsey-comments-settings">'
+                'Configure Lindsey comments</button></div>'
+            ) + controls
         if section == "Pull requests":
             squash_formatting = {"squashOmitBulletsForEmojiTitles", "filterSyncCommitSummaries", "squashTrailerSeparatorStyle"}
             controls = (

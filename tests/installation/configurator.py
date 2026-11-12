@@ -49,6 +49,17 @@ def form_values():
 
 
 class SubmissionTests(unittest.TestCase):
+    def test_lindsey_comment_credential_setup_is_reachable_from_settings(self):
+        page = configurator.render_form(
+            dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save",
+        )
+        self.assertIn('id="lindsey-comments-settings"', page)
+        self.assertIn("Configure Lindsey comments", page)
+        self.assertIn("Check comment permissions", page)
+        self.assertIn("github-app-card-lindsey", page)
+        self.assertIn("tab.click();", page)
+        self.assertIn("appRequest('/check'", page)
+
     def test_welcome_tour_reuses_real_settings_controls(self):
         page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
         self.assertIn('id="welcome-tour"', page)

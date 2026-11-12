@@ -61,6 +61,7 @@ async function loadApps() {
       const app = status.apps[role];
       const card = document.createElement('fieldset');
       card.className = 'pack-picker';
+      card.id = 'github-app-card-' + role;
       // Saved values enter DOM properties, never HTML interpolation.
       card.innerHTML = `<legend>${role === 'kefania' ? 'Kefania' : 'Lindsey'}</legend>
         <label class="setting field-row"><span>App ID</span><input data-id inputmode="numeric"></label>
@@ -69,7 +70,7 @@ async function loadApps() {
           <input type="file" data-key accept=".pem" autocomplete="off"></label>
         <p><a data-install target="_blank" rel="noopener noreferrer">Install App</a></p>
         <button type="button" data-save>Save App</button>
-        <button type="button" data-check>Check connection</button>
+        <button type="button" data-check>${role === 'lindsey' ? 'Check comment permissions' : 'Check connection'}</button>
         <output data-result role="status" aria-live="polite"></output>`;
       const id = card.querySelector('[data-id]');
       const slug = card.querySelector('[data-slug]');
@@ -128,6 +129,27 @@ document.getElementById('app-mode-save').addEventListener('click', async event =
     output.textContent = result.message;
   } catch (error) { output.textContent = error.message; }
   finally { event.target.disabled = false; }
+});
+// Lindsey comments use the same App credential card as other GitHub operations.
+document.getElementById('lindsey-comments-settings')?.addEventListener('click', async () => {
+  const apps = document.getElementById('app-cards');
+  const panel = apps?.closest('.settings-panel');
+  const tab = panel && document.querySelector('.settings-tab[aria-controls="' + panel.id + '"]');
+  if (!tab) {
+    document.getElementById('app-status').textContent = 'GitHub App Settings is unavailable.';
+    return;
+  }
+  tab.click();
+  let card = document.getElementById('github-app-card-lindsey');
+  if (!card) {
+    // May still be loading on first visit; refresh the existing settings only.
+    await loadApps();
+    card = document.getElementById('github-app-card-lindsey');
+  }
+  if (card) {
+    card.scrollIntoView({block: 'nearest'});
+    card.querySelector('[data-check]')?.focus();
+  }
 });
 void loadApps();
 '''
