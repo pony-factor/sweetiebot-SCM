@@ -34,8 +34,8 @@ WING_END = '\n/* scm-toolkit-codex-send-wing:end */\n'
 INTERRUPT_START = '\n/* scm-toolkit-codex-send-interrupt:start */\n'
 INTERRUPT_END = '\n/* scm-toolkit-codex-send-interrupt:end */\n'
 INTERRUPT_ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/send-interrupt.js'
-ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/composer-controls.js'
-CUSTOM_ASSET = ASSET.parent / 'composer-layout.js'
+ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/composer/controls.js'
+CUSTOM_ASSET = ASSET.parent / 'layout.js'
 CUSTOM_START = '\n/* scm-toolkit-codex-composer-layout:start */\n'
 CUSTOM_END = '\n/* scm-toolkit-codex-composer-layout:end */\n'
 PLACEHOLDER_START = '\n/* scm-toolkit-codex-placeholders:start\n'
@@ -95,7 +95,7 @@ def transform_placeholders(source: str, settings: dict) -> str:
     if edits:
         metadata = json.dumps(edits, ensure_ascii=True).replace('*', '\\u002a')
         source += PLACEHOLDER_START + metadata + PLACEHOLDER_END
-        payload = (ASSET.parent / 'placeholders.js').read_text().replace(
+        payload = (ASSET.parent.parent / 'placeholders.js').read_text().replace(
             '__SCM_TOOLKIT_PLACEHOLDERS__', json.dumps([
                 str(settings.get(name, '')).strip()
                 for name in ('codexNewChatPlaceholder', 'codexFollowUpPlaceholder')

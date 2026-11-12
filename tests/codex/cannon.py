@@ -78,7 +78,7 @@ class CannonTest(unittest.TestCase):
             install.transform_codex(original + install.CODEX_LIMIT_START, cannon_enabled=True)
 
     def test_timestamp_hiding_yields_activity_label_to_cannon(self):
-        content = (Path(__file__).resolve().parent.parent.parent / "assets/codex/hide-chat-timestamps.js").read_text()
+        content = (Path(__file__).resolve().parent.parent.parent / "assets/codex/hide/chat-timestamps.js").read_text()
         self.assertIn("!globalThis.scmToolkitShowCannon && activityLeadPattern.test", content)
 
 

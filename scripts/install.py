@@ -1254,21 +1254,21 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
     if not remove and hide_reset_times:
         js += (
             CODEX_HIDE_RESET_START
-            + (CODEX_ASSETS / "hide-reset-times.js").read_text()
+            + (CODEX_ASSETS / "hide/reset-times.js").read_text()
             + CODEX_HIDE_RESET_END
         )
 
     if not remove and hide_promotions:
         js += (
             CODEX_PROMOTIONS_START
-            + (CODEX_ASSETS / "hide-promotions.js").read_text()
+            + (CODEX_ASSETS / "hide/promotions.js").read_text()
             + CODEX_PROMOTIONS_END
         )
 
     if not remove and hide_timestamps:
         js += (
             CODEX_TIMESTAMPS_START
-            + (CODEX_ASSETS / "hide-chat-timestamps.js").read_text().replace(
+            + (CODEX_ASSETS / "hide/chat-timestamps.js").read_text().replace(
                 '__SCM_TOOLKIT_ACTIVITY_CANNON__',
                 'data:image/png;base64,' + base64.b64encode(
                     (HERE.parent / 'assets/imgs/activity-cannon.png').read_bytes()).decode('ascii'))
@@ -1278,7 +1278,7 @@ def transform_codex(js, enabled=False, hide_promotions=False, hide_timestamps=Fa
     if not remove and hide_dictation:
         js += (
             CODEX_DICTATION_START
-            + (CODEX_ASSETS / "hide-dictation.js").read_text()
+            + (CODEX_ASSETS / "hide/dictation.js").read_text()
             + CODEX_DICTATION_END
         )
 

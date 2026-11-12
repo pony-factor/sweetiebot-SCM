@@ -168,7 +168,7 @@ async function run() {
   store.setItem('codex:persisted-atom:'+attachmentAtom,JSON.stringify(attachmentDrafts));
   assert.equal(store.getItem('codex:persisted-atom:'+attachmentAtom),'{}','Global browser fallback cannot leak attachments');
   const attachmentHost=vm.createContext({});
-  vm.runInContext(fs.readFileSync(path.join(__dirname,'../../assets/codex/composer-attachments.js'),'utf8'),attachmentHost);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../../assets/codex/composer/attachments.js'),'utf8'),attachmentHost);
   let records={}; const signal={};
   const composer={value:{id:'new-conversation'},get:()=>records,set:(_,value)=>{records=value;}};
   attachmentHost.scmToolkitSaveComposerAttachments(composer,attachmentDrafts['new-conversation'],signal,value=>value.id);

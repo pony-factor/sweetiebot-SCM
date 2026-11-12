@@ -146,4 +146,4 @@ def transform_attachments(source, enabled=True):
             raise ValueError('Unsupported Codex attachment composer anchor.')
         source = source.replace(original, replacement, 1)
     return (source + ATTACH_START + '/* edits:' + json.dumps(edits) + ' */\n' +
-            (ASSETS / 'composer-attachments.js').read_text() + ATTACH_END)
+            (ASSETS / 'composer/attachments.js').read_text() + ATTACH_END)
