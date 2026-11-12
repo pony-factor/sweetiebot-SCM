@@ -64,7 +64,7 @@ def transform(source, kind, enabled=True):
     source = source.replace(original, replacement, 1)
     helper = (ASSETS / f'context-{kind}.js').read_text()
     if kind == 'webview':
-        helper = (ASSETS / 'composer-focus.js').read_text() + '\n' + (ASSETS / 'rate-limit-continuation.js').read_text() + '\n' + helper
+        helper = (ASSETS / 'composer/focus.js').read_text() + '\n' + (ASSETS / 'rate-limit-continuation.js').read_text() + '\n' + helper
     if kind == 'host':
         helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
     helper += '\n' + (ASSETS / f'permissions-{kind}.js').read_text()

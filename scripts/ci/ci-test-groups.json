@@ -208,7 +208,7 @@
         "scripts/ui-customizations.py",
         "assets/codex/rate-limit-continuation.js",
         "assets/codex/activity-cannon.js",
-        "assets/codex/composer-layout.js",
+        "assets/codex/composer/layout.js",
         "scripts/codex-composer-layout.py"
       ]
     },

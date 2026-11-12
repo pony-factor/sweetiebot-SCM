@@ -272,7 +272,7 @@ def run():
                 assert bar.get_attribute('aria-valuenow') == str(percent)
         assert not page.locator('#meter-control svg').is_visible()
         assert page.locator('#meter-surface textarea').input_value() == 'Untouched draft'
-        page.add_script_tag(content=(ASSETS / 'composer-controls.js').read_text())
+        page.add_script_tag(content=(ASSETS / 'composer/controls.js').read_text())
         page.wait_for_function('document.getElementById("meter-control").classList.contains("scm-toolkit-inline-location")')
         circle_bounds = meter.bounding_box()
         access_bounds = page.locator('#access-control').bounding_box()
@@ -355,7 +355,7 @@ def run():
                 right:['clipboard','send'], hidden:['access']};
             window.originalUsageParent = document.getElementById('meter-control').parentElement;
         }''')
-        page.add_script_tag(content=(ASSETS / 'composer-layout.js').read_text().replace(
+        page.add_script_tag(content=(ASSETS / 'composer/layout.js').read_text().replace(
             '__SCM_TOOLKIT_COMPOSER_LAYOUT__', 'window.usageLayout'))
         page.wait_for_function('document.querySelector(".scm-toolkit-location-slot")')
         page.wait_for_function('document.getElementById("access-control").classList.contains("scm-toolkit-layout-concealed")')

@@ -70,7 +70,7 @@ async function run() {
     setTimeout(callback) { focusTimers.push(callback); return focusTimers.length; },
     clearTimeout() {}
   });
-  load('composer-focus.js', focusVM);
+  load('composer/focus.js', focusVM);
   const focus = focusVM.scmToolkitComposerFocus();
   const waiting = focus.restore({}, () => visibleThread, conversationId);
   focusTimers.at(-1)();

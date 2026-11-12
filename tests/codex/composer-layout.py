@@ -98,7 +98,7 @@ class ComposerLayoutTests(unittest.TestCase):
     def test_extra_composer_more_menu_is_removed(self):
         from pathlib import Path
         runtime = (Path(__file__).resolve().parents[2] /
-                   "assets/codex/composer-layout.js").read_text()
+                   "assets/codex/composer/layout.js").read_text()
         self.assertNotIn("scm-toolkit-composer-more", runtime)
         self.assertNotIn("mountMenu", runtime)
         self.assertNotIn('id !== "access"', runtime)
