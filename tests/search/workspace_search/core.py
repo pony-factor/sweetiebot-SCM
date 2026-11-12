@@ -41,7 +41,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
     def test_pony_publisher_is_bundled_beside_background_worker(self):
         files = workspace_search.source_files()
         self.assertEqual(files[Path('pony-git-publish.js')].read_bytes(),
-                         (Path(__file__).resolve().parent.parent.parent / 'extension/commits/pony-git-publish.js').read_bytes())
+                         (Path(__file__).resolve().parent.parent.parent.parent / 'extension/commits/pony-git-publish.js').read_bytes())
 
     def test_bundled_git_wrapper_can_switch_branches(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,7 +265,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
                     stylesheet)
 
     def test_chromium_ci_uses_one_latest_runner(self):
-        workflow = (Path(__file__).resolve().parent.parent.parent / ".github/workflows/check.yml").read_text()
+        workflow = (Path(__file__).resolve().parent.parent.parent.parent / ".github/workflows/check.yml").read_text()
         browser = workflow.split("  codex-webview-browser:\n", 1)[1].split("\n  bot-app-identities:", 1)[0]
         self.assertEqual(browser.count("runs-on: ubuntu-latest"), 1)
         self.assertNotIn("matrix:", browser)

@@ -146,7 +146,7 @@ require('node:child_process').execFileSync('node', ['--check'], {input: 'const v
         self.assertTrue(ci.browser_needed(manifest["groups"]["browser-ui"]))
 
     def test_python_suite_keeps_its_module_import_path(self):
-        spec = {"label": "Python imports", "tests": ["search/workspace-search.py"],
+        spec = {"label": "Python imports", "tests": ["search/workspace_search/core.py"],
                 "syntax": []}
         with patch.object(ci, "execute", return_value=0) as execute:
             ci.run_group("efs-search", spec)
@@ -216,7 +216,7 @@ require('node:child_process').execFileSync('node', ['--check'], {input: 'const v
         self.assertIn("if: steps.browser.outputs.required == 'true'\n        run: |", suites)
 
     def test_codex_browser_follows_playwright_managed_revision(self):
-        source = (ROOT / "tests/browser/codex-webview-browser.py").read_text(encoding="utf-8")
+        source = (ROOT / "tests/browser/codex_webview/browser.py").read_text(encoding="utf-8")
         self.assertIn('custom_browser = os.environ.get("CODEX_TEST_CHROMIUM")', source)
         self.assertIn("executable_path=custom_browser or None", source)
         self.assertNotIn("shutil.which", source)

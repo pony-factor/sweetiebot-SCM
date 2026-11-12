@@ -347,11 +347,11 @@
         "search/case-only-renames.js",
         "search/workspace-activity.js",
         "search/workspace-prune.js",
-        "search/workspace-search.py",
-        "search/workspace-search-core.js",
-        "search/workspace-search-extract.js",
-        "search/workspace-search-index.js",
-        "search/workspace-search-view.js"
+        "search/workspace_search/core.py",
+        "search/workspace_search/core.js",
+        "search/workspace_search/extract.js",
+        "search/workspace_search/index.js",
+        "search/workspace_search/view.js"
       ],
       "syntax": [
         "extension/search/core.js",
@@ -407,8 +407,8 @@
     }
   },
   "specialized_browser_tests": [
-    "browser/codex-webview-browser.py",
-    "browser/codex-webview-iframe.py",
+    "browser/codex_webview/browser.py",
+    "browser/codex_webview/iframe.py",
     "browser/codex-queued-edit-browser.py",
     "browser/workflow-recovery-browser.py"
   ]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Chromium host simulation for Codex webview patches.
 
-Run: python tests/test_codex-webview-browser.py
+Run: python tests/browser/codex_webview/browser.py
 Requires: pip install playwright; python -m playwright install chromium
 Set CODEX_TEST_CHROMIUM to an existing executable to avoid downloading Chromium.
 This runs real JS assets in a browser DOM, not the proprietary Codex extension.
@@ -25,7 +25,7 @@ import os
 import base64
 import sys
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 ASSETS = ROOT / "assets" / "codex"
 
 HTML = """<!doctype html><html><head><style>

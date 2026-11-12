@@ -258,8 +258,8 @@ jobs:
       - name: Browser-backed Codex webview simulation
         run: |
           python tests/browser/codex-queued-edit-browser.py
-          python tests/browser/codex-webview-browser.py
-          python tests/browser/codex-webview-iframe.py
+          python tests/browser/codex_webview/browser.py
+          python tests/browser/codex_webview/iframe.py
       - name: Commit wand placement, shared outline and workflow recovery
         run: python tests/browser/workflow-recovery-browser.py
       - name: Node.js timestamp, heading and countdown tests

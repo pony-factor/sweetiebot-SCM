@@ -61,7 +61,7 @@ async function run() {
     if (name === './ollama') return {};
     return require(name);
   }};
-  vm.runInNewContext(fs.readFileSync(require.resolve('../../extension/search/view'), 'utf8'), sandbox);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../../../extension/search/view'), 'utf8'), sandbox);
   const {groupSearchResults, splitResultPath, formatResultScore, scoreIconSize} = sandbox.module.exports;
   const grouped = groupSearchResults([
     {uri: 'file:///top/a.md', relative: 'top/a.md', score: .99},

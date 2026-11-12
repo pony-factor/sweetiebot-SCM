@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise Codex assets inside a Chromium iframe hosted by a mock VS Code shell.
 
-Run: python tests/test_codex-webview-iframe.py
+Run: python tests/browser/codex_webview/iframe.py
 Requires Playwright and Chromium; normal unittest discovery has no dependency.
 """
 
@@ -23,7 +23,7 @@ from pathlib import Path
 import os
 import shutil
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 ASSETS = ROOT / "assets" / "codex"
 
 WEBVIEW = """<html><head><style>
