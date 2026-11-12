@@ -616,8 +616,8 @@ assert.equal(context.scmToolkitFooterRateLimitNotice(semanticRoot).rich, true);
 
 console.log('Codex reset shortcut, persistent compact rate-limit text, and composer sticker checks passed.');
 
-// Regression: the native green card remains visible, with centered art but
-// without its duplicate short caption or an inert empty pill above it.
+// Regression: the picture stays centered in the native card, without the
+// card's outer border, its duplicate short caption, or an inert empty pill.
 assert.match(rateLimitSource, /data-scm-toolkit-sticker-redundant="true"\],\[data-scm-toolkit-hidden-blank-rail="true"\]\{display:none!important/);
 assert.match(rateLimitSource, /data-scm-toolkit-hidden-blank-rail="true"\]\{display:none!important/);
 const nativeComposer = makeNode('', rect(0, 0, 320, 800), appRoot);
@@ -709,15 +709,24 @@ assert.equal(nativeSticker.style.width, '100%', 'fill the status card to center 
 assert.equal(nativeSticker.style.justifyContent, 'center');
 assert.equal(nativeSticker.style.alignItems, 'center');
 assert.equal(nativeSticker.style.alignSelf, 'stretch');
-assert.equal(nativeSticker.style.border, '0', 'preserve original green card border');
+assert.equal(nativeSticker.style.border, '0', 'the sticker wrapper does not add a second frame');
 assert.equal(nativeSticker.children[0].style.border, '1px solid var(--vscode-focusBorder, currentColor)');
 assert.equal(nativeBanner.style.display, undefined, 'the original card remains visible');
+assert.equal(nativeBanner.style['border-width'], '0', 'hide the outer card border when the picture is set');
+assert.equal(nativeBanner.style['border-style'], 'none');
+assert.equal(nativeBanner.attrs['data-scm-toolkit-native-rate-limit-frame'], 'true');
 assert.equal(nativeBanner.attrs['data-scm-toolkit-native-rate-limit-banner'], 'true');
+assert.match(rateLimitSource, /data-scm-toolkit-native-rate-limit-frame="true"\]\{border-width:0!important/);
 assert.equal(nativeMarker.attrs['data-scm-toolkit-sticker-redundant'], 'true', 'remove caption visually only');
 assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], 'true', 'hide the empty pill');
 assert.equal(nativeBanner.textContent, originalNativeCopy, 'preserve provider text and controls');
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, 1, 'idempotent on DOM resync');
+
+// A portal-owned notice cannot make frame cleanup reach the application shell.
+const portalBannerFrame = makeNode("Rate limited", rect(0, 0, 280, 54), appRoot);
+assert.equal(context.scmToolkitNativeRateLimitFrameNodes(portalBannerFrame).length, 1);
+assert.equal(context.scmToolkitNativeRateLimitFrameNodes(portalBannerFrame)[0], portalBannerFrame);
 
 // A meaningful control appearing in the top rail must immediately restore it.
 railHasControl = true;
@@ -733,6 +742,8 @@ context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeSticker, null);
 assert.equal(nativeBanner.style.display, undefined);
 assert.equal(nativeBanner.attrs['data-scm-toolkit-native-rate-limit-banner'], undefined);
+assert.equal(nativeBanner.attrs['data-scm-toolkit-native-rate-limit-frame'], undefined);
+assert.equal(nativeBanner.style['border-width'], undefined, 'restore the native card border with the caption');
 assert.equal(nativeMarker.attrs['data-scm-toolkit-sticker-redundant'], undefined);
 assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], undefined);
 
