@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../../assets/codex/rate-limit-continuation.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../../../assets/codex/rate-limit-continuation.js'), 'utf8');
 function setup(noticeText = 'Rate limited · resets in 1 second') {
   const messages=[], microtasks=[], timers=[], listeners={};
   const state={now:1000,queued:false,composerText:'',threadId:'chat-one'};

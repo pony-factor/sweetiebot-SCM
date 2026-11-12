@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const context = vm.createContext({});
-const rateLimitSource = fs.readFileSync(path.join(__dirname, '../../assets/codex/rate-limit-controls.js'), 'utf8');
+const rateLimitSource = fs.readFileSync(path.join(__dirname, '../../../assets/codex/rate-limit-controls.js'), 'utf8');
 // The injected CSS must not reinstate the previous 4px padding.
 assert.match(rateLimitSource, /padding:0!important/);
 assert.doesNotMatch(rateLimitSource, /padding:4px!important/);
@@ -493,7 +493,7 @@ class SyntheticObserver {
         observedOptions = options;
     }
 }
-const injectedSource = fs.readFileSync(path.join(__dirname, '../../assets/codex/rate-limit-controls.js'), 'utf8');
+const injectedSource = fs.readFileSync(path.join(__dirname, '../../../assets/codex/rate-limit-controls.js'), 'utf8');
 new Function('document', 'MutationObserver', 'queueMicrotask', 'globalThis', injectedSource)(
     syntheticDocument,
     SyntheticObserver,
@@ -517,7 +517,7 @@ assert.equal(queuedSyncCount, 2);
 // creation or mutating the composer notice into a sticker card.
 const disabledContext = vm.createContext({});
 vm.runInContext(
-    fs.readFileSync(path.join(__dirname, '../../assets/codex/rate-limit-controls.js'), 'utf8')
+    fs.readFileSync(path.join(__dirname, '../../../assets/codex/rate-limit-controls.js'), 'utf8')
         .replace('"__SCM_TOOLKIT_RATE_LIMIT_STICKER_ENABLED__"', 'false'),
     disabledContext
 );

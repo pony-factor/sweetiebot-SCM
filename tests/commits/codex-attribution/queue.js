@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {registerCodexCommitCommand} = require('../../extension/commits/codex-commit');
+const {registerCodexCommitCommand} = require('../../../extension/commits/codex-commit');
 
 async function run() {
   const commands = new Map(), calls = [];

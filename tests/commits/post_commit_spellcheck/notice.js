@@ -4,8 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   finishSpellcheckPreview, saveSpellcheckEdit, undoSpellcheckChange, closeSpellcheckPopup, takeSpellcheckPopup, parseNotice, coauthor, spellcheckMessage, takeNotice, showNotice, registerPostCommitSpellcheckNotice
-} = require('../../extension/commits/post-commit-spellcheck-notice');
-const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange, spellcheckChangeSpans } = require('../../extension/commits/spellcheck-diff');
+} = require('../../../extension/commits/post-commit-spellcheck-notice');
+const { renderSpellcheckDiff, parseUnifiedDiff, highlightChange, spellcheckChangeSpans } = require('../../../extension/commits/spellcheck-diff');
 
 const head = 'a'.repeat(40);
 const notice = JSON.stringify({ version: 1, head, paths: ['notes/report.md'] });

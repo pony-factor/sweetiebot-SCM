@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 async function run() {
-  const manifest = require('../../extension/package.json');
+  const manifest = require('../../../extension/package.json');
   assert(manifest.activationEvents.includes('onCommand:sweetiebot.prepareCodexCommit'),
     'The first Codex commit command must activate the extension in a fresh window');
   let command, active = false, bridgeInstalled = false, progress = 0;
@@ -65,7 +65,7 @@ async function run() {
         };
       }
       if (name === 'node:path') return path;
-      if (name === '../codex/attribution') return require('../../extension/codex/attribution');
+      if (name === '../codex/attribution') return require('../../../extension/codex/attribution');
       assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
         assert.equal(exe, '/resolved/python3');
         assert.deepEqual(Array.from(args), ['/extension/local-codex-commit.py', '--normalize-staged-whitespace']);
@@ -80,7 +80,7 @@ async function run() {
       return child;
     } }; }
   });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../extension/commits/codex-commit.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../../extension/commits/codex-commit.js'), 'utf8'), sandbox);
   const vscode = {
     Uri: { from: uri => uri, joinPath: (uri, file) => ({ fsPath: `${uri.fsPath}/${file}` }) },
     extensions: { getExtension: id => id === 'vscode.git'
