@@ -1,8 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../../extension/github/pr-actions');
-const { squashMessage } = require('../../extension/merge/squash-attribution');
+const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../../../extension/github/pr-actions');
+const { squashMessage } = require('../../../extension/merge/squash-attribution');
 const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',
   headRefOid: 'a'.repeat(40), isCrossRepository: false, title: '🐛 Correct caching' };

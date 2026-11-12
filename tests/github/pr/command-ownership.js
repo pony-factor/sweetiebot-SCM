@@ -1,12 +1,12 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { registerLegacyCommandAliases } = require('../../extension/ui/command-aliases');
-const { registerGitHubPullRequestActions } = require('../../extension/github/pr-actions');
-const { installPullRequestRefresh } = require('../../extension/github/pr-refresh');
+const { registerLegacyCommandAliases } = require('../../../extension/ui/command-aliases');
+const { registerGitHubPullRequestActions } = require('../../../extension/github/pr-actions');
+const { installPullRequestRefresh } = require('../../../extension/github/pr-refresh');
 
 async function main() {
-  const manifest = require('../../extension/package.json');
+  const manifest = require('../../../extension/package.json');
   assert(manifest.activationEvents.includes('onCommand:sweetiebot.squashMergeTreePullRequest'),
     'A first sidebar click must activate Sweetiebot before dispatching');
   assert(manifest.contributes.commands.some(item => item.command === 'sweetiebot.squashMergeTreePullRequest'));

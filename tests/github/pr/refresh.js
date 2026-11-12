@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder, checkFolderMergeEligibility } = require('../../extension/github/pr-refresh');
+const { installPullRequestRefresh, pullRequestFromTreeNode, pullRequestsInFolder, checkFolderMergeEligibility } = require('../../../extension/github/pr-refresh');
 
 async function testBulkEligibility() {
   const request = { number: 12, url: "https://github.com/owner/repo/pull/12" };
@@ -404,7 +404,7 @@ async function main() {
     assert.match(folderErrors.at(-1), /No pull requests were found/);
     for (const subscription of folderSubscriptions) subscription.dispose();
     for (const subscription of rowSubscriptions) subscription.dispose();
-    const manifest = require('../../extension/package.json');
+    const manifest = require('../../../extension/package.json');
     assert.equal(manifest.contributes.menus['view/item/context'][0].command,
       'sweetiebot.squashMergeTreePullRequest');
     await Promise.resolve();

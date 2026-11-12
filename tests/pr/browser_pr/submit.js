@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../../assets/browser/pull-request-submit.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../../../assets/browser/pull-request-submit.js'), 'utf8');
 function fixture({ url = 'https://chatgpt.com/?q=Draft%20PR&sweetiebot_pr=1', text = 'Draft PR', disabled = false, label = 'Send prompt', sidebar = false, projectComposer = false, resultLinks = [], assistantCodes = [], conversationCodes = [], modernAssistantCodes = [], assistantText = '', streaming = false, backgroundStreaming = false, hiddenStop = false, hiddenStopAncestor = false, recoveredCallback, streamError = false, hiddenRetry = false, retryStartsStreaming = true, thinkingReady = true, formatInserted = text => text } = {}) {
   let clicks = 0, sidebarClicks = 0, now = 0, timerId = 0;
   let currentAssistantText = assistantText;
