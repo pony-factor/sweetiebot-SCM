@@ -52,7 +52,7 @@ def window_label(source, label):
     if label == 'Codex':
         return source
     label = codex_label._validate_label(label)
-    payload = (codex_composer.ASSET.parent / 'window-label.js').read_text().replace(
+    payload = (codex_composer.ASSET.parent.parent / 'window-label.js').read_text().replace(
         '__SCM_TOOLKIT_CODEX_WINDOW_LABEL__', json.dumps(label))
     return source + LABEL_START + codex_composer.runtime_payload('window label', payload) + LABEL_END
 
