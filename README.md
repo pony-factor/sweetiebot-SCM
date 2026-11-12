@@ -71,6 +71,8 @@ python3 scripts/configure.py
 
 The settings server listens on a local authenticated loopback address; it does not transmit your settings to an external configuration service.
 
+To connect your GitHub account to Kefania or access its advanced setup, open **Settings → GitHub & Pull Requests → Apps → Open Kefania setup**. Sweetiebot starts or reuses Kefania's local service and opens the page directly, so you do not need to run `npm run setup:web` or type a localhost address. Saved macOS Keychain credentials are reused; no new authorization is performed unless you select Connect or Reconnect.
+
 | Settings section | What you can configure |
 | --- | --- |
 | **Message bar** | Branch selector, message-bar layout, commit and co-author hotkeys, labels, publish and push controls |

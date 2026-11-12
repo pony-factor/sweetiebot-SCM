@@ -984,6 +984,37 @@ def _local_setup_controls() -> str:
         '</div></div>'
     )
 
+def _open_kefania_setup() -> dict[str, object]:
+    """Start or reuse the local Kefania setup UI from authenticated Sweetiebot Settings."""
+    launcher = Path(__file__).resolve().parent.parent / "extension" / "codex" / "kefania-setup.js"
+    node = (shutil.which("node") or next(
+        (path for path in ("/opt/homebrew/bin/node", "/usr/local/bin/node")
+         if Path(path).is_file()), None
+    ))
+    if not node:
+        raise RuntimeError("Node.js is unavailable. Install Node.js to open Kefania setup.")
+    try:
+        result = subprocess.run(
+            [node, str(launcher)], capture_output=True, text=True, timeout=20,
+            cwd=str(launcher.parent.parent.parent),
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError("Unable to launch Kefania's local setup service.") from error
+    if result.returncode != 0:
+        lines = (result.stderr or "").strip().splitlines()
+        raise RuntimeError(lines[-1][:300] if lines else "Kefania setup could not start.")
+    try:
+        payload = json.loads(result.stdout)
+        url = urllib.parse.urlsplit(payload["url"])
+        if (url.scheme != "http" or url.hostname != "127.0.0.1" or not url.port
+                or url.path != "/" or url.query or url.fragment
+                or url.username or url.password):
+            raise ValueError("Invalid setup URL")
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError("Kefania returned an invalid local setup URL.") from error
+    return {"url": payload["url"], "reused": payload.get("reused") is True}
+
+
 BUILD_REVISION_FILE = Path(__file__).with_name("build-revision.json")
 
 
@@ -1961,7 +1992,8 @@ def run_configurator(
             if not self._authorized():
                 self._send("<h1>Not found</h1>", 404)
                 return
-            if urllib.parse.urlsplit(self.path).path.startswith("/github-apps/"):
+            if (urllib.parse.urlsplit(self.path).path.startswith("/github-apps/")
+                    or urllib.parse.urlsplit(self.path).path == "/kefania-setup/open"):
                 expected = f"http://127.0.0.1:{self.server.server_port}"
                 if self.headers.get("Origin") != expected or self.headers.get("Host") != expected[7:]:
                     self._send_json({"error": "Invalid settings origin."}, 403)
@@ -1978,6 +2010,12 @@ def run_configurator(
                 self._send_json({"error": "Request too large."}, 413)
                 return
             data = self.rfile.read(length)
+            if path == "/kefania-setup/open":
+                try:
+                    self._send_json(_open_kefania_setup())
+                except RuntimeError as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
             if path == "/codex-permissions":
                 if parent_pid is None:
                     self._send_json({"error": "Open Magic Settings from VS Code to change Codex permissions."}, 409)

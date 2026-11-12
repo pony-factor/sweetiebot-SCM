@@ -21,6 +21,11 @@ are never displayed again. Environment variables override saved settings.</p>
 <small>Checks authenticate without creating a PR, comment or merge.</small></span>
 <input id="app-repository" aria-label="Repository to check" value="pony-factor/sweetiebot-SCM"></div>
 <p><a id="app-installations" target="_blank" rel="noopener noreferrer">Manage organization installations</a></p>
+<div class="setting"><span><strong>GitHub account and Kefania setup</strong>
+<small>Open Kefania to connect or reconnect your GitHub user account, select repositories,
+repair its local PR integration, or configure its drafting tools. Existing connections are reused.</small></span>
+<button type="button" id="kefania-open-setup">Open Kefania setup</button></div>
+<output id="kefania-setup-status" role="status" aria-live="polite"></output>
 <div id="app-cards"></div>
 <div class="setting field-row"><span><strong>Local App identities</strong>
 <small>Local Kefania PRs and Lindsey’s headless runner. Hosted services and
@@ -51,6 +56,41 @@ function installationLink() {
 }
 appRepository.addEventListener('input', installationLink);
 installationLink();
+document.getElementById('kefania-open-setup').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const output = document.getElementById('kefania-setup-status');
+  // Open during the user gesture so browser popup restrictions do not hide the result.
+  const tab = window.open('about:blank', '_blank');
+  if (tab) tab.opener = null;
+  button.disabled = true;
+  output.textContent = 'Opening Kefania setup…';
+  try {
+    const response = await fetch('/kefania-setup/open' + location.search, {
+      method: 'POST', body: new URLSearchParams()
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to start Kefania setup.');
+    if (!/^http:\/\/127\.0\.0\.1:\d+\/$/.test(result.url)) {
+      throw new Error('Kefania returned an invalid local setup address.');
+    }
+    if (tab) {
+      tab.location.replace(result.url);
+      output.textContent = result.reused ? 'Opened the existing Kefania setup.' : 'Started Kefania setup.';
+    } else {
+      const link = document.createElement('a');
+      link.href = result.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open Kefania setup';
+      output.replaceChildren(link);
+    }
+  } catch (error) {
+    tab?.close();
+    output.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 async function loadApps() {
   try {
     const status = await appRequest('');
