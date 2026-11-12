@@ -32,8 +32,8 @@ SOURCE = HERE.parent / "extension"
 # Shared artwork stays in assets while VS Code receives stable installed icon paths.
 IMAGE_SOURCES = {
     "efs.svg": Path("efs.svg"),
-    "merge-prs-light.svg": Path("kefania/merge-prs-light.svg"),
-    "merge-prs-dark.svg": Path("kefania/merge-prs-dark.svg"),
+    "merge-prs-light.svg": Path("kefania/merge/prs-light.svg"),
+    "merge-prs-dark.svg": Path("kefania/merge/prs-dark.svg"),
 }
 STANDALONE_CONTAINER_ID = "sweetiebot-workspaceSearchContainer"
 LEGACY_EXTENSION_PATTERNS = ("jfwooten4.scm-toolkit-workspace-search-*",)
