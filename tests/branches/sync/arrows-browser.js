@@ -5,10 +5,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const source = fs.readFileSync(path.join(__dirname, '../../assets/workbench/picker.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../../../assets/workbench/picker.js'), 'utf8');
 const helper = source.slice(source.indexOf('function scmToolkitCustomizeSyncLabels('),
   source.indexOf('\nfunction scmToolkitCustomizeCommitButtonLabel('));
-const css = fs.readFileSync(path.join(__dirname, '../../assets/workbench/picker.css'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '../../../assets/workbench/picker.css'), 'utf8');
 
 (async () => {
   const browser = await chromium.launch({ headless: true,

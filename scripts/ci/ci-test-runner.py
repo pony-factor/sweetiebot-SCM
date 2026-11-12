@@ -50,7 +50,7 @@ def inventory(verbose=False):
         if not spec.get("tests"):
             problems.append(f"{group} has no tests")
         for name in spec["tests"]:
-            if not re.fullmatch(r"[a-z][a-z0-9-]*/[A-Za-z0-9_-]+\.(?:py|js)", name):
+            if not re.fullmatch(r"(?:[a-z][a-z0-9_-]*/)+[A-Za-z0-9_-]+\.(?:py|js)", name):
                 problems.append(f"Invalid test name: {name}")
             if name in owners:
                 problems.append(f"{name} assigned to {owners[name]} and {group}")

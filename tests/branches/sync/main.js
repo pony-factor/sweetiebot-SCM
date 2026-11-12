@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { refreshMain, syncIdentity, syncPublisher } = require('../../extension/branches/sync-main');
-const { syncBranch } = require('../../extension/branches/actions');
+const { refreshMain, syncIdentity, syncPublisher } = require('../../../extension/branches/sync-main');
+const { syncBranch } = require('../../../extension/branches/actions');
 
 async function run() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-refresh-main-'));

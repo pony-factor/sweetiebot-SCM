@@ -198,12 +198,12 @@ jobs:
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
           node --check tests/branches/window.js
-          node --check tests/branches/strip.js
+          node --check tests/branches/strip/core.js
           node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
         run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
-        run: node tests/branches/strip.js
+        run: node tests/branches/strip/core.js
       - name: Test real Git worktrees, session publication, and branch handoff
         run: node tests/branches/shared-main.js
 
@@ -338,14 +338,14 @@ jobs:
           node --check extension/branches/strip.js
           node --check extension/branches/actions.js
           node --check tests/branches/window.js
-          node --check tests/branches/strip.js
+          node --check tests/branches/strip/core.js
           node --check tests/branches/shared-main.js
       - name: Test live-window focus, refusal, and stale session handling
         if: ${{ !cancelled() }}
         run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
         if: ${{ !cancelled() }}
-        run: node tests/branches/strip.js
+        run: node tests/branches/strip/core.js
       - name: Test real Git worktrees, session publication, and branch handoff
         if: ${{ !cancelled() }}
         run: node tests/branches/shared-main.js

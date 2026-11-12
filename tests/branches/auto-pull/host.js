@@ -20,7 +20,7 @@ const topic = { rootUri: { scheme: 'file', fsPath: '/topic' }, state: {
 } };
 main.state.onDidChange = callback => { mainChange = callback; return { dispose() { mainChange = undefined; } }; };
 topic.state.onDidChange = callback => { topicChange = callback; return { dispose() { topicChange = undefined; } }; };
-const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../../extension/branches/actions')), process,
+const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resolve('../../../extension/branches/actions')), process,
   require(name) {
     if (name === 'node:util') return { promisify(fn) { return (...args) => new Promise((resolve, reject) =>
       fn(...args, (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr }))); } };
@@ -51,16 +51,16 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
         else { main.state.HEAD.behind = 0; callback(null, '', ''); }
       }
     } };
-    if (name === '../../merge/lindsey-conflicts') return require('../../extension/merge/lindsey-conflicts');
-    if (name === './name-selection') return require('../../extension/branches/name-selection');
-    if (name.startsWith('.')) return require(path.resolve(__dirname, '../../extension/branches', name));
+    if (name === '../../merge/lindsey-conflicts') return require('../../../extension/merge/lindsey-conflicts');
+    if (name === './name-selection') return require('../../../extension/branches/name-selection');
+    if (name.startsWith('.')) return require(path.resolve(__dirname, '../../../extension/branches', name));
     return require(name);
   },
   Date: { now() { return clock; } },
   setInterval(callback, delay) { assert.equal(delay, 60000, 'Use one-minute fallback, not one-second polling'); tick = callback; return { unref() {} }; },
   clearInterval() { cleared = true; }
 };
-vm.runInNewContext(fs.readFileSync(require.resolve('../../extension/branches/actions'), 'utf8'), sandbox);
+vm.runInNewContext(fs.readFileSync(require.resolve('../../../extension/branches/actions'), 'utf8'), sandbox);
 const context = { subscriptions: [] };
 const handlers = {};
 const vscode = {

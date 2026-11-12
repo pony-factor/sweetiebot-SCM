@@ -5,8 +5,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip, pullRequestCacheKey } = require('../../extension/branches/strip');
-const { worktreeLocations } = require('../../extension/branches/worktree-registry');
+const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip, pullRequestCacheKey } = require('../../../extension/branches/strip');
+const { worktreeLocations } = require('../../../extension/branches/worktree-registry');
 
 assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');

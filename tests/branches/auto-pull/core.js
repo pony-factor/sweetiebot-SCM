@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, '../../assets/workbench/picker.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../../../assets/workbench/picker.js'), 'utf8');
 const polling = source.slice(
   source.indexOf('async function scmToolkitPullCleanRepository('),
   source.indexOf('const SCM_TOOLKIT_CODEX_COAUTHOR')

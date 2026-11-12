@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { pullRequestNames, cachedPullRequestLookup } = require('../../extension/branches/strip');
+const { pullRequestNames, cachedPullRequestLookup } = require('../../../extension/branches/strip');
 
 const pr = number => ({ number, headRefName: `topic-${number}`, isCrossRepository: false,
   url: `https://github.com/example/repo/pull/${number}`, state: 'MERGED',

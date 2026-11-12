@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 // Exercise the injected workbench function without requiring VS Code or a browser.
-const source = fs.readFileSync(require.resolve('../../assets/workbench/picker.js'), 'utf8');
+const source = fs.readFileSync(require.resolve('../../../assets/workbench/picker.js'), 'utf8');
 const start = source.indexOf('function scmToolkitCustomizeSyncLabels(');
 const end = source.indexOf('\nfunction scmToolkitCustomizeCommitButtonLabel(', start);
 assert.ok(start >= 0 && end > start, 'Sync label customization must exist');
