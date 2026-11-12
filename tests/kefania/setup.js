@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
-const { launchKefaniaSetup, probeSetup } = require('../extension/codex/kefania-setup');
+const { launchKefaniaSetup, probeSetup } = require('../../extension/codex/kefania-setup');
 
 const url = 'http://127.0.0.1:8766/';
 

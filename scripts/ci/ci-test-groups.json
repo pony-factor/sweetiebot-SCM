@@ -222,13 +222,15 @@
         "kefania/close-position.js",
         "kefania/merge-help.js",
         "kefania/paths.js",
-        "kefania/runner.js"
+        "kefania/runner.js",
+        "kefania/setup.js"
       ],
       "syntax": [
         "extension/github/app-identity.js",
         "extension/github/app-settings.js",
         "extension/codex/kefania-merge-help.js",
-        "extension/codex/kefania-runner.js"
+        "extension/codex/kefania-runner.js",
+        "extension/codex/kefania-setup.js"
       ]
     },
     "lindsey": {
