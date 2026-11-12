@@ -257,7 +257,7 @@ def main():
         page.set_content('<div id="activity">Working for 6m 20s</div><span id="clock">Working for 6m 20s</span><div data-conversation-role="user"><span id="user">Working for 9m</span></div>')
         page.evaluate('(image)=>{globalThis.scmToolkitActivityCannonEnabled=true;globalThis.scmToolkitActivityCannonImage=image}', PNG)
         page.add_script_tag(content=(ROOT / 'assets/codex/activity-cannon.js').read_text())
-        page.add_script_tag(content=(ROOT / 'assets/codex/hide-chat-timestamps.js').read_text())
+        page.add_script_tag(content=(ROOT / 'assets/codex/hide/chat-timestamps.js').read_text())
         assert page.get_attribute('#clock', 'data-scm-toolkit-activity-dots') == '•' * 6
         assert page.get_attribute('#user', 'data-scm-toolkit-activity-cannon') is None
         page.eval_on_selector('#clock', "el=>el.textContent='Worked for 6m 20s'")

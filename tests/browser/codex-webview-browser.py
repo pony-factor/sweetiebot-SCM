@@ -92,7 +92,7 @@ def run():
             "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", '"CelestAI"'
         )
         page.add_script_tag(content=title)
-        timestamp = (ASSETS / "hide-chat-timestamps.js").read_text().replace(
+        timestamp = (ASSETS / "hide/chat-timestamps.js").read_text().replace(
             '__SCM_TOOLKIT_ACTIVITY_CANNON__', 'data:image/png;base64,' + base64.b64encode(
                 (ROOT / 'assets/imgs/activity-cannon.png').read_bytes()).decode('ascii'))
         page.add_script_tag(content=timestamp)
@@ -393,8 +393,8 @@ def run():
             <section id="fast"><span>Enable Fast mode</span><button>Enable now</button></section>
             <section id="ordinary-upgrade"><button>Upgrade</button></section>
             <textarea id="composer">continue</textarea></main>""")
-        page.add_script_tag(content=(ASSETS / "hide-promotions.js").read_text())
-        page.add_script_tag(content=(ASSETS / "hide-reset-times.js").read_text())
+        page.add_script_tag(content=(ASSETS / "hide/promotions.js").read_text())
+        page.add_script_tag(content=(ASSETS / "hide/reset-times.js").read_text())
         assert page.locator('#upsell').is_visible()
         assert page.locator('#upsell [role="status"]').inner_text() == 'Rate limited'
         assert not page.locator('#upsell button').first.is_visible()
@@ -505,7 +505,7 @@ def run():
             <div><button>Upgrade</button><button>Add Credits</button></div></aside>
           <textarea>Retained draft</textarea>
         </section></main>""")
-        sticker_page.add_script_tag(content=(ASSETS / 'hide-reset-times.js').read_text())
+        sticker_page.add_script_tag(content=(ASSETS / 'hide/reset-times.js').read_text())
         sticker_page.add_script_tag(content=rate_script)
         sticker_page.wait_for_selector('#native-card img', state='attached')
         sticker_page.wait_for_function('''() => {
@@ -555,7 +555,7 @@ def run():
         }""", warning)
         hidden_page.add_script_tag(content=rate_script.replace('const scmToolkitRateLimitStickerEnabled = true;', 'const scmToolkitRateLimitStickerEnabled = false;'))
         assert hidden_page.locator('#limit-notice').inner_text() == warning
-        hidden_page.add_script_tag(content=(ASSETS / 'hide-reset-times.js').read_text())
+        hidden_page.add_script_tag(content=(ASSETS / 'hide/reset-times.js').read_text())
         hidden_page.wait_for_function('document.getElementById("limit-notice").textContent === "Rate limited"')
         for _ in range(5):
             rendered = hidden_page.evaluate("""text => new Promise(resolve => {

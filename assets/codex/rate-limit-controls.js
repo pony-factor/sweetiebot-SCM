@@ -426,7 +426,7 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
         else if (notice.style) notice.style.display = 'none';
     }
 }
-// Codex's native banner can be compacted by hide-reset-times.js into a
+// Codex's native banner can be compacted by hide/reset-times.js into a
 // [data-scm-toolkit-rate-limited] span while keeping the full outer <aside>.
 // In that layout the generic "rich" notice branch would add a companion pony
 // inside the original green card. Replace that presentation only for the

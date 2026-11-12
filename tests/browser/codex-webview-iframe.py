@@ -58,7 +58,7 @@ def run():
             "__SCM_TOOLKIT_CODEX_WINDOW_LABEL__", '"CelestAI"'
         )
         frame.add_script_tag(content=title)
-        frame.add_script_tag(content=(ASSETS / "hide-chat-timestamps.js").read_text())
+        frame.add_script_tag(content=(ASSETS / "hide/chat-timestamps.js").read_text())
         frame.wait_for_function("getComputedStyle(document.getElementById('clock')).display === 'none'")
         assert frame.locator("#title").text_content() == "CelestAINew Chat"
         assert frame.locator("#summary").text_content() == "Ran commands"

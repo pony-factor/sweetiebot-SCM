@@ -106,7 +106,7 @@ const context = vm.createContext({
     },
 });
 vm.runInContext(
-    fs.readFileSync(path.join(__dirname, '../../assets/codex/hide-chat-timestamps.js'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '../../assets/codex/hide/chat-timestamps.js'), 'utf8'),
     context,
 );
 
@@ -160,7 +160,7 @@ assert.equal(splitTimestamp.getAttribute('aria-hidden'), 'true');
 
 // Multiple Codex bundles must not install competing observers.
 vm.runInContext(
-    fs.readFileSync(path.join(__dirname, '../../assets/codex/hide-chat-timestamps.js'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '../../assets/codex/hide/chat-timestamps.js'), 'utf8'),
     context,
 );
 assert.equal(observerCount, 1);
