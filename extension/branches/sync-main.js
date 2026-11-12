@@ -57,8 +57,8 @@ async function refreshMain(repository, { defaultBranch, remote, checkBranch }) {
   return local;
 }
 
-// Use the same verified App for Git authorship and authenticated publication.
-// Command-scoped identity preserves the user's config and signing behavior.
+// Use the verified Lindsey App for authenticated publication and the separate
+// Lindsey Pony identity for Git commits. Preserve local signing and user config.
 async function syncPublisher(root, remote, { enabled = separateAppsEnabled, transport = createLindseyTransport,
   run = exec, identity = syncIdentity } = {}) {
   if (!enabled()) return null;

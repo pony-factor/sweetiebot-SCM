@@ -43,7 +43,8 @@ function fixture({ checksFail = false, baseMoves = false, appMode = false } = {}
   const app = fixture({appMode:true});
   assert((await squashMergePullRequest(input,()=>assert.fail('Never use the personal API'),{
     method:'merge',getAppActor:async()=>({request:app.request,gitToken:async()=> 'fixture-app-token',
-      author:{name:'lindsey-fixture[bot]',email:'123+lindsey-fixture[bot]@users.noreply.github.com'}})
+      login:'lindsey-fixture[bot]',
+      author:{name:'Lindsey Pony',email:'346700433+sync@users.noreply.github.com'}})
   })).merged);
   assert.equal(app.writes(),1);
   let personalReads=0;
