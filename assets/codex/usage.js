@@ -232,7 +232,9 @@ function scmToolkitKeepUsageFresh(refetch) {
             if (exhausted) {
                 this.style.background = 'transparent';
                 this.setAttribute('role', 'img');
-                this.setAttribute('aria-label', 'Rate limited — 0% Codex usage remaining');
+                this.setAttribute('aria-label', this.getAttribute('kind') === 'weekly'
+                    ? 'Rate limited — 0% weekly Codex usage remaining'
+                    : 'Rate limited — 0% Codex usage remaining');
                 this.setAttribute('title', 'Rate limited');
                 return;
             }
@@ -294,13 +296,20 @@ function scmToolkitKeepUsageFresh(refetch) {
         attributeChangedCallback() { this.update(); }
         update() {
             const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
-            this.pie?.setAttribute('percent', percent == null ? 'unavailable' : percent);
-            // The exhausted allowance remains a hollow usage pie with a centered
-            // exclamation mark, instead of replacing the pie with a text label.
-            if (this.pie) this.pie.style.display = percent === 0 ? 'inline-grid' : 'inline-block';
-            if (!this.bar) return;
             const weekly = this.hasAttribute('weekly-percent');
-            const barPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : percent;
+            const weeklyPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : null;
+            // Either exhausted allowance blocks Codex, even if the five-hour
+            // window has reset and its own remaining percentage is still 100%.
+            const exhaustedWeekly = weeklyPercent === 0;
+            const piePercent = exhaustedWeekly ? 0 : percent;
+            if (this.pie) {
+                this.pie.setAttribute('kind', exhaustedWeekly ? 'weekly' : 'usage');
+                this.pie.setAttribute('percent', piePercent == null ? 'unavailable' : piePercent);
+                // Preserve the hollow exclamation indicator for either limit.
+                this.pie.style.display = piePercent === 0 ? 'inline-grid' : 'inline-block';
+            }
+            if (!this.bar) return;
+            const barPercent = weekly ? weeklyPercent : percent;
             this.bar.setAttribute('aria-label', weekly ? 'Weekly Codex usage remaining' : 'Five-hour Codex usage remaining');
             this.bar.hidden = barPercent == null;
             if (barPercent == null) {
@@ -403,7 +412,8 @@ function scmToolkitKeepUsageFresh(refetch) {
     const refresh = () => {
         if (localOnly) for (const button of document.querySelectorAll('button[data-composer-navigation-target="run-location"]')) {
             if (!button.disabled) button.disabled = true;
-            const exhausted = button.querySelector('scm-toolkit-usage-meter[percent="0"]');
+            const exhausted = button.querySelector(
+                'scm-toolkit-usage-meter[percent="0"], scm-toolkit-usage-meter[weekly-percent="0"]');
             const label = exhausted ? 'Rate limited' : 'Five-hour Codex usage remaining';
             if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
         }
