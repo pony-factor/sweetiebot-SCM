@@ -2,7 +2,11 @@
 
 const { separateAppsEnabled, workflowBotLogin } = require('./app-identity');
 
-// Verify the configured App's public bot account instead of guessing its ID.
+// Keep the verified GitHub App login separate from the requested Git commit
+// identity. A commit identity change cannot rename the authenticated App actor.
+const LINDSEY_COMMIT_IDENTITY = Object.freeze({
+  name: 'Lindsey Pony', email: '346700433+sync@users.noreply.github.com'
+});
 async function appCommitIdentity({ login = workflowBotLogin('lindsey'), token,
   fetchImpl = globalThis.fetch } = {}) {
   let account, failure = 'GitHub returned an invalid bot account';
@@ -21,7 +25,7 @@ async function appCommitIdentity({ login = workflowBotLogin('lindsey'), token,
       || account.type !== 'Bot' || !Number.isSafeInteger(account.id) || account.id <= 0) {
     throw Error('Could not verify the configured Lindsey bot identity. ' + failure + '. No automation commit was created.');
   }
-  return { name: account.login, email: `${account.id}+${account.login}@users.noreply.github.com` };
+  return { ...LINDSEY_COMMIT_IDENTITY, login: account.login };
 }
 
 async function configuredMergeActor(repository, { enabled = separateAppsEnabled,
@@ -30,7 +34,9 @@ async function configuredMergeActor(repository, { enabled = separateAppsEnabled,
   if (!enabled()) return null;
   const actor = transport(repository);
   const token = await actor.gitToken(); // Verify App access before any commit or publication.
-  return { ...actor, author: await identity({ token }) };
+  const { login, name, email } = await identity({ token });
+  if (!login || !/\[bot\]$/i.test(login)) throw Error('Could not verify the Lindsey App login.');
+  return { ...actor, login, author: { name, email } };
 }
 
 // Both roles are explicit: inherited author configuration must not attribute

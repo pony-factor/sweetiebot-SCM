@@ -124,7 +124,12 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     onProgress({ stage: 'reading-history' });
     const info = await request('repos/' + repository);
     if (info.allow_merge_commit !== true) throw new Error('This repository does not allow merge commits.');
-    const actor = appActor ? { type: 'Bot', login: appActor.author.name } : await request('user');
+    // GitHub attributes the merge action to the App login, which is distinct
+    // from the Lindsey Pony name/email on commits created by Sweetiebot.
+    const actor = appActor ? { type: 'Bot', login: appActor.login } : await request('user');
+    if (appActor && (!actor.login || !/\[bot\]$/i.test(actor.login))) {
+      throw new Error('Could not verify the Lindsey App login for merge attribution.');
+    }
     if (!appActor && (actor.type !== 'User' || /\[bot\]$/i.test(actor.login || ''))) throw new Error('A signed-in human account is required for this merge.');
     const commits = await readCommits(async ([url]) => request(url), repository, result.number);
     const human = verifiedHumanAuthor(commits);

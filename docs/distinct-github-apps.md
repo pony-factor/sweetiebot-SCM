@@ -140,6 +140,15 @@ installation token. Its current safety restrictions (including linked/native
 stacks and ambiguous attribution) still apply; authentication does not relax
 merge policy.
 
+## Git commit attribution
+
+In **Separate Kefania and Lindsey Apps** mode, Git commits created by Lindsey
+(e.g., automated branch-sync and conflict-resolution commits) use
+`Lindsey Pony <346700433+sync@users.noreply.github.com>` as the selected Git
+identity. This does not change the actual authenticated `lindsey-pony[bot]`
+App actor, rename its GitHub account, or replace a verified original human
+Git author on human-authored merges. Existing commits are not rewritten.
+
 ## What this does not change
 
 - **ChatGPT-based bulk merging** remains a separate user-authenticated workflow:
