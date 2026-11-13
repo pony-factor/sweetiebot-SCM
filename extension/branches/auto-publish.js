@@ -1,6 +1,7 @@
 'use strict';
 
 const { deferExperimentPublish } = require('./experiment-policy');
+const { isPullRequestReviewBranch } = require('./publish-policy');
 
 // Git events survive SCM widget replacement and opening a branch in a new window.
 async function registerAutoPublish(vscode, context) {
@@ -21,7 +22,9 @@ async function registerAutoPublish(vscode, context) {
       const branch = head?.name;
       // An unborn branch has nothing to publish. Local-only repositories also
       // have no default remote branch to resolve; wait for Git state to change.
-      if (!branch || !head.commit) return;
+      // GitHub PR review checkouts (pr/<contributor>/<number>) are local snapshots,
+      // not new work branches. Never publish them simply because they became active.
+      if (!branch || !head.commit || isPullRequestReviewBranch(branch)) return;
       const remote = await require('../commits/codex-commit').readCommitGitSetting(root.fsPath, 'scm-toolkit.remote', 'origin');
       if (!repository.state.remotes?.some(item => item.name === remote)) return;
       if ((repository.state.HEAD.upstream?.remote === remote
