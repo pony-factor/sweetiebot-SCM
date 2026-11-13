@@ -312,6 +312,18 @@ async function run() {
   }
   {
     const { repository, calls } = fixture();
+    repository.state.HEAD.name = 'pr/bobmahalo/12';
+    assert.equal(await publishBranch(repository, {
+      branch: 'pr/bobmahalo/12', remote: 'origin', automatic: true
+    }), false, 'Fork PR review checkouts never auto-publish');
+    assert(!calls.some(call => call[0] === 'push'));
+    assert.equal(await publishBranch(repository, {
+      branch: 'pr/bobmahalo/12', remote: 'origin'
+    }), true, 'An explicit manual publish remains available');
+    assert.deepEqual(calls.at(-1), ['push', 'origin', 'pr/bobmahalo/12', true]);
+  }
+  {
+    const { repository, calls } = fixture();
     repository.state.HEAD.upstream = { remote: 'origin', name: 'main' };
     assert.equal(await publishBranch(repository, { branch: 'topic', remote: 'origin' }), true,
       'A manually created branch must replace an inherited upstream');
@@ -519,6 +531,12 @@ async function run() {
     assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
     assert.equal(await commands.get('sweetiebot.createBranch')({ ...uri }, options), 'fresh');
     assert.equal(await commands.get('sweetiebot.createBranch')({ rootUri: uri }, options), 'fresh');
+    repository.state.HEAD = { name: 'pr/bobmahalo/12' };
+    const beforeReview = calls.length;
+    assert.equal(await commands.get('sweetiebot.publishBranch')({ rootUri: uri }, {
+      branch: 'pr/bobmahalo/12', remote: 'origin', automatic: true
+    }), false, 'Automatic command cannot publish a fork PR checkout');
+    assert.equal(calls.length, beforeReview, 'Rejected review publication performs no Git operation');
     repository.state.HEAD = { name: 'topic' };
     assert.equal(await commands.get('sweetiebot.publishBranch')({ rootUri: uri }, {
       branch: 'topic', remote: 'origin'

@@ -17,6 +17,7 @@ const { recoveryPlan } = require('../commits/finalized-commit-recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
 const { routeBranch, routeExistingBranchWorktree, recordDeletedBranchReturn } = require('./shared-main');
 const { createStackedBranch } = require('./stacked-branch');
+const { isPullRequestReviewBranch } = require('./publish-policy');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -772,8 +773,9 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
   return branch;
 }
 
-async function publishBranch(repository, { branch, remote }) {
+async function publishBranch(repository, { branch, remote, automatic = false }) {
   if (!branch) throw new Error('No branch was supplied for publishing.');
+  if (automatic && isPullRequestReviewBranch(branch)) return false;
   await repository.status();
   const head = repository.state.HEAD;
   if (head?.name !== branch) {
@@ -1456,6 +1458,8 @@ function registerBranchCommands(vscode, context) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
       try {
         const repository = await resolveRepository(uri);
+        if (command === 'sweetiebot.publishBranch' && options.automatic === true
+            && isPullRequestReviewBranch(options.branch)) return false;
         if (command === 'sweetiebot.publishBranch' && options.automatic === true
             && await require('./experiment-policy').deferExperimentPublish(repository.rootUri?.fsPath)) return false;
         const commitDraftValue = repository.inputBox?.value;
