@@ -165,7 +165,39 @@ assert.equal(meter.pie.style.display, 'inline-block');
 assert.equal(meter.limitLabel, undefined);
 meter.pie.update();
 assert.equal(meter.pie.textContent, '');
+// The weekly limit takes precedence even when the five-hour allowance is full.
+meter.setAttribute('percent', 100);
+meter.setAttribute('weekly-percent', 0);
+meter.update();
+meter.pie.update();
+assert.equal(meter.pie.getAttribute('percent'), '0');
+assert.equal(meter.pie.getAttribute('kind'), 'weekly');
+assert.equal(meter.pie.style.display, 'inline-grid');
+assert.equal(meter.pie.textContent, '!');
+assert.equal(meter.pie.getAttribute('aria-label'), 'Rate limited — 0% weekly Codex usage remaining');
+// Renewing the weekly allowance restores the five-hour percentage and green pie.
+meter.setAttribute('weekly-percent', 50);
+meter.update();
+meter.pie.update();
+assert.equal(meter.pie.getAttribute('percent'), '100');
+assert.equal(meter.pie.style.display, 'inline-block');
+assert.equal(meter.pie.textContent, '');
+assert.equal(meter.pie.getAttribute('aria-label'), '100% Codex usage remaining');
+// When the five-hour limit is exhausted instead, the usual warning remains.
+meter.setAttribute('percent', 0);
+meter.update();
+meter.pie.update();
+assert.equal(meter.pie.textContent, '!');
+assert.equal(meter.pie.getAttribute('aria-label'), 'Rate limited — 0% Codex usage remaining');
+// A known empty weekly allowance still warns if five-hour data is unavailable.
+meter.setAttribute('percent', 'unavailable');
+meter.setAttribute('weekly-percent', 0);
+meter.update();
+meter.pie.update();
+assert.equal(meter.pie.getAttribute('percent'), '0');
+assert.equal(meter.pie.textContent, '!');
 const usageSource = fs.readFileSync(path.join(__dirname, '../../assets/codex/usage.js'), 'utf8');
+assert.match(usageSource, /scm-toolkit-usage-meter\\[weekly-percent="0"\\]/);
 assert.doesNotMatch(usageSource, /scm-toolkit-usage-add-button|scm-toolkit-usage-replaced|attachToAddButton/);
 assert.doesNotMatch(usageSource, /button\[aria-label="Add files and more"\]/);
 const MenuReset = components.get('scm-toolkit-menu-reset');
