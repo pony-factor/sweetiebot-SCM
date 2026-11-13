@@ -197,7 +197,7 @@ meter.pie.update();
 assert.equal(meter.pie.getAttribute('percent'), '0');
 assert.equal(meter.pie.textContent, '!');
 const usageSource = fs.readFileSync(path.join(__dirname, '../../assets/codex/usage.js'), 'utf8');
-assert.match(usageSource, /scm-toolkit-usage-meter\\[weekly-percent="0"\\]/);
+assert.ok(usageSource.includes('scm-toolkit-usage-meter[weekly-percent="0"]'));
 assert.doesNotMatch(usageSource, /scm-toolkit-usage-add-button|scm-toolkit-usage-replaced|attachToAddButton/);
 assert.doesNotMatch(usageSource, /button\[aria-label="Add files and more"\]/);
 const MenuReset = components.get('scm-toolkit-menu-reset');
