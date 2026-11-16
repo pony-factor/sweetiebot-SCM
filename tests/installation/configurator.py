@@ -66,6 +66,19 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn("'/kefania-setup/open' + location.search", page)
         self.assertIn('GitHub account and Kefania setup', page)
 
+    def test_kefania_setup_launcher_uses_installed_companion_layout(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            launcher = directory / "codex" / "kefania-setup.js"
+            launcher.parent.mkdir()
+            launcher.touch()
+            with patch.object(configurator, "__file__", str(directory / "configurator.py")), \
+                 patch.object(configurator.shutil, "which", return_value="/usr/local/bin/node"), \
+                 patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(
+                     returncode=0, stdout=json.dumps({"url": "http://127.0.0.1:8766/"}), stderr="")) as run:
+                configurator._open_kefania_setup()
+                self.assertEqual(Path(run.call_args.args[0][1]).resolve(), launcher.resolve())
+
     def test_kefania_setup_launcher_accepts_only_local_service_urls(self):
         def launch(url):
             return SimpleNamespace(returncode=0, stdout=json.dumps({"url": url, "reused": True}), stderr="")

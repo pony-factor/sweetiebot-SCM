@@ -986,7 +986,14 @@ def _local_setup_controls() -> str:
 
 def _open_kefania_setup() -> dict[str, object]:
     """Start or reuse the local Kefania setup UI from authenticated Sweetiebot Settings."""
-    launcher = Path(__file__).resolve().parent.parent / "extension" / "codex" / "kefania-setup.js"
+    directory = Path(__file__).resolve().parent
+    # The installed companion keeps codex beside configurator.py; the source
+    # checkout keeps it under extension/ beside scripts/.
+    launchers = [directory / "codex" / "kefania-setup.js",
+                 directory.parent / "extension" / "codex" / "kefania-setup.js"]
+    launcher = next((candidate for candidate in launchers if candidate.is_file()), None)
+    if launcher is None:
+        raise RuntimeError("Kefania setup launcher is missing. Rebuild Sweetiebot, then retry.")
     node = (shutil.which("node") or next(
         (path for path in ("/opt/homebrew/bin/node", "/usr/local/bin/node")
          if Path(path).is_file()), None
