@@ -1534,7 +1534,15 @@ function registerBranchCommands(vscode, context) {
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
               reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
-              resolveConflicts: repo => generatePreview(vscode, repo, { sync: true })
+              resolveConflicts: async repo => {
+                try { return await generatePreview(vscode, repo, { sync: true }); }
+                catch (error) {
+                  // Do not replace a failed Lindsey launch with the generic
+                  // conflict picker: that hides the reason Sync stopped.
+                  error.lindseySyncFailed = true;
+                  throw error;
+                }
+              }
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: detachedTip => confirmUnverifiedLocalDeletion(vscode, repository, {
@@ -1553,6 +1561,7 @@ function registerBranchCommands(vscode, context) {
         try {
           return await queueRepositoryOperation(repository, attempt);
         } catch (error) {
+          if (error.lindseySyncFailed) throw error;
           // Conflicts differ from a dirty checkout and must never be stashed.
           await repository.status();
           if (isConflictState(repository)) {

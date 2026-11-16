@@ -14,14 +14,17 @@ const git = async (cwd, args) => (await exec('git', args, {
   cwd, timeout: 15000, maxBuffer: 1024 * 1024
 })).stdout.trim();
 
-function lindseyScript(repoRoot, folders = [], configured = process.env.LINDSEY_SYNC_REPO) {
+function lindseyScript(repoRoot, folders = [], configured = process.env.LINDSEY_SYNC_REPO,
+  home = os.homedir()) {
   const candidates = [configured, path.join(path.dirname(repoRoot), 'lindsey-sync'),
-    ...folders.map(folder => folder?.uri?.fsPath || folder?.fsPath || '')].filter(Boolean);
+    ...folders.map(folder => folder?.uri?.fsPath || folder?.fsPath || ''),
+    path.join(home, 'GitHub', 'pony-factor', 'lindsey-sync'),
+    path.join(home, 'GitHub', 'lindsey-sync')].filter(Boolean);
   for (const directory of candidates) {
     const script = path.resolve(directory, 'scripts', 'resolve-conflicts.js');
     if (existsSync(script)) return script;
   }
-  throw new Error('Lindsey Sync is not available locally. Open the lindsey-sync repository in this VS Code workspace, put it beside this repository, or set LINDSEY_SYNC_REPO.');
+  throw new Error('Lindsey Sync is not available locally. Open the lindsey-sync repository in this VS Code workspace, keep it under ~/GitHub/pony-factor or ~/GitHub, put it beside this repository, or set LINDSEY_SYNC_REPO.');
 }
 
 function isConflictState(repository) {
@@ -113,7 +116,7 @@ async function generatePreview(vscode, repository, { sync = false, run = exec, f
     const { stdout } = await run(process.execPath,
       [script, '--repo', root, '--output', temporary], {
         cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', GIT_TERMINAL_PROMPT: '0' }
       });
     const manifest = JSON.parse(stdout);
     const files = await inspectPreview(repository, temporary, manifest);
