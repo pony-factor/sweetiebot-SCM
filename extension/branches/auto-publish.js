@@ -17,7 +17,7 @@ async function registerAutoPublish(vscode, context) {
       if (disposed || closed || busy) return;
       const root = repository.rootUri;
       const config = vscode.workspace.getConfiguration('sweetiebot', root);
-      if (!config.get('autoPublishNewBranches', false)) return;
+      const pushAfterCommit = vscode.workspace.getConfiguration('git', root).get('postCommitCommand') === 'push';
       const head = repository.state.HEAD;
       const branch = head?.name;
       // An unborn branch has nothing to publish. Local-only repositories also
@@ -27,8 +27,9 @@ async function registerAutoPublish(vscode, context) {
       if (!branch || !head.commit || isPullRequestReviewBranch(branch)) return;
       const remote = await require('../commits/codex-commit').readCommitGitSetting(root.fsPath, 'scm-toolkit.remote', 'origin');
       if (!repository.state.remotes?.some(item => item.name === remote)) return;
-      if ((repository.state.HEAD.upstream?.remote === remote
-          && repository.state.HEAD.upstream.name === branch)) return;
+      const tracked = head.upstream?.remote === remote && head.upstream.name === branch;
+      if (tracked ? !pushAfterCommit || !(head.ahead > 0) || head.behind !== 0
+        : !config.get('autoPublishNewBranches', false)) return;
       if (lastBranch === branch && Date.now() - lastAttempt < 15000) return;
       busy = true;
       try {
@@ -38,8 +39,8 @@ async function registerAutoPublish(vscode, context) {
         if (branch === await resolveDefaultBranch(repository, remote)) return;
         // A merged PR head is retired even if its remote tracking ref was pruned.
         // Preserve manual push warnings, but never show them from this watcher.
-        const published = await vscode.commands.executeCommand('sweetiebot.publishBranch', root, {
-          branch, remote, silentMerged: true, automatic: true
+        const published = await vscode.commands.executeCommand(tracked ? 'sweetiebot.pushCommittedBranch' : 'sweetiebot.publishBranch', root, {
+          branch, remote, expectedHead: head.commit, silentMerged: true, automatic: true
         });
         reported = undefined;
         if (!published && !disposed && !closed) {
@@ -68,7 +69,7 @@ async function registerAutoPublish(vscode, context) {
   } }, api.onDidOpenRepository(attach), api.onDidCloseRepository(repository => {
     watchers.get(repository)?.dispose(); watchers.delete(repository);
   }), vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('sweetiebot.autoPublishNewBranches')) {
+    if (event.affectsConfiguration('sweetiebot.autoPublishNewBranches') || event.affectsConfiguration('git.postCommitCommand')) {
       for (const repository of api.repositories) {
         watchers.get(repository)?.dispose(); watchers.delete(repository); attach(repository);
       }

@@ -786,6 +786,20 @@ async function publishBranch(repository, { branch, remote, automatic = false }) 
   return true;
 }
 
+async function pushCommittedBranch(repository, { branch, remote, defaultBranch, expectedHead }) {
+  await repository.status();
+  const head = repository.state.HEAD;
+  if (!branch || branch === defaultBranch || isPullRequestReviewBranch(branch)
+      || head?.name !== branch || head.commit !== expectedHead
+      || head.upstream?.remote !== remote || head.upstream?.name !== branch
+      || !(head.ahead > 0) || head.behind !== 0 || commitInProgress(repository)
+      || ['mergeChanges', 'indexChanges', 'workingTreeChanges', 'untrackedChanges']
+        .some(key => repository.state[key]?.length)
+      || await asyncCommitPending(repository, { refs: [branch] })) return false;
+  await repository.push(remote, `${branch}:${branch}`);
+  return true;
+}
+
 // A shared default workspace owns its branch. Release the topic with a
 // detached checkout instead of fetching into or checking out that occupied ref.
 async function deletionHome(repository, defaultBranch, targetRef) {
@@ -1444,7 +1458,7 @@ function registerBranchCommands(vscode, context) {
 
   const needsDefaultBranch = new Set([
     'sweetiebot.returnHome', 'sweetiebot.createBranch', 'sweetiebot.createStackedBranch',
-    'sweetiebot.deleteBranch', 'sweetiebot.syncBranch'
+    'sweetiebot.deleteBranch', 'sweetiebot.syncBranch', 'sweetiebot.pushCommittedBranch'
   ]);
   for (const [command, action] of [
     ['sweetiebot.returnHome', returnHome],
@@ -1452,15 +1466,19 @@ function registerBranchCommands(vscode, context) {
     ['sweetiebot.createBranch', createBranch],
     ['sweetiebot.createStackedBranch', (repository, options) => createStackedBranch(vscode, repository, options)],
     ['sweetiebot.publishBranch', publishBranch],
+    ['sweetiebot.pushCommittedBranch', async (repository, options) => {
+      if (vscode.workspace.getConfiguration('git', repository.rootUri).get('postCommitCommand') !== 'push') return false;
+      return pushCommittedBranch(repository, options);
+    }],
     ['sweetiebot.deleteBranch', deleteBranch],
     ['sweetiebot.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
       try {
         const repository = await resolveRepository(uri);
-        if (command === 'sweetiebot.publishBranch' && options.automatic === true
+        if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
             && isPullRequestReviewBranch(options.branch)) return false;
-        if (command === 'sweetiebot.publishBranch' && options.automatic === true
+        if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
             && await require('./experiment-policy').deferExperimentPublish(repository.rootUri?.fsPath)) return false;
         const commitDraftValue = repository.inputBox?.value;
         if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
@@ -1474,8 +1492,8 @@ function registerBranchCommands(vscode, context) {
           if (command === 'sweetiebot.syncBranch') refs.push(`refs/remotes/${remote}/${defaultBranch}`);
           // Switching to an unpublished branch can trigger automatic publishing.
           // Let a later status refresh retry after the background queue drains.
-          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository, { refs })) return false;
-          if (command === 'sweetiebot.publishBranch') {
+          if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && await asyncCommitPending(repository, { refs })) return false;
+          if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command)) {
             const merged = await mergedBranchStatus(repository, options.remote, options.branch);
             if (merged) return warnMergedBranch(vscode, repository, merged, {
               silent: options.silentMerged === true
@@ -1761,6 +1779,7 @@ module.exports = {
   returnHome,
   createBranch,
   publishBranch,
+  pushCommittedBranch,
   deleteBranch,
   deleteEmptyBranch,
   remoteBranchTip,
