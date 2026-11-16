@@ -33,6 +33,29 @@ function fixture(onMain = false) {
 
 async function run() {
   {
+    const { pushCommittedBranch } = require('../../extension/branches/actions');
+    const { repository, calls } = fixture();
+    repository.state.HEAD = { name: 'topic', commit: 'verified', ahead: 2, behind: 0,
+      upstream: { remote: 'origin', name: 'topic' } };
+    const selected = { branch: 'topic', remote: 'origin', defaultBranch: 'main', expectedHead: 'verified' };
+    assert.equal(await pushCommittedBranch(repository, selected), true);
+    assert.deepEqual(calls.filter(call => call[0] === 'push'), [['push', 'origin', 'topic:topic']]);
+    calls.length = 0;
+    for (const changes of [{ commit: 'changed' }, { behind: 1 }, { name: 'other' }, { ahead: 0 }]) {
+      const before = repository.state.HEAD;
+      repository.state.HEAD = { ...before, ...changes };
+      assert.equal(await pushCommittedBranch(repository, selected), false);
+      repository.state.HEAD = before;
+    }
+    repository.state.indexChanges = [{}];
+    assert.equal(await pushCommittedBranch(repository, selected), false);
+    repository.state.indexChanges = [];
+    const active = beginRepositoryCommit(repository);
+    assert.equal(await pushCommittedBranch(repository, selected), false);
+    endRepositoryCommit(repository, active);
+    assert(!calls.some(call => ['push', 'merge', 'fetch', 'create'].includes(call[0])));
+  }
+  {
     const { repository } = fixture(true);
     const main = beginRepositoryCommit(repository);
     assert.equal(commitInProgress(repository), true);

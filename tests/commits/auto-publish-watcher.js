@@ -23,14 +23,14 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
   const {resolveDefaultBranch} = require('../../extension/branches/actions');
   const module = require('../../extension/branches/actions');
   module.resolveDefaultBranch = async () => 'main';
-  let change, open, enabled=true;
+  let change, open, enabled=true, pushAfterCommit=false;
   const calls=[];
   const repository={rootUri:{fsPath:'/repo'},state:{HEAD:{name:'manual',commit:'a'.repeat(40)},remotes:[{name:'origin'}],onDidChange(fn){change=fn;return{dispose(){}};}}};
   const api={repositories:[repository],onDidOpenRepository(fn){open=fn;return{dispose(){}};},onDidCloseRepository(){return{dispose(){}};}};
   const context={subscriptions:[]};
   const vscode={extensions:{getExtension(){return{activate:async()=>({getAPI:()=>api})};}},
-    workspace:{getConfiguration:()=>({get:(key,fallback)=>key==='autoPublishNewBranches'?enabled:fallback}),onDidChangeConfiguration(){return{dispose(){}};}},
-    commands:{executeCommand:async(...args)=>{calls.push(args);repository.state.HEAD.upstream={remote:'origin',name:repository.state.HEAD.name};return true;}},
+    workspace:{getConfiguration:()=>({get:(key,fallback)=>key==='autoPublishNewBranches'?enabled:key==='postCommitCommand'&&pushAfterCommit?'push':fallback}),onDidChangeConfiguration(){return{dispose(){}};}},
+    commands:{executeCommand:async(...args)=>{calls.push(args);repository.state.HEAD.upstream={remote:'origin',name:repository.state.HEAD.name};repository.state.HEAD.ahead=0;return true;}},
     window:{showWarningMessage:assert.fail}};
   try {
     await registerAutoPublish(vscode,context); await tick();
@@ -71,6 +71,18 @@ const tick = () => new Promise(resolve => setTimeout(resolve,650));
     repository.state.HEAD = { name: 'trial-87654321', commit: 'a'.repeat(40) };
     change();await tick();assert.equal(calls.length,5,'A normal workspace is not excluded merely by its branch name');
     enabled=false;repository.state.HEAD={name:'local',commit:'a'.repeat(40)};change();await tick();assert.equal(calls.length,5);
+    pushAfterCommit=true;
+    repository.rootUri={fsPath:'/repo'};
+    repository.state.HEAD={name:'tracked-topic',commit:'b'.repeat(40),ahead:2,behind:0,upstream:{remote:'origin',name:'tracked-topic'}};
+    change();await tick();assert.equal(calls.length,6,'The checked push preference sends finalized commits on an existing branch');
+    assert.equal(calls.at(-1)[0],'sweetiebot.pushCommittedBranch');
+    assert.equal(calls.at(-1)[2].expectedHead,'b'.repeat(40));
+    change();await tick();assert.equal(calls.length,6,'A completed push is not repeated');
+    repository.state.HEAD={name:'diverged-topic',commit:'b'.repeat(40),ahead:1,behind:1,upstream:{remote:'origin',name:'diverged-topic'}};
+    change();await tick();assert.equal(calls.length,6,'Automatic sending does not merge diverged branches');
+    pushAfterCommit=false;
+    repository.state.HEAD={name:'push-disabled',commit:'b'.repeat(40),ahead:1,behind:0,upstream:{remote:'origin',name:'push-disabled'}};
+    change();await tick();assert.equal(calls.length,6,'Unchecking push keeps existing-branch commits local');
     console.log('Repository automatic publishing watcher checks passed.');
   } finally {context.subscriptions.forEach(item=>item.dispose()); module.resolveDefaultBranch=resolveDefaultBranch;await fs.rm(trial,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
