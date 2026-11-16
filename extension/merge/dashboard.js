@@ -650,6 +650,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     } finally {
       working = false;
       publish();
+      if (latestBatchState) queueAutomaticRepair(latestBatchState);
     }
     })().finally(() => { activeRefresh = null; });
     return activeRefresh;
@@ -672,6 +673,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       if (autoRepairAttempts.has(key)) continue;
       autoRepairAttempts.add(key);
       launchingActions.add(pr.number);
+      let openedSuccessfully = false;
       publish();
       void (async () => {
         const fresh = await githubGet(readFetch, token, selection.repository, '/pulls/' + pr.number);
@@ -687,10 +689,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         // Bind the repair to the branch endpoint, just like the Git executor.
         const baseTip=await githubGet(readFetch,token,selection.repository,
           '/branches/'+encodeURIComponent(candidate.base));
-        if(disposed || baseTip.commit?.sha!==candidate.baseSha){
+        if(disposed || !SHA.test(baseTip.commit?.sha || '')) return;
+        if(baseTip.commit.sha!==candidate.baseSha && !conflict){
           addEvent(pr,'updated','Automatic '+kind+' repair skipped · current base branch advanced');
           return;
         }
+        // Conflict repair has not produced a patch yet. Review the same verified
+        // PR head against today's base instead of stranding it after a batch merge.
+        const repairCandidate = conflict ? {...candidate, baseSha:baseTip.commit.sha} : candidate;
         const checkApi = endpoint => {
           const prefix = 'repos/' + selection.repository;
           if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');
@@ -707,8 +713,8 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           return;
         }
         const notes = await readReports(readFetch, token, selection.repository, pr.number, 3,
-          { headSha: candidate.headSha, baseSha: candidate.baseSha });
-        const snapshot = { ...pr, ...candidate, ...notes, state: conflict ? 'conflict' : 'blocked',
+          { headSha: repairCandidate.headSha, baseSha: repairCandidate.baseSha });
+        const snapshot = { ...pr, ...repairCandidate, ...notes, state: conflict ? 'conflict' : 'blocked',
           currentHead: candidate.headSha, mergeableState: fresh.mergeable_state };
         if (notes.review || blockerOptions(snapshot).length >= 2) {
           addEvent(pr, 'blocked', 'Automatic ' + kind + ' repair skipped · a human implementation choice is pending');
@@ -723,6 +729,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         if (!option) return;
         const opened = await launchAction(vscode, context, rootUri, selection.repository, snapshot,
           {...option,automatic:true},method);
+        openedSuccessfully = opened !== false;
         addEvent(pr, opened === false ? 'updated' : 'action',
           opened === false ? 'Automatic ' + kind + ' repair was not opened'
             : 'Automatic ' + kind + ' repair opened with ' + (method === 'codex' ? 'Codex' : 'ChatGPT') +
@@ -732,6 +739,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         if (!disposed) addEvent(pr, 'error', 'Automatic ' + kind + ' repair could not start',
           String(failure.message || failure).slice(0, 1000));
       }).finally(() => {
+        // Failed validation or a canceled/failed launch did not start a repair.
+        // A later status refresh must be able to try again.
+        if (!openedSuccessfully) autoRepairAttempts.delete(key);
         launchingActions.delete(pr.number);
         publish();
       });
