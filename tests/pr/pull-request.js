@@ -225,12 +225,15 @@ async function run() {
     desktop: 'codex://threads/' + codexSource.uuid });
   const decorated = appendSourceDetails('Actual change.', { ...codexSource, sharedUrl: share });
   assert(decorated.endsWith(sourceDetailsMarkdown({ ...codexSource, sharedUrl: share })));
-  assert.match(decorated, /<summary>Source links<\/summary>/);
+  assert.match(decorated, /<summary>🔗 Source<\/summary>/);
   assert(!decorated.includes('**Privacy:**'));
   assert(decorated.includes('[Local](' + codexConversationUrl(codexSource.uuid) + ')'));
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
     `vscode://openai.chatgpt/local/${codexSource.uuid}`);
-  assert(decorated.includes('[Desktop](codex://threads/' + codexSource.uuid + ')'));
+  const desktopWeb = new URL(decorated.match(/\[Desktop\]\(([^)]+)\)/)[1]);
+  assert.equal(desktopWeb.origin,'https://wooten.link','Desktop links use the independent HTTPS launcher');
+  assert.equal(desktopWeb.pathname,'/codex/'+codexSource.uuid);
+  assert.equal(desktopWeb.searchParams.get('url'),null,'Default native links need no query parameters');
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert(!appendSourceDetails('Local only.', codexSource).includes('[Online]('),
     'Unavailable web links must be omitted');
@@ -259,7 +262,7 @@ async function run() {
     instructions: '', source: unlinkedSource
   });
   assert.match(unlinkedPrompt, /omit the entire Source links disclosure/);
-  assert(!unlinkedPrompt.includes('<summary>Source links</summary>'));
+  assert(!unlinkedPrompt.includes('<summary>🔗 Source</summary>'));
   assert(!unlinkedPrompt.includes('End the published PR description with exactly this expandable'));
   assert.equal(appendSourceDetails('Body.\n\n' + sourceDetailsMarkdown(codexSource), unlinkedSource),
     'Body.', 'New-style source footers also disappear without links');

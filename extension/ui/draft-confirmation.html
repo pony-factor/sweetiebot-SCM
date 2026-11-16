@@ -112,7 +112,7 @@ function renderMarkdown(target, markdown) {
   target.replaceChildren();
   // Only recognize the exact trailing provenance disclosure. Older PRs retain
   // their Markdown but render with the same compact presentation.
-  const footer = /\n\n<details>\n<summary>(?:Source details|Source links)<\/summary>\n\n([\s\S]*?)\n<\/details>\s*$/.exec(markdown);
+  const footer = /\n\n<details>\n<summary>(?:Source details|Source links|🔗 Source)<\/summary>\n\n([\s\S]*?)\n<\/details>\s*$/.exec(markdown);
   renderMergeMarkdown(target, footer ? markdown.slice(0, footer.index) : markdown, {
     baseUrl: 'https://github.com/',
     mapLink: imageSourcePage
@@ -121,7 +121,7 @@ function renderMarkdown(target, markdown) {
   const disclosure = document.createElement('details');
   disclosure.className = 'source-links';
   const summary = document.createElement('summary');
-  summary.textContent = 'Source links';
+  summary.textContent = '🔗 Source';
   disclosure.append(summary);
   const links = document.createElement('div');
   links.className = 'source-links-inline';
@@ -132,8 +132,24 @@ function renderMarkdown(target, markdown) {
         ? /^(?:vscode:\/\/(?:openai\.chatgpt\/local|(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)\/codex)\/[0-9a-f-]{36}|https:\/\/vscode\.dev\/redirect\?url=vscode%3A%2F%2F(?:openai\.chatgpt%2Flocal|(?:pony-factor\.sweetiebot-scm|jfwooten4\.scm-toolkit-workspace-search)%2Fcodex)%2F[0-9a-f-]{36})$/i.test(value)
         : (() => {
           try {
-            const native = new URL(value);
-            return native.protocol === 'codex:' && native.hostname === 'threads' &&
+            let native = new URL(value), expectedId;
+            if (native.origin === 'https://wooten.link') {
+              expectedId = /^\/codex\/([0-9a-f-]{36})\/?$/i.exec(native.pathname)?.[1];
+              const copied = native.searchParams.getAll('url');
+              if (!expectedId || native.username || native.password || native.port || native.hash ||
+                  [...native.searchParams.keys()].some(key => key !== 'url') ||
+                  copied.length > 1 || (copied.length === 1 && (!copied[0] || copied[0].length > 2048))) return false;
+              native = new URL(copied[0] || `codex://threads/${expectedId}`);
+            } else if (native.origin === 'https://vscode.dev' && native.pathname === '/redirect' &&
+                !native.hash && [...native.searchParams.keys()].every(key => key === 'url') && native.searchParams.getAll('url').length === 1) {
+              const bridge = new URL(native.searchParams.get('url'));
+              expectedId = /^\/codex-desktop\/([0-9a-f-]{36})$/i.exec(bridge.pathname)?.[1];
+              if (bridge.protocol !== 'vscode:' || bridge.hostname !== 'pony-factor.sweetiebot-scm' ||
+                  !expectedId || bridge.username || bridge.password || bridge.port || bridge.hash ||
+                  [...bridge.searchParams.keys()].some(key => key !== 'url') || bridge.searchParams.getAll('url').length !== 1) return false;
+              native = new URL(bridge.searchParams.get('url'));
+            }
+            return (!expectedId || native.pathname === '/' + expectedId) && native.protocol === 'codex:' && native.hostname === 'threads' &&
               /^\/[0-9a-f-]{36}$/i.test(native.pathname) &&
               !native.username && !native.password && !native.port && !native.hash;
           } catch { return false; }

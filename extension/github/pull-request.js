@@ -199,18 +199,24 @@ function conversationSourceLinks(source) {
   } : { online };
 }
 
+function desktopSourceLink(uuid, desktopUrl) {
+  const path = `https://wooten.link/codex/${uuid}`;
+  return desktopUrl === `codex://threads/${uuid}`
+    ? path : path + '?url=' + encodeURIComponent(desktopUrl);
+}
+
 function sourceDetailsMarkdown(source) {
   const links = conversationSourceLinks(source);
   if (!links) return '';
   const entries = [
     ...(links.online ? ['[Online](' + links.online + ')'] : []),
     ...(links.local ? ['[Local](' + links.local + ')'] : []),
-    ...(links.desktop ? ['[Desktop](' + links.desktop + ')'] : []),
+    ...(links.desktop ? ['[Desktop](' + desktopSourceLink(normalizeConversationSource(source).uuid, links.desktop) + ')'] : []),
   ];
   if (!entries.length) return '';
   return [
     '<details>',
-    '<summary>Source links</summary>',
+    '<summary>🔗 Source</summary>',
     '',
     entries.join(' · '),
     '',
@@ -234,7 +240,7 @@ function appendSourceDetails(body, source) {
   // A draft can contain a stale provenance footer even when its current source
   // has no usable links. Remove that footer rather than leaving an empty feature.
   const main = normalized.trimEnd()
-    .replace(/\n*<details>\s*<summary>(?:Source details|Source links)<\/summary>[\s\S]*?<\/details>\s*$/i, '')
+    .replace(/\n*<details>\s*<summary>(?:Source details|Source links|🔗 Source)<\/summary>[\s\S]*?<\/details>\s*$/i, '')
     .trimEnd();
   const details = sourceDetailsMarkdown(source);
   if (!details) return main === normalized.trimEnd() ? normalized : main;
