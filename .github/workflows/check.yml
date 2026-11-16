@@ -17,6 +17,10 @@ permissions:
   contents: read
 
 jobs:
+  codex-queue-release-compatibility:
+    name: Current Codex queue releases
+    uses: ./.github/workflows/codex-queue-compatibility.yml
+
   python-compatibility:
     name: Python repair and web-commit safety (3.12 and 3.14)
     runs-on: ubuntu-latest

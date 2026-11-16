@@ -24,11 +24,14 @@ STORE = ('function hook(thread){let scope=useScope(),host=useHost(thread),get=as
 ROWS = ('function Row(e){let {messageId:id,position:position,fullMessageText:text,messageText:preview,hostId:host,isEditing:editing}=e;'
         'let label={"aria-label":intl.formatMessage({id:`composer.queuedMessage.preview.trigger.label`,defaultMessage:`Preview`})};'
         'return jsx("div",{ref:nativeRef,style:style,initial:!1,animate:motion})}function next(){}')
+INLINE_STORE = ('function hook(thread){let scope=useScope(),host=useHost(thread),get=async()=>manager(scope,host).getTurnCoordinator();'
+                'return{threadKey:{threadId:thread,hostId:host},messages:[],visibleMessages:[],actions:wrap(actions)}}async '
+                'function next(){}function wrap(e){return {...e,beginEdit:e.remove,restoreEdit:e.restore}}')
 
 
 class QueuedEditPatchTests(unittest.TestCase):
     def test_adapters_are_idempotent_and_fully_reversible(self):
-        for kind, source in [('store', STORE), ('rows', ROWS)]:
+        for kind, source in [('store', STORE), ('store', INLINE_STORE), ('rows', ROWS)]:
             with self.subTest(kind=kind):
                 patched = patcher.transform(source, kind)
                 self.assertEqual(patcher.transform(patched, kind), patched)
@@ -37,6 +40,18 @@ class QueuedEditPatchTests(unittest.TestCase):
                                text=True, capture_output=True, check=True)
         self.assertIn('scmToolkitRegisterQueueStore(thread,host,result,()=>manager(scope,host).getTurnCoordinator())', patcher.transform(STORE, 'store'))
         self.assertIn('ref:scmToolkitQueueRowRef(nativeRef,id,host)', patcher.transform(ROWS, 'rows'))
+
+    def test_inline_store_keeps_native_actions_and_registers_the_coordinator(self):
+        script = ('globalThis.useScope=()=>"scope";globalThis.useHost=()=>"local";'
+                  'const coordinator={deferAutomaticTurns(){}};globalThis.manager=()=>({getTurnCoordinator:()=>coordinator});'
+                  'const actions={get(){return {id:"queued"}},send(){},remove(){},restore(){}};'
+                  + patcher.transform(INLINE_STORE, 'store') +
+                  ';const store=hook("thread");const adapter=globalThis.scmToolkitQueuedEditCurrent;'
+                  'if(adapter.threadId!=="thread"||adapter.hostId!=="local"||adapter.coordinator()!==coordinator'
+                  '||store.actions.beginEdit!==actions.remove||store.actions.restoreEdit!==actions.restore'
+                  '||adapter.actions!==store.actions)throw Error("native store capabilities were not preserved");')
+        subprocess.run(['node', '--input-type=module'], input=script,
+                       text=True, capture_output=True, check=True)
 
     def test_discovery_uses_capabilities_and_never_partially_installs(self):
         with tempfile.TemporaryDirectory() as directory:

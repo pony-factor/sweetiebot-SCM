@@ -14,14 +14,17 @@ const git = async (cwd, args) => (await exec('git', args, {
   cwd, timeout: 15000, maxBuffer: 1024 * 1024
 })).stdout.trim();
 
-function lindseyScript(repoRoot, folders = [], configured = process.env.LINDSEY_SYNC_REPO) {
+function lindseyScript(repoRoot, folders = [], configured = process.env.LINDSEY_SYNC_REPO,
+  home = os.homedir()) {
   const candidates = [configured, path.join(path.dirname(repoRoot), 'lindsey-sync'),
-    ...folders.map(folder => folder?.uri?.fsPath || folder?.fsPath || '')].filter(Boolean);
+    ...folders.map(folder => folder?.uri?.fsPath || folder?.fsPath || ''),
+    path.join(home, 'GitHub', 'pony-factor', 'lindsey-sync'),
+    path.join(home, 'GitHub', 'lindsey-sync')].filter(Boolean);
   for (const directory of candidates) {
     const script = path.resolve(directory, 'scripts', 'resolve-conflicts.js');
     if (existsSync(script)) return script;
   }
-  throw new Error('Lindsey Sync is not available locally. Open the lindsey-sync repository in this VS Code workspace, put it beside this repository, or set LINDSEY_SYNC_REPO.');
+  throw new Error('Lindsey Sync is not available locally. Open the lindsey-sync repository in this VS Code workspace, keep it under ~/GitHub/pony-factor or ~/GitHub, put it beside this repository, or set LINDSEY_SYNC_REPO.');
 }
 
 function isConflictState(repository) {
@@ -110,11 +113,22 @@ async function generatePreview(vscode, repository, { sync = false, run = exec, f
   const script = findScript(root, vscode.workspace?.workspaceFolders || []);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-lindsey-'));
   try {
-    const { stdout } = await run(process.execPath,
-      [script, '--repo', root, '--output', temporary], {
-        cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-      });
+    let stdout;
+    try {
+      ({ stdout } = await run(process.execPath,
+        [script, '--repo', root, '--output', temporary], {
+          cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', GIT_TERMINAL_PROMPT: '0' }
+        }));
+    } catch (error) {
+      // Never send provider output through the Git error formatter, which
+      // mistakes the resolver's filename for an ordinary merge failure.
+      // Only recognize fixed setup diagnostics; provider output stays private.
+      const missingService = /Set LINDSEY_RESOLVE_SECRET|LINDSEY_RESOLVE_URL must be HTTPS/.test(String(error.stderr || ''));
+      throw new Error(missingService
+        ? 'Lindsey conflict resolution service is not configured. Configure LINDSEY_RESOLVE_URL and LINDSEY_RESOLVE_SECRET in the local VS Code environment, then retry. No resolutions were applied.'
+        : 'Lindsey could not prepare conflict proposals. Check the local resolution service and retry. No resolutions were applied.');
+    }
     const manifest = JSON.parse(stdout);
     const files = await inspectPreview(repository, temporary, manifest);
     for (const file of files) {

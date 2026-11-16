@@ -1,0 +1,61 @@
+name: Codex queue release compatibility
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 10 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  current-release:
+    name: Queue adapters (${{ matrix.channel }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, pre-release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install current official Codex release in a disposable profile
+        env:
+          CODEX_CHANNEL: ${{ matrix.channel }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vscode" "$RUNNER_TEMP/codex-extensions" "$RUNNER_TEMP/codex-profile"
+          curl -fLsS --retry 3 https://update.code.visualstudio.com/latest/linux-x64/stable -o "$RUNNER_TEMP/vscode.tar.gz"
+          tar -xzf "$RUNNER_TEMP/vscode.tar.gz" -C "$RUNNER_TEMP/vscode"
+          channel_args=()
+          if [[ "$CODEX_CHANNEL" == pre-release ]]; then channel_args+=(--pre-release); fi
+          "$RUNNER_TEMP/vscode/VSCode-linux-x64/bin/code" --no-sandbox \
+            --user-data-dir "$RUNNER_TEMP/codex-profile" --extensions-dir "$RUNNER_TEMP/codex-extensions" \
+            --install-extension openai.chatgpt --force "${channel_args[@]}"
+      - name: Require compatibility with the real unmodified release bundles
+        env:
+          CODEX_CHANNEL: ${{ matrix.channel }}
+        run: |
+          python scripts/ci/check-codex-queue-compatibility.py \
+            --extensions-dir "$RUNNER_TEMP/codex-extensions" --channel "$CODEX_CHANNEL" \
+            --report "$RUNNER_TEMP/queue-compatibility/report.json"
+      - name: Require native queue transaction regressions
+        run: |
+          python tests/codex/queued-edit.py
+          node tests/codex/queued-edit.js
+          node tests/codex/queue-pause.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codex-queue-compatibility-${{ matrix.channel }}
+          path: ${{ runner.temp }}/queue-compatibility/report.json
+          if-no-files-found: warn
+          retention-days: 14

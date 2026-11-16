@@ -798,6 +798,33 @@ async function publishBranch(repository, { branch, remote, automatic = false }) 
   return true;
 }
 
+async function pushCommittedBranch(repository, { branch, remote, defaultBranch, expectedHead, canPush = () => true,
+  push = async (remote, refspec) => {
+    if (!repository.rootUri?.fsPath) throw new Error('No local repository selected for sending commits.');
+    // Use Git directly so the native rejected-push recovery cannot merge the
+    // branch while this background operation is only authorized to send.
+    await promisify(execFile)(existsSync('/usr/bin/git') ? '/usr/bin/git' : 'git',
+      ['push', remote, refspec], { cwd: repository.rootUri.fsPath, timeout: 120000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  } }) {
+  const ready = () => {
+    const head = repository.state.HEAD;
+    return branch && branch !== defaultBranch && !isPullRequestReviewBranch(branch)
+      && head?.name === branch && head.commit === expectedHead
+      && head.upstream?.remote === remote && head.upstream?.name === branch
+      && head.ahead > 0 && head.behind === 0 && !commitInProgress(repository)
+      && !['mergeChanges', 'indexChanges', 'workingTreeChanges', 'untrackedChanges']
+        .some(key => repository.state[key]?.length) && canPush();
+  };
+  await repository.status();
+  if (!ready() || await asyncCommitPending(repository, { refs: [branch] })) return false;
+  await repository.status();
+  if (!ready()) return false;
+  await push(remote, `${expectedHead}:refs/heads/${branch}`);
+  await repository.status();
+  return true;
+}
+
 // A shared default workspace owns its branch. Release the topic with a
 // detached checkout instead of fetching into or checking out that occupied ref.
 async function deletionHome(repository, defaultBranch, targetRef) {
@@ -1456,7 +1483,7 @@ function registerBranchCommands(vscode, context) {
 
   const needsDefaultBranch = new Set([
     'sweetiebot.returnHome', 'sweetiebot.createBranch', 'sweetiebot.createStackedBranch',
-    'sweetiebot.deleteBranch', 'sweetiebot.syncBranch'
+    'sweetiebot.deleteBranch', 'sweetiebot.syncBranch', 'sweetiebot.pushCommittedBranch'
   ]);
   for (const [command, action] of [
     ['sweetiebot.returnHome', returnHome],
@@ -1464,15 +1491,19 @@ function registerBranchCommands(vscode, context) {
     ['sweetiebot.createBranch', createBranch],
     ['sweetiebot.createStackedBranch', (repository, options) => createStackedBranch(vscode, repository, options)],
     ['sweetiebot.publishBranch', publishBranch],
+    ['sweetiebot.pushCommittedBranch', async (repository, options) => {
+      return pushCommittedBranch(repository, { ...options,
+        canPush: () => vscode.workspace.getConfiguration('git', repository.rootUri).get('postCommitCommand') === 'push' });
+    }],
     ['sweetiebot.deleteBranch', deleteBranch],
     ['sweetiebot.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
       try {
         const repository = await resolveRepository(uri);
-        if (command === 'sweetiebot.publishBranch' && options.automatic === true
+        if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
             && isPullRequestReviewBranch(options.branch)) return false;
-        if (command === 'sweetiebot.publishBranch' && options.automatic === true
+        if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
             && await require('./experiment-policy').deferExperimentPublish(repository.rootUri?.fsPath)) return false;
         const commitDraftValue = repository.inputBox?.value;
         if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
@@ -1486,8 +1517,8 @@ function registerBranchCommands(vscode, context) {
           if (command === 'sweetiebot.syncBranch') refs.push(`refs/remotes/${remote}/${defaultBranch}`);
           // Switching to an unpublished branch can trigger automatic publishing.
           // Let a later status refresh retry after the background queue drains.
-          if (command === 'sweetiebot.publishBranch' && await asyncCommitPending(repository, { refs })) return false;
-          if (command === 'sweetiebot.publishBranch') {
+          if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && await asyncCommitPending(repository, { refs })) return false;
+          if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command)) {
             const merged = await mergedBranchStatus(repository, options.remote, options.branch);
             if (merged) return warnMergedBranch(vscode, repository, merged, {
               silent: options.silentMerged === true
@@ -1546,7 +1577,15 @@ function registerBranchCommands(vscode, context) {
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
               reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
-              resolveConflicts: repo => generatePreview(vscode, repo, { sync: true })
+              resolveConflicts: async repo => {
+                try { return await generatePreview(vscode, repo, { sync: true }); }
+                catch (error) {
+                  // Do not replace a failed Lindsey launch with the generic
+                  // conflict picker: that hides the reason Sync stopped.
+                  error.lindseySyncFailed = true;
+                  throw error;
+                }
+              }
             } : {}),
             ...(command === 'sweetiebot.deleteBranch' ? {
               confirmUnverified: detachedTip => confirmUnverifiedLocalDeletion(vscode, repository, {
@@ -1565,6 +1604,7 @@ function registerBranchCommands(vscode, context) {
         try {
           return await queueRepositoryOperation(repository, attempt);
         } catch (error) {
+          if (error.lindseySyncFailed) throw error;
           // Conflicts differ from a dirty checkout and must never be stashed.
           await repository.status();
           if (isConflictState(repository)) {
@@ -1764,6 +1804,7 @@ module.exports = {
   returnHome,
   createBranch,
   publishBranch,
+  pushCommittedBranch,
   deleteBranch,
   deleteEmptyBranch,
   remoteBranchTip,

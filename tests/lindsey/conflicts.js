@@ -79,7 +79,8 @@ async function run() {
       } }
     };
     const previewOptions = { sync: true, findScript: () => '/fixture/resolve-conflicts.js',
-      run: async (_, args) => {
+      run: async (_, args, options) => {
+        assert.equal(options.env.ELECTRON_RUN_AS_NODE, '1', 'VS Code must run the resolver as Node');
         const output = args[args.indexOf('--output') + 1];
         fs.writeFileSync(path.join(output, candidate), 'merged\n');
         return { stdout: JSON.stringify(manifest) };
@@ -92,7 +93,25 @@ async function run() {
       path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex')
     }] });
     assert(git('ls-files', '-u'), 'Preview returns reviewed bytes to the sync coordinator before staging');
-    assert.throws(() => lindseyScript(root, [], '/nonexistent/lindsey-sync'), /not available locally/);
+    const failedPreview = stderr => generatePreview(syncUI, mockRepo, {
+      ...previewOptions, run: async () => { throw Object.assign(new Error('Command failed'), { stderr }); }
+    });
+    await assert.rejects(failedPreview('Set LINDSEY_RESOLVE_SECRET in Sweetiebot’s local environment'),
+      error => /service is not configured/.test(error.message) && !error.stderr && !error.cause);
+    await assert.rejects(failedPreview('private provider diagnostics'),
+      error => /could not prepare conflict proposals/.test(error.message) && !error.message.includes('private provider'));
+    assert.throws(() => lindseyScript(root, [], '/nonexistent/lindsey-sync', folder), /not available locally/);
+    const checkout = path.join(folder, 'GitHub', 'pony-factor', 'lindsey-sync');
+    fs.mkdirSync(path.join(checkout, 'scripts'), { recursive: true });
+    const resolver = path.join(checkout, 'scripts', 'resolve-conflicts.js');
+    fs.writeFileSync(resolver, '// fixture');
+    assert.equal(lindseyScript(root, [], undefined, folder), resolver,
+      'Managed worktrees can find the standard Lindsey checkout');
+    const explicit = path.join(folder, 'custom-lindsey');
+    fs.mkdirSync(path.join(explicit, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(explicit, 'scripts', 'resolve-conflicts.js'), '// fixture');
+    assert.equal(lindseyScript(root, [], explicit, folder), path.join(explicit, 'scripts', 'resolve-conflicts.js'),
+      'Explicit resolver configuration takes precedence');
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
