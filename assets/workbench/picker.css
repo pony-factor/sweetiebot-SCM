@@ -651,7 +651,7 @@
     display: flex;
     align-items: stretch;
     box-sizing: border-box;
-    width: fit-content;
+    width: 100%;
     max-width: 100%;
     height: 28px;
     padding-inline: 0;
@@ -661,7 +661,7 @@
 }
 
 .scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings > .monaco-button {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     width: auto;
     min-width: 0;
     padding-inline: 12px;
