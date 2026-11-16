@@ -4,7 +4,7 @@ Use non-destructive inspection first; do not force-push, reset history, delete w
 
 | Symptom | Inspect | Safe next step |
 | --- | --- | --- |
-| Patch missing after VS Code update | **Output → Sweetie Bot app repair**, `python3 scripts/install.py --check`, permissions | Repair/reload only supported anchors |
+| Patch missing after VS Code update | **Output → Sweetiebot app repair**, `python3 scripts/install.py --check`, permissions | Repair/reload only supported anchors |
 | Settings tab missing | Source Control gear, authenticated local configurator | Retry `python3 scripts/configure.py`; inspect extension startup |
 | Ollama commit title fails | Local model, memory, staging and `~/Library/Logs/Sweetiebot/sweetiebot.log` | Keep staged changes; use manual title if necessary |
 | Background commit/push pending | Job finalization state, remote head and Git credentials | **Do not amend/reset/force-push** pending placeholder history |
