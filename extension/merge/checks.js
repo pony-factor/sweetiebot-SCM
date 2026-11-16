@@ -35,7 +35,16 @@ async function readMergeChecks(api, repository, sha, { expectChecks = false, col
     }
     return [...map.values()];
   };
-  const activeRuns = latest(runs, run => (run.app?.id || '') + ':' + run.name);
+  const activeRuns = latest(runs, run => (run.app?.id || '') + ':' + run.name).map(run => {
+    // GitHub can retain in_progress on a finished job. Require both its
+    // terminal timestamp/conclusion and the matching completed suite on this
+    // exact head before treating that inconsistent status as completed.
+    const suite = suites.find(suite => suite.id && suite.id === run.check_suite?.id);
+    const settled = run.head_sha === sha && Number.isFinite(Date.parse(run.completed_at)) &&
+      typeof run.conclusion === 'string' && run.conclusion &&
+      suite?.head_sha === sha && suite.status === 'completed' && suite.conclusion === run.conclusion;
+    return run.status !== 'completed' && settled ? { ...run, status: 'completed' } : run;
+  });
   const activeStatuses = latest(statuses, status => status.context);
   const passing = new Set(['success', 'neutral', 'skipped']);
   const failed = activeRuns.filter(run => run.status === 'completed' && !passing.has(run.conclusion))

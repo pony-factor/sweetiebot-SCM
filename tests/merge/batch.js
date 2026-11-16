@@ -451,6 +451,26 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   checks.check_suites = [{ id: 10, status: 'completed', conclusion: 'failure' },
     { id: 11, status: 'completed', conclusion: 'success' }];
   assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'passed', 'An old suite failure does not override a successful job rerun');
+  checks.check_runs = [{ id: 3, name: 'native host', head_sha: a, check_suite: { id: 12 },
+    status: 'in_progress', conclusion: 'success', completed_at: '2026-11-13T18:29:34Z' }];
+  checks.check_suites = [{ id: 12, head_sha: a, status: 'completed', conclusion: 'success' }];
+  const settledCheck = await readMergeChecks(checkApi, 'owner/repo', a, { collectEvidence: true });
+  assert.equal(settledCheck.state, 'passed', 'A terminal job corroborated by its exact-head suite must not stall the batch');
+  assert.equal(settledCheck.evidence[0].result, 'success');
+  for (const change of [{ status: 'in_progress' }, { head_sha: b }, { conclusion: 'failure' }]) {
+    const suite = checks.check_suites[0];
+    checks.check_suites[0] = { ...suite, ...change };
+    assert.notEqual((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'passed',
+      'Incomplete, different-head or contradictory suite evidence cannot clear a running job');
+    checks.check_suites[0] = suite;
+  }
+  checks.check_runs[0].completed_at = null;
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'pending');
+  checks.check_runs[0].completed_at = '2026-11-13T18:29:34Z';
+  checks.check_runs[0].conclusion = 'failure';
+  checks.check_suites[0].conclusion = 'failure';
+  assert.equal((await readMergeChecks(checkApi, 'owner/repo', a)).state, 'failed',
+    'A terminal failure must remain blocking even with a stale running status');
   {
     // Concurrent check requests avoid three serial GitHub round trips per poll.
     const checkEndpointsStarted = [];
