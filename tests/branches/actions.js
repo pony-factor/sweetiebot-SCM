@@ -37,9 +37,10 @@ async function run() {
     const { repository, calls } = fixture();
     repository.state.HEAD = { name: 'topic', commit: 'verified', ahead: 2, behind: 0,
       upstream: { remote: 'origin', name: 'topic' } };
-    const selected = { branch: 'topic', remote: 'origin', defaultBranch: 'main', expectedHead: 'verified' };
+    const selected = { branch: 'topic', remote: 'origin', defaultBranch: 'main', expectedHead: 'verified',
+      push: async (...args) => calls.push(['push', ...args]) };
     assert.equal(await pushCommittedBranch(repository, selected), true);
-    assert.deepEqual(calls.filter(call => call[0] === 'push'), [['push', 'origin', 'topic:topic']]);
+    assert.deepEqual(calls.filter(call => call[0] === 'push'), [['push', 'origin', 'verified:refs/heads/topic']]);
     calls.length = 0;
     for (const changes of [{ commit: 'changed' }, { behind: 1 }, { name: 'other' }, { ahead: 0 }]) {
       const before = repository.state.HEAD;
@@ -53,6 +54,14 @@ async function run() {
     const active = beginRepositoryCommit(repository);
     assert.equal(await pushCommittedBranch(repository, selected), false);
     endRepositoryCommit(repository, active);
+    assert.equal(await pushCommittedBranch(repository, { ...selected, canPush: () => false }), false);
+    let refreshes = 0;
+    const status = repository.status;
+    repository.status = async () => {
+      if (++refreshes === 2) repository.state.HEAD = { ...repository.state.HEAD, commit: 'new-head' };
+    };
+    assert.equal(await pushCommittedBranch(repository, selected), false, 'Recheck HEAD after waiting for pending commits');
+    repository.status = status;
     assert(!calls.some(call => ['push', 'merge', 'fetch', 'create'].includes(call[0])));
   }
   {

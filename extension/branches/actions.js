@@ -786,7 +786,15 @@ async function publishBranch(repository, { branch, remote, automatic = false }) 
   return true;
 }
 
-async function pushCommittedBranch(repository, { branch, remote, defaultBranch, expectedHead, canPush = () => true }) {
+async function pushCommittedBranch(repository, { branch, remote, defaultBranch, expectedHead, canPush = () => true,
+  push = async (remote, refspec) => {
+    if (!repository.rootUri?.fsPath) throw new Error('No local repository selected for sending commits.');
+    // Use Git directly so the native rejected-push recovery cannot merge the
+    // branch while this background operation is only authorized to send.
+    await promisify(execFile)(existsSync('/usr/bin/git') ? '/usr/bin/git' : 'git',
+      ['push', remote, refspec], { cwd: repository.rootUri.fsPath, timeout: 120000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  } }) {
   const ready = () => {
     const head = repository.state.HEAD;
     return branch && branch !== defaultBranch && !isPullRequestReviewBranch(branch)
@@ -800,7 +808,8 @@ async function pushCommittedBranch(repository, { branch, remote, defaultBranch, 
   if (!ready() || await asyncCommitPending(repository, { refs: [branch] })) return false;
   await repository.status();
   if (!ready()) return false;
-  await repository.push(remote, `${branch}:${branch}`);
+  await push(remote, `${expectedHead}:refs/heads/${branch}`);
+  await repository.status();
   return true;
 }
 
