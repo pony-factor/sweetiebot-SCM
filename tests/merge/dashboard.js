@@ -419,11 +419,12 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   // Local handoffs use the signed-in user's token even when separate Apps are enabled.
   const previousIdentityMode = process.env.SWEETIEBOT_BOT_IDENTITY_MODE;
   process.env.SWEETIEBOT_BOT_IDENTITY_MODE = 'separate-apps';
+  let launchResult = true;
   const dashboard = startMergeDashboard(vscode, selection, 'test-token', {
     onRefresh: async numbers => { refreshedQueues.push(numbers); },
     onFocusWorker: async id => { workerFocus.push(id); },
     context: { globalStorageUri: { fsPath: reactionStorage }, workspaceState },
-    launchAction: async (...args) => { actionLaunches.push(args); return true; },
+    launchAction: async (...args) => { actionLaunches.push(args); return launchResult; },
     fetchImpl: fakeFetch,
     intervalMs: 25000,
     setTimer(callback) { pollCallback = callback; return 17; },
@@ -1029,6 +1030,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(events.at(-1).autoFixCi, false);
   info = { ...info, mergeable: false, mergeable_state: 'dirty',base:{...info.base,sha:'d'.repeat(40)} };
   const conflictState = { ...repairState,
+    pullRequests: repairState.pullRequests.map(pr => ({...pr, baseSha:'b'.repeat(40)})),
     history: [{ number: 12, status: 'needs_resolution', conflictPaths: ['feature.js'] }] };
   const beforeConflicts = actionLaunches.length;
   dashboard.recordBatchState(conflictState);
@@ -1039,12 +1041,34 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(events.at(-1).autoFixConflicts, true);
   assert.equal(actionLaunches.length, beforeConflicts + 1, 'Confirmed deferred conflicts open a repair task');
   assert.equal(actionLaunches.at(-1)[4].baseSha,'c'.repeat(40),
-    'An older PR base.sha cannot suppress a repair bound to the actual branch tip');
+    'A batch base advanced by another merge must open conflict review against the current branch tip');
   assert.equal(actionLaunches.at(-1)[5].id, 'resolve-conflicts');
   assert.equal(actionLaunches.at(-1)[6], 'codex');
   dashboard.recordBatchState(conflictState);
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(actionLaunches.length, beforeConflicts + 1, 'Polling cannot duplicate a conflict repair');
+  const retryHead = 'e'.repeat(40);
+  info = {...info, head:{...info.head, sha:retryHead}};
+  const retryState = {...conflictState,
+    pullRequests:conflictState.pullRequests.map(pr => ({...pr, headSha:retryHead}))};
+  requestFault = Error('Temporary GitHub outage');
+  dashboard.recordBatchState(retryState);
+  await new Promise(resolve => setTimeout(resolve, 25));
+  requestFault = undefined;
+  launchResult = false;
+  await dashboard.refresh({force:true});
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(actionLaunches.length, beforeConflicts + 2,
+    'Status refresh retries a repair whose validation failed');
+  launchResult = true;
+  await dashboard.refresh({force:true});
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(actionLaunches.length, beforeConflicts + 3,
+    'A canceled launch does not permanently consume the repair attempt');
+  await dashboard.refresh({force:true});
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(actionLaunches.length, beforeConflicts + 3,
+    'A successful launch stays deduplicated on later refreshes');
   await messageHandler({ type: 'auto-fix-conflicts', enabled: false });
   assert.equal(events.at(-1).autoFixConflicts, false);
   requestFault = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
