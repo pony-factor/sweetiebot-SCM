@@ -101,11 +101,11 @@ const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require
     await resumePRSession(vscode, context);
     assert.equal(calls.filter(([command]) => command === 'workbench.action.browser.open').length, 3,
       'Restoring a dashboard does not resubmit the three merge chats');
-    const repairLaunches=Array.from({length:4},(_,index)=>launchBlockerWebSession(vscode,context,file(root),
+    const repairLaunches=Array.from({length:7},(_,index)=>launchBlockerWebSession(vscode,context,file(root),
       'https://chatgpt.com/#sweetiebot_merge=1&q=Resolve+compatible+conflicts',index+1,
       {...selection,pullRequests:[selection.pullRequests[index]]}));
-    const handles=await Promise.all(repairLaunches.slice(0,3));
-    assert.equal(tabs.length,6,'Three conflict chats run alongside the three reviewers');
+    const handles=await Promise.all(repairLaunches.slice(0,6));
+    assert.equal(tabs.length,9,'Six conflict chats run alongside the three reviewers');
     assert.equal(calls.filter(([command])=>command==='vscode.openFolder').length,1,
       'Parallel conflict repairs stay in the existing bulk window');
     for(const [,options] of calls.filter(([command])=>command==='workbench.action.browser.open').slice(3)) {
@@ -113,8 +113,8 @@ const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require
       assert(prompt.includes('BRANCH-ONLY EXECUTION'),'A repair chat cannot merge or close its PR');
     }
     await vscode.window.tabGroups.close(handles[0].tab,true);
-    handles.push(await repairLaunches[3]);
-    assert.equal(maximumTabs,6,'A fourth repair waits for a free chat slot');
+    handles.push(await repairLaunches[6]);
+    assert.equal(maximumTabs,9,'A seventh repair waits for a free chat slot');
     for(const handle of handles)handle.dispose();
     await Promise.all(handles.map(handle=>handle.done));
     assert.equal(tabs.length,3,'Finishing repairs retains all three review chats');

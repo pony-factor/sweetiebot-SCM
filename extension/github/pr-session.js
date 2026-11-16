@@ -382,7 +382,7 @@ async function resumePRSession(vscode, context) {
           event => { report(event); controller?.recordLocalProgress?.(event); });
         const summaryErrors = await mergePublications.record(snapshot, result, executed);
         return { ...executed, summaryErrors };
-      }));
+      }), require('../merge/runner-layout').executionResources(result, snapshot, input.options?.syncOnly === true));
       if (!input.options?.syncOnly) {
         activeRepairRuntime?.dispose();
         activeRepairRuntime=createBulkRepairRuntime(vscode,context,root,selection,endpoint=>{

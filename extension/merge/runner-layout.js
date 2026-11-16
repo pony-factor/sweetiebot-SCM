@@ -2,15 +2,15 @@
 const windows = new WeakMap();
 const names = ['First','Second','Third','Fourth','Fifth','Sixth','Seventh','Eighth','Ninth'];
 
-// Reviews have three reserved chats. Repairs use three additional slots;
+// Reviews have three reserved chats. Repairs use six additional slots;
 // waiting jobs do not open another chat, and a PR cannot occupy two slots.
 function createRepairPool() {
   const jobs = new Map(), pending = [], active = new Map();
   let disposed = false;
   function drain() {
-    while (!disposed && pending.length && active.size < 3) {
+    while (!disposed && pending.length && active.size < 6) {
       const job = pending.shift();
-      const slot = [4,5,6].find(id => !active.has(id));
+      const slot = [4,5,6,7,8,9].find(id => !active.has(id));
       active.set(slot, job);
       const release = () => {
         if (active.get(slot) !== job) return;
@@ -46,12 +46,33 @@ function createRepairPool() {
 }
 
 function createExecutionQueue() {
-  let tail = Promise.resolve();
-  return task => {
-    const next = tail.then(task);
-    tail = next.catch(() => {});
+  const tails = new Map();
+  return (task, resources = ['local-execution']) => {
+    if (!Array.isArray(resources) || !resources.length || resources.some(key => typeof key !== 'string' || !key))
+      throw Error('Local execution requires branch resources.');
+    const keys = [...new Set(resources)];
+    const next = Promise.all(keys.map(key => tails.get(key))).then(task);
+    const settled = next.catch(() => {});
+    for (const key of keys) tails.set(key, settled);
+    void settled.then(() => {
+      for (const key of keys) if (tails.get(key) === settled) tails.delete(key);
+    });
     return next;
   };
+}
+function executionResources(input, selection, branchOnly = false) {
+  if (!selection?.repository || !Array.isArray(input?.results) || !input.results.length)
+    throw Error('Local execution requires a selected PR.');
+  const keys = [];
+  for (const item of input.results) {
+    const pr = selection.pullRequests.find(pr => pr.number === item.number);
+    if (!pr?.head || !pr.base) throw Error('Local execution is outside the selected branches.');
+    keys.push(JSON.stringify([selection.repository, pr.head]));
+    // Isolated repairs read the base but only update their own PR head. Merges
+    // also own their destination, so they cannot overlap another base writer.
+    if (!branchOnly && item.operation !== 'sync') keys.push(JSON.stringify([selection.repository, pr.base]));
+  }
+  return [...new Set(keys)];
 }
 function state(vscode) {
   let current = windows.get(vscode.window);
@@ -167,4 +188,4 @@ function openInlineRepairRunner(vscode,url,id) {
   current.tail=next.catch(()=>{});
   return next;
 }
-module.exports={registerMergeRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,openRepairRunner,openInlineRepairRunner,createRepairPool,createExecutionQueue};
+module.exports={registerMergeRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,openRepairRunner,openInlineRepairRunner,createRepairPool,createExecutionQueue,executionResources};
