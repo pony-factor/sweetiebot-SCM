@@ -786,16 +786,20 @@ async function publishBranch(repository, { branch, remote, automatic = false }) 
   return true;
 }
 
-async function pushCommittedBranch(repository, { branch, remote, defaultBranch, expectedHead }) {
+async function pushCommittedBranch(repository, { branch, remote, defaultBranch, expectedHead, canPush = () => true }) {
+  const ready = () => {
+    const head = repository.state.HEAD;
+    return branch && branch !== defaultBranch && !isPullRequestReviewBranch(branch)
+      && head?.name === branch && head.commit === expectedHead
+      && head.upstream?.remote === remote && head.upstream?.name === branch
+      && head.ahead > 0 && head.behind === 0 && !commitInProgress(repository)
+      && !['mergeChanges', 'indexChanges', 'workingTreeChanges', 'untrackedChanges']
+        .some(key => repository.state[key]?.length) && canPush();
+  };
   await repository.status();
-  const head = repository.state.HEAD;
-  if (!branch || branch === defaultBranch || isPullRequestReviewBranch(branch)
-      || head?.name !== branch || head.commit !== expectedHead
-      || head.upstream?.remote !== remote || head.upstream?.name !== branch
-      || !(head.ahead > 0) || head.behind !== 0 || commitInProgress(repository)
-      || ['mergeChanges', 'indexChanges', 'workingTreeChanges', 'untrackedChanges']
-        .some(key => repository.state[key]?.length)
-      || await asyncCommitPending(repository, { refs: [branch] })) return false;
+  if (!ready() || await asyncCommitPending(repository, { refs: [branch] })) return false;
+  await repository.status();
+  if (!ready()) return false;
   await repository.push(remote, `${branch}:${branch}`);
   return true;
 }
@@ -1467,8 +1471,8 @@ function registerBranchCommands(vscode, context) {
     ['sweetiebot.createStackedBranch', (repository, options) => createStackedBranch(vscode, repository, options)],
     ['sweetiebot.publishBranch', publishBranch],
     ['sweetiebot.pushCommittedBranch', async (repository, options) => {
-      if (vscode.workspace.getConfiguration('git', repository.rootUri).get('postCommitCommand') !== 'push') return false;
-      return pushCommittedBranch(repository, options);
+      return pushCommittedBranch(repository, { ...options,
+        canPush: () => vscode.workspace.getConfiguration('git', repository.rootUri).get('postCommitCommand') === 'push' });
     }],
     ['sweetiebot.deleteBranch', deleteBranch],
     ['sweetiebot.syncBranch', syncBranch]
