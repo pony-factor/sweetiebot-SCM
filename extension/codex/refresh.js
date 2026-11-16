@@ -27,6 +27,18 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
   const paused = path.join(os.homedir(), '.config', 'sweetiebot', 'pause-app-repair');
   const enabled = () => !fs.existsSync(paused) && vscode.workspace.getConfiguration('sweetiebot').get('automaticAppRepair', true);
   const selectedCodexPath = () => vscode.extensions.getExtension('openai.chatgpt')?.extensionPath;
+  const restartState = context.globalState || context.workspaceState;
+  const restartKey = 'sweetiebot.browserProfileRestart';
+  const appPid = process.env.VSCODE_PID;
+  let restartReported = false;
+  const reportBrowserRestart = () => {
+    if (restartReported || disposed) return;
+    restartReported = true;
+    const message = 'Sweetiebot restored the shared browser profile. Fully quit and reopen VS Code to use your saved site sign-ins; Reload Window cannot restart the browser process.';
+    output.appendLine(message);
+    void vscode.window.showWarningMessage?.(message);
+  };
+  if (appPid && restartState?.get(restartKey) === appPid) reportBrowserRestart();
 
   const reportReloadBlock = reason => {
     if (reloadLoopReported) return;
@@ -111,6 +123,7 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
     });
     const running = child;
     let finished = false, timedOut = false;
+    let coreRepaired = false, outputTail = '';
     const timeout = setTimeout(() => {
       timedOut = true;
       output.appendLine('Automatic repair timed out; it will retry later.');
@@ -143,9 +156,11 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
           output.appendLine(`Retrying automatic repair in ${delay / 1000} seconds.`);
           schedule(delay);
         }
-        return;
+        // A later release/optional patch failure cannot strand the core UI
+        // that the local preflight successfully restored.
+        if (!coreRepaired) return;
       }
-      failures = 0;
+      if (code === 0 && !timedOut) failures = 0;
       clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
         if (disposed || !enabled()) return;
@@ -156,7 +171,19 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
         reload(runtimeRevision(vscode, context));
       }, QUIET_PERIOD_MS);
     };
-    running.stdout.on('data', data => output.append(data.toString()));
+    running.stdout.on('data', data => {
+      const message = data.toString();
+      output.append(message);
+      outputTail += message;
+      if (outputTail.includes('Sweetiebot core repair complete.')) coreRepaired = true;
+      if (outputTail.includes('Browser session changes require a full VS Code quit and restart')) {
+        if (appPid) void Promise.resolve(restartState?.update(restartKey, appPid)).catch(error => {
+          output.appendLine('Could not remember the browser restart notice: ' + error.message);
+        });
+        reportBrowserRestart();
+      }
+      outputTail = outputTail.slice(-256);
+    });
     running.stderr.on('data', data => output.append(data.toString()));
     running.on('error', error => { output.appendLine(error.message); finish(-1); });
     running.on('close', finish);
@@ -188,6 +215,20 @@ function registerCodexRefresh(vscode, context, beforeReload = async () => {}) {
       }
     });
   // Allow startup extension discovery and pending installs to settle first.
+  if (fs.existsSync(paused)) {
+    const message = 'Sweetiebot automatic repair is paused by a shared stop flag. App updates cannot restore the SCM controls or saved browser profile while it is paused.';
+    output.appendLine(message);
+    void Promise.resolve(vscode.window.showWarningMessage?.(message, 'Resume automatic repair')).then(async choice => {
+      if (choice !== 'Resume automatic repair' || disposed) return;
+      try {
+        try { fs.unlinkSync(paused); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        await vscode.workspace.getConfiguration('sweetiebot').update('automaticAppRepair', true, vscode.ConfigurationTarget.Global);
+        schedule(QUIET_PERIOD_MS);
+      } catch (error) {
+        output.appendLine('Could not resume automatic repair: ' + error.message);
+      }
+    });
+  }
   schedule(QUIET_PERIOD_MS);
 }
 

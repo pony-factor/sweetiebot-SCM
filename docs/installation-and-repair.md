@@ -31,6 +31,10 @@ closed if the required safety dependencies cannot load.
 
 Inspect **Output → Sweetie Bot app repair** when UI customizations disappear. Use `python3 scripts/install.py --check` to validate compatibility and app permissions before reinstalling. VS Code may report an installation-integrity warning because its application files changed.
 
+Automatic repair first restores the installed SCM controls, Explorer layout, and shared browser profile before checking for remote updates or optional integrations. If the shared stop flag pauses repair, startup shows **Resume automatic repair**. Browser profile repairs show a full-restart notice that remains after Reload Window until VS Code is fully quit and reopened. Updates can temporarily open the native VS Code browser profile; the repair returns ordinary browser windows to the existing Sweetiebot profile without reading, copying, or deleting its cookies. Sites can still expire their own sign-ins.
+
+For the same local recovery without a remote update or changes to companion extensions and Git tools, run `python3 scripts/install.py --core-only`. Add `--check` to validate without writing. The SCM repair can proceed even when the browser lifecycle is unsupported; the output identifies that skipped repair. Keep the original app files in the printed backup directories until verification is complete.
+
 The full installer and automatic repair plan Codex customizations independently. If Codex compatibility validation fails, its pending edits are discarded and its installed files are preserved; compatible SCM and Integrated Browser repairs still proceed. The output identifies the skipped Codex customizations. Explicit Codex-only operations and uninstall continue to stop on compatibility failures. Browser session-sharing changes require fully quitting and reopening VS Code; Reload Window does not restart the main process that owns browser profiles.
 
 To restore only the SCM workbench without checking optional extension patches:
