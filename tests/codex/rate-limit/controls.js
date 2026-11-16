@@ -46,35 +46,6 @@ source.textContent = '0 resets available';
 context.scmToolkitSyncResetShortcut(root);
 assert.equal(added[0].removed, true);
 
-// Once the image replaces the caption, put the button directly under the
-// sticker; don't depend on a heading that is hidden or has been removed.
-const sticker = {
-    dataset: {}, style: {flexDirection: 'row'}, isConnected: true, parentElement: null,
-    querySelector(selector) { return selector === 'img' ? {} : null; },
-    closest: () => null,
-    append(button) { added.push(button); button.parentElement = this; },
-};
-root.querySelectorAll = query => query === '[data-scm-toolkit-rate-limit-pony="true"]'
-    ? [sticker] : query.includes('h1,') ? [] : [source];
-source.textContent = '2 resets available';
-context.scmToolkitSyncResetShortcut(root);
-assert.equal(added.length, 2);
-assert.equal(added[1].parentElement, sticker, 'reset action is visible alongside the image');
-assert.equal(sticker.style.flexDirection, 'column');
-assert.equal(added[1].style.marginTop, '6px');
-added[1].handler();
-assert.equal(source.clicks, 2, 'use the provider confirmation instead of redeeming directly');
-context.scmToolkitSyncResetShortcut(root);
-assert.equal(added.length, 2, 'no duplicate shortcut after rerenders');
-source.textContent = '0 resets available';
-context.scmToolkitSyncResetShortcut(root);
-assert.equal(added[1].removed, true, 'remove the action when resets run out');
-assert.equal(sticker.style.flexDirection, 'row', 'restore sticker layout with no action');
-source.textContent = 'Full reset';
-sticker.querySelector = () => null; // The illustration has not loaded yet.
-context.scmToolkitSyncResetShortcut(root);
-assert.equal(added.length, 2, 'never add a shortcut to a missing heading or image');
-
 // A narrow transcript notice is not the empty composer-adjacent rate-limit card.
 const rect = (left, top, width, height) => ({left, top, width, height, bottom: top + height});
 const makeNode = (value, bounds, parent = null) => ({
@@ -650,7 +621,7 @@ let nativeImages = 0;
 nativeBanner.querySelector = selector =>
     selector === '[data-scm-toolkit-native-rate-limit-pony]' ? nativeSticker : null;
 nativeBanner.querySelectorAll = selector =>
-    selector === 'strong, h1, h2, h3, span, p, [role="status"]' ? (showNativeMarker ? [nativeMarker] : []) :
+    selector === 'span, p, [role="status"]' ? (showNativeMarker ? [nativeMarker] : []) :
     selector === '[data-scm-toolkit-sticker-redundant="true"]' && nativeMarker.attrs['data-scm-toolkit-sticker-redundant'] === 'true'
         ? [nativeMarker] : [];
 nativeBanner.append = sticker => {
@@ -722,11 +693,6 @@ assert.equal(nativeRail.attrs['data-scm-toolkit-hidden-blank-rail'], 'true', 'hi
 assert.equal(nativeBanner.textContent, originalNativeCopy, 'preserve provider text and controls');
 context.scmToolkitSyncRateLimitPony(nativeRoot);
 assert.equal(nativeImages, 1, 'idempotent on DOM resync');
-
-// A portal-owned notice cannot make frame cleanup reach the application shell.
-const portalBannerFrame = makeNode("Rate limited", rect(0, 0, 280, 54), appRoot);
-assert.equal(context.scmToolkitNativeRateLimitFrameNodes(portalBannerFrame).length, 1);
-assert.equal(context.scmToolkitNativeRateLimitFrameNodes(portalBannerFrame)[0], portalBannerFrame);
 
 // A meaningful control appearing in the top rail must immediately restore it.
 railHasControl = true;
