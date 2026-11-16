@@ -64,10 +64,10 @@ def transform(source: str, label: str = "Codex", remove: bool = False) -> str:
              for kind, parent, identity, item, field in _slots(manifest)}
     if originals is not None:
         if not isinstance(originals, dict) or not isinstance(originals.get("entries"), list):
-            raise ValueError("Invalid Sweetie Bot Codex label restoration metadata.")
+            raise ValueError("Invalid Sweetiebot Codex label restoration metadata.")
         previous_label = originals.get("label")
         if not isinstance(previous_label, str):
-            raise ValueError("Invalid Sweetie Bot Codex label restoration value.")
+            raise ValueError("Invalid Sweetiebot Codex label restoration value.")
         for entry in originals["entries"]:
             try:
                 kind, parent, identity, value = entry
@@ -75,7 +75,7 @@ def transform(source: str, label: str = "Codex", remove: bool = False) -> str:
             except (ValueError, TypeError, KeyError) as error:
                 raise ValueError("Codex sidebar layout changed; cannot safely restore labels.") from error
             if item[field] != previous_label:
-                raise ValueError("Codex sidebar label changed outside Sweetie Bot; refusing to overwrite it.")
+                raise ValueError("Codex sidebar label changed outside Sweetiebot; refusing to overwrite it.")
             item[field] = value
         del manifest[MARKER]
 
