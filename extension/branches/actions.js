@@ -150,6 +150,7 @@ async function gitConfig(repository, key, fallback) {
 const resolvedDefaultBranches = new WeakMap();
 
 // A repository-local override wins; otherwise identify the real remote HEAD.
+// Repositories without remotes use their local base, including unborn HEAD.
 // Cache the result briefly so branch-control refreshes do not repeatedly fetch.
 async function resolveDefaultBranch(repository, remote = 'origin') {
   const cwd = repository.rootUri?.fsPath;
@@ -163,6 +164,17 @@ async function resolveDefaultBranch(repository, remote = 'origin') {
   try {
     name = await git(['config', '--local', '--get', 'scm-toolkit.default-branch']);
   } catch { /* No local override. */ }
+  if (!name && !(await git(['remote']))) {
+    const configured = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+    try {
+      await git(['show-ref', '--verify', `refs/heads/${configured}`]);
+      name = configured;
+    } catch {
+      // An initial commit has no branch ref yet, but symbolic HEAD still names it.
+      try { name = await git(['symbolic-ref', '--quiet', '--short', 'HEAD']); }
+      catch { /* Detached HEAD without a known local base remains unresolved. */ }
+    }
+  }
   if (!name) {
     try {
       const refs = await git(['ls-remote', '--symref', remote, 'HEAD']);

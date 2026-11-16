@@ -64,6 +64,30 @@ async function run(allowed, failCommit = false) {
   assert.equal(failed.commits, 1);
   assert.equal(failed.calls.at(-1), 'sweetiebot.endCommit',
     'A failed Git commit must still release the auto-pull pause');
+  for (const asynchronous of [false, true]) {
+    let committed = false, queued = false;
+    const repository = {
+      rootUri: { fsPath: '/tmp/local-repo' }, remotes: [],
+      async commit(_message, options) { committed = true; assert.equal(options.postCommitCommand, null); },
+      async push() { assert.fail('A local-only commit must not push'); }
+    };
+    const commands = { async executeCommand(command, _uri, options) {
+      if (command === 'sweetiebot.queueCommit') {
+        queued = true;
+        assert.equal(options.push, false);
+        return { queued: true };
+      }
+      if (command === 'sweetiebot.beginCommit') assert.equal(options.waitForPush, false);
+      if (command === 'sweetiebot.checkCommitLimits') return true;
+    } };
+    const context = vm.createContext({ repository, commands,
+      configuration: { getValue(key) { return key === 'sweetiebot.durableBackgroundCommits' ? asynchronous : 'push'; } },
+      notifications: { error(error) { throw error; } } });
+    vm.runInContext(snippet + '\nscmToolkitGuardCommit(repository, commands, configuration, notifications);', context);
+    await repository.commit('message', { postCommitCommand: 'push' });
+    assert.equal(queued, asynchronous);
+    assert.equal(committed, !asynchronous);
+  }
   for (const pushFails of [false, true]) {
     const events = [];
     let finishPush;

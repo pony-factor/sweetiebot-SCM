@@ -221,7 +221,7 @@ function registerCodexCommitCommand(vscode, extensionContext) {
     });
     // The public Git API suppresses post-commit commands. Keep the Push
     // checkbox behavior by dispatching the normal push command afterward.
-    if (configuration.get('postCommitCommand') === 'push') {
+    if (configuration.get('postCommitCommand') === 'push' && repository.state.remotes?.length) {
       await vscode.commands.executeCommand('git.push', root);
     }
     return { committed: true };

@@ -637,7 +637,8 @@ def enqueue(request, start=True):
         tracking = bool(remote and destination)
         remote = remote or request.get('remote', 'origin')
         destination = destination or branch
-        push = request.get('push') is True
+        # A remote-less repository is local-only even when Commit & Push is on.
+        push = request.get('push') is True and bool(git('remote'))
         if push and (not isinstance(remote, str) or remote.startswith('-')
                      or git('remote', 'get-url', remote, check=False).returncode != 0):
             raise RuntimeError('Configure the push remote before queuing Commit & Push.')
