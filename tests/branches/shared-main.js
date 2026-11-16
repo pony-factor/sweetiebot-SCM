@@ -53,14 +53,32 @@ async function openedRoot(result) {
     await fs.writeFile(path.join(root, 'untracked.txt'), 'untracked addition\n');
     const initialStatus = git('-C', root, 'status', '--porcelain');
     const initialIndex = git('-C', root, 'diff', '--cached', '--binary');
-    const initialWorktree = git('-C', root, 'diff', '--binary');
 
     const nativeFallback = editor(root);
     assert.equal(await routeBranch(nativeFallback, { rootUri: { fsPath: root } },
       { ...options, branch: 'unoccupied-pr', existingOnly: true }), false);
     assert.equal(nativeFallback.commands.calls.length, 0, 'Do not switch windows for an unoccupied PR');
     assert(!git('-C', root, 'branch', '--list', 'unoccupied-pr'), 'Do not create a fallback branch');
+    const unsaved = editor(root);
+    unsaved.workspace.textDocuments = [{ uri: { scheme: 'file', fsPath: path.join(root, 'file.txt') },
+      isDirty: true, async save() { return false; } }];
+    await assert.rejects(routeBranch(unsaved, { rootUri: { fsPath: root } },
+      { ...options, branch: 'unsaved-refused', create: true }), /Save the repository/);
+    assert(!git('-C', root, 'branch', '--list', 'unsaved-refused'), 'A refused save must not create a branch');
     const topicEditor = editor(root);
+    const sourceTab = { input: { uri: { scheme: 'file', fsPath: path.join(root, 'file.txt') } }, isActive: true };
+    let closedSourceTab = false;
+    topicEditor.window = { tabGroups: { all: [{ viewColumn: 1, tabs: [sourceTab] }],
+      async close(tabs) { closedSourceTab = tabs.includes(sourceTab); return true; } } };
+    const savedBuffer = 'unsaved editor text\n';
+    let savedWorktree;
+    topicEditor.workspace.textDocuments = [{ uri: { scheme: 'file', fsPath: path.join(root, 'file.txt') },
+      isDirty: true, async save() {
+        await fs.writeFile(this.uri.fsPath, savedBuffer);
+        savedWorktree = git('-C', root, 'diff', '--binary');
+        this.isDirty = false;
+        return true;
+      } }];
     assert.equal(await routeBranch(topicEditor, { rootUri: { fsPath: root } },
       { ...options, branch: 'topic', create: true, start: 'main' }), true);
     assert.deepEqual(topicEditor.commands.calls.at(-1)[2], { forceReuseWindow: true },
@@ -69,6 +87,9 @@ async function openedRoot(result) {
       'The originating main workspace and Codex session remain untouched');
     const topicWorkspace = topicEditor.commands.calls.at(-1)[1].fsPath;
     const topic = await openedRoot({ target: topicWorkspace });
+    assert(closedSourceTab, 'A new branch must close editors that still point into main');
+    assert(topicEditor.commands.calls.some(call => call[0] === 'vscode.open' &&
+      call[1].fsPath === path.join(topic, 'file.txt')), 'The open working file follows the new branch');
     assert.equal(path.dirname(path.dirname(topic)), path.join(baseDirectory, 'repo'));
     assert.match(path.basename(path.dirname(topic)), /^topic-(?:\d+-)?[a-z]+$/);
     assert.equal(path.dirname(path.dirname(topicWorkspace)), path.join(baseDirectory, 'repo'));
@@ -76,11 +97,11 @@ async function openedRoot(result) {
     assert.equal(git('-C', topic, 'branch', '--show-current'), 'topic');
     assert.equal(git('-C', root, 'branch', '--show-current'), 'main', 'Never switch the shared main folder');
     assert.equal(await originalRepository(topic, options), root);
-    assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), 'pending shared main\n');
+    assert.equal(await fs.readFile(path.join(topic, 'file.txt'), 'utf8'), savedBuffer);
     assert.equal(git('-C', topic, 'status', '--porcelain'), initialStatus,
       'New Branch transfers staged, unstaged, partially staged and untracked changes without Codex');
     assert.equal(git('-C', topic, 'diff', '--cached', '--binary'), initialIndex);
-    assert.equal(git('-C', topic, 'diff', '--binary'), initialWorktree);
+    assert.equal(git('-C', topic, 'diff', '--binary'), savedWorktree);
     assert.equal(git('-C', root, 'status', '--porcelain'), '', 'Verified transfer cleans main');
     const recovery = path.join(path.dirname(topic), '.sweetiebot-handoff-backup');
     assert.equal((await fs.readFile(path.join(recovery, 'index.patch'), 'utf8')).trim(), initialIndex);
