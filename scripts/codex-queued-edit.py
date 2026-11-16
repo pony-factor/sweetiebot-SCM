@@ -55,13 +55,24 @@ def transform(source, kind, enabled=True):
         declaration, body = candidates[0]
         manager = re.search(rf'({IDENT})\(({IDENT}),({IDENT})\)\.getTurnCoordinator\(\)', body)
         result = re.search(rf',({IDENT})\}}(?:async\s*)?$', body)
-        if manager is None or result is None:
+        inline = re.search(r'return(\{threadKey:[\s\S]*\})\}(?:async\s*)?$', body)
+        if manager is None or (result is None and inline is None):
             raise ValueError('Unsupported Codex queue store capabilities.')
-        original = body[result.start():result.start() + len(result[1]) + 1]
-        replacement = (',scmToolkitRegisterQueueStore(' + declaration[2] + ',' + manager[3] + ','
-                       + result[1] + ',()=>'+manager[1]+'('+manager[2]+','+manager[3]+').getTurnCoordinator())')
+        coordinator = '()=>'+manager[1]+'('+manager[2]+','+manager[3]+').getTurnCoordinator()'
+        if result is not None:
+            original = body[result.start():result.start() + len(result[1]) + 1]
+            replacement = (',scmToolkitRegisterQueueStore(' + declaration[2] + ',' + manager[3] + ','
+                           + result[1] + ',' + coordinator + ')')
+            offset = declaration.start() + result.start()
+        else:
+            # Newer Codex builds return the native store object directly,
+            # without the compiler's cached-result/comma return expression.
+            # Wrap that exact object while retaining its native action wrapper.
+            original = 'return' + inline[1]
+            replacement = ('return scmToolkitRegisterQueueStore(' + declaration[2] + ',' + manager[3]
+                           + ',' + inline[1] + ',' + coordinator + ')')
+            offset = declaration.start() + inline.start()
         # Restrict replacement to the selected native hook's return expression.
-        offset = declaration.start() + result.start()
         source = source[:offset] + replacement + source[offset + len(original):]
         edits.append([original, replacement])
     elif kind == 'rows':
