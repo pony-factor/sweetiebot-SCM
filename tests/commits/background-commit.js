@@ -153,6 +153,15 @@ async function run() {
   assert.equal(titleContexts.at(-1), true, 'title shows Pushing while a queued push waits for naming');
   assert.equal(notices.pop(), 'Commit message generation is in progress. Your changes will be pushed as soon as it completes.');
   status = {};
+  const { blockedNotification } = sandbox.module.exports;
+  const failedCommitNotice = blockedNotification('/repo', {
+    hasLocalCommit: false, error: 'Commit signing failed.', branch: 'refs/heads/main'
+  });
+  assert.match(failedCommitNotice.message, /Commit paused/);
+  assert.equal(failedCommitNotice.retryAction, 'Retry captured commit');
+  assert.equal(failedCommitNotice.stopAction, 'Dismiss failed commit');
+  assert.match(failedCommitNotice.detail, /original snapshot/);
+  assert.match(failedCommitNotice.detail, /preserves your files and staging/);
   const commit = commands.get('sweetiebot.queueCommit');
   assert.equal((await push(root)).queued, false);
   assert.equal(mergedWarnings.length, 0, 'a direct push request does not consult GitHub on the UI thread');

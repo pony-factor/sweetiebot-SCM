@@ -62,12 +62,18 @@ function readStatus(script, cwd) {
 }
 
 function blockedNotification(root, status) {
+  const uncommitted = status.hasLocalCommit === false;
+  const retryAction = uncommitted ? 'Retry captured commit' : 'Retry sync and push';
+  const stopAction = uncommitted ? 'Dismiss failed commit' : 'Stop background push';
   const conflict = /merge conflicts?/i.test(status.error || '');
   const files = Array.isArray(status.conflictPaths) ? status.conflictPaths : [];
   const branch = status.branch?.replace(/^refs\/heads\//, '');
   const count = files.length ? ` in ${files.length} file${files.length === 1 ? '' : 's'}` : '';
   return {
-    message: conflict
+    retryAction, stopAction,
+    message: uncommitted
+      ? `Sweetiebot: Commit paused. ${status.error || 'The local commit failed; your changes remain staged.'}`
+      : conflict
       ? `Sweetiebot: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
       : `Sweetiebot: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
     action: conflict ? 'View conflicting files' : 'View details',
@@ -76,8 +82,12 @@ function blockedNotification(root, status) {
       ...(conflict ? ['Push blocked: local and remote changes conflict.', '',
         ...files.map(file => '  • ' + file), ...(files.length ? [''] : [])] : []),
       status.error || '', '',
-      'Retry sync and push after resolving the problem.',
-      'Stop background push keeps your local commit and stops this queued push.'
+      uncommitted
+        ? 'Retry captured commit uses the original snapshot. Dismiss the failed commit to keep your staged changes and prepare a fresh attempt.'
+        : 'Retry sync and push after resolving the problem.',
+      uncommitted
+        ? 'No local commit was created. Dismissing preserves your files and staging.'
+        : 'Stop background push keeps your local commit and stops this queued push.'
     ].join('\n')
   };
 }
@@ -179,7 +189,7 @@ function registerBackgroundCommit(vscode, context) {
           }
           const notice = blockedNotification(root, status);
           void vscode.window.showErrorMessage(notice.message,
-            notice.action, 'Retry sync and push', 'Stop background push').then(choice => {
+            notice.action, notice.retryAction, notice.stopAction).then(choice => {
               if (choice === notice.action) {
                 if (!output) {
                   output = vscode.window.createOutputChannel('Commit & Push problems');
@@ -188,8 +198,8 @@ function registerBackgroundCommit(vscode, context) {
                 output.appendLine(notice.detail + '\n');
                 output.show(true);
               }
-              if (choice === 'Retry sync and push') control(root, 'retry');
-              if (choice === 'Stop background push') control(root, 'cancel');
+              if (choice === notice.retryAction) control(root, 'retry');
+              if (choice === notice.stopAction) control(root, 'cancel');
             });
         } else if (previous?.id && !status.id) {
           await repository.status();

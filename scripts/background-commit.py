@@ -526,6 +526,77 @@ def validated_preflight_files(snapshot, tree, parent):
     return files
 
 
+def retire_failed_uncommitted_job(meta, branch, parent):
+    """A rejected local commit must not pin future attempts to its old tree.
+
+    Called under the repository lock. Keep the journal and snapshot ref for
+    recovery; never retire a job which created a commit or moved its branch.
+    """
+    marker = Path(meta) / MARKER
+    entries = queue_entries(marker)
+    if not entries or (Path(meta) / TRANSACTION).exists():
+        return
+    directory = Path(entries[0]['directory'])
+    with (directory / 'worker.lock').open('a+b') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        job = read_journal(directory / 'job.json')
+        if (not job or job.get('phase') != 'blocked' or job.get('sha')
+                or job.get('branch') != branch or job.get('parent') != parent
+                or branch_tip(branch) != parent):
+            return
+        job.update(phase='cancelled', context='', superseded_uncommitted=True)
+        write_journal(directory / 'job.json', job)
+        save_queue(marker, entries)
+
+
+def commit_hook_environment():
+    """GUI/launchd workers need installed hook tools as well as system Git.
+
+    Preserve the caller's tool precedence and add conventional tool locations
+    without sourcing shell profiles or changing Git's signing configuration.
+    """
+    env = os.environ.copy()
+    directories = env.get('PATH', os.defpath).split(os.pathsep)
+    home = Path.home()
+    candidates = [Path('/opt/homebrew/bin'), Path('/usr/local/bin'),
+                  home / '.local/bin', home / 'Library/pnpm',
+                  home / '.local/share/pnpm', home / '.volta/bin',
+                  home / '.asdf/shims', home / '.local/share/mise/shims']
+    for name in ('PNPM_HOME', 'NVM_BIN'):
+        if env.get(name):
+            candidates.append(Path(env[name]))
+    for candidate in candidates:
+        value = str(candidate)
+        if value not in directories and candidate.is_dir():
+            directories.append(value)
+    env['PATH'] = os.pathsep.join(directories)
+    return env
+
+
+def commit_failure_message(result):
+    """Classify Git failures without retaining arbitrary hook output or secrets."""
+    output = '\n'.join((result.stderr or '', result.stdout or '')).lower()
+    if any(text in output for text in ('gpg failed to sign', 'failed to sign the data',
+                                       'signing failed', 'could not load public key')):
+        reason = 'Commit signing failed. Unlock or repair your configured signing tool and retry.'
+    elif re.search(r'(?:pnpm|npm|node|yarn): (?:command )?not found', output) or any(
+            text in output for text in ('command not found: pnpm', 'command not found: node',
+                                        'env: node: no such file or directory')):
+        reason = 'A Git hook could not find Node or its package manager. Fix the hook environment and retry.'
+    elif 'index.lock' in output and ('file exists' in output or 'unable to create' in output):
+        reason = 'The Git index is locked. Wait for the other Git operation to finish and retry.'
+    elif 'unable to auto-detect email address' in output or 'author identity unknown' in output:
+        reason = 'Git author identity is missing. Configure user.name and user.email and retry.'
+    elif 'pre-commit' in output or 'commit-msg' in output or 'husky' in output:
+        reason = 'A Git commit hook rejected the changes. Run the repository checks, fix their failures, and retry.'
+    else:
+        reason = 'Check the repository commit hooks and configured signing tool before retrying.'
+    return f'Background Git commit failed (exit {result.returncode}). {reason}'
+
+
 def enqueue(request, start=True):
     root = git('rev-parse', '--show-toplevel')
     meta = Path(git('rev-parse', '--absolute-git-dir'))
@@ -533,6 +604,7 @@ def enqueue(request, start=True):
     with (meta / (MARKER + '.lock')).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         branch, parent = state()
+        retire_failed_uncommitted_job(meta, branch, parent)
         dependencies = related_pending_jobs(core.REAL_GIT, [])
         # A branch explicitly forked under the background finalizer may queue
         # descendants of its inherited provisional commit. This is not an
@@ -1209,9 +1281,9 @@ def work(directory, commit_only=False):
                 if job['signoff']: args.append('--signoff')
                 if job.get('no_verify'): args.append('--no-verify')
                 os.environ['GIT_REFLOG_ACTION'] = 'sweetiebot-background:' + job['id']
-                result = git(*args, check=False)
+                result = git(*args, check=False, env=commit_hook_environment())
                 if result.returncode:
-                    raise RuntimeError('Background Git commit failed; inspect Git hooks or signing.')
+                    raise RuntimeError(commit_failure_message(result))
                 sha = git('rev-parse', 'HEAD')
                 # Capture the actual message too (hooks/signoff may add trailers).
                 if state()[0] != job['branch'] or not matches_commit(job, sha):
@@ -1397,7 +1469,7 @@ def control(action):
             raise RuntimeError('The background worker is active; try again after it finishes.')
         job = read_journal(directory / 'job.json')
         if action == 'cancel':
-            if job.get('provisional'):
+            if job.get('provisional') and job.get('sha'):
                 # Removing an unresolved ancestor would release placeholders to
                 # push. Give it a local fallback message before cancelling push.
                 _, _, files = captured_diff(job)
@@ -1752,6 +1824,8 @@ if __name__ == '__main__':
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
             status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths', 'mergedBranch') if key in job} if job else {}
+            if job:
+                status['hasLocalCommit'] = bool(job.get('sha'))
             recoverable = False
             if job and job['phase'] == 'blocked' and branch_recovery_candidate(job):
                 try:
