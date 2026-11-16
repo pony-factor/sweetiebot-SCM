@@ -28,6 +28,7 @@ function harness(executeCommand) {
     configuration: { getValue() { return undefined; } },
     settings: { mcpPullRequest: true, remote: 'origin' },
     currentBranch: 'draft', currentDefaultBranch: 'main', currentBranchRevision: 'head1',
+    currentBranchPublication: '2 outgoing',
     currentRepositoryUri: { toString: () => 'file:///workspace/repository' },
     pullRequestEligibilityKey: undefined, pullRequestEligibility: undefined,
     pullRequestEligibilityRetry: undefined, pullRequestEligibilityRequest: 0,
@@ -95,6 +96,20 @@ async function run() {
   await tick();
   assert.equal(unqueued.context.pullRequestButton.disabled, true,
     'Without a pending commit, the existing no-commits guard remains');
+  let published = false, publicationReads = 0;
+  const publication = harness(async () => {
+    publicationReads++;
+    return published ? { allowed: true } : { allowed: false, reason: 'no-commits' };
+  });
+  publication.context.refresh();
+  await tick();
+  assert.equal(publication.context.pullRequestButton.disabled, true);
+  published = true;
+  publication.context.currentBranchPublication = '0 outgoing';
+  publication.context.refresh();
+  await tick();
+  assert.equal(publicationReads, 2, 'A push rechecks the remote even when HEAD is unchanged');
+  assert.equal(publication.context.pullRequestButton.disabled, false);
   console.log('PR eligibility recovery checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

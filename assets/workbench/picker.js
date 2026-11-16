@@ -1757,6 +1757,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     let currentRepositoryUri;
     let currentDefaultBranch;
     let currentBranchRevision;
+    let currentBranchPublication;
     let pullRequestEligibilityKey;
     let pullRequestEligibility;
     let pullRequestEligibilityRetry;
@@ -2134,7 +2135,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             || !currentRepositoryUri;
 
         const key = [currentRepositoryUri?.toString(), branch, currentDefaultBranch,
-            currentBranchRevision, settings.remote].join('|');
+            currentBranchRevision, currentBranchPublication, settings.remote].join('|');
         if (unavailable) {
             clearTimeout(pullRequestEligibilityRetry);
             pullRequestEligibilityRetry = undefined;
@@ -2933,6 +2934,9 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             widget.repositoryDisposables.add(observe(reader => {
                 provider.actionButton?.read(reader);
                 const items = provider.statusBarCommands.read(reader) ?? [];
+                // A push changes the native ahead/behind command without
+                // changing HEAD. Recheck remote PR eligibility after it settles.
+                currentBranchPublication = items.map(item => [item.id, item.title].join(':')).join('|');
                 // Keep the first Git status command and its original arguments so the
                 // built-in branch picker remains the source of truth.
                 const command = items[0];
