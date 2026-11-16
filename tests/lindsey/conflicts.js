@@ -93,6 +93,13 @@ async function run() {
       path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex')
     }] });
     assert(git('ls-files', '-u'), 'Preview returns reviewed bytes to the sync coordinator before staging');
+    const failedPreview = stderr => generatePreview(syncUI, mockRepo, {
+      ...previewOptions, run: async () => { throw Object.assign(new Error('Command failed'), { stderr }); }
+    });
+    await assert.rejects(failedPreview('Set LINDSEY_RESOLVE_SECRET in Sweetiebot’s local environment'),
+      error => /service is not configured/.test(error.message) && !error.stderr && !error.cause);
+    await assert.rejects(failedPreview('private provider diagnostics'),
+      error => /could not prepare conflict proposals/.test(error.message) && !error.message.includes('private provider'));
     assert.throws(() => lindseyScript(root, [], '/nonexistent/lindsey-sync', folder), /not available locally/);
     const checkout = path.join(folder, 'GitHub', 'pony-factor', 'lindsey-sync');
     fs.mkdirSync(path.join(checkout, 'scripts'), { recursive: true });

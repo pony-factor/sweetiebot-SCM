@@ -113,11 +113,22 @@ async function generatePreview(vscode, repository, { sync = false, run = exec, f
   const script = findScript(root, vscode.workspace?.workspaceFolders || []);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-lindsey-'));
   try {
-    const { stdout } = await run(process.execPath,
-      [script, '--repo', root, '--output', temporary], {
-        cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', GIT_TERMINAL_PROMPT: '0' }
-      });
+    let stdout;
+    try {
+      ({ stdout } = await run(process.execPath,
+        [script, '--repo', root, '--output', temporary], {
+          cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', GIT_TERMINAL_PROMPT: '0' }
+        }));
+    } catch (error) {
+      // Never send provider output through the Git error formatter, which
+      // mistakes the resolver's filename for an ordinary merge failure.
+      // Only recognize fixed setup diagnostics; provider output stays private.
+      const missingService = /Set LINDSEY_RESOLVE_SECRET|LINDSEY_RESOLVE_URL must be HTTPS/.test(String(error.stderr || ''));
+      throw new Error(missingService
+        ? 'Lindsey conflict resolution service is not configured. Configure LINDSEY_RESOLVE_URL and LINDSEY_RESOLVE_SECRET in the local VS Code environment, then retry. No resolutions were applied.'
+        : 'Lindsey could not prepare conflict proposals. Check the local resolution service and retry. No resolutions were applied.');
+    }
     const manifest = JSON.parse(stdout);
     const files = await inspectPreview(repository, temporary, manifest);
     for (const file of files) {
