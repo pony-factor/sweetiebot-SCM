@@ -1,10 +1,15 @@
 'use strict';
 const assert = require('node:assert/strict');
+const { existsSync } = require('node:fs');
 const { stackedPullRequestBase, verifyPublishedBranch } = require('../../extension/github/pull-request');
 (async () => {
   let state = 'MERGED', ancestry = 0;
+  const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
   const run = async (program, args) => {
-    if (program === 'gh') return { stdout: JSON.stringify({state, headRefName:'parent', baseRefName:'main'}) };
+    if (args[0] === 'pr') {
+      assert.equal(program, gh, 'Stack checks must resolve Homebrew gh outside the GUI PATH');
+      return { stdout: JSON.stringify({state, headRefName:'parent', baseRefName:'main'}) };
+    }
     if (args[0] === 'config') {
       if (args.at(-1).includes('branch.child.')) return {stdout:'parent'};
       throw Object.assign(new Error('unset'), {code:1});
