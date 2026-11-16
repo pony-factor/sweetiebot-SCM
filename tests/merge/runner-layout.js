@@ -76,6 +76,18 @@ const {openRepairRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,createRe
   assert.equal(started[6].slot,4,'Completion frees a slot for the next queued repair');
   finishers[1]();await tasks[7];
   pool.dispose();await Promise.all(tasks.map(async task=>(await task).done));
+  const twoRunners=createRepairPool(2),twoStarted=[],twoFinish=[];
+  const twoTasks=Array.from({length:6},(_,index)=>twoRunners.run('two-'+index,async slot=>{
+    twoStarted.push(slot);let finish;const done=new Promise(resolve=>{finish=resolve;});
+    twoFinish[index]=finish;return {done,dispose:finish};
+  }));
+  await Promise.all(twoTasks.slice(0,4));
+  assert.deepEqual(twoStarted,[4,5,6,7],'Two review runners allow exactly four concurrent repairs');
+  twoRunners.setRunnerCount(3);
+  await Promise.all(twoTasks);
+  assert.deepEqual(twoStarted,[4,5,6,7,8,9],'A third review runner provides two additional repair slots');
+  twoRunners.dispose();await Promise.all(twoTasks.map(async task=>(await task).done));
+  assert.throws(()=>createRepairPool(4),/one to three/);
   const serial=createExecutionQueue(),order=[];let releaseWrite;
   const writeGate=new Promise(resolve=>{releaseWrite=resolve;});
   const first=serial(async()=>{order.push('first');await writeGate;order.push('first done');});

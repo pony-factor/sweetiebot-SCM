@@ -19,6 +19,8 @@ const moduleRoot = path.resolve(__dirname, process.env.LINDSEY_MODULE_ROOT || '.
 const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require(moduleRoot + '/github/pr-session');
 
 (async () => {
+  const prCount=Number(process.env.LINDSEY_TEST_PR_COUNT || 11);
+  const runnerCount=prCount>=10?3:2,repairCount=runnerCount*2;
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'parallel-pr-session-'));
   const originalFetch = globalThis.fetch;
   const dashboardPath = require.resolve(moduleRoot + '/merge/dashboard');
@@ -29,7 +31,7 @@ const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require
     const root = path.join(temporary, 'repo');
     await fs.mkdir(root); execFileSync('git', ['init', '--quiet', root]);
     const file = fsPath => ({ scheme: 'file', fsPath });
-    const selection = { repository: 'owner/repo', pullRequests: Array.from({ length: 11 }, (_, index) => ({
+    const selection = { repository: 'owner/repo', pullRequests: Array.from({ length: prCount }, (_, index) => ({
       number: index + 1, title: 'Feature ' + (index + 1), url: 'https://github.com/owner/repo/pull/' + (index + 1),
       head: 'feature-' + (index + 1), headSha: 'a'.repeat(40), base: 'main'
     })) };
@@ -54,7 +56,7 @@ const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require
     require.cache[dashboardPath] = { ...dashboardModule, exports: { ...dashboardExports,
       startMergeDashboard(host, selected, token, options) {
         dashboardCount++;
-        assert.equal(selected.pullRequests.length, 11); dashboardOptions = options;
+        assert.equal(selected.pullRequests.length, prCount); dashboardOptions = options;
         return { recordBatchState(state) { recorded = state; },recordRepairWorker() {},recordLocalResult() {} };
       } } };
     globalThis.fetch = async address => {
@@ -84,7 +86,7 @@ const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require
     const originalSelection = JSON.parse(await fs.readFile(path.join(path.dirname(workspace.fsPath), 'merge-selection.json'), 'utf8'));
     assert(originalSelection.pullRequests.every(pr => pr.headSha === 'a'.repeat(40)), 'Recovery preserves original dashboard snapshots');
     const launches = calls.filter(([command]) => command === 'workbench.action.browser.open');
-    assert.equal(launches.length, 3, 'Large independent queues open three GPT sessions');
+    assert.equal(launches.length, runnerCount, 'Review runner count follows the ten-PR boundary');
     const assigned = [];
     for (const [, options] of launches) {
       const prompt = await localPrompt(options.url);
@@ -93,31 +95,31 @@ const { launchMergeSession, resumePRSession, launchBlockerWebSession } = require
       assert(JSON.parse(snapshot).every(pr => pr.headSha === 'c'.repeat(40)), 'Explicit recovery reviews the current heads');
       assigned.push(...JSON.parse(snapshot).map(pr => pr.number));
     }
-    assert.equal(assigned.length, 11); assert.equal(new Set(assigned).size, 11);
-    assert.equal(recorded.workers.length, 3);
+    assert.equal(assigned.length, prCount); assert.equal(new Set(assigned).size, prCount);
+    assert.equal(recorded.workers.length, runnerCount);
     await dashboardOptions.onFocusWorker(2);
     assert.deepEqual(calls.slice(-2).map(([command]) => command),
       ['workbench.action.focusFirstEditorGroup', 'workbench.action.openEditorAtIndex2']);
     await resumePRSession(vscode, context);
-    assert.equal(calls.filter(([command]) => command === 'workbench.action.browser.open').length, 3,
+    assert.equal(calls.filter(([command]) => command === 'workbench.action.browser.open').length, runnerCount,
       'Restoring a dashboard does not resubmit the three merge chats');
-    const repairLaunches=Array.from({length:7},(_,index)=>launchBlockerWebSession(vscode,context,file(root),
+    const repairLaunches=Array.from({length:repairCount+1},(_,index)=>launchBlockerWebSession(vscode,context,file(root),
       'https://chatgpt.com/#sweetiebot_merge=1&q=Resolve+compatible+conflicts',index+1,
       {...selection,pullRequests:[selection.pullRequests[index]]}));
-    const handles=await Promise.all(repairLaunches.slice(0,6));
-    assert.equal(tabs.length,9,'Six conflict chats run alongside the three reviewers');
+    const handles=await Promise.all(repairLaunches.slice(0,repairCount));
+    assert.equal(tabs.length,runnerCount+repairCount,'Each reviewer gets two concurrent repair chats');
     assert.equal(calls.filter(([command])=>command==='vscode.openFolder').length,1,
       'Parallel conflict repairs stay in the existing bulk window');
-    for(const [,options] of calls.filter(([command])=>command==='workbench.action.browser.open').slice(3)) {
+    for(const [,options] of calls.filter(([command])=>command==='workbench.action.browser.open').slice(runnerCount)) {
       const prompt=await localPrompt(options.url);
       assert(prompt.includes('BRANCH-ONLY EXECUTION'),'A repair chat cannot merge or close its PR');
     }
     await vscode.window.tabGroups.close(handles[0].tab,true);
-    handles.push(await repairLaunches[6]);
-    assert.equal(maximumTabs,9,'A seventh repair waits for a free chat slot');
+    handles.push(await repairLaunches[repairCount]);
+    assert.equal(maximumTabs,runnerCount+repairCount,'Overflow repairs wait for a free chat slot');
     for(const handle of handles)handle.dispose();
     await Promise.all(handles.map(handle=>handle.done));
-    assert.equal(tabs.length,3,'Finishing repairs retains all three review chats');
+    assert.equal(tabs.length,runnerCount,'Finishing repairs retains the review chats');
     const openedBeforeRestore=calls.filter(([command])=>command==='workbench.action.browser.open').length;
     dashboardOptions.onClose();
     await new Promise(resolve=>setTimeout(resolve,20));

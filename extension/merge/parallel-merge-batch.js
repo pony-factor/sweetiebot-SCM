@@ -21,7 +21,7 @@ function planMergeLanes(selection, files, limit = 3) {
     if (!components.has(root)) components.set(root, []);
     components.get(root).push(pr);
   });
-  const lanes = Array.from({ length: Math.min(limit, prs.length > 10 ? 3 : 2, components.size) }, () => []);
+  const lanes = Array.from({ length: Math.min(limit, prs.length >= 10 ? 3 : 2, components.size) }, () => []);
   // Place larger dependency groups first so a long stack does not accumulate
   // all the independent work before another worker receives its first PR.
   for (const component of [...components.values()].sort((a, b) => b.length - a.length || a[0].number - b[0].number)) {
@@ -50,7 +50,7 @@ function planMergeLanes(selection, files, limit = 3) {
 async function createParallelMergeBatch(rawSelection, options = {}) {
   const selection = validateSelection(rawSelection);
   const { api, onState = async () => {}, onProgress = () => {}, execute,
-    makePrompt, maxWorkers = 3, threshold = 8 } = options;
+    makePrompt, maxWorkers = 3, threshold = 2 } = options;
   if (selection.pullRequests.length < threshold || maxWorkers < 2) return createMergeBatch(selection, options);
   const files = new Map();
   // Filenames only: never fetch file contents to decide whether work is independent.

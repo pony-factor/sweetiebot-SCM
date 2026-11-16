@@ -2,13 +2,14 @@
 const windows = new WeakMap();
 const names = ['First','Second','Third','Fourth','Fifth','Sixth','Seventh','Eighth','Ninth'];
 
-// Reviews have three reserved chats. Repairs use six additional slots;
+// Each active review runner gets two repair chats in the additional slots;
 // waiting jobs do not open another chat, and a PR cannot occupy two slots.
-function createRepairPool() {
+function createRepairPool(runnerCount = 3) {
+  if (!Number.isInteger(runnerCount) || runnerCount < 1 || runnerCount > 3) throw Error('Expected one to three review runners.');
   const jobs = new Map(), pending = [], active = new Map();
   let disposed = false;
   function drain() {
-    while (!disposed && pending.length && active.size < 6) {
+    while (!disposed && pending.length && active.size < runnerCount * 2) {
       const job = pending.shift();
       const slot = [4,5,6,7,8,9].find(id => !active.has(id));
       active.set(slot, job);
@@ -28,6 +29,11 @@ function createRepairPool() {
     }
   }
   return {
+    setRunnerCount(count) {
+      if (!Number.isInteger(count) || count < 1 || count > 3) throw Error('Expected one to three review runners.');
+      runnerCount = count;
+      drain();
+    },
     run(key, start) {
       if (disposed) return Promise.reject(Error('The bulk repair queue was closed.'));
       if (jobs.has(key)) return jobs.get(key).promise;
