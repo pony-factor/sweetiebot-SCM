@@ -118,7 +118,10 @@ async function humanSquashMerge(repository, number, {
   const signLocally = requireSignedCommit;
   // A human-opened PR retains its author in a native squash. Keep Lindsey as
   // the merge actor when App mode is enabled; never switch to a human token.
-  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge === true && original.user?.type === 'User' &&
+  // Installation-scoped repository reads can omit administrative merge settings.
+  // Only an explicit false disables this route; GitHub's merge endpoint still
+  // enforces the repository setting, checks and branch protection.
+  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge !== false && original.user?.type === 'User' &&
     original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
   decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');

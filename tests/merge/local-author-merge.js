@@ -6,7 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -82,7 +82,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
           '-f','commit_title='+value('commitHeadline'),'-f','commit_message='+value('commitBody')]);
         return {data:{mergePullRequest:{pullRequest:{merged:outcome.merged,mergeCommit:{oid:outcome.sha}}}}};
       }
-      if(endpoint==='repos/owner/repo')return {default_branch:'main',allow_squash_merge:true,allow_rebase_merge:true,private:privateRepository};
+      if(endpoint==='repos/owner/repo')return {default_branch:'main',...(squashSetting===null?{}:{allow_squash_merge:squashSetting}),allow_rebase_merge:true,private:privateRepository};
       if(endpoint.endsWith('/pulls/1/merge')&&method==='PUT'){
         assert(humanOpener,'Only a matching human opener uses native squash');
         const values=Object.fromEntries(fields.filter((_,i)=>i%2).map(value=>{const i=value.indexOf('=');return [value.slice(0,i),value.slice(i+1)];}));
@@ -142,7 +142,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       publicationDirectory:path.join(root,'receipts'),
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
-    if(!syncOnly && (!humanOpener || requireSignedCommit)) {
+    if(!syncOnly && (!humanOpener || requireSignedCommit || squashSetting===false)) {
       const blocked = await action();
       assert.equal(blocked.merged,false,'Unsupported attribution/signing must not be reported as merged');
       assert.equal(blocked.status,conflict?'needs_resolution':'blocked');
@@ -218,6 +218,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
  await fixture({appMode:true});
  await fixture({appMode:true,closeRetry:true});
  await fixture({appMode:true,humanOpener:true});
+ await fixture({appMode:true,humanOpener:true,squashSetting:null});
+ await fixture({appMode:true,humanOpener:true,squashSetting:false});
  await fixture({appMode:true,humanOpener:true,localSigningEnabled:true,lostAck:true});
  await fixture({appMode:true,humanOpener:true,localSigningEnabled:true,advanceBase:true,conflict:true});
  await fixture({protectedHead:true});
