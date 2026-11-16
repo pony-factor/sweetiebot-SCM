@@ -34,37 +34,16 @@ function scmToolkitFindRateLimitHeading(root) {
     }
     return null;
 }
-// Stickers replace or visually hide the native heading. Mount the shortcut
-// beside the actual image, not inside the now-hidden rate-limit caption.
-function scmToolkitFindRateLimitSticker(root) {
-    const stickers = [...root.querySelectorAll('[data-scm-toolkit-rate-limit-pony="true"]')]
-        .filter(node => node.isConnected !== false
-            && node.querySelector?.('img')
-            && !node.closest?.(scmToolkitRateLimitTranscriptSelector)
-            && !node.closest?.('[hidden], [aria-hidden="true"], [inert]'));
-    return stickers.length === 1 ? stickers[0] : null;
-}
-function scmToolkitRemoveResetShortcut(button) {
-    const parent = button?.parentElement;
-    if (parent?.dataset?.scmToolkitResetShortcutLayout === 'true') {
-        parent.style.flexDirection = parent.dataset.scmToolkitResetShortcutFlexDirection || '';
-        delete parent.dataset.scmToolkitResetShortcutLayout;
-        delete parent.dataset.scmToolkitResetShortcutFlexDirection;
-    }
-    button?.remove();
-}
 function scmToolkitSyncResetShortcut(root) {
     const nativeSummary = scmToolkitFindAvailableResetSummary(root);
     const existing = root.querySelector('[data-scm-toolkit-reset-action]');
-    const sticker = nativeSummary ? scmToolkitFindRateLimitSticker(root) : null;
-    const heading = nativeSummary && !sticker ? scmToolkitFindRateLimitHeading(root) : null;
-    const mount = sticker || heading?.parentElement;
-    if (!mount) {
-        scmToolkitRemoveResetShortcut(existing);
+    const heading = nativeSummary ? scmToolkitFindRateLimitHeading(root) : null;
+    if (!heading) {
+        existing?.remove();
         return;
     }
-    if (existing && existing.parentElement === mount) return;
-    scmToolkitRemoveResetShortcut(existing);
+    if (existing && existing.parentElement === heading.parentElement) return;
+    existing?.remove();
     const button = root.createElement('button');
     button.type = 'button';
     button.textContent = 'Use credits';
@@ -72,10 +51,8 @@ function scmToolkitSyncResetShortcut(root) {
     button.setAttribute('data-scm-toolkit-reset-action', '');
     button.setAttribute('aria-label', 'Use an available Codex rate-limit reset');
     button.title = 'Review and confirm a banked Codex reset';
-    button.style.marginInlineStart = sticker ? '0' : 'auto';
-    button.style.marginTop = sticker ? '6px' : '0';
+    button.style.marginInlineStart = 'auto';
     button.style.flex = '0 0 auto';
-    button.style.maxWidth = '100%';
     button.style.cursor = 'pointer';
     button.style.padding = '4px 10px';
     button.style.borderRadius = '6px';
@@ -87,19 +64,14 @@ function scmToolkitSyncResetShortcut(root) {
         if (native?.isConnected && typeof native.click === 'function') {
             native.click(); // Native reset dialog owns all confirmations.
         } else {
-            scmToolkitRemoveResetShortcut(button);
+            button.remove();
         }
     });
-    if (sticker) {
-        sticker.dataset.scmToolkitResetShortcutLayout = 'true';
-        sticker.dataset.scmToolkitResetShortcutFlexDirection = sticker.style.flexDirection || '';
-        sticker.style.flexDirection = 'column';
-    } else {
-        mount.style.display = 'flex';
-        mount.style.alignItems = 'center';
-        mount.style.gap = '8px';
-    }
-    mount.append(button);
+    const row = heading.parentElement;
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.append(button);
 }
 
 // The empty status strip above the composer owns the Twilight sticker.
@@ -426,7 +398,7 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
         else if (notice.style) notice.style.display = 'none';
     }
 }
-// Codex's native banner can be compacted by hide/reset-times.js into a
+// Codex's native banner can be compacted by hide-reset-times.js into a
 // [data-scm-toolkit-rate-limited] span while keeping the full outer <aside>.
 // In that layout the generic "rich" notice branch would add a companion pony
 // inside the original green card. Replace that presentation only for the
@@ -434,14 +406,12 @@ function scmToolkitHideDuplicateRateLimitNotices(notices, footer) {
 // once the picture is showing.
 function scmToolkitCollapsedNativeRateLimitBanner(root) {
     const banners = new Set();
-    const hasEditor = [...root.querySelectorAll(scmToolkitCodexEditorSelector)].some(editor =>
-        !editor.closest?.('[hidden], [aria-hidden="true"], [inert], ' + scmToolkitRateLimitTranscriptSelector));
-    if (!hasEditor) return null;
     for (const status of root.querySelectorAll?.('[data-scm-toolkit-rate-limited="true"]') || []) {
         const banner = status.closest?.('aside');
-        if (!banner || status.closest?.(scmToolkitRateLimitTranscriptSelector)
-            || status.closest?.('[hidden], [aria-hidden="true"], [inert]')
-            || scmToolkitIsQueuedPrompt(status)) continue;
+        const composer = banner?.closest?.('[data-codex-composer-root]');
+        if (!composer || status.closest?.(scmToolkitRateLimitTranscriptSelector)
+            || scmToolkitIsQueuedPrompt(status)
+            || !composer.querySelector?.(scmToolkitCodexEditorSelector)) continue;
         banners.add(banner);
     }
     return banners.size === 1 ? [...banners][0] : null;
@@ -450,7 +420,7 @@ function scmToolkitCollapsedNativeRateLimitBanner(root) {
 // and any empty wrapper around it, while leaving the illustration's own border.
 // Only suppress a redundant short caption; do not change native quota data.
 function scmToolkitHideNativeRateLimitCaption(banner) {
-    for (const label of banner.querySelectorAll?.('strong, h1, h2, h3, span, p, [role="status"]') || []) {
+    for (const label of banner.querySelectorAll?.('span, p, [role="status"]') || []) {
         if (!scmToolkitIsShortRateLimit(label.textContent)
             || label.querySelector?.('a, button, input, [role="button"]')) continue;
         if (label.getAttribute?.('data-scm-toolkit-sticker-redundant') !== 'true')
@@ -471,8 +441,6 @@ const scmToolkitNativeRateLimitFrame = [
 function scmToolkitNativeRateLimitFrameNodes(banner) {
     const nodes = [];
     const composer = banner?.closest?.('[data-codex-composer-root]');
-    // Portal-owned banners have no composer ancestor: never strip app or page frames.
-    if (!composer) return banner ? [banner] : [];
     for (let node = banner; node && node !== composer; node = node.parentElement) {
         if (node !== banner && node.querySelector?.('textarea, input, [contenteditable="true"]')) break;
         nodes.push(node);
