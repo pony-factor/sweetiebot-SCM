@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { openIndependentWorkspace } = require('../../extension/branches/new-workspace');
-const { routeBranch, originalRepository, reconnectManagedMain, recordDeletedBranchReturn, reconnectDeletedBranch } = require('../../extension/branches/shared-main');
+const { routeBranch, mainRoot, originalRepository, reconnectManagedMain, recordDeletedBranchReturn, reconnectDeletedBranch } = require('../../extension/branches/shared-main');
 const { registerManagedWindowActivity, stopManagedWindowActivity } =
   require('../../extension/branches/workspace-activity');
 
@@ -365,33 +365,14 @@ async function openedRoot(result) {
     const originalStatus = git('-C', root, 'status', '--porcelain');
     const originalIndex = git('-C', root, 'diff', '--cached');
     const fallbackEditor = editor(root);
-    const fallback = await openIndependentWorkspace(fallbackEditor, options);
-    const linkedMain = await openedRoot(fallback);
-    assert.equal(git('-C', linkedMain, 'branch', '--show-current'), 'main');
-    assert.equal(await fs.readFile(path.join(linkedMain, 'file.txt'), 'utf8'), 'committed main\n');
-    assert.equal(git('-C', linkedMain, 'rev-parse', '--path-format=absolute', '--git-common-dir'),
-      path.join(root, '.git'), 'Main shares the original Git database, not a clone');
-    const mainManifest = JSON.parse(await fs.readFile(
-      path.join(path.dirname(linkedMain), '.sweetiebot-workspace.json'), 'utf8'));
-    assert.equal(mainManifest.kind, 'main-worktree');
-    assert.deepEqual(fallbackEditor.commands.calls.at(-1)[2], { forceNewWindow: true });
+    await assert.rejects(openIndependentWorkspace(fallbackEditor, options),
+      error => error.code === 'SWEETIEBOT_ORIGINAL_ON_TOPIC');
+    assert.equal(fallbackEditor.commands.calls.length, 0, 'Never create a substitute main window');
     assert.equal(git('-C', root, 'branch', '--show-current'), 'external-topic');
     assert.equal(git('-C', root, 'status', '--porcelain'), originalStatus);
     assert.equal(git('-C', root, 'diff', '--cached'), originalIndex);
     assert.equal(await fs.readFile(path.join(root, 'file.txt'), 'utf8'), 'additional unstaged topic edits\n');
-    assert.equal(await reconnectManagedMain(editor(linkedMain), options), false,
-      'Existing main worktree must never reconnect to a topic checkout');
-    const anotherMain = await openIndependentWorkspace(editor(root), options);
-    assert.equal(await openedRoot(anotherMain), linkedMain,
-      'A second main window reuses the existing main worktree');
-    const legacyFallback = await openIndependentWorkspace(editor(legacy), options);
-    assert.equal(await openedRoot(legacyFallback), linkedMain,
-      'Legacy clones may reopen the shared linked main worktree');
-    const returningFromOriginal = editor(root);
-    assert.equal(await routeBranch(returningFromOriginal, { rootUri: { fsPath: root } },
-      { ...options, branch: 'main' }), true);
-    assert.equal(await openedRoot({ target: returningFromOriginal.commands.calls.at(-1)[1].fsPath }),
-      linkedMain, 'Returning to main preserves the original topic checkout');
+    const linkedMain = root;
     const originalTopicEditor = editor(root);
     assert.equal(await routeBranch(originalTopicEditor, { rootUri: { fsPath: root } }, {
       ...options, branch: 'new-from-original-topic', create: true, start: 'refs/heads/main'
@@ -404,6 +385,72 @@ async function openedRoot(result) {
     assert.equal(git('-C', root, 'diff', '--cached'), '');
     assert.equal(git('-C', newFromOriginal, 'status', '--porcelain'), originalStatus);
     assert.equal(git('-C', newFromOriginal, 'diff', '--cached'), originalIndex);
+    // Reclaim an old managed main without changing files, commits, or staging.
+    git('-C', root, 'switch', '--detach', 'main');
+    const oldMain = path.join(baseDirectory, 'repo', 'old-main', 'repo');
+    await fs.mkdir(path.dirname(oldMain), {recursive: true});
+    git('-C', root, 'worktree', 'add', oldMain, 'main');
+    assert.equal(await originalRepository(oldMain, options), root);
+    await fs.writeFile(path.join(oldMain, 'pending.txt'), 'keep pending main edits');
+    await assert.rejects(mainRoot(oldMain, options), /pending edits/);
+    assert.equal(git('-C', oldMain, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', root, 'branch', '--show-current'), '');
+    await fs.unlink(path.join(oldMain, 'pending.txt'));
+    // Nonconflicting original edits may remain in place, including staging.
+    await fs.writeFile(path.join(root, 'original-draft.txt'), 'source draft');
+    git('-C', root, 'add', 'original-draft.txt');
+    const sourceIndex = git('-C', root, 'diff', '--cached', '--binary');
+    const mainHead = git('-C', oldMain, 'rev-parse', 'HEAD');
+    assert.equal(await mainRoot(oldMain, options), root);
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', root, 'diff', '--cached', '--binary'), sourceIndex);
+    assert.equal(git('-C', oldMain, 'branch', '--show-current'), '');
+    assert.equal(git('-C', oldMain, 'rev-parse', 'HEAD'), mainHead);
+    assert.equal(await reconnectManagedMain(editor(oldMain), options), true,
+      'Saved windows reconnect after main ownership moves to the source folder');
+    const sourceMainOne = await openIndependentWorkspace(editor(root), options);
+    const sourceMainTwo = await openIndependentWorkspace(editor(oldMain), options);
+    assert.notEqual(sourceMainOne.target, sourceMainTwo.target);
+    assert.equal(await openedRoot(sourceMainOne), root);
+    assert.equal(await openedRoot(sourceMainTwo), root);
+    // An explicit later detach invalidates the migration receipt.
+    const migratedHead = path.join(git('-C', oldMain, 'rev-parse', '--absolute-git-dir'), 'HEAD');
+    const migratedStamp = await fs.stat(migratedHead);
+    await fs.utimes(migratedHead, migratedStamp.atime, new Date(migratedStamp.mtimeMs + 5000));
+    assert.equal(await reconnectManagedMain(editor(oldMain), options), false);
+
+    // Reproduce an older install whose primary Git directory is managed,
+    // while the real source folder is a detached linked checkout.
+    const managedPrimary = path.join(baseDirectory, 'second-repo', 'legacy-primary', 'second-repo');
+    const canonical = path.join(githubDirectory, 'owner', 'second-repo');
+    await fs.mkdir(managedPrimary, {recursive: true});
+    git('init', '-b', 'main', managedPrimary);
+    git('-C', managedPrimary, 'config', 'user.name', 'Test');
+    git('-C', managedPrimary, 'config', 'user.email', 'test@example.invalid');
+    git('-C', managedPrimary, 'remote', 'add', 'origin', 'https://github.com/owner/second-repo.git');
+    await fs.writeFile(path.join(managedPrimary, 'file.txt'), 'first version\n');
+    git('-C', managedPrimary, 'add', 'file.txt');
+    git('-C', managedPrimary, 'commit', '-m', 'Synthetic base');
+    git('-C', managedPrimary, 'worktree', 'add', '--detach', canonical);
+    await fs.writeFile(path.join(managedPrimary, 'file.txt'), 'main version\n');
+    git('-C', managedPrimary, 'add', 'file.txt');
+    git('-C', managedPrimary, 'commit', '-m', 'Synthetic main advance');
+    assert.equal(await originalRepository(managedPrimary, options), canonical,
+      'A managed Git common directory must not hide the original source folder');
+    await fs.writeFile(path.join(canonical, 'file.txt'), 'private original edit\n');
+    const beforeRefusal = git('-C', canonical, 'status', '--porcelain');
+    await assert.rejects(mainRoot(managedPrimary, options));
+    assert.equal(git('-C', managedPrimary, 'branch', '--show-current'), 'main',
+      'A refused canonical checkout restores the previous main owner');
+    assert.equal(git('-C', canonical, 'branch', '--show-current'), '');
+    assert.equal(git('-C', canonical, 'status', '--porcelain'), beforeRefusal);
+    assert.equal(await fs.readFile(path.join(canonical, 'file.txt'), 'utf8'), 'private original edit\n');
+    git('-C', canonical, 'restore', '--worktree', 'file.txt');
+    assert.equal(await mainRoot(managedPrimary, options), canonical);
+    assert.equal(git('-C', canonical, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', managedPrimary, 'branch', '--show-current'), '');
+    assert.equal(await openedRoot(await openIndependentWorkspace(editor(managedPrimary), options)), canonical);
+
     // Only an explicit completed deletion can reroute other detached windows.
     const retired = path.join(baseDirectory, 'retired');
     git('-C', root, 'worktree', 'add', '-b', 'to-delete', retired, 'main');
