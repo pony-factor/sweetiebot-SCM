@@ -92,7 +92,7 @@ class BackgroundCommitTests(unittest.TestCase):
         self.git('remote', 'remove', 'origin')
         directory = self.queue(push=True)
         self.assertFalse(self.job(directory)['push'])
-        worker.process_job(directory)
+        worker.work(directory)
         self.assertEqual(self.job(directory)['phase'], 'done')
         self.assertEqual(self.git('log', '-1', '--format=%s'), '🧪 Record captured change')
 

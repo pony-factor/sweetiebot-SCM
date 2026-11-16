@@ -24,7 +24,7 @@ async function run() {
   const queued = [];
   const repository = {
     rootUri: { fsPath: '/selected' },
-    state: { indexChanges: ['staged'], workingTreeChanges: [{ uri: { fsPath: '/selected/edited file' } }, { uri: { fsPath: '/selected/deleted file' } }], untrackedChanges: [{ uri: { fsPath: '/selected/new file' } }], mergeChanges: [] },
+    state: { remotes: [{ name: 'origin' }], indexChanges: ['staged'], workingTreeChanges: [{ uri: { fsPath: '/selected/edited file' } }, { uri: { fsPath: '/selected/deleted file' } }], untrackedChanges: [{ uri: { fsPath: '/selected/new file' } }], mergeChanges: [] },
     get inputBox() { throw new Error('The commit backend must not access the message box'); },
     async commit(message, options) {
       assert.equal(normalizations, commits.length + 1, 'normalize staged files before each commit');
@@ -220,6 +220,10 @@ async function run() {
   expectedPaths = ['/selected/edited file', '/selected/deleted file'];
   await prepare(uri, { all: 'tracked' });
   assert.equal(additions, 4, 'explicit tracked mode preserves untracked files');
+  repository.state.remotes = [];
+  await commit(uri, 'Local-only commit');
+  assert.equal(commits.at(-1).message, 'Local-only commit');
+  assert.equal(pushes, 1, 'a remote-less Codex commit must remain local even when push is enabled');
   console.log('Local Codex commit command checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
