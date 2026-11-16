@@ -26,6 +26,42 @@ from tests.installation.install import workbench_fixture
 
 
 class RepairTests(unittest.TestCase):
+    def setUp(self):
+        self.real_restore_core = repair.restore_core
+        core = patch.object(repair, 'restore_core')
+        self.restore_core = core.start()
+        self.addCleanup(core.stop)
+        jobs = patch.object(install, 'resume_stalled_background_jobs', return_value=False)
+        jobs.start()
+        self.addCleanup(jobs.stop)
+
+    def test_local_core_repair_precedes_remote_check(self):
+        events = []
+        self.restore_core.side_effect = lambda args: events.append(('core', args))
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', side_effect=lambda _cache: events.append(('remote', None))), \
+                patch.object(repair.os, 'execv'):
+            repair.repair(['--app', '/Custom/Code.app'])
+        self.assertEqual(events, [('core', ['--app', '/Custom/Code.app']), ('remote', None)])
+
+    def test_core_preflight_does_not_pass_optional_extension_flags(self):
+        with patch.object(repair.subprocess, 'run') as run:
+            self.real_restore_core(['--app', '/Custom/Code.app', '--codex-extension', '/optional'])
+        self.assertEqual(run.call_args.args[0][-3:], ['--core-only', '--app', '/Custom/Code.app'])
+
+    def test_check_never_runs_mutating_core_preflight(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                patch.object(repair, 'prepare_update', return_value=None), patch.object(repair.os, 'execv'):
+            repair.repair(['--check'])
+        self.restore_core.assert_not_called()
+
+    def test_scoped_repairs_do_not_expand_to_browser_or_workbench(self):
+        for flag in ('--codex-only', '--workbench-only', '--core-only', '--ui-only', '--uninstall'):
+            with tempfile.TemporaryDirectory() as directory, patch.object(Path, 'home', return_value=Path(directory)), \
+                    patch.object(repair, 'prepare_update', return_value=None), patch.object(repair.os, 'execv'):
+                repair.repair([flag])
+        self.restore_core.assert_not_called()
+
     def test_repair_restores_workbench_and_stale_runtime_tools(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             root = Path(directory)

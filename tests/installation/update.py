@@ -60,7 +60,7 @@ class UpdateTests(unittest.TestCase):
             root = Path(directory)
             (root / 'upstream.git').mkdir()
             payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
-                       'scripts/repair.py': 'repair'}
+                       'scripts/repair.py': 'repair --core-only'}
             with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]), \
                     patch.object(update, 'installer_imports', return_value=False):
                 self.assertIsNone(update.prepare_update(root, force=True))
@@ -194,7 +194,7 @@ class UpdateTests(unittest.TestCase):
                     update.THINKING_ASSET.as_posix(): 'thinking guard'}
                 if supports_updates:
                     payload['scripts/update.py'] = 'updater'
-                    payload['scripts/repair.py'] = 'repair'
+                    payload['scripts/repair.py'] = 'repair --core-only'
                 with patch.object(update, 'git', side_effect=[b'', b'', b'abc\n', archive(payload)]):
                     result = update.prepare_update(root)
                 self.assertEqual(result is not None, supports_updates)
@@ -205,7 +205,7 @@ class UpdateTests(unittest.TestCase):
                 root = Path(directory)
                 (root / 'upstream.git').mkdir()
                 payload = {
-                    'scripts/install.py': 'installer', 'scripts/repair.py': 'repair',
+                    'scripts/install.py': 'installer', 'scripts/repair.py': 'repair --core-only',
                     'scripts/update.py': 'FORMATS = {"extension": {".js", ".html"}}',
                     'scripts/workspace-search.py': 'FORMATS = {"extension": {".js", ".html"}}',
                     'extension/codex/draft-handoff.js': 'handoff',
@@ -226,7 +226,7 @@ class UpdateTests(unittest.TestCase):
             root = Path(directory)
             (root / 'upstream.git').mkdir()
             payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
-                       'scripts/repair.py': 'repair'}
+                       'scripts/repair.py': 'repair --core-only'}
             for force in (False, True):
                 with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
                     result = update.prepare_update(root, force=force)
@@ -237,7 +237,7 @@ class UpdateTests(unittest.TestCase):
             root = Path(directory)
             (root / 'upstream.git').mkdir()
             payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
-                       'scripts/repair.py': 'repair',
+                       'scripts/repair.py': 'repair --core-only',
                        update.THINKING_ASSET.as_posix(): 'thinking guard'}
             for profile in (None, 'SHARED_BROWSER_PROFILE = 2', update.SHARED_PROFILE_MARKER):
                 if profile is not None:
@@ -248,6 +248,21 @@ class UpdateTests(unittest.TestCase):
                         result = update.prepare_update(root, force=force)
                     self.assertEqual(result is not None, force or profile == update.SHARED_PROFILE_MARKER)
 
+    def test_automatic_update_retains_local_first_recovery_until_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'upstream.git').mkdir()
+            payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
+                       'scripts/repair.py': 'older repair',
+                       update.THINKING_ASSET.as_posix(): 'thinking guard',
+                       update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER}
+            for force in (False, True):
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                    self.assertEqual(update.prepare_update(root, force=force) is not None, force)
+            payload['scripts/repair.py'] = 'repair --core-only'
+            with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]):
+                self.assertIsNotNone(update.prepare_update(root))
+
     def test_same_revision_repairs_missing_or_stale_installed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -257,7 +272,7 @@ class UpdateTests(unittest.TestCase):
             (cache / 'installed-revision').write_text('abc\n')
             payload = {
                 'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
-                'scripts/repair.py': 'repair', 'scripts/codex-composer.py': 'new placeholders',
+                'scripts/repair.py': 'repair --core-only', 'scripts/codex-composer.py': 'new placeholders',
                 update.SHARED_PROFILE_SOURCE.as_posix(): update.SHARED_PROFILE_MARKER,
                     update.THINKING_ASSET.as_posix(): 'thinking guard',
                 'scripts/ai-commit.py': 'current Git wrapper',

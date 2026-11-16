@@ -14,6 +14,8 @@ let preserveCalls = 0, preserveAvailable = true, preserveFails = false;
 const reloadEvents = [];
 const notices = [];
 let invalidations = 0;
+let warningChoice;
+const warningOptions = [];
 const warnings = [];
 const workspaceData = new Map();
 const workspaceState = {
@@ -32,7 +34,10 @@ const sandbox = vm.createContext({
   require(name) {
     if (name === 'path') return path;
     if (name === 'os') return { homedir() { return '/test-home'; } };
-    if (name === 'fs') return { existsSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); return paused; } };
+    if (name === 'fs') return {
+      existsSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); return paused; },
+      unlinkSync(file) { assert.equal(file, '/test-home/.config/sweetiebot/pause-app-repair'); paused = false; }
+    };
     if (name === '../ui/runtime-revision') return { runtimeRevision() { return revision; } };
     if (name === '../ui/extension-cache') return { invalidateUserExtensionCache() { invalidations++; return true; } };
     if (name === '../ui/reload-guard') return require('../../extension/ui/reload-guard');
@@ -55,7 +60,10 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '../../extension/codex/refr
 const context = { subscriptions: [], extensionUri: { fsPath: '/toolkit' }, workspaceState };
 const vscode = {
   env: { appRoot: '/Custom/Code.app/Contents/Resources/app' },
-  workspace: { getConfiguration() { return { get() { return enabled; } }; },
+  ConfigurationTarget: { Global: 1 },
+  workspace: { getConfiguration() { return { get() { return enabled; }, async update(key, value, target) {
+    assert.equal(key, 'automaticAppRepair'); assert.equal(target, 1); enabled = value;
+  } }; },
     onDidChangeConfiguration(fn) { configurationChanged = fn; return { dispose() {} }; } },
   commands: {
     async getCommands() {
@@ -74,7 +82,7 @@ const vscode = {
     }
   },
   Uri: { joinPath(uri, ...parts) { return { fsPath: [uri.fsPath, ...parts].join('/') }; } },
-  window: { onDidChangeWindowState(fn) { focusChanged = fn; return { dispose() {} }; }, showInformationMessage(message) { notices.push(message); return Promise.resolve(); }, showWarningMessage(message) { warnings.push(message); return Promise.resolve(); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
+  window: { onDidChangeWindowState(fn) { focusChanged = fn; return { dispose() {} }; }, showInformationMessage(message) { notices.push(message); return Promise.resolve(); }, showWarningMessage(message, ...options) { warnings.push(message); warningOptions.push(options); return Promise.resolve(warningChoice); }, createOutputChannel() { return { append() {}, appendLine() {}, dispose() {} }; } },
   extensions: {
     getExtension() { return installed ? { extensionPath } : undefined; },
     onDidChange(fn) { changed = fn; return { dispose() {} }; }
@@ -223,6 +231,70 @@ focusChanged({ focused: true });
 assert.equal(timers.size, 0, 'paused profiles cannot schedule repairs on update or focus');
 assert.equal(launches, launchesBeforePause);
 pausedContext.subscriptions.at(-1).dispose();
+assert(warnings.at(-1).includes('shared stop flag'), 'a paused repair cannot silently strand an updated app');
+assert.deepEqual(warningOptions.at(-1), ['Resume automatic repair']);
+warningChoice = 'Resume automatic repair';
+const resumed = { ...context, subscriptions: [] };
+sandbox.module.exports.registerCodexRefresh(vscode, resumed);
+await new Promise(setImmediate);
+assert.equal(paused, false, 'explicit Resume removes the shared stop flag');
+assert.equal(timers.size, 1, 'Resume queues repair immediately');
+resumed.subscriptions.at(-1).dispose();
+warningChoice = undefined;
+
+// A failed optional update must still activate the successfully recovered UI.
+sandbox.process.env.VSCODE_PID = '100';
+const browserData = new Map();
+const browserState = {
+  get(key, fallback) { return browserData.has(key) ? browserData.get(key) : fallback; },
+  async update(key, value) { browserData.set(key, value); }
+};
+const browserContext = { ...context, subscriptions: [], workspaceState: browserState };
+sandbox.module.exports.registerCodexRefresh(vscode, browserContext);
+tick();
+const recoveredChild = children.at(-1);
+recoveredChild.callbacks.get('stdout')('Sweetiebot core repair com');
+recoveredChild.callbacks.get('stdout')('plete.\nBrowser session changes require a full VS Code quit and restart after installation; Reload Window is not sufficient.');
+assert.equal(browserState.get('sweetiebot.browserProfileRestart'), '100');
+assert(warnings.at(-1).includes('saved site sign-ins'));
+revision = 'core-recovered-with-optional-failure';
+const beforeCoreReload = reloads;
+recoveredChild.callbacks.get('close')(1);
+const [settleId, settle] = [...timers.entries()].at(-1);
+timers.delete(settleId); settle();
+await new Promise(setImmediate);
+assert.equal(reloads, beforeCoreReload + 1, 'optional failure cannot withhold a completed core repair');
+browserContext.subscriptions.at(-1).dispose();
+const beforeRestartWarning = warnings.length;
+const stillRunning = { ...browserContext, subscriptions: [] };
+sandbox.module.exports.registerCodexRefresh(vscode, stillRunning);
+assert.equal(warnings.length, beforeRestartWarning + 1, 'Reload Window retains the required full-restart notice');
+stillRunning.subscriptions.at(-1).dispose();
+sandbox.process.env.VSCODE_PID = '101';
+const restarted = { ...browserContext, subscriptions: [] };
+sandbox.module.exports.registerCodexRefresh(vscode, restarted);
+assert.equal(warnings.length, beforeRestartWarning + 1, 'a new app process clears the restart notice');
+restarted.subscriptions.at(-1).dispose();
+// Browser executable changes participate in stale-window detection.
+const { runtimeRevision } = require('../../extension/ui/runtime-revision');
+const runtimeRoot = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'sweetiebot-runtime-test-'));
+try {
+  const appRoot = path.join(runtimeRoot, 'app');
+  const extensionRoot = path.join(runtimeRoot, 'extensions', 'toolkit');
+  fs.mkdirSync(extensionRoot, {recursive: true});
+  fs.mkdirSync(path.join(appRoot, 'out/vs/platform/browserView/electron-browser'), {recursive: true});
+  const nativeMain = path.join(appRoot, 'out/mainImpl.js');
+  const preload = path.join(appRoot, 'out/vs/platform/browserView/electron-browser/preload-browserView.js');
+  fs.writeFileSync(nativeMain, 'native main');
+  fs.writeFileSync(preload, 'native preload');
+  const runtime = () => runtimeRevision({env: {appRoot}, extensions: {getExtension() {}}}, {extensionPath: extensionRoot});
+  const before = runtime();
+  fs.writeFileSync(nativeMain, 'repaired main');
+  const mainRepaired = runtime();
+  assert.notEqual(before, mainRepaired);
+  fs.writeFileSync(preload, 'repaired preload');
+  assert.notEqual(mainRepaired, runtime());
+} finally { fs.rmSync(runtimeRoot, {recursive: true, force: true}); }
 console.log('Codex update repair lifecycle checks passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -45,6 +45,16 @@ def mark(path):
         pass
 
 
+def restore_core(arguments):
+    core_arguments = []
+    if '--app' in arguments:
+        index = arguments.index('--app')
+        core_arguments = arguments[index:index + 2]
+    return subprocess.run([sys.executable, '-u',
+                           str(Path(__file__).with_name('install.py')),
+                           '--core-only', *core_arguments], check=False)
+
+
 def repair(arguments, *, install=False):
     lock_dir = Path.home() / 'Library/Caches/dev.ponyfactor.sweetiebot'
     lock_dir.mkdir(parents=True, exist_ok=True)
@@ -54,6 +64,11 @@ def repair(arguments, *, install=False):
         except BlockingIOError:
             print('Another window is updating Sweetie Bot; retrying before offering a reload.', flush=True)
             return RETRY_LATER
+        # Restore local app customizations before a slow/offline release check,
+        # or an incompatible optional extension can hold up the visible repair.
+        if not install and not any(flag in arguments for flag in (
+                '--check', '--uninstall', '--codex-only', '--ui-only', '--workbench-only', '--core-only')):
+            restore_core(arguments)
         checked = lock_dir / 'last-remote-check'
         failed = lock_dir / 'last-remote-failure'
         check_remote = install or not (

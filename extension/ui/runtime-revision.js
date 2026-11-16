@@ -24,6 +24,8 @@ function runtimeRevision(vscode, context) {
   for (const name of ['workbench.desktop.main.js', 'workbench.desktop.main.css']) {
     file(path.join(vscode.env.appRoot, 'out/vs/workbench', name));
   }
+  file(path.join(vscode.env.appRoot, 'out/mainImpl.js'));
+  file(path.join(vscode.env.appRoot, 'out/vs/platform/browserView/electron-browser/preload-browserView.js'));
   tree(context.extensionPath);
   const extensionsRoot = path.dirname(context.extensionPath);
   for (const name of fs.readdirSync(extensionsRoot).sort()) {

@@ -1652,6 +1652,31 @@ def repair_workbench(app, settings, *, check=False):
     print(f"Restored SCM workbench for VS Code {version}. Reload the intended window to apply the change.")
 
 
+def repair_core(app, settings, *, check=False):
+    """Recover update-sensitive UI and profile routing without optional extensions."""
+    repair_workbench(app, settings, check=check)
+    # Browser compatibility must not prevent the already validated SCM repair.
+    try:
+        patches = browser_pr.patch_files(app)
+    except (ValueError, OSError) as error:
+        print(f"Warning: browser repair skipped: {error}", flush=True)
+    else:
+        paths, old, new = map(list, zip(*patches))
+        if not check and old != new:
+            if old != [path.read_text() for path in paths]:
+                raise RuntimeError("VS Code changed during validation; retry the command.")
+            backup = Path(tempfile.mkdtemp(prefix="sweetiebot-browser-repair-"))
+            for path in paths:
+                shutil.copy2(path, backup / path.name)
+            write_pair(paths, new, old)
+            print(f"Previous browser files saved to {backup}")
+        if any(path.name == 'mainImpl.js' and previous != updated
+               for path, previous, updated in patches):
+            print("Browser session changes require a full VS Code quit and restart after installation; Reload Window is not sufficient.", flush=True)
+    if not check:
+        print("Sweetiebot core repair complete.", flush=True)
+
+
 def plan_codex_patches(args, settings):
     """Plan optional Codex edits without changing the independent app plan."""
     paths, old, new = [], [], []
@@ -1899,7 +1924,10 @@ def main():
     parser.add_argument("--ui-only", action="store_true", help="Update Codex UI and EFS view labels/icons without host or workbench patches")
     parser.add_argument("--repair", action="store_true", help="Repair app patches and refresh companion tools")
     parser.add_argument("--workbench-only", action="store_true", help="Restore only SCM workbench patches and live components, independently of Codex patches")
+    parser.add_argument("--core-only", action="store_true", help="Restore SCM and shared browser profiles before checking optional integrations or remote updates")
     args = parser.parse_args()
+    if args.core_only and (args.uninstall or args.configure or args.codex_only or args.ui_only or args.codex_extension or args.workbench_only):
+        parser.error("--core-only cannot be combined with other scoped or uninstall operations")
     if args.workbench_only and (args.uninstall or args.configure or args.codex_only or args.ui_only or args.codex_extension):
         parser.error("--workbench-only cannot be combined with --uninstall, --configure, --codex-only, --ui-only, or --codex-extension")
     if args.repair and (args.uninstall or args.configure or args.codex_only):
@@ -1911,6 +1939,9 @@ def main():
     if args.ui_only and (args.uninstall or args.configure or args.repair or args.codex_only):
         parser.error("--ui-only cannot be combined with uninstall, configure, repair, or codex-only")
     settings = load_settings()
+    if args.core_only:
+        repair_core(args.app, settings, check=args.check)
+        return
     if args.workbench_only:
         repair_workbench(args.app, settings, check=args.check)
         return

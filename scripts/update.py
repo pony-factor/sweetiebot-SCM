@@ -178,6 +178,12 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
                  or SHARED_PROFILE_MARKER not in published_profile.read_text())):
         print('Published release predates shared browser sign-ins; keeping the installed preview.', flush=True)
         return None
+    local_repair = Path(__file__).with_name('repair.py')
+    published_repair = candidate / 'scripts/repair.py'
+    if (not force and '--core-only' in local_repair.read_text()
+            and '--core-only' not in published_repair.read_text()):
+        print('Published release predates local-first app recovery; keeping the installed preview.', flush=True)
+        return None
     if not installer_imports(candidate):
         print('Published installer cannot load with this Python; keeping the installed sources.', flush=True)
         return None

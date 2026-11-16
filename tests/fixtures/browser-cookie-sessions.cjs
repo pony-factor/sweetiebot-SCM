@@ -28,12 +28,15 @@ function finish(error) {
 
 app.whenReady().then(async () => {
   const cookie = 'sweetiebot_cookie_ci=disposable-fixture';
+  const login = 'sweetiebot_session_ci=disposable-session';
   server = http.createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html');
     if (request.url === '/seed') {
-      response.setHeader('Set-Cookie', `${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`);
+      response.setHeader('Set-Cookie', [`${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`,
+        `${login}; Path=/; HttpOnly; SameSite=Lax`]);
     }
-    response.end(`<body>${(request.headers.cookie || '').split('; ').includes(cookie) ? 'authenticated' : 'anonymous'}</body>`);
+    const cookies = (request.headers.cookie || '').split('; ');
+    response.end(`<body>${cookies.includes(cookie) && cookies.includes(login) ? 'authenticated' : 'anonymous'}</body>`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -73,6 +76,13 @@ app.whenReady().then(async () => {
     if (phase === 'seed') {
       await visit(repository, '/before-login', 'anonymous');
       await visit(repository, '/seed', 'anonymous');
+      const deadline = Date.now() + 5000;
+      while (true) {
+        const [saved] = await repository.cookies.get({name: 'sweetiebot_session_ci'});
+        if (saved && !saved.session) break;
+        assert(Date.now() < deadline, 'synthetic session cookie must be retained before exit');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
     }
     for (const id of ['repository', 'new-pr', 'bulk-merge', 'another-repository']) {
       await visit(browser({scope: 'workspace'}, id), `/${id}`, 'authenticated');

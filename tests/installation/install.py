@@ -2041,6 +2041,7 @@ class IndependentRepairTests(WorkbenchFixture):
                 (install, 'ai_wrapper_path', self.root / 'bin/git-wrapper'),
                 (install, 'sync_ai_wrapper', False),
                 (install, 'sync_model_picker', False),
+                (install, 'resume_stalled_background_jobs', False),
                 (install, 'persist_message_bar_layout', None),
                 (install, 'invalidate_extension_cache', None),
                 (install.workspace_search, 'sync_extension', False),
@@ -2070,6 +2071,30 @@ class IndependentRepairTests(WorkbenchFixture):
     def run_installer(self, *flags):
         with patch('sys.argv', ['install.py', '--app', str(self.app), *flags]):
             install.main()
+
+    def test_core_repair_recovers_profile_and_ui_without_optional_integrations(self):
+        with patch.object(install, 'plan_codex_patches', side_effect=AssertionError('optional Codex')), \
+                patch.object(install.github_pr, 'patch_files', side_effect=AssertionError('optional GitHub')), \
+                patch.object(install, 'sync_ai_wrapper', side_effect=AssertionError('Git wrapper')), \
+                patch.object(install, 'resume_stalled_background_jobs', side_effect=AssertionError('commit jobs')):
+            self.run_installer('--core-only')
+        self.assertIn(install.START, self.paths[0].read_text())
+        self.assertIn(install.browser_pr.STORAGE_START, self.native_main.read_text())
+        self.assertIn('Sweetiebot core repair complete.', self.output.getvalue())
+        self.assertIn('full VS Code quit and restart', self.output.getvalue())
+
+    def test_core_repair_restores_scm_even_if_browser_is_unsupported(self):
+        self.native_main.write_text('unsupported browser lifecycle')
+        self.run_installer('--core-only')
+        self.assertIn(install.START, self.paths[0].read_text())
+        self.assertEqual(self.native_main.read_text(), 'unsupported browser lifecycle')
+        self.assertNotIn(install.browser_pr.START, self.preload.read_text())
+        self.assertIn('browser repair skipped', self.output.getvalue())
+
+    def test_core_check_never_writes(self):
+        before = [p.read_bytes() for p in self.files]
+        self.run_installer('--core-only', '--check')
+        self.assertEqual([p.read_bytes() for p in self.files], before)
 
     def test_full_repair_restores_browser_and_scm_after_late_codex_failure(self):
         self.run_installer('--repair')
