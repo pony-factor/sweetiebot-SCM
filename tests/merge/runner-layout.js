@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {openRepairRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,createRepairPool,createExecutionQueue}=require('../../extension/merge/runner-layout');
+const {openRepairRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,createRepairPool,createExecutionQueue,executionResources}=require('../../extension/merge/runner-layout');
 (async()=>{
   const batch={label:'Squash merge PRs'},dashboard={label:'Lindsey · Merge progress'},draft={label:'Original PR',draft:'unsent text'};
   const groups=[{viewColumn:1,tabs:[batch]},{viewColumn:2,tabs:[dashboard,draft]}];
@@ -63,19 +63,31 @@ const {openRepairRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,createRe
   assert.equal(groups[0].tabs.length,1);
   assert(groups[2].tabs.includes(dashboard)&&groups[2].tabs.includes(draft));
   const pool=createRepairPool(),started=[],finishers=[];
-  const tasks=Array.from({length:5},(_,index)=>pool.run('repair-'+index,async slot=>{
+  const tasks=Array.from({length:8},(_,index)=>pool.run('repair-'+index,async slot=>{
     started.push({index,slot});let finish;
     const done=new Promise(resolve=>{finish=resolve;});finishers[index]=finish;
     return {done,dispose:finish};
   }));
-  await Promise.all(tasks.slice(0,3));
-  assert.deepEqual(started.map(item=>item.slot),[4,5,6],'Three repair chats use slots four through six');
-  assert.equal(started.length,3,'Additional repairs wait without opening another chat');
+  await Promise.all(tasks.slice(0,6));
+  assert.deepEqual(started.map(item=>item.slot),[4,5,6,7,8,9],'Six repair chats use slots four through nine');
+  assert.equal(started.length,6,'Additional repairs wait without opening another chat');
   assert.equal(pool.run('repair-0',()=>assert.fail('Duplicate repair')),tasks[0]);
-  finishers[0]();await tasks[3];
-  assert.equal(started[3].slot,4,'Completion frees a slot for the next queued repair');
-  finishers[1]();await tasks[4];
+  finishers[0]();await tasks[6];
+  assert.equal(started[6].slot,4,'Completion frees a slot for the next queued repair');
+  finishers[1]();await tasks[7];
   pool.dispose();await Promise.all(tasks.map(async task=>(await task).done));
+  const twoRunners=createRepairPool(2),twoStarted=[],twoFinish=[];
+  const twoTasks=Array.from({length:6},(_,index)=>twoRunners.run('two-'+index,async slot=>{
+    twoStarted.push(slot);let finish;const done=new Promise(resolve=>{finish=resolve;});
+    twoFinish[index]=finish;return {done,dispose:finish};
+  }));
+  await Promise.all(twoTasks.slice(0,4));
+  assert.deepEqual(twoStarted,[4,5,6,7],'Two review runners allow exactly four concurrent repairs');
+  twoRunners.setRunnerCount(3);
+  await Promise.all(twoTasks);
+  assert.deepEqual(twoStarted,[4,5,6,7,8,9],'A third review runner provides two additional repair slots');
+  twoRunners.dispose();await Promise.all(twoTasks.map(async task=>(await task).done));
+  assert.throws(()=>createRepairPool(4),/one to three/);
   const serial=createExecutionQueue(),order=[];let releaseWrite;
   const writeGate=new Promise(resolve=>{releaseWrite=resolve;});
   const first=serial(async()=>{order.push('first');await writeGate;order.push('first done');});
@@ -87,5 +99,34 @@ const {openRepairRunner,arrangeRunnerPanes,updateResponsiveRunnerLayout,createRe
   await assert.rejects(serial(async()=>{throw Error('Failed write');}),/Failed write/);
   await serial(async()=>order.push('recovered'));
   assert.equal(order.at(-1),'recovered','A failed write does not strand later queued work');
+  const selection={repository:'o/r',pullRequests:[{number:1,head:'one',base:'main'},
+    {number:2,head:'two',base:'main'},{number:3,head:'child',base:'one'}]};
+  const repair=n=>executionResources({results:[{number:n,operation:'sync'}]},selection);
+  const merge=n=>executionResources({results:[{number:n}]},selection);
+  const concurrent=createExecutionQueue(),events=[];
+  let releaseRepair;
+  const repairGate=new Promise(resolve=>{releaseRepair=resolve;});
+  const slowRepair=concurrent(async()=>{events.push('repair one');await repairGate;},repair(1));
+  const ownMerge=concurrent(async()=>events.push('merge one'),merge(1));
+  const otherRepair=concurrent(async()=>events.push('repair two'),repair(2));
+  await otherRepair;
+  assert.deepEqual(events,['repair one','repair two'],'A different PR repair runs while the first PR and its merge wait');
+  releaseRepair();await Promise.all([slowRepair,ownMerge]);
+  assert.equal(events.at(-1),'merge one','Merging a PR waits for its own repair');
+  let releaseMerge;
+  const mergeGate=new Promise(resolve=>{releaseMerge=resolve;});
+  const firstMerge=concurrent(async()=>{events.push('first merge');await mergeGate;},merge(1));
+  const nextMerge=concurrent(async()=>events.push('second merge'),merge(2));
+  const childRepair=concurrent(async()=>events.push('child repair'),repair(3));
+  await childRepair;
+  assert.equal(events.at(-1),'child repair','Other branch repairs proceed during a base merge');
+  assert(!events.includes('second merge'),'Merges into the same base remain serialized');
+  releaseMerge();await Promise.all([firstMerge,nextMerge]);
+  assert.equal(events.at(-1),'second merge');
+  await assert.rejects(concurrent(async()=>{throw Error('repair failed');},repair(1)),/repair failed/);
+  await concurrent(async()=>events.push('repair recovered'),repair(1));
+  assert.equal(events.at(-1),'repair recovered');
+  assert.deepEqual(executionResources({results:[{number:1}]},selection,true),repair(1));
+  assert.throws(()=>executionResources({results:[{number:99}]},selection),/outside the selected/);
   console.log('In-window repair chats, stacked runner panes, overflow tabs, duplicate focus and draft preservation passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

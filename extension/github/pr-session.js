@@ -155,9 +155,10 @@ async function openMergeWorker(vscode, launch) {
 
 function createBulkRepairRuntime(vscode, context, root, selection, api, execute) {
   const layout=require('../merge/runner-layout');
-  const pool=layout.createRepairPool();
+  const pool=layout.createRepairPool(1);
   let disposed=false;
   const runtime={repository:selection.repository,root:root.fsPath,
+    setRunnerCount(count) {pool.setRunnerCount(count);},
     accepts(repairSelection) {
       return repairSelection.pullRequests.length === 1 && repairSelection.pullRequests.every(pr=>
         selection.pullRequests.some(original=>original.number===pr.number && original.head===pr.head &&
@@ -382,7 +383,7 @@ async function resumePRSession(vscode, context) {
           event => { report(event); controller?.recordLocalProgress?.(event); });
         const summaryErrors = await mergePublications.record(snapshot, result, executed);
         return { ...executed, summaryErrors };
-      }));
+      }), require('../merge/runner-layout').executionResources(result, snapshot, input.options?.syncOnly === true));
       if (!input.options?.syncOnly) {
         activeRepairRuntime?.dispose();
         activeRepairRuntime=createBulkRepairRuntime(vscode,context,root,selection,endpoint=>{
@@ -445,6 +446,7 @@ async function resumePRSession(vscode, context) {
         execute: runLocal,
         parallelConflicts:()=>vscode.workspace.getConfiguration('sweetiebot').get('mergeAutoFixConflicts',false)===true,
         onState: async state => {
+          activeRepairRuntime?.setRunnerCount(state.workers?.length || 1);
           awakeState = state;
           updateAwake();
           for (const number of Object.keys(blockerReports)) {

@@ -36,11 +36,11 @@ async function submit(url, body) {
   assert(reversedStack.pullRequests.findIndex(pr => pr.number === 1) < reversedStack.pullRequests.findIndex(pr => pr.number === 3));
   assert.equal(planMergeLanes(selection, new Map()).length, 1, 'Unknown file ownership falls back to one session');
 
-  for (const count of [8, 9, 10, 11, 12]) {
+  for (const count of [2, 7, 8, 9, 10, 11, 12]) {
     const subset = { ...selection, pullRequests: selection.pullRequests.slice(0, count) };
     const shared = new Map(subset.pullRequests.map(pr => [pr.number, ['shared.js']]));
     const balanced = planMergeLanes(subset, shared);
-    assert.equal(balanced.length, count > 10 ? 3 : 2, 'Middle starts only above ten PRs');
+    assert.equal(balanced.length, count >= 10 ? 3 : 2, 'Middle starts at ten PRs');
     const sizes = balanced.map(lane => lane.pullRequests.length);
     assert(Math.max(...sizes) - Math.min(...sizes) <= 1, 'Overlapping files distribute evenly');
     assert.equal(new Set(balanced.flatMap(lane => lane.pullRequests.map(pr => pr.number))).size, count);
