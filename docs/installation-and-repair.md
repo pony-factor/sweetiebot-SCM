@@ -46,6 +46,18 @@ python3 scripts/install.py --workbench-only
 
 This uses the existing customization settings and guarded workbench transforms, saves the previous workbench files in the printed backup directory, and refreshes the live workbench components. Reload the affected VS Code window afterward. This option excludes browser profile repairs; use the full installer to restore shared browser sessions. Codex assets, companion extensions, Git configuration, and repository files are untouched. An unsupported or externally modified workbench patch still stops the repair before writing.
 
+## Codex queue compatibility checks
+
+Every PR and main push runs the queue adapters against fresh stable and pre-release Codex packages installed through the [official VS Code CLI](https://code.visualstudio.com/docs/configure/command-line). A separate daily run detects upstream releases even when Sweetiebot has no new commits; the workflow also supports manual runs. These checks require both native adapters, validate the patched JavaScript with Node, verify repeat installation and exact restoration, and leave the downloaded bundles unchanged. Existing browser tests cover queue editing, pause/resume, order and attachments. An unsupported release fails CI rather than silently skipping the override. Reports retain the exact version, platform, bundle hashes and adapter result for 14 days; no sign-in or credentials are required.
+
+To check a local package without changing it:
+
+```sh
+python3 scripts/ci/check-codex-queue-compatibility.py \
+  --extension /path/to/openai.chatgpt-version \
+  --report /tmp/codex-queue-compatibility.json
+```
+
 ## Security and removal
 
 The settings server listens on local authenticated loopback. GitHub App PEMs belong in Keychain or private credential files, never repo files or debug output ([App guide](distinct-github-apps.md)). **Workspace Trust** remains VS Code's decision: trusting the managed parent trusts **all** its children, including future ones. Never trust an uncontrolled parent.
