@@ -180,6 +180,7 @@
         "codex/queued-edit.js",
         "codex/queued-edit.py",
         "codex/rate-limit/controls.js",
+        "codex/rate-limit-controls.js",
         "codex/rate-limit/continuation.js",
         "codex/recent-chats.py",
         "codex/refresh.js",
