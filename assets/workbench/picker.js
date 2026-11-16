@@ -703,7 +703,7 @@ function scmToolkitCoauthorTrailer(settings = {}) {
         || /[\x00-\x1f\x7f<>\u2028\u2029]/.test(name)
         || typeof email !== 'string' || email.length > 254
         || !/^[^\s<>@]+@[^\s<>@]+$/.test(email)) {
-        throw new Error('Invalid co-author name or email in Sweetie Bot settings.');
+        throw new Error('Invalid co-author name or email in Sweetiebot settings.');
     }
     if (name === 'Codex' && email === 'noreply@openai.com') return SCM_TOOLKIT_CODEX_COAUTHOR;
     return `Co-authored-by: ${name} <${email}>`;
