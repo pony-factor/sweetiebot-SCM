@@ -35,7 +35,7 @@
 
 Run on a supported macOS machine in disposable branches/repos where changes will be published:
 
-- [ ] Installer: `python3 scripts/install.py --check`, install, reload, update, and review **Output → Sweetie Bot app repair**.
+- [ ] Installer: `python3 scripts/install.py --check`, install, reload, update, and review **Output → Sweetiebot app repair**.
 - [ ] Settings: change, persist, and reset a harmless toggle; verify repository-level Markdown opt-out independently of global Spellcheck Changes.
 - [ ] Commits: stage a known diff; check blank AI vs explicit title, commit authorship, co-author trailer, hooks and size check. On a disposable branch test durable finalization and avoid editing pending placeholder history.
 - [ ] Branches: create a managed worktree, inspect `git worktree list --porcelain`, test an already-active branch, dirty worktree protection, and stack parent selection.

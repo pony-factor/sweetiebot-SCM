@@ -86,7 +86,7 @@ class CodexWindowLabelTests(unittest.TestCase):
     def test_rejects_changed_labels_and_invalid_input(self):
         changed = codex_label.transform(example_manifest(), "CelestAI")
         altered = changed.replace('"title": "CelestAI"', '"title": "Unexpected"', 1)
-        with self.assertRaisesRegex(ValueError, "outside Sweetie Bot"):
+        with self.assertRaisesRegex(ValueError, "outside Sweetiebot"):
             codex_label.transform(altered, "Luna")
         for value in ("", "text\nlabel", "x" * 81):
             with self.subTest(value=value), self.assertRaises(ValueError):

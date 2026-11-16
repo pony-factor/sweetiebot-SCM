@@ -253,7 +253,7 @@ def repair(extension_path: Path | None = None) -> list[Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Remove Sweetie Bot's retired Codex composer patch from installed OpenAI extensions."
+        description="Remove Sweetiebot's retired Codex composer patch from installed OpenAI extensions."
     )
     parser.add_argument(
         "--extension",
@@ -267,7 +267,7 @@ def main() -> None:
             print(f"Restored {path}")
         print("Reload Visual Studio Code to start Codex with the restored webview bundle.")
     else:
-        print("No retired Sweetie Bot Codex composer patch was found.")
+        print("No retired Sweetiebot Codex composer patch was found.")
 
 
 if __name__ == "__main__":

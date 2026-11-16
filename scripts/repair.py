@@ -62,7 +62,7 @@ def repair(arguments, *, install=False):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | (0 if install else fcntl.LOCK_NB))
         except BlockingIOError:
-            print('Another window is updating Sweetie Bot; retrying before offering a reload.', flush=True)
+            print('Another window is updating Sweetiebot; retrying before offering a reload.', flush=True)
             return RETRY_LATER
         # Restore local app customizations before a slow/offline release check,
         # or an incompatible optional extension can hold up the visible repair.

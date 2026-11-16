@@ -269,7 +269,7 @@ class WorkspaceSearchViewProvider {
     try {
       const settings = this.getSettings();
       const model = String(settings.chatModel || '').trim();
-      if (!settings.askOllama || !model) throw new Error('Choose an Ask Ollama chat model in Sweetie Bot settings.');
+      if (!settings.askOllama || !model) throw new Error('Choose an Ask Ollama chat model in Sweetiebot settings.');
       const answer = await ask(settings, model, this.lastQuery, this.lastResults);
       this.post({ type: 'answer', answer: answer || 'Ollama returned an empty answer.', model });
     } catch (error) {

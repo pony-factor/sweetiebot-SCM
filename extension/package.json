@@ -561,7 +561,7 @@
           "type": "boolean",
           "default": true,
           "scope": "window",
-          "description": "Open Sweetie Bot / Source Control when each VS Code window starts, then return keyboard focus to the editor."
+          "description": "Open Sweetiebot / Source Control when each VS Code window starts, then return keyboard focus to the editor."
         },
         "sweetiebot.pullRequestAutoRefresh": {
           "type": "boolean",
@@ -609,7 +609,7 @@
           "type": "boolean",
           "default": true,
           "scope": "machine",
-          "description": "Automatically install Sweetie Bot updates from main, restore customizations, and reload stale windows after updates settle. Background windows reload when focused."
+          "description": "Automatically install Sweetiebot updates from main, reapply its patches after VS Code or extension updates, and reload windows when required. Background windows reload when focused."
         },
         "sweetiebot.messageBarLayout": {
           "type": "string",

@@ -55,9 +55,9 @@ The locally built installer expects the **Sweetiebot Installer Local Signing** K
 
 ### Updates and repair
 
-After the initial bootstrap is installed, the companion extension can restore compatible patches after VS Code or extension updates without rebuilding the installer app. **Initialization → Automatically update and restore app customizations** controls automatic repair and update checks. Some live workbench components update without a window reload; other patches and first-time installation still require a reload.
+After the initial bootstrap is installed, the companion extension can restore compatible patches after VS Code or extension updates without rebuilding the installer app. **Initialization → Automatically update Sweetiebot and restore patches** controls automatic repair and update checks. Some live workbench components update without a window reload; other patches and first-time installation still require a reload.
 
-Look in **Output → Sweetie Bot app repair** for skipped patches, update failures, and reload details. Unsupported upstream versions are guarded rather than patched indiscriminately. A currently installed version that predates automatic repair may need the installer once.
+Look in **Output → Sweetiebot app repair** for skipped patches, update failures, and reload details. Unsupported upstream versions are guarded rather than patched indiscriminately. A currently installed version that predates automatic repair may need the installer once.
 
 ## Settings
 
@@ -227,7 +227,7 @@ Prefer the live settings page for the current option names and defaults rather t
 
 | Symptom | First checks |
 | --- | --- |
-| Customizations disappeared after an update | **Output → Sweetie Bot app repair**; app version, supported patch anchors, permissions; `python3 scripts/install.py --check` |
+| Customizations disappeared after an update | **Output → Sweetiebot app repair**; app version, supported patch anchors, permissions; `python3 scripts/install.py --check` |
 | Commit title/model failure | Ollama running locally, selected model installed, available memory; `~/Library/Logs/Sweetiebot/sweetiebot.log` |
 | Git command fails with `No module named 'toolkit_settings'` (sometimes through `git-auto-title`) | Update the source checkout and rerun `bash scripts/install.command`. The installer restores the wrapper's sibling Python dependencies and migrates the legacy `git-auto-title` executable to the canonical wrapper. Avoid bypassing the wrapper for commits, pushes, or branch changes while background jobs may be unfinished. |
 | Pending background commit or push | Read the queued job's status; avoid amending, resetting, or forcing a push while title finalization is pending |
