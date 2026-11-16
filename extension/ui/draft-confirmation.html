@@ -133,7 +133,14 @@ function renderMarkdown(target, markdown) {
         : (() => {
           try {
             let native = new URL(value), expectedId;
-            if (native.origin === 'https://vscode.dev' && native.pathname === '/redirect' &&
+            if (native.origin === 'https://wooten.link') {
+              expectedId = /^\/codex\/([0-9a-f-]{36})\/?$/i.exec(native.pathname)?.[1];
+              const copied = native.searchParams.getAll('url');
+              if (!expectedId || native.username || native.password || native.port || native.hash ||
+                  [...native.searchParams.keys()].some(key => key !== 'url') ||
+                  copied.length > 1 || (copied.length === 1 && (!copied[0] || copied[0].length > 2048))) return false;
+              native = new URL(copied[0] || `codex://threads/${expectedId}`);
+            } else if (native.origin === 'https://vscode.dev' && native.pathname === '/redirect' &&
                 !native.hash && [...native.searchParams.keys()].every(key => key === 'url') && native.searchParams.getAll('url').length === 1) {
               const bridge = new URL(native.searchParams.get('url'));
               expectedId = /^\/codex-desktop\/([0-9a-f-]{36})$/i.exec(bridge.pathname)?.[1];

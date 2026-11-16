@@ -231,10 +231,9 @@ async function run() {
   assert.equal(new URL(codexLinks.local).searchParams.get('url'),
     `vscode://openai.chatgpt/local/${codexSource.uuid}`);
   const desktopWeb = new URL(decorated.match(/\[Desktop\]\(([^)]+)\)/)[1]);
-  assert.equal(desktopWeb.origin,'https://vscode.dev','GitHub source links must use an HTTPS URL');
-  const desktopBridge = new URL(desktopWeb.searchParams.get('url'));
-  assert.equal(desktopBridge.href, 'vscode://pony-factor.sweetiebot-scm/codex-desktop/' + codexSource.uuid + '?' +
-    new URLSearchParams({url:codexSource.desktopUrl}));
+  assert.equal(desktopWeb.origin,'https://wooten.link','Desktop links use the independent HTTPS launcher');
+  assert.equal(desktopWeb.pathname,'/codex/'+codexSource.uuid);
+  assert.equal(desktopWeb.searchParams.get('url'),null,'Default native links need no query parameters');
   assert.equal(appendSourceDetails(decorated, { ...codexSource, sharedUrl: share }), decorated);
   assert(!appendSourceDetails('Local only.', codexSource).includes('[Online]('),
     'Unavailable web links must be omitted');
@@ -860,18 +859,6 @@ async function run() {
   assert.equal(calls[0].args[0].value, 'openai-codex:/local/019c56c3-06fc-7db3-a928-9c3607e17129');
   assert.equal(calls[0].args[1], 'chatgpt.conversationEditor');
 
-  const desktopPath='/codex-desktop/'+codexSource.uuid;
-  const copiedNative=codexSource.desktopUrl+'?host=remote';
-  const openedDesktop=[];
-  vscode.env={openExternal:async uri=>{openedDesktop.push(uri.value);}};
-  await uriHandler.handleUri({path:desktopPath,query:new URLSearchParams({url:copiedNative}).toString()});
-  assert.deepEqual(openedDesktop,[copiedNative],'Desktop opens the verified native destination including copied host parameters');
-  for(const url of ['https://evil.example/', 'codex://threads/11111111-2222-4333-8444-555555555555',
-    copiedNative+'#fragment','codex://user@threads/'+codexSource.uuid]) {
-    await uriHandler.handleUri({path:desktopPath,query:new URLSearchParams({url}).toString()});
-  }
-  await uriHandler.handleUri({path:desktopPath,query:new URLSearchParams({url:copiedNative}).toString()+'&url='+encodeURIComponent(copiedNative)});
-  assert.equal(openedDesktop.length,1,'Desktop bridges cannot redirect to a different thread, website, or malformed native route');
   browserAvailable = false;
   await assert.rejects(callback(uri, { branch: 'draft', remote: 'origin', base: 'main' }), /Update VS Code/);
   browserAvailable = true;

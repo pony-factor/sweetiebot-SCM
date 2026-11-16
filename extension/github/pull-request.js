@@ -199,9 +199,9 @@ function conversationSourceLinks(source) {
 }
 
 function desktopSourceLink(uuid, desktopUrl) {
-  const bridge = `vscode://pony-factor.sweetiebot-scm/codex-desktop/${uuid}?` +
-    new URLSearchParams({ url: desktopUrl });
-  return 'https://vscode.dev/redirect?url=' + encodeURIComponent(bridge);
+  const path = `https://wooten.link/codex/${uuid}`;
+  return desktopUrl === `codex://threads/${uuid}`
+    ? path : path + '?url=' + encodeURIComponent(desktopUrl);
 }
 
 function sourceDetailsMarkdown(source) {
@@ -612,15 +612,6 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
             void vscode.window.showErrorMessage(error.message);
             throw error;
           }
-          return;
-        }
-        const desktop = String(uri?.path || '').match(/^\/codex-desktop\/([0-9a-f-]{36})$/i);
-        if (desktop) {
-          const values = new URLSearchParams(uri.query || '');
-          if (uri.fragment || values.getAll('url').length !== 1 || [...values.keys()].some(key => key !== 'url')) return;
-          const source = normalizeConversationSource({ kind: 'codex', uuid: desktop[1],
-            url: codexConversationUrl(desktop[1]), desktopUrl: values.get('url') });
-          if (source?.desktopUrl) await vscode.env.openExternal(vscode.Uri.parse(source.desktopUrl));
           return;
         }
         const match = String(uri?.path || '').match(/^\/codex\/([0-9a-f-]{36})$/i);
