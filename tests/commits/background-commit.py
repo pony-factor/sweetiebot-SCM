@@ -88,6 +88,19 @@ class BackgroundCommitTests(unittest.TestCase):
             'approvedWarnings': [],
         }
 
+    def test_commit_and_push_without_remotes_commits_locally(self):
+        self.git('remote', 'remove', 'origin')
+        directory = self.queue(push=True)
+        self.assertFalse(self.job(directory)['push'])
+        worker.process_job(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), '🧪 Record captured change')
+
+    def test_missing_push_remote_still_blocks_when_another_remote_exists(self):
+        self.git('remote', 'rename', 'origin', 'upstream')
+        with self.assertRaisesRegex(RuntimeError, 'Configure the push remote'):
+            self.queue(push=True)
+
     def published_blocked_job(self):
         directory = self.queue(push=True)
         self.git('commit', '--allow-empty', '-qm', 'External follow-up')

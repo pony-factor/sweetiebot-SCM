@@ -35,9 +35,32 @@ async function check(defaultName) {
 }
 (async () => {
   try {
+    for (const branch of ['main', 'master', 'notes']) {
+      const work = path.join(root, 'local-' + branch);
+      git(root, 'init', '--initial-branch=' + branch, work);
+      const repo = { rootUri: { fsPath: work } };
+      assert.equal(await resolveDefaultBranch(repo), branch,
+        'A local repository can resolve its unborn branch before its first commit');
+      git(work, 'config', 'user.email', 'test@example.invalid');
+      git(work, 'config', 'user.name', 'Tester');
+      fs.writeFileSync(path.join(work, 'sample.txt'), 'Local files\n');
+      git(work, 'add', 'sample.txt');
+      git(work, '-c', 'commit.gpgsign=false', 'commit', '-m', 'Test');
+      assert.equal(await resolveDefaultBranch({ rootUri: { fsPath: work } }), branch);
+      if (branch === 'main') {
+        git(work, 'checkout', '-b', 'topic');
+        assert.equal(await resolveDefaultBranch({ rootUri: { fsPath: work } }), 'main',
+          'Keep an existing local main as the base when checking out a topic');
+      }
+      git(work, 'remote', 'add', 'origin', path.join(root, 'missing-remote.git'));
+      if (branch !== 'main') {
+        await assert.rejects(resolveDefaultBranch({ rootUri: { fsPath: work } }),
+          /Could not determine/, 'Do not guess the base of a configured remote');
+      }
+    }
     await check('master');
     await check('develop');
-    console.log('Default branch resolution tests passed for master and develop.');
+    console.log('Default branch resolution tests passed for local, unborn, and remote repositories.');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

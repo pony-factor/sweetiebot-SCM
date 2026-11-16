@@ -833,7 +833,8 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
 
             const requestedPostCommitCommand = options?.postCommitCommand;
             const configuredPostCommitCommand = configuration.getValue('git.postCommitCommand');
-            const shouldReleasePush = typeof originalPush === 'function' && (
+            const localOnly = Array.isArray(repository.remotes) && repository.remotes.length === 0;
+            const shouldReleasePush = !localOnly && typeof originalPush === 'function' && (
                 (requestedPostCommitCommand === 'push' || requestedPostCommitCommand === 'git.push')
                 || (requestedPostCommitCommand === undefined && configuredPostCommitCommand === 'push')
             );
@@ -880,7 +881,8 @@ function scmToolkitGuardCommit(repository, commands, configuration, notification
                 }
 
                 if (!shouldReleasePush) {
-                    const result = await originalCommit.call(repository, message, options);
+                    const result = await originalCommit.call(repository, message,
+                        localOnly ? { ...(options ?? {}), postCommitCommand: null } : options);
                     finishProgress(true);
                     return result;
                 }
