@@ -59,9 +59,6 @@ installationLink();
 document.getElementById('kefania-open-setup').addEventListener('click', async event => {
   const button = event.currentTarget;
   const output = document.getElementById('kefania-setup-status');
-  // Open during the user gesture so browser popup restrictions do not hide the result.
-  const tab = window.open('about:blank', '_blank');
-  if (tab) tab.opener = null;
   button.disabled = true;
   output.textContent = 'Opening Kefania setup…';
   try {
@@ -73,19 +70,11 @@ document.getElementById('kefania-open-setup').addEventListener('click', async ev
     if (!/^http:\/\/127\.0\.0\.1:\d+\/$/.test(result.url)) {
       throw new Error('Kefania returned an invalid local setup address.');
     }
-    if (tab) {
-      tab.location.replace(result.url);
-      output.textContent = result.reused ? 'Opened the existing Kefania setup.' : 'Started Kefania setup.';
-    } else {
-      const link = document.createElement('a');
-      link.href = result.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'Open Kefania setup';
-      output.replaceChildren(link);
-    }
+    // VS Code's integrated browser does not support popup windows reliably.
+    // Navigate this tab; Back returns to the authenticated settings page.
+    output.textContent = result.reused ? 'Opened the existing Kefania setup.' : 'Started Kefania setup.';
+    location.assign(result.url);
   } catch (error) {
-    tab?.close();
     output.textContent = error.message;
   } finally {
     button.disabled = false;

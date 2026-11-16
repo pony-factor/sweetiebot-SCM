@@ -4,9 +4,37 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const { launchKefaniaSetup, probeSetup } = require('../../extension/codex/kefania-setup');
 
 const url = 'http://127.0.0.1:8766/';
+
+test('setup button navigates without popups and displays launch failures', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../../scripts/github-apps-ui.py'), 'utf8');
+  const handler = source.slice(source.indexOf("document.getElementById('kefania-open-setup').addEventListener"),
+    source.indexOf('async function loadApps()'));
+  for (const [ok, address] of [[true, url], [false, url], [true, 'https://example.com/']]) {
+    let click, destination;
+    const output = {}, button = {};
+    vm.runInNewContext(handler, {
+      document: { getElementById: id => id === 'kefania-setup-status' ? output
+        : { addEventListener: (_event, callback) => { click = callback; } } },
+      window: { open() { assert.fail('Integrated browser must not need popups'); } },
+      location: { search: '?token=fixture', assign: value => { destination = value; } },
+      URLSearchParams,
+      fetch: async (route, options) => {
+        assert.equal(route, '/kefania-setup/open?token=fixture');
+        assert.equal(options.method, 'POST');
+        return { ok, json: async () => ({ url: address, reused: true, error: 'Setup unavailable' }) };
+      },
+    });
+    await click({ currentTarget: button });
+    assert.equal(button.disabled, false);
+    assert.equal(destination, ok && address === url ? url : undefined);
+    assert.match(output.textContent, !ok ? /Setup unavailable/ : address === url ? /Opened the existing/ : /invalid local/);
+  }
+});
 
 test('reuses an already-running Kefania setup service without starting a child', async () => {
   const result = await launchKefaniaSetup({
