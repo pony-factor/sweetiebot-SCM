@@ -61,7 +61,7 @@ async function resolveChatgptActionProject(vscode, context) {
   if (!context?.globalState || context.globalState.get(REGULAR_CHAT_CHOICE_KEY, false)) return '';
 
   const choice = await vscode.window.showInformationMessage(
-    'Keep Sweetie Bot pull-request and merge chats together in a private ChatGPT project, rather than your main chat history.',
+    'Keep Sweetiebot pull-request and merge chats together in a private ChatGPT project, rather than your main chat history.',
     { modal: true },
     'Set up project',
     'Use regular chats'
@@ -76,8 +76,8 @@ async function resolveChatgptActionProject(vscode, context) {
   // the user from creating or navigating to their project.
   await vscode.env.openExternal(vscode.Uri.parse('https://chatgpt.com/'));
   const value = await vscode.window.showInputBox({
-    title: 'Sweetie Bot web-action project',
-    prompt: 'In ChatGPT, create or open an unshared project. Copy its /g/g-p-.../project URL and paste it here. Sweetie Bot cannot create or verify a private project for you.',
+    title: 'Sweetiebot web-action project',
+    prompt: 'In ChatGPT, create or open an unshared project. Copy its /g/g-p-.../project URL and paste it here. Sweetiebot cannot create or verify a private project for you.',
     placeHolder: 'https://chatgpt.com/g/g-p-.../project',
     ignoreFocusOut: true,
     validateInput(text) {
