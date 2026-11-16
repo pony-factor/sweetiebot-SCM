@@ -99,7 +99,7 @@ const sourceBlock='Body.\n\n<details>\n<summary>Source details</summary>\n\n'
 context.renderMarkdown(output,sourceBlock);
 assert.equal(output.children.at(-1).tag,'details','Legacy source footer still renders as a collapsed disclosure');
 assert.equal(output.children.at(-1).children[0].tag,'summary');
-assert.equal(output.children.at(-1).children[0].textContent,'Source links');
+assert.equal(output.children.at(-1).children[0].textContent,'🔗 Source');
 const sourceLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
 assert.deepEqual(sourceLinks.map(node=>node.href),[sourceShared,localLink,desktopLink]);
 assert.deepEqual(sourceLinks.map(node=>node.textContent),['Online','Local','Desktop']);
@@ -114,7 +114,7 @@ const generatedLinks=output.children.at(-1).children[1].children.filter(node=>no
 assert.equal(generatedLinks.length,2,'Local and Desktop links are available without a shared Online link');
 assert(generatedLinks[0].href.startsWith('https://vscode.dev/redirect?'));
 assert.equal(generatedLinks[0].textContent,'Local');
-assert.equal(generatedLinks[1].href,desktopLink,
+assert.equal(new URL(new URL(generatedLinks[1].href).searchParams.get('url')).searchParams.get('url'),desktopLink,
   'Derive the Desktop deeplink from the Local thread ID without requiring native copy');
 assert.equal(generatedLinks[1].textContent,'Desktop');
 const copiedDesktopSource=require('../../extension/github/pull-request').sourceDetailsMarkdown({
@@ -125,8 +125,19 @@ const copiedDesktopSource=require('../../extension/github/pull-request').sourceD
 context.renderMarkdown(output,'Body.\n\n'+copiedDesktopSource);
 const copiedDesktopLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
 assert.equal(copiedDesktopLinks.length,2);
-assert.equal(copiedDesktopLinks[1].href,desktopLink+'?host=remote',
+assert.equal(new URL(new URL(copiedDesktopLinks[1].href).searchParams.get('url')).searchParams.get('url'),desktopLink+'?host=remote',
   'Preserve query parameters on verified copied native Codex routes');
+const githubDesktop=generatedLinks[1].href;
+for(const bridge of [
+  'vscode://other.extension/codex-desktop/'+sourceId+'?'+new URLSearchParams({url:desktopLink}),
+  'vscode://pony-factor.sweetiebot-scm/codex-desktop/'+sourceId+'?'+new URLSearchParams({url:'https://evil.example/'}),
+  'vscode://pony-factor.sweetiebot-scm/codex-desktop/'+sourceId+'?'+new URLSearchParams({url:'codex://threads/11111111-2222-4333-8444-555555555555'})
+]) {
+  const invalid='https://vscode.dev/redirect?url='+encodeURIComponent(bridge);
+  context.renderMarkdown(output,'Body.\n\n'+generatedSource.replace(githubDesktop,invalid));
+  const links=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
+  assert.equal(links.length,1,'A desktop bridge must name the installed handler and matching Codex thread');
+}
 context.renderMarkdown(output,sourceBlock.replaceAll(desktopLink,desktopLink+'#fragment'));
 const rejectedDesktopLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
 assert.deepEqual(rejectedDesktopLinks.map(node=>node.href),[sourceShared,localLink],
@@ -155,7 +166,7 @@ const sharedSource=require('../../extension/github/pull-request').sourceDetailsM
 context.renderMarkdown(output,'Body.\n\n'+sharedSource);
 const sharedLinks=output.children.at(-1).children[1].children.filter(node=>node.tag==='a');
 assert.deepEqual(sharedLinks.map(node=>node.href),[
-  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId),desktopLink
+  sourceShared,require('../../extension/github/pull-request').codexConversationUrl(sourceId),generatedLinks[1].href
 ]);
 assert.deepEqual(sharedLinks.map(node=>node.textContent),['Online','Local','Desktop']);
 assert.equal(output.children.at(-1).children[1].textContent,'Online · Local · Desktop');
