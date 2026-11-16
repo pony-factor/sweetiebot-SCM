@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const { existsSync } = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -427,7 +428,8 @@ async function stackedPullRequestBase(root, branch, fallback, run = promisify(ex
   if (parent === branch) throw new Error('A stacked PR cannot target its own branch.');
   // Squash merging deletes the remote parent without making its commits
   // ancestors of main. Consult the parent's actual PR before comparing refs.
-  const { stdout } = await run('gh', ['pr', 'view', parent,
+  const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
+  const { stdout } = await run(gh, ['pr', 'view', parent,
     '--json', 'state,headRefName,baseRefName'], { cwd: root, timeout: 20000 });
   const previous = JSON.parse(stdout);
   if (previous.headRefName !== parent) throw new Error('The stacked parent PR could not be verified.');
