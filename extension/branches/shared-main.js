@@ -10,6 +10,7 @@ const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-lay
 const { worktreeLocations } = require('./worktree-registry');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
+const { saveRepositoryDocuments, assertSavedRepositoryDocuments, moveRepositoryEditors } = require('./editor-handoff');
 
 const exec = promisify(execFile);
 const DELETION_RETURN = 'sweetiebot-deleted-branch.json';
@@ -172,6 +173,7 @@ async function replaceRepository(vscode, root, destination, options) {
     folders.push({ path: sameRoot
       ? path.join(destination, path.relative(root, location)) : folder.uri.fsPath, name: folder.name });
   }
+  await moveRepositoryEditors(vscode, root, destination);
   return openFolders(vscode, folders, options);
 }
 
@@ -319,6 +321,7 @@ async function removeTransferredFiles(root, destination, directory, snapshot, ru
 }
 
 async function switchRepository(vscode, root, destination, options) {
+  await saveRepositoryDocuments(vscode, root);
   const handoff = await prepareCodexHandoff(vscode, root);
   try {
     return await replaceRepository(vscode, root, destination, {
@@ -410,6 +413,7 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   try {
     handoff = await prepareCodexHandoff(vscode, root);
     // File ownership follows New Branch even when no Codex chat is open.
+    await saveRepositoryDocuments(vscode, root);
     const pendingFiles = create ? await capturePendingFiles(root, run) : null;
     if (pendingFiles) recovery = await backupPendingFiles(root, directory, pendingFiles);
     const args = ['-C', original, 'worktree', 'add'];
@@ -435,6 +439,7 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
       version: 1, kind: 'topic-worktree', repositories: [path.basename(original)]
     }, null, 2) + '\n');
     if (pendingFiles) {
+      assertSavedRepositoryDocuments(vscode, root);
       await removeTransferredFiles(root, destination, directory, pendingFiles, run);
       transferred = true;
     }

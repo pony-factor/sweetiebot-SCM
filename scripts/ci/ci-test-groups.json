@@ -85,6 +85,7 @@
         "branches/prune-merged-branches.py",
         "branches/routine-sync.js",
         "branches/shared-main.js",
+        "branches/editor-handoff.js",
         "branches/sync/arrows-browser.js",
         "branches/sync/labels.js",
         "branches/sync/review.js"
