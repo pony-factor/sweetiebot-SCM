@@ -1213,6 +1213,121 @@ class BackgroundCommitTests(unittest.TestCase):
         result = subprocess.run(['/usr/bin/git', 'rev-parse', '--verify', 'HEAD'], capture_output=True)
         self.assertNotEqual(result.returncode, 0)
 
+    def reject_initial_commit(self):
+        hook = self.repo / '.git' / 'hooks' / 'pre-commit'
+        hook.write_text('#!/bin/sh\necho "husky - pre-commit hook failed" >&2\nexit 1\n')
+        hook.chmod(0o755)
+        with self.assertRaisesRegex(RuntimeError, 'Git commit failed'):
+            self.queue(message='')
+        entry = worker.queue_entries(self.repo / '.git' / worker.MARKER)[0]
+        return hook, Path(entry['directory'])
+
+    def test_next_attempt_replaces_rejected_snapshot_with_latest_staging(self):
+        hook, failed = self.reject_initial_commit()
+        captured = self.job(failed)['tree']
+        (self.repo / 'story.txt').write_text('Latest reviewed change\n')
+        self.git('add', 'story.txt')
+        latest = self.git('write-tree')
+        hook.unlink()
+        replacement = self.queue()
+        self.assertEqual(self.git('rev-parse', 'HEAD^{tree}'), latest)
+        self.assertNotEqual(latest, captured)
+        self.assertEqual(self.job(failed)['phase'], 'cancelled')
+        self.assertTrue(self.job(failed)['superseded_uncommitted'])
+        self.assertEqual(self.git('rev-parse', 'refs/sweetiebot/jobs/' + failed.name), captured)
+        self.assertNotEqual(replacement, failed)
+
+    def test_retrying_current_changes_does_not_bypass_rejecting_hook(self):
+        _, failed = self.reject_initial_commit()
+        with self.assertRaisesRegex(RuntimeError, 'commit hook rejected'):
+            self.queue()
+        self.assertEqual(self.job(failed)['phase'], 'cancelled')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), 'story.txt')
+        self.assertNotEqual(subprocess.run(['/usr/bin/git', 'rev-parse', '--verify', 'HEAD'],
+                                          capture_output=True).returncode, 0)
+
+    def test_cancelling_uncommitted_placeholder_preserves_files_and_index(self):
+        _, failed = self.reject_initial_commit()
+        captured = self.git('write-tree')
+        (self.repo / 'story.txt').write_text('Later unstaged edits\n')
+        worker.control('cancel')
+        self.assertEqual(self.job(failed)['phase'], 'cancelled')
+        self.assertEqual(self.git('write-tree'), captured)
+        self.assertEqual((self.repo / 'story.txt').read_text(), 'Later unstaged edits\n')
+        self.assertFalse((self.repo / '.git' / worker.MARKER).exists())
+
+    def test_failed_job_is_not_retired_after_branch_moves(self):
+        hook, failed = self.reject_initial_commit()
+        hook.unlink()
+        self.git('commit', '-qm', 'External commit')
+        with worker.repository_lock(self.repo / '.git'):
+            worker.retire_failed_uncommitted_job(self.repo / '.git', 'refs/heads/main', self.git('rev-parse', 'HEAD'))
+        self.assertEqual(self.job(failed)['phase'], 'blocked')
+
+    def test_failed_job_is_not_retired_while_worker_is_active(self):
+        _, failed = self.reject_initial_commit()
+        with (failed / 'worker.lock').open('a+b') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with worker.repository_lock(self.repo / '.git'):
+                worker.retire_failed_uncommitted_job(self.repo / '.git', 'refs/heads/main', '')
+        self.assertEqual(self.job(failed)['phase'], 'blocked')
+
+    def test_failed_job_with_recorded_commit_is_not_retired(self):
+        hook, failed = self.reject_initial_commit()
+        hook.unlink()
+        self.git('commit', '-qm', 'Existing commit')
+        sha = self.git('rev-parse', 'HEAD')
+        job = self.job(failed)
+        job.update(sha=sha, parent=sha)
+        worker.write_journal(failed / 'job.json', job)
+        with worker.repository_lock(self.repo / '.git'):
+            worker.retire_failed_uncommitted_job(self.repo / '.git', 'refs/heads/main', sha)
+        self.assertEqual(self.job(failed)['phase'], 'blocked')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), sha)
+
+    def test_gui_commit_finds_hook_tools_without_changing_parent_environment(self):
+        home = self.root / 'home'
+        tools = home / '.local/bin'
+        tools.mkdir(parents=True)
+        tool = tools / 'sweetiebot-test-hook-tool'
+        tool.write_text('#!/bin/sh\nexit 0\n')
+        tool.chmod(0o755)
+        hook = self.repo / '.git/hooks/pre-commit'
+        hook.write_text('#!/bin/sh\nsweetiebot-test-hook-tool\n')
+        hook.chmod(0o755)
+        with patch.dict(os.environ, {'PATH': '/usr/bin:/bin'}), patch.object(worker.Path, 'home', return_value=home):
+            directory = self.queue()
+            self.assertEqual(os.environ['PATH'], '/usr/bin:/bin')
+        self.assertTrue(self.job(directory).get('sha'))
+
+    def test_hook_environment_preserves_existing_tool_precedence(self):
+        home = self.root / 'home'
+        tools = home / '.local/bin'
+        tools.mkdir(parents=True)
+        current = str(tools) + os.pathsep + '/usr/bin:/bin'
+        with patch.dict(os.environ, {'PATH': current}), patch.object(worker.Path, 'home', return_value=home):
+            result = worker.commit_hook_environment()
+        self.assertTrue(result['PATH'].startswith(current))
+        self.assertEqual(result['PATH'].split(os.pathsep).count(str(tools)), 1)
+
+    def test_commit_failure_diagnostics_classify_without_exposing_hook_output(self):
+        cases = [
+            ('error: gpg failed to sign the data', 'Commit signing failed'),
+            ('.husky/pre-commit: pnpm: command not found', 'could not find Node'),
+            ('Author identity unknown', 'author identity is missing'),
+            ("Unable to create index.lock: File exists", 'index is locked'),
+            ('husky - pre-commit script failed', 'commit hook rejected'),
+            ('arbitrary hook output', 'Check the repository commit hooks'),
+        ]
+        for output, expected in cases:
+            with self.subTest(output=output):
+                result = subprocess.CompletedProcess([], 1, stdout='private fixture text', stderr=output)
+                message = worker.commit_failure_message(result)
+                self.assertIn(expected, message)
+                self.assertIn('exit 1', message)
+                self.assertNotIn('private fixture text', message)
+                self.assertNotIn('arbitrary hook output', message)
+
     def test_captured_tree_and_later_staging_survive_detached_process(self):
         directory = self.queue(push=True)
         captured = self.git('write-tree')
