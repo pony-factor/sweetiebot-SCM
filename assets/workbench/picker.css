@@ -1149,6 +1149,14 @@ body:has(.scm-toolkit-spellcheck-popup[open]) .webview {
     flex: 1 0 128px;
     max-width: 100%;
 }
+
+/* When the message editor wraps, keep the branch control on a full-width row
+   so its edges line up with the editor/button row below it. */
+.scm-view .scm-editor.scm-toolkit-responsive-message-bar > .scm-toolkit-branch {
+    flex: 1 0 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
 .scm-view .scm-toolkit-message-break {
     flex: 0 0 100%;
     height: 0;
