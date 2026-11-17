@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 
 async function run() {
-  const children = [], calls = [], errors = [], updates = [];
+  const children = [], calls = [], errors = [], updates = [], notices = [];
   let managedActivityStops = 0;
   const state = new Map();
   const workspaceState = new Map();
@@ -37,7 +37,8 @@ async function run() {
       };
     } },
     Uri: { joinPath: (_, file) => ({ fsPath: `/extension/${file}` }) },
-    window: { showErrorMessage: message => errors.push(message) },
+    window: { showErrorMessage: message => errors.push(message),
+      showInformationMessage: async message => { notices.push(message); } },
     commands: {
       async getCommands() { return available ? ['workbench.action.browser.open'] : []; },
       async executeCommand(id, options) {
@@ -223,6 +224,12 @@ async function run() {
   children[2].stdout.emit('data', '{"rebuildComplete":false}\n');
   await tick();
   assert(!calls.some(call => call.id === 'workbench.action.reloadWindow'));
+  children[2].stdout.emit('data', '{"rebuildComplete":true,"restartRequired":true}\n');
+  await tick();
+  assert.match(notices.pop(), /Fully quit VS Code/);
+  assert(!children[2].killed, 'Keep restart instructions available in settings');
+  assert(!calls.some(call => call.id === 'workbench.action.reloadWindow'),
+    'Browser main-process changes cannot be applied by reloading a window');
   children[2].stdout.emit('data', '{"rebuildComplete":true}\n{"rebuildComplete":true}\n');
   await tick();
   assert.equal(children[2].killed, true, 'Stop the owning settings server before reloading');
