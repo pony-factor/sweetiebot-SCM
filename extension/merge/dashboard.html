@@ -149,7 +149,7 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
 .file.additional-file{border-left:3px solid var(--vscode-editorWarning-foreground,#cca700);background:var(--vscode-textBlockQuote-background,rgba(204,167,0,.08))}
-.additional-file-label{color:var(--vscode-editorWarning-foreground,#cca700);font-size:12px;padding:0 12px 8px}
+.additional-file-label{display:block;color:var(--vscode-editorWarning-foreground,#cca700);font-size:12px;margin-top:4px}
 pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
 /* Resolved VS Code theme tokens already include workbench.colorCustomizations in settings.json. */
 pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-background,var(--vscode-textCodeBlock-background));color:var(--vscode-editor-foreground,var(--vscode-foreground))}
@@ -774,7 +774,7 @@ __RATE_LIMIT_FORMATTER__
       const wrap = show('details', 'file' + (additional ? ' additional-file' : ''), undefined, parent);
       const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
       if (!file.pending) show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
-      if (additional) show('div', 'additional-file-label', 'Additional repair change · outside the original PR diff', wrap);
+      if (additional) show('small', 'additional-file-label', 'Additional repair change · outside the original PR diff', summary);
       if (file.patch) renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch);
       else show('p', 'empty', file.pending ? 'Prepared locally; awaiting the GitHub diff.' : 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }

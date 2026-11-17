@@ -114,7 +114,7 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     execute:async body=>{
       assert.equal(body.results[0].operation,'sync');repairAttempts++;
       return {repository:selection.repository,results:[{number:1,status:repairAttempts===1?'needs_resolution':'synced',
-        merged:false,sha:a,previousHeadSha:a,conflictPaths:repairAttempts===1?['options.html']:[]}]};
+        merged:false,sha:a,previousHeadSha:a,additionalFiles:repairAttempts===1?[]:['tests/supporting.test.mjs'],conflictPaths:repairAttempts===1?['options.html']:[]}]};
     }});
   try {
     const forbidden=await submit(repair.url,[{...item(1,c),operation:'merge'}]);
@@ -126,6 +126,8 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert(prompt.includes('options.html'));
     const second=await submit(first.value.continueUrl,[{...item(1,c,'complete patch\n'),operation:'sync'}]);
     assert.equal(second.value.batch.prepared.length,1);
+    assert.deepEqual(second.value.batch.prepared[0].additionalFiles, ['tests/supporting.test.mjs'],
+      'Restored batch history retains the additional repair file highlights');
     assert.equal(second.value.batch.merged.length,0,'A branch fix never claims a merge');
     assert.equal(second.value.continueUrl,undefined,'Successful synchronization finishes the repair loop');
   } finally {repair.dispose();}

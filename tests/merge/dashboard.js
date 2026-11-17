@@ -847,6 +847,10 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(reviewEvents().length, previousReviewEvents + 4, 'A pending review creates an event only after submission');
 
   const stateBeforeProgress = events.at(-1).prs[0].state;
+  dashboard.recordLocalProgress({ number: 12, stage: 'additional-files', additionalFiles: ['tests/supporting.test.mjs', '../outside'] });
+  assert.deepEqual(events.at(-1).prs[0].additionalFiles, ['tests/supporting.test.mjs']);
+  await dashboard.refresh();
+  assert.deepEqual(events.at(-1).prs[0].additionalFiles, ['tests/supporting.test.mjs'], 'GitHub refresh preserves extra-file highlights');
   dashboard.recordLocalProgress({ number: 12, stage: 'preparing', description: 'Preserve the existing API and add optional tax.' });
   assert.equal(events.at(-1).prs[0].localExplanation, 'Preserve the existing API and add optional tax.');
   assert.equal(events.at(-1).postSummaries, false);

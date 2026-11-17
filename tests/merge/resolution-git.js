@@ -24,6 +24,8 @@ const run = promisify(execFile);
     await fs.writeFile(path.join(working, 'file.txt'), 'original\n');
     await fs.writeFile(path.join(working, 'clean.txt'), 'original clean\n');
     await fs.writeFile(path.join(working, 'remove.txt'), 'obsolete\n');
+    await fs.writeFile(path.join(working, 'support-config.json'), '{"enabled":false}\n');
+    await repo('add', 'support-config.json');
     await repo('add', 'file.txt', 'clean.txt', 'remove.txt'); await repo('commit', '--quiet', '-m', 'Initial fixture');
     await repo('remote', 'add', 'origin', remote);
     await repo('checkout', '--quiet', '-b', 'feature');
@@ -193,9 +195,17 @@ const run = promisify(execFile);
       '-p', headSha, '-m', 'Dependent child fixture');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/child', childSha);
     stalePushReads = resolving ? 2 : 0;
-    const incremental = await attempt({ api: dependentApi });
+    const extraProgress = [];
+    const configPatch = 'diff --git a/support-config.json b/support-config.json\n--- a/support-config.json\n+++ b/support-config.json\n@@ -1 +1 @@\n-{"enabled":false}\n+{"enabled":true}\n';
+    const incremental = await attempt({ api: dependentApi,
+      ...(resolving ? { resolutionPatch: completePatch + additionalPatch + configPatch } : {}),
+      onProgress: event => extraProgress.push(event) });
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     if (resolving) {
+      assert.deepEqual(incremental.additionalFiles, ['support-config.json', 'tests/supporting.test.mjs']);
+      assert.deepEqual(extraProgress.find(event => event.stage === 'additional-files').additionalFiles, incremental.additionalFiles);
+      assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':tests/supporting.test.mjs'), '// Supporting regression coverage');
+      assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':support-config.json'), '{"enabled":true}');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':feature-art.png'), await git('--git-dir=' + remote, 'rev-parse', headSha + ':feature-art.png'), 'Text conflict resolution retains the exact clean binary blob');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':clean.txt'), 'updated clean');
