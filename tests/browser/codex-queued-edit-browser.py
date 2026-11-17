@@ -35,6 +35,9 @@ const actions = {
  }
  ,async send(message,options){
   if(window.failRestore)throw Error('native storage failure');
+  if(options.acceptLocally && held) return new Promise(()=>{});
+  if(options.queueModeOverride!=='queue-only') throw Error('save could dispatch an idle queue');
+  if(message.context.prompt!==message.text) throw Error('serialized prompt is stale');
   const next=queue.findIndex(m=>m.id===options.editPosition.nextMessageId);
   queue.splice(next<0?queue.length:next,0,message);renderQueue();return {status:'queued',messageId:message.id};
  }
@@ -96,6 +99,7 @@ def run():
         field.wait_for(state='visible')
         page.wait_for_function('document.querySelector(".scm-toolkit-queue-editor textarea")?.disabled===false')
         assert field.input_value() == 'Second queued prompt'
+        assert page.locator('#rail .scm-toolkit-queue-editor').count() == 0, 'editor must survive native rail replacement'
         assert page.evaluate('held') == 1
         assert page.evaluate('nativePreviews') == 0
         assert page.locator('#main').input_value() == 'Main draft stays here'
@@ -121,6 +125,18 @@ def run():
         page.wait_for_function('detachedRails>0')
         page.wait_for_function('document.activeElement === document.querySelector(".scm-toolkit-queue-editor textarea")')
         field.fill('Do not keep this edit')
+        # Rebuilding the native queue rail must not detach the active editor,
+        # lose the caret, or commit partially typed text.
+        page.evaluate('''() => {
+          window.activeQueueField = document.activeElement;
+          activeQueueField.setSelectionRange(3, 7);
+          document.getElementById('composer').insertAdjacentHTML('afterbegin', '<div id="rail"><div id="list"></div></div>');
+          renderQueue();
+        }''')
+        page.wait_for_timeout(350)
+        assert page.evaluate('document.activeElement === activeQueueField')
+        assert page.evaluate('activeQueueField.selectionStart === 3 && activeQueueField.selectionEnd === 7')
+        assert page.evaluate('held') == 1
         field.press('Escape')
         page.wait_for_function('held===0 && queue.length===1')
         assert page.evaluate('queue[0].text') == 'Second queued prompt, edited'
