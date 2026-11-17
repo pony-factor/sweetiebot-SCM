@@ -13,6 +13,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,6 +30,46 @@ spec = importlib.util.spec_from_file_location(
 )
 ai_commit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_commit)
+
+
+class HookEnvironmentTests(unittest.TestCase):
+    def test_push_hook_finds_gui_package_manager_and_can_be_skipped(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, remote, home = root / 'repo', root / 'remote', root / 'home'
+            tools = home / 'Library/pnpm'
+            tools.mkdir(parents=True)
+            tool = tools / 'pnpm'
+            tool.write_text('#!/bin/sh\nexit 0\n')
+            tool.chmod(0o755)
+            def git(*args, env=None):
+                return subprocess.run(['/usr/bin/git', '-C', str(repo), *args],
+                                      env=env, capture_output=True, text=True)
+            subprocess.run(['/usr/bin/git', 'init', str(repo)], check=True, capture_output=True)
+            subprocess.run(['/usr/bin/git', 'init', '--bare', str(remote)], check=True, capture_output=True)
+            git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'fixture')
+            hook = repo / '.git/hooks/pre-push'
+            hook.write_text('#!/bin/sh\npnpm --version\n')
+            hook.chmod(0o755)
+            with patch.dict(os.environ, {'PATH': '/usr/bin:/bin'}), \
+                    patch.object(ai_commit.Path, 'home', return_value=home), \
+                    patch.object(ai_commit, 'git_config_bool', return_value=False):
+                env = ai_commit.hook_environment()
+            result = git('push', str(remote), 'HEAD:refs/heads/test', env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            hook.write_text('#!/bin/sh\nexit 1\n')
+            self.assertNotEqual(git('push', str(remote), 'HEAD:refs/heads/rejected', env=env).returncode, 0)
+            with patch.object(ai_commit, 'git_config_bool', return_value=True):
+                skipped = ai_commit.hook_environment()
+            result = git('push', str(remote), 'HEAD:refs/heads/skipped', env=skipped)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            hook = repo / '.git/hooks/pre-commit'
+            hook.write_text('#!/bin/sh\nexit 1\n')
+            hook.chmod(0o755)
+            result = git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                         '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'skip', env=skipped)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class GitOutputTests(unittest.TestCase):
@@ -260,6 +301,8 @@ class PostCommitRoutingTests(unittest.TestCase):
     def test_job_only_follows_a_successful_new_automatic_commit(self):
         for returncode, dirty, new_head in [(0, False, "new"), (1, False, "old"), (0, True, "new"), (0, False, "old")]:
             with self.subTest(returncode=returncode, dirty=dirty, new_head=new_head), ExitStack() as stack:
+                # The mocked Git exec must not leak temporary hook settings to later tests.
+                stack.enter_context(patch.dict(os.environ))
                 worker = SimpleNamespace(
                     has_unstaged_changes=lambda args: dirty,
                     staged_markdown_paths=lambda args: ["note.md"],
@@ -286,6 +329,7 @@ class PostCommitRoutingTests(unittest.TestCase):
 
     def test_retired_provisional_toggle_cannot_create_new_placeholder_commits(self):
         with ExitStack() as stack:
+            stack.enter_context(patch.dict(os.environ))
             stack.enter_context(patch.object(sys, "argv", ["wrapper", "commit"]))
             for name, value in [
                 ("feature_enabled", True),
