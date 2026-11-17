@@ -145,13 +145,14 @@ async function humanSquashMerge(repository, number, {
   if (repairChecks && (resolutionPatch === null || initialChecks.state !== 'failed')) {
     throw Error('A check repair requires a complete patch and confirmed failing checks on the selected head.');
   }
+  let additionalFiles = [];
   const finish = async (sha, expected, method = 'rebase') => {
     progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
       ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
       onPoll: checks => progress('checks-polled', { sha, ...checks })
     });
-    if (checks.state !== 'passed') return { merged: false, status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
+    if (checks.state !== 'passed') return { merged: false, additionalFiles, status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
       sha, previousHeadSha: originalSha, base, baseSha, number, author,
       reason: checks.state === 'pending' ? 'Waiting for checks on the integrated PR head'
         : 'Checks failed on the integrated PR head: ' + checks.names.join(', ') };
@@ -204,7 +205,7 @@ async function humanSquashMerge(repository, number, {
     if (!merged.merged || merged.base?.ref !== base || merged.merge_commit_sha !== outcome.sha) {
       throw Error('PR merge bookkeeping or target was not verified; inspect GitHub.');
     }
-    return { merged: true, status: 'merged', githubMerged: true, method, sha: outcome.sha, headSha: sha, previousHeadSha: originalSha,
+    return { merged: true, additionalFiles, status: 'merged', githubMerged: true, method, sha: outcome.sha, headSha: sha, previousHeadSha: originalSha,
       author, base, baseSha, number,
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
@@ -251,7 +252,7 @@ async function humanSquashMerge(repository, number, {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
     if (liveBase !== baseSha) throw refreshBase();
-    const finishLocalSquash = async () => ({ merged: false, status: 'blocked', number,
+    const finishLocalSquash = async () => ({ merged: false, additionalFiles, status: 'blocked', number,
       headSha: originalSha, base, baseSha,
       reason: 'Cannot complete a genuine GitHub squash merge with the required human attribution and signing under the current authentication. No squash was pushed and no PR was closed. PR branch history must not be rewritten.' });
     progress('inspecting-files');
@@ -334,7 +335,7 @@ async function humanSquashMerge(repository, number, {
       const patchFile = path.join(temp, '.git', 'sweetiebot-resolution.patch');
       await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
       const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
-      resolvedFiles = patchPaths(resolutionPatch, numstat, originalFiles, { allowCheckRepairTests: repairChecks });
+      resolvedFiles = patchPaths(resolutionPatch, numstat);
       const missing = requiredFiles.filter(name => !resolvedFiles.includes(name));
       if (missing.some(name => conflicts.includes(name))) {
         throw Error('Resolution patch must cover every conflicted PR file.');
@@ -391,13 +392,16 @@ async function humanSquashMerge(repository, number, {
     }
     const staged = await inRepo('diff', '--cached', '--name-only', '-z');
     if (!staged.trim()) throw Error('Squash would make no changes; refusing empty commit.');
-    // No unexpected base-only or unrelated file changes may enter this commit.
+    // Additional supporting files are allowed when explicitly supplied by the
+    // resolution patch. Keep the staged tree bound to that validated patch.
     const proposedFiles = staged.split('\0').filter(Boolean).sort();
-    if (proposedFiles.some(name => !originalFiles.includes(name) &&
-          !(repairChecks && /^tests\/test_[\w.-]+\.(?:js|py)$/.test(name))) ||
+    if (proposedFiles.some(name => !safePatchPath(name) ||
+          (!originalFiles.includes(name) && !resolvedFiles?.includes(name))) ||
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
       throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
     }
+    additionalFiles = proposedFiles.filter(name => !originalFiles.includes(name));
+    if (additionalFiles.length) progress('additional-files', { additionalFiles });
     const finishLocal = async finalTree => finishLocalSquash(finalTree);
     // Publish a one-parent squash without altering the original PR branch.
     if (operation === 'merge' && (!nativeSquash || (!conflicts.length && !needsResolution))) {
@@ -416,7 +420,7 @@ async function humanSquashMerge(repository, number, {
             await exec('python3', ['scripts/ci/ci-test-runner.py', 'run', group],
               { cwd: temp, timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
           } catch (error) {
-            return { merged: false, status: 'checks_failed', number,
+            return { merged: false, additionalFiles, status: 'checks_failed', number,
               sha: originalSha, previousHeadSha: originalSha, base, baseSha,
               reason: 'Integrated-tree ' + group + ' checks failed: ' +
                 String(error.stderr || error.message).slice(-1800) };
@@ -449,7 +453,7 @@ async function humanSquashMerge(repository, number, {
       progress('verifying-push', { sha: prepared.sha, title: operationCommitTitle });
       await verifyPushedPR(prepared.sha);
       if (operation === 'merge' && nativeSquash) return finish(prepared.sha, preparedMessage, 'squash');
-      return { merged: false, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
+      return { merged: false, additionalFiles, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
         reason: prepared.commits.length
           ? 'Appended per-file conflict decisions followed by the remaining base synchronization; existing PR history was retained.'

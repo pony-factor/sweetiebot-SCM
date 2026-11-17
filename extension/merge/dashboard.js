@@ -334,6 +334,14 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     events: persistence.restoredEvents.filter(event => event.number === pr.number).slice(-35)
   }));
   const byNumber = new Map(prs.map(pr => [pr.number, pr]));
+  const additionalFilesKey = pr => 'sweetiebot.additionalFiles.' + selection.repository + '.' + pr.number + '.' + pr.originalHead;
+  function recordAdditionalFiles(pr, files) {
+    if (!Array.isArray(files)) return;
+    pr.additionalFiles = [...new Set([...(pr.additionalFiles || []), ...files]
+      .filter(file => require('./patch').safePatchPath(file)))].sort();
+    void Promise.resolve(context?.workspaceState?.update(additionalFilesKey(pr), pr.additionalFiles)).catch(() => {});
+  }
+  for (const pr of prs) recordAdditionalFiles(pr, context?.workspaceState?.get(additionalFilesKey(pr), []) || []);
   let workers = [];
   const repairWorkers = new Map();
   let disposed = false;
@@ -921,6 +929,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
   return { panel, refresh, selection, flushLocalState: () => persistence.flush(), recordLocalProgress(event) {
     const pr = byNumber.get(event?.number);
     if (!pr) return;
+    recordAdditionalFiles(pr, event.additionalFiles);
     const stages = {
       ...require('./progress').stages,
       preparing: 'Preparing PR in a temporary checkout',
@@ -1008,6 +1017,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of state.history || []) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      recordAdditionalFiles(pr, item.additionalFiles);
       if (item.status === 'needs_resolution' || item.conflictPaths?.length) pr.sawConflict = true;
       if (typeof item.explanation === 'string' && item.explanation.trim()) {
         pr.localExplanation = item.explanation.trim().slice(0, 4000);
@@ -1064,6 +1074,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     for (const item of result.results) {
       const pr = byNumber.get(item.number);
       if (!pr) continue;
+      recordAdditionalFiles(pr, item.additionalFiles);
       const merged = item.status === 'merged' && item.merged === true && item.githubMerged === true && SHA.test(item.sha || '');
       if (merged) confirmMerge(pr, item.sha, undefined, item.githubMerged !== false);
       if (typeof item.reason === 'string') pr.localResultReason = item.reason.slice(0, 4000);

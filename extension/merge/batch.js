@@ -199,7 +199,7 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
             status: item.status, githubMerged: item.githubMerged, prClosed: item.prClosed, method: item.method, explanation: input.explanation, decisions: require('./resolution-commits').validateDecisions(input.decisions), reason: item.reason || '',
             sourceHeadSha: input.headSha, destinationSha: item.merged ? item.sha : undefined,
             sha: item.sha, previousHeadSha: item.previousHeadSha, repairChecks: input.repairChecks === true,
-            conflictPaths: item.conflictPaths || [], baseSha: item.baseSha || pr.baseSha };
+            conflictPaths: item.conflictPaths || [], additionalFiles: item.additionalFiles || [], baseSha: item.baseSha || pr.baseSha };
           history.push(detail);
           if (item.merged === true && item.githubMerged === true && item.status === 'merged') merged.push(detail);
           else if (['synced', 'waiting', 'checks_failed', 'needs_refresh'].includes(item.status) && item.previousHeadSha === pr.headSha && SHA.test(item.sha || '')) {

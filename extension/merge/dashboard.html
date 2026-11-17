@@ -148,6 +148,8 @@ main{padding:18px 22px 32px;overflow:auto;min-width:0}
 .file{border:1px solid var(--vscode-widget-border,#555);border-radius:8px;margin:8px 0;overflow:hidden}
 .file summary{cursor:pointer;padding:10px 12px;overflow-wrap:anywhere}
 .file summary span{float:right}
+.file.additional-file{border-left:3px solid var(--vscode-editorWarning-foreground,#cca700);background:var(--vscode-textBlockQuote-background,rgba(204,167,0,.08))}
+.additional-file-label{color:var(--vscode-editorWarning-foreground,#cca700);font-size:12px;padding:0 12px 8px}
 pre{margin:0;background:var(--vscode-textCodeBlock-background);padding:12px;overflow:auto;white-space:pre;font:12px/1.55 var(--vscode-editor-font-family,monospace);max-height:450px}
 /* Resolved VS Code theme tokens already include workbench.colorCustomizations in settings.json. */
 pre.diff-patch{padding:8px 0;white-space:normal;background:var(--vscode-editor-background,var(--vscode-textCodeBlock-background));color:var(--vscode-editor-foreground,var(--vscode-foreground))}
@@ -762,14 +764,19 @@ __RATE_LIMIT_FORMATTER__
     }
     showTextPanel(parent, 'Original PR description', pr.description,
       'No PR description supplied.', true);
-    show('h3', '', 'Changed files (' + pr.files.length + (pr.filesTruncated ? '+' : '') + ')', parent);
-    if (!pr.files.length) show('p', 'empty', 'No file diff loaded yet.', parent);
-    for (const file of pr.files) {
-      const wrap = show('details', 'file', undefined, parent);
+    const additionalFiles = new Set(pr.additionalFiles || []);
+    const displayedFiles = [...pr.files, ...[...additionalFiles].filter(name => !pr.files.some(file => file.name === name))
+      .map(name => ({ name, status: 'prepared locally', pending: true }))];
+    show('h3', '', 'Changed files (' + displayedFiles.length + (pr.filesTruncated ? '+' : '') + ')', parent);
+    if (!displayedFiles.length) show('p', 'empty', 'No file diff loaded yet.', parent);
+    for (const file of displayedFiles) {
+      const additional = additionalFiles.has(file.name);
+      const wrap = show('details', 'file' + (additional ? ' additional-file' : ''), undefined, parent);
       const summary = show('summary', '', file.name + ' · ' + file.status, wrap);
-      show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
+      if (!file.pending) show('span', 'muted', '+' + file.additions + ' / −' + file.deletions, summary);
+      if (additional) show('div', 'additional-file-label', 'Additional repair change · outside the original PR diff', wrap);
       if (file.patch) renderMergePatch(show('pre', 'diff-patch', undefined, wrap), file.patch);
-      else show('p', 'empty', 'Patch unavailable (binary or GitHub omitted it).', wrap);
+      else show('p', 'empty', file.pending ? 'Prepared locally; awaiting the GitHub diff.' : 'Patch unavailable (binary or GitHub omitted it).', wrap);
     }
     show('p', 'footer', 'Live GitHub status and diffs are authoritative. AI-written explanations are labeled separately; no claim of merge success is based on the chat alone.', parent);
     const tree = show('section', 'pr-commit-tree', undefined, layout);

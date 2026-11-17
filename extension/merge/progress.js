@@ -10,6 +10,7 @@ const stages = {
   'message-prepared': 'Commit message verified',
   integrating: 'Integrating with the current base',
   'applying-resolution': 'Applying the conflict resolution',
+  'additional-files': 'Preparing additional repair files',
   'decision-commit': 'Recording the file resolution',
   'sync-prepared': 'Branch update prepared',
   prepared: 'Integration prepared',
