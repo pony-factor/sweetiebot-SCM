@@ -20,6 +20,11 @@ async function run(){
  }}]);
  assert(modeled.trailers.includes('Co-authored-by: Codex (6.1 Med) <noreply@openai.com>'),
   'Only explicitly recorded Codex qualifiers may appear in attribution');
+ const integerModel=squashMessage('🔩 Verify integer model',269,[{commit:{
+   author:{name:'Human',email:'human@example.org'},
+   message:'Model fix\n\nCo-authored-by: Codex (6 Med) <noreply@openai.com>'
+ }}]);
+ assert(integerModel.trailers.includes('Co-authored-by: Codex (6 Med) <noreply@openai.com>'));
  assert.deepEqual(prepared.trailers.map(s=>s.match(/^Co-authored-by: (.+?) </)[1]),['John Wooten','Codex (Web)']);
  assert.equal(prepared.message, [
   '- Change',
