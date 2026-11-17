@@ -24,6 +24,8 @@ const run = promisify(execFile);
     await fs.writeFile(path.join(working, 'file.txt'), 'original\n');
     await fs.writeFile(path.join(working, 'clean.txt'), 'original clean\n');
     await fs.writeFile(path.join(working, 'remove.txt'), 'obsolete\n');
+    await fs.writeFile(path.join(working, 'support-config.json'), '{"enabled":false}\n');
+    await repo('add', 'support-config.json');
     await repo('add', 'file.txt', 'clean.txt', 'remove.txt'); await repo('commit', '--quiet', '-m', 'Initial fixture');
     await repo('remote', 'add', 'origin', remote);
     await repo('checkout', '--quiet', '-b', 'feature');
@@ -110,13 +112,14 @@ const run = promisify(execFile);
       return output;
     };
     const completePatch = 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-base update\n+feature and base update\n';
+    const additionalPatch = 'diff --git a/tests/supporting.test.mjs b/tests/supporting.test.mjs\nnew file mode 100644\n--- /dev/null\n+++ b/tests/supporting.test.mjs\n@@ -0,0 +1 @@\n+// Supporting regression coverage\n';
     const resolutionPatch = resolving ? completePatch : null;
     const decisions = resolving ? [{ path: 'file.txt', title: '🛠️ Preserve the feature and base update',
       description: 'Keep the updated base behavior and the feature continuation together rather than discarding either side.' }] : [];
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
     const webModelNumber = '7.2';
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
-      api, git: localGit, expected, operation: 'sync', resolutionPatch, decisions, assistantModelNumber: webModelNumber,
+      api, git: localGit, getAppActor: async () => null, expected, operation: 'sync', resolutionPatch, decisions, assistantModelNumber: webModelNumber,
       publicationDirectory:path.join(root,'receipts'),
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
@@ -148,7 +151,6 @@ const run = promisify(execFile);
         commit: { author, message: originalMessage } }];
       return api(endpoint, ...rest);
     } }), /No verified original human/);
-    await assert.rejects(attempt({ resolutionPatch: completePatch.replaceAll('file.txt', 'other.txt') }), /unrelated/);
     if (resolving) {
       const invalidPatch = await attempt({ resolutionPatch: completePatch.replace('@@ -1 +1 @@', '@@ -1,9 +1,9 @@'),
         git: async (...args) => {
@@ -193,9 +195,17 @@ const run = promisify(execFile);
       '-p', headSha, '-m', 'Dependent child fixture');
     await git('--git-dir=' + remote, 'update-ref', 'refs/heads/child', childSha);
     stalePushReads = resolving ? 2 : 0;
-    const incremental = await attempt({ api: dependentApi });
+    const extraProgress = [];
+    const configPatch = 'diff --git a/support-config.json b/support-config.json\n--- a/support-config.json\n+++ b/support-config.json\n@@ -1 +1 @@\n-{"enabled":false}\n+{"enabled":true}\n';
+    const incremental = await attempt({ api: dependentApi,
+      ...(resolving ? { resolutionPatch: completePatch + additionalPatch + configPatch } : {}),
+      onProgress: event => extraProgress.push(event) });
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     if (resolving) {
+      assert.deepEqual(incremental.additionalFiles, ['support-config.json', 'tests/supporting.test.mjs']);
+      assert.deepEqual(extraProgress.find(event => event.stage === 'additional-files').additionalFiles, incremental.additionalFiles);
+      assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':tests/supporting.test.mjs'), '// Supporting regression coverage');
+      assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':support-config.json'), '{"enabled":true}');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':feature-art.png'), await git('--git-dir=' + remote, 'rev-parse', headSha + ':feature-art.png'), 'Text conflict resolution retains the exact clean binary blob');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':clean.txt'), 'updated clean');
@@ -207,7 +217,7 @@ const run = promisify(execFile);
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
     const progress = [];
-    const result = await humanSquashMerge('owner/repo', 12, { api: dependentApi, git: localGit,
+    const result = await humanSquashMerge('owner/repo', 12, { api: dependentApi, git: localGit, getAppActor: async () => null,
       onProgress: event => progress.push(event), localGitMerge:true,
       expected: { ...expected, headSha: incremental.sha },
       publicationDirectory:path.join(root,'receipts'),

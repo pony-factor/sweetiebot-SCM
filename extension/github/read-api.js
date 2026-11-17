@@ -7,6 +7,19 @@ const REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/;
 // Share one token-acquisition pipeline for default callers in this extension host.
 const sharedReaders = new Map();
 
+// GitHub takes the entire branch name as one encoded route parameter. A slash
+// inside that parameter does not change the repository owning the request.
+function safeBranchReadPath(pathname, prefix) {
+  if (!pathname.startsWith(prefix + '/')) return false;
+  const match = /^\/(?:rules\/)?branches\/([^/]+)$/.exec(pathname.slice(prefix.length));
+  if (!match) return false;
+  let branch;
+  try { branch = decodeURIComponent(match[1]); } catch { return false; }
+  return !!branch && !/[\x00-\x20\x7f\\%~^:?*\[\]#]/.test(branch) &&
+    !branch.includes('..') && !branch.includes('@{') &&
+    branch.split('/').every(part => part && part !== '.' && !part.endsWith('.lock'));
+}
+
 function createLindseyReadFetch(repository, {
   env = process.env, fetchImpl = globalThis.fetch,
   getToken = getRoleInstallationToken, now = Date.now
@@ -50,7 +63,7 @@ function createLindseyReadFetch(repository, {
         parsed.origin !== 'https://api.github.com' ||
         (parsed.pathname !== prefix && !parsed.pathname.startsWith(prefix + '/')) ||
         parsed.username || parsed.password || parsed.hash ||
-        /%(?:2f|5c|2e)/i.test(parsed.pathname)) {
+        /%(?:2f|5c|2e)/i.test(parsed.pathname) && !safeBranchReadPath(parsed.pathname, prefix)) {
       throw Error('Lindsey installation credentials are restricted to repository GET requests.');
     }
     const token = await installationToken();
@@ -61,4 +74,4 @@ function createLindseyReadFetch(repository, {
   return read;
 }
 
-module.exports = { createLindseyReadFetch };
+module.exports = { createLindseyReadFetch, safeBranchReadPath };

@@ -1,7 +1,7 @@
 'use strict';
 
 const { separateAppsEnabled, getRoleInstallationToken } = require('../github/app-identity');
-const { createLindseyReadFetch } = require('../github/read-api');
+const { createLindseyReadFetch, safeBranchReadPath } = require('../github/read-api');
 const { githubUserAPI, legacyAPI } = require('../github/user-api');
 
 // Lindsey is the actual authenticated actor for pushes and merge writes.
@@ -26,7 +26,9 @@ function createLindseyTransport(repository, { env = process.env, fetchImpl = glo
   const read = githubUserAPI('unused', createLindseyReadFetch(repository, {env, fetchImpl, getToken, now}));
   const request = async (endpoint, options = {}) => {
     if (!separateAppsEnabled(env)) throw Error('Enable and configure the Lindsey GitHub App for local handoffs.');
-    if ((endpoint !== prefix && !endpoint.startsWith(prefix + '/')) || /%(?:2f|5c|2e)/i.test(endpoint)
+    const pathname = endpoint.split('?')[0];
+    const branchRead = (options.method || 'GET') === 'GET' && safeBranchReadPath(pathname, prefix);
+    if ((endpoint !== prefix && !endpoint.startsWith(prefix + '/')) || /%(?:2f|5c|2e)/i.test(endpoint) && !branchRead
         || endpoint.split('?')[0].split('/').some(part => part === '..' || part === '.'))
       throw Error('Lindsey handoff request is outside the selected repository.');
     if ((options.method || 'GET') === 'GET') return read(endpoint, options);
