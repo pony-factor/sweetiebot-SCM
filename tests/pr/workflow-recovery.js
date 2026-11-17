@@ -18,6 +18,38 @@ assert.equal(helpers.scmToolkitActivityMinutes('Working for 6m 20s'), 6);
 assert.equal(helpers.scmToolkitActivityMinutes('Working for 59s'), 0);
 assert.equal(helpers.scmToolkitActivityMinutes('Worked for 1h 2m'), 62);
 assert.equal(helpers.scmToolkitActivityMinutes('Ordinary user text 6m'), null);
+// Exercise a hydrated composer whose first synthetic Send click is ignored.
+{
+  const submit = fs.readFileSync(path.join(root, 'assets/browser/pull-request-submit.js'), 'utf8');
+  const loop = submit.slice(submit.indexOf('  const normalize = text =>'),
+    submit.indexOf('\n}\nscmToolkitStartPullRequestWorkflow();'));
+  for (const edited of [false, true]) {
+    let now = 100, clicks = 0, queued;
+    const composer = {value: 'Owned prompt', getClientRects: () => [1]};
+    const button = {getClientRects: () => [1], getAttribute: () => null,
+      click() { if (++clicks === 2) composer.value = ''; }};
+    const window = {location: new URL('https://chatgpt.com/'), sessionStorage: {removeItem() {}}};
+    const context = {window, URL, prompt: 'Owned prompt', fragmentLaunch: true,
+      composerIsolated: false, inserting: false, launch: window.location,
+      initialSubmitted: false, Date: {now: () => now},
+      setTimeout(fn) {queued = fn;}, clearTimeout() {},
+      history: {replaceState() {}},
+      document: {addEventListener() {}, removeEventListener() {},
+        querySelector: selector => selector === '#prompt-textarea' ? composer : button}};
+    context.sweetiebotEnsureMaximumThinking = () => true;
+    vm.runInNewContext(loop, context);
+    assert.equal(clicks, 1);
+    assert.equal(context.initialSubmitted, false, 'A click is not submission confirmation');
+    if (edited) composer.value = 'User changed this draft';
+    now += 2100; queued();
+    if (edited) assert.equal(clicks, 1, 'Never resend user-edited text');
+    else {
+      assert.equal(clicks, 2, 'Retry an ignored Send for the exact owned prompt');
+      queued();
+      assert.equal(context.initialSubmitted, true, 'Confirm only after the draft clears');
+    }
+  }
+}
 (async () => {
   const bridge = await createMergeHandoff({ repository: 'owner/repo', pullRequests: [{number:1,title:'Test',head:'topic',base:'main',headSha:'a'.repeat(40),url:'https://github.com/owner/repo/pull/1'}] });
   try {
