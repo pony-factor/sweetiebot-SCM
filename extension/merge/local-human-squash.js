@@ -398,7 +398,7 @@ async function humanSquashMerge(repository, number, {
     if (proposedFiles.some(name => !safePatchPath(name) ||
           (!originalFiles.includes(name) && !resolvedFiles?.includes(name))) ||
         (resolvedFiles && JSON.stringify(proposedFiles) !== JSON.stringify(resolvedFiles))) {
-      throw Error('The squash changes a different file set than the PR; inspect conflicts manually.');
+      throw Error('The integration changes a different file set than the validated resolution; inspect conflicts manually.');
     }
     additionalFiles = proposedFiles.filter(name => !originalFiles.includes(name));
     if (additionalFiles.length) progress('additional-files', { additionalFiles });
