@@ -301,6 +301,8 @@ class PostCommitRoutingTests(unittest.TestCase):
     def test_job_only_follows_a_successful_new_automatic_commit(self):
         for returncode, dirty, new_head in [(0, False, "new"), (1, False, "old"), (0, True, "new"), (0, False, "old")]:
             with self.subTest(returncode=returncode, dirty=dirty, new_head=new_head), ExitStack() as stack:
+                # The mocked Git exec must not leak temporary hook settings to later tests.
+                stack.enter_context(patch.dict(os.environ))
                 worker = SimpleNamespace(
                     has_unstaged_changes=lambda args: dirty,
                     staged_markdown_paths=lambda args: ["note.md"],
@@ -327,6 +329,7 @@ class PostCommitRoutingTests(unittest.TestCase):
 
     def test_retired_provisional_toggle_cannot_create_new_placeholder_commits(self):
         with ExitStack() as stack:
+            stack.enter_context(patch.dict(os.environ))
             stack.enter_context(patch.object(sys, "argv", ["wrapper", "commit"]))
             for name, value in [
                 ("feature_enabled", True),
