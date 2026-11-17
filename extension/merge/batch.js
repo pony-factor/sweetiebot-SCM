@@ -209,10 +209,9 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
           if (branchOnly && item.status === 'synced') prepared.push(detail);
           if (!branchOnly && item.status === 'synced' && item.unchanged === true) deferred.push({ number: pr.number,
             reason: item.reason || 'Nothing needed synchronization; do not retry the unchanged branch.' });
-          if ((typeof parallelConflicts === 'function' ? parallelConflicts() : parallelConflicts) && !branchOnly && item.status === 'needs_resolution') {
-            deferred.push({number:pr.number,kind:'conflict',reason:'Conflict resolution moved to the parallel repair queue.'});
-          }
-          else if (item.status === 'checks_failed') {
+          // Keep textual conflicts in this authorized integration loop. A
+          // separate repair launch is not proof that another worker owns them.
+          if (item.status === 'checks_failed') {
             pr.checkFailures = (pr.checkFailures || 0) + 1;
             // A deterministic CI failure is not a reason to synchronize main again.
             // A dedicated check-repair task can act on this verified failing head.

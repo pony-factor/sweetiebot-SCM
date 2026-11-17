@@ -205,7 +205,8 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     execute:async()=>({repository:'owner/repo',results:[{number:1,merged:false,status:'needs_resolution',conflictPaths:['feature.js']}]})});
   try {
     const next=await submit(parallelConflict.url,[item(1,c)]);
-    assert.equal(next.value.batch.deferred[0].kind,'conflict','The first conflict is handed to a separate repair worker');
+    assert(!next.value.batch.deferred.some(pr=>pr.number===1),
+      'A textual conflict stays owned by its merge lane until resolved or its retry budget is exhausted');
     assert(next.value.continueUrl,'Reviewing continues for other PRs while conflict repair runs');
     repairedHead=e;
     const refreshed=await parallelConflict.reconcile([1]);
