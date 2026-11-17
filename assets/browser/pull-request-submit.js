@@ -424,6 +424,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   let timer;
   let stopped = false;
   let inserted = false;
+  let sendAttemptedAt = null;
   const stop = () => {
     stopped = true;
     clearTimeout(timer);
@@ -447,6 +448,16 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
     const composer = primaryComposer?.getClientRects().length ? primaryComposer
       : document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
+    if (sendAttemptedAt !== null) {
+      // A click alone does not establish submission. Wait for the owned draft
+      // to clear before retiring its launch; never retry changed user text.
+      if (composer && !text) { initialSubmitted = true; return stop(); }
+      if (!samePreparedText(text)) return stop();
+      if (Date.now() - sendAttemptedAt < 2000) {
+        timer = setTimeout(attempt, 250);
+        return;
+      }
+    }
     if (composerIsolated && composer && text && !samePreparedText(text) && !inserted && composer.getClientRects().length) {
       // Hydration can read its saved draft before preload isolation runs.
       // This is a newly created workflow tab; the shared draft is preserved.
@@ -494,7 +505,6 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
         timer = setTimeout(attempt, 250);
         return;
       }
-      stop();
       // Remove the launch payload before sending so a reload cannot send it again.
       const clean = new URL(window.location.href);
       clean.searchParams.delete('q');
@@ -503,8 +513,9 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       clean.searchParams.delete('sweetiebot_launch');
       if (fragmentLaunch) clean.hash = '';
       history.replaceState(history.state, '', clean.href);
-      initialSubmitted = true;
+      sendAttemptedAt = Date.now();
       button.click();
+      timer = setTimeout(attempt, 250);
       return;
     }
     timer = setTimeout(attempt, 250);

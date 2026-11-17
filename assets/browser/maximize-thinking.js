@@ -137,6 +137,10 @@ globalThis.sweetiebotEnsureMaximumThinking = (() => {
       .filter(control => level(control));
     if (!controls.length) { mark('Waiting for thinking controls before sending…'); return false; }
     for (const selector of controls) {
+      // ChatGPT 6 exposes its selected High effort directly in the trigger.
+      // Reopening that already-selected menu can strand background workflows.
+      if (/^(select chatgpt model|select model)$/i.test(label(selector))
+          && plainSix(selector) && level(selector) === 'high') continue;
       let state = states.get(selector);
       if (!state) { state = {attempts: 0, adjustments: 0}; states.set(selector, state); }
       if (state.confirmed === level(selector)
