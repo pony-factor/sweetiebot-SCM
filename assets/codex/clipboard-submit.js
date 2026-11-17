@@ -42,16 +42,31 @@
         const name = label(button);
         if (/\b(stop|cancel|interrupt|pause|voice|dictat|microphone|retry)\b/i.test(name)) return '';
         if (/\bqueue\b/i.test(name) && !/\b(remove|delete|edit|reorder)\b/i.test(name)) return 'queue';
-        if (/\b(send|submit)\b/i.test(name) && !/\bsettings?\b/i.test(name)) return 'send';
+        if (/\b(send|submit|steer)\b/i.test(name) && !/\bsettings?\b/i.test(name)) return 'send';
         if (button.type === 'submit') return 'send';
         return '';
+    }
+
+    function nativeSubmit(button) {
+        const key = Object.keys(button || {}).find(key => key.startsWith('__reactFiber$'));
+        let fiber = key && button[key];
+        let top = fiber;
+        while (top?.return) top = top.return;
+        if (top?.stateNode?.current && top.stateNode.current !== top) fiber = fiber.alternate;
+        for (let depth = 0; fiber && depth < 40; fiber = fiber.return, depth++) {
+            const props = fiber.memoizedProps;
+            if (typeof props?.isResponseInProgress === 'boolean'
+                && typeof props.handleSubmit === 'function' && typeof props.onStop === 'function') return props;
+        }
+        return null;
     }
 
     function chooseAction(buttons, active, pendingQueue = false) {
         const eligible = buttons.filter(button => classify(button));
         const queue = eligible.find(button => classify(button) === 'queue');
         // Do not submit ahead of existing native queued messages.
-        if (pendingQueue) return queue || (active ? eligible.find(button => classify(button) === 'send') : null) || null;
+        if (pendingQueue) return queue || eligible.find(button => nativeSubmit(button))
+            || (active ? eligible.find(button => classify(button) === 'send') : null) || null;
         return (active && queue) || eligible.find(button => classify(button) === 'send') || null;
     }
 
@@ -75,7 +90,7 @@
 
     function isRunning(root) {
         return [...root.querySelectorAll('button')].some(button =>
-            visible(button) && RUNNING_CONTROL.test(label(button)))
+            visible(button) && (RUNNING_CONTROL.test(label(button)) || nativeSubmit(button)?.isResponseInProgress))
             || Boolean(root.querySelector('[data-state="streaming"], [data-state="generating"], [data-state="running"]'));
     }
 
@@ -86,7 +101,8 @@
         for (const anchor of [...anchors, ...editors]) {
             let root = anchor.parentElement;
             for (let depth = 0; root && root !== document.body && depth < 10; depth++, root = root.parentElement) {
-                const editor = [...root.querySelectorAll(EDITOR_SELECTOR)].find(visible);
+                const editor = [...root.querySelectorAll(EDITOR_SELECTOR)].find(editor => visible(editor)
+                    && !editor.closest?.('.scm-toolkit-queue-editor'));
                 if (!editor) continue;
                 const mountTarget = chooseMountTarget([...root.querySelectorAll('button')], isRunning(root));
                 if (mountTarget) return { root, editor, mountTarget };
@@ -209,9 +225,19 @@
                 const pendingQueue = hasPendingQueue(current.root);
                 const action = chooseAction([...current.root.querySelectorAll('button')], active, pendingQueue);
                 if (!action) continue;
-                // Only click the native Send / Queue action; never click Stop
+                // Delegate submission to the native composer; never click Stop
                 // or synthesize Enter, which could change the draft instead.
-                action.click();
+                const native = nativeSubmit(action);
+                if (native) {
+                    // The visible primary action may be Steer. Queue explicitly
+                    // through the native composer without stopping the response.
+                    await native.handleSubmit(active || pendingQueue
+                        ? {followUpSubmitAction:'queue'} : {});
+                } else {
+                    // A Steer-only control cannot safely stand in for Queue.
+                    if (/\bsteer\b/i.test(label(action)) && classify(action) !== 'queue') continue;
+                    action.click();
+                }
                 message(button, active || pendingQueue ? 'Queue clipboard prompt' : 'Send clipboard prompt');
                 return;
             }
@@ -269,6 +295,7 @@
 
     // Pure helpers are exposed only to the local Node test harness.
     if (globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__) {
+        globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.nativeSubmit = nativeSubmit;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.classify = classify;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.chooseAction = chooseAction;
         globalThis.__SCM_TOOLKIT_CLIPBOARD_TEST__.hasPendingQueue = hasPendingQueue;

@@ -116,7 +116,8 @@
                         // Restore is native Undo: server queues deliberately reuse
                         // its old serialized input. Edited text must use native Send
                         // with edit-position metadata, just like Codex's own editor.
-                        const context = receipt.message.context;
+                        const context = {...receipt.message.context, prompt:this.text};
+                        receipt.message.context = context;
                         const editPosition = {
                             messageId:this.receipt.message.id,
                             previousMessageId:this.receipt.previousMessageId,
@@ -129,7 +130,9 @@
                             restoredPromptContext:context.restoredPromptContext,
                         };
                         const result = await this.adapter.actions.send(receipt.message, {
-                            acceptLocally:true, queueModeOverride:'queue', editPosition,
+                            // Local acceptance waits for automatic processing, which
+                            // this editor deliberately holds until saving completes.
+                            acceptLocally:false, queueModeOverride:'queue-only', editPosition,
                         });
                         if (!['queued','sent'].includes(result?.status)) throw Error('Queue edit was not accepted.');
                     }
@@ -320,7 +323,9 @@
         if (!adapter || !fallback) return;
         event.preventDefault(); event.stopImmediatePropagation();
         mount(adapter, row.dataset.scmToolkitQueueId, {
-            parent:row.parentElement, before:row.nextSibling, fallback,
+            // Native beginEdit removes the row and may unmount its entire rail.
+            // Keep the editor in the stable composer from its first render.
+            parent:fallback.host, before:fallback.before, fallback,
         });
     }, true);
     document.addEventListener('keydown', event => {

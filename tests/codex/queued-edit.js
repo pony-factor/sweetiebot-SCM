@@ -7,7 +7,7 @@ vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../../a
 });
 const {QueueEdit} = hooks;
 function fixture() {
-    const context = {imageAttachments:[{src:'attachment.png'}], fileAttachments:[{path:'fixture.txt'}]};
+    const context = {prompt:'original serialized prompt', imageAttachments:[{src:'attachment.png'}], fileAttachments:[{path:'fixture.txt'}]};
     let messages = ['a','b','c'].map(id => ({id, text:id + ' original', context, submission:{status:'queued'}}));
     let holds = 0, restores = 0, removals = 0, fail = false, failStorage = false;
     const data = new Map(), calls = [];
@@ -37,7 +37,9 @@ function fixture() {
             async send(message, options) {
                 assert.equal(holds>0,true); restores++; calls.push('send');
                 if(fail)throw Error('native persistence unavailable');
-                assert.equal(options.acceptLocally,true); assert.equal(options.queueModeOverride,'queue');
+                assert.equal(options.acceptLocally,false,'save must not wait for the held automatic processor');
+                assert.equal(options.queueModeOverride,'queue-only','saving the last item must remain queued even when idle');
+                assert.equal(message.context.prompt,message.text,'serialized prompt must contain the edit');
                 const next=messages.findIndex(m=>m.id===options.editPosition.nextMessageId);
                 messages.splice(next<0?messages.length:next,0,message);
                 return {status:'queued',messageId:message.id};
@@ -74,7 +76,9 @@ assert.equal(bridgeSandbox.ref(nativeObjectRef,'id','local'),nativeObjectRef);
     assert.equal(f.restores,1); assert.equal(f.holds,0);
     assert.deepEqual(f.messages.map(m=>m.id),['a','b','c']);
     assert.equal(f.messages[1].text,'b edited\nwith a second line');
-    assert.equal(f.messages[1].context,f.context,'rich context is retained by reference');
+    assert.equal(f.messages[1].context.imageAttachments,f.context.imageAttachments,'images are retained');
+    assert.equal(f.messages[1].context.fileAttachments,f.context.fileAttachments,'files are retained');
+    assert.equal(f.context.prompt,'original serialized prompt','original context remains unchanged');
     assert.deepEqual(f.calls,['hold','remove','send','release']);
     assert.equal(f.data.size,0);
 
