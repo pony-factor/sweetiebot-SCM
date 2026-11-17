@@ -186,24 +186,39 @@ function scmToolkitRegisterCodexSnapshot(api) {
         }
         // Capture only visible composer labels at handoff time. Codex does not
         // provide a stable public API for a thread's historical model choices.
+        const visible = item => item.getClientRects().length;
+        // Fall back only within composer metadata controls. Never read the
+        // editor, transcript, settings defaults, or open model-menu options.
+        const controls = [...document.querySelectorAll(
+            '[data-composer-body] button, [data-composer-body] [role="button"], ' +
+            '[class*="ComposerLayoutFooter_"] button, [class*="ComposerLayoutFooter_"] [role="button"]'
+        )].filter(visible);
+        const effortPattern = '(?:Extra[- ]High|X-?High|Uber|Medium|Med|High|Low|Light)';
+        const modelPattern = new RegExp('^(?:(?:Select|Change) +)?(?:Model *: *|Model +)?' +
+            '((?:GPT[- ]?)?\\d+(?:\\.\\d+){0,2}(?:[- ]Codex)?)(?: +(' + effortPattern + '))?$', 'i');
+        const effortLabel = new RegExp('^(?:(?:(?:Select|Change) +)?(?:Reasoning|Thinking)(?: +effort)? *:? *)?(' + effortPattern + ')$', 'i');
+        const labels = item => [item.getAttribute('title'), item.getAttribute('aria-label'),
+            item.innerText || item.textContent].filter(value => typeof value === 'string')
+            .map(value => value.replace(/\s+/g, ' ').trim());
         const composerLabel = kind => {
-            const button = [...document.querySelectorAll(
-                'button[data-composer-navigation-target="' + kind + '"]'
-            )].find(item => item.getClientRects().length);
-            const visible = String(button?.innerText || button?.textContent || '').replace(/\s+/g, ' ').trim();
-            const attrs = [button?.getAttribute('title'), button?.getAttribute('aria-label')]
-                .filter(value => typeof value === 'string');
-            // A descriptive accessible label is more complete than Sweetiebot's
-            // intentionally abbreviated visible text (e.g. "6.1" or "Uber").
-            const descriptive = attrs.find(value => /\bGPT[- ]?\d|\b(?:o[1-9]|Codex)[- ]\d/i.test(value));
-            const label = descriptive || visible || attrs[0] || '';
-            const normalized = kind === 'model' && /^\d+(?:\.\d+)*(?:\s|$)/.test(label)
-                ? 'GPT-' + label : kind === 'reasoning' && /^Uber$/i.test(label)
-                    ? 'Extra High' : kind === 'reasoning' && /^Med$/i.test(label)
-                        ? 'Medium' : label;
-            return normalized.trim().slice(0, 100);
+            const preferred = [...document.querySelectorAll(
+                '[data-composer-navigation-target="' + kind + '"]'
+            )].filter(visible);
+            for (const item of [...preferred, ...controls]) {
+                for (const label of labels(item)) {
+                    const match = (kind === 'model' ? modelPattern : effortLabel).exec(label);
+                    if (match) return kind === 'model' ? match : match[1];
+                }
+            }
+            return '';
         };
-        const model = { name: composerLabel('model'), effort: composerLabel('reasoning') };
+        const selected = composerLabel('model');
+        const effort = composerLabel('reasoning') || selected?.[2] || '';
+        const model = {
+            name: selected ? (/^\d/.test(selected[1]) ? 'GPT-' : '') + selected[1] : '',
+            effort: /^Uber$|^X-?High$/i.test(effort) ? 'Extra High'
+                : /^Med$/i.test(effort) ? 'Medium' : /^Light$/i.test(effort) ? 'Low' : effort
+        };
         if (request.modelOnly) {
             api.postMessage({ type: 'scm-toolkit-context-response', id: request.id, model });
             return;

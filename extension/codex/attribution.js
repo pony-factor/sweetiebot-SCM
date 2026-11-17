@@ -4,7 +4,7 @@
 // authors just because their names happen to include "Codex".
 const EMAIL = 'noreply@openai.com';
 const COAUTHOR = /^Co-authored-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/i;
-const VERSION = /^\d+(?:\.\d+){1,2}(?: (?:Low|Med|High|XHigh))?$/;
+const VERSION = /^\d+(?:\.\d+){0,2}(?: (?:Low|Med|High|XHigh))?$/;
 function isCodex(name, email) {
   return typeof name === 'string' && typeof email === 'string' &&
     email.toLowerCase() === EMAIL &&
@@ -31,11 +31,11 @@ function mergeNames(...names) {
 function modelQualifier(model) {
   if (!model || typeof model !== 'object') return '';
   const name = typeof model.name === 'string' ? model.name.trim() : '';
-  const version = /^(?:GPT[- ]?)?(\d+(?:\.\d+){1,2})(?:[- ]Codex)?$/i.exec(name)?.[1];
+  const version = /^(?:GPT[- ]?)?(\d+(?:\.\d+){0,2})(?:[- ]Codex)?$/i.exec(name)?.[1];
   if (!version) return ''; // Never fabricate a model from a default/config value.
   const effort = typeof model.effort === 'string' ? model.effort.trim().toLowerCase() : '';
-  const level = ({ low:'Low', medium:'Med', med:'Med', high:'High',
-    'extra high':'XHigh', 'extra-high':'XHigh', uber:'XHigh' })[effort] || '';
+  const level = ({ low:'Low', light:'Low', medium:'Med', med:'Med', high:'High',
+    'extra high':'XHigh', 'extra-high':'XHigh', uber:'XHigh', xhigh:'XHigh', 'x-high':'XHigh' })[effort] || '';
   return version + (level ? ' ' + level : '');
 }
 function withModel(name, model) {
@@ -59,4 +59,3 @@ function collapse(message, trailer) {
   return base + (base ? '\n\n' : '') + 'Co-authored-by: ' + mergeNames(...names) + ' <' + EMAIL + '>';
 }
 module.exports = { EMAIL, isCodex, mergeNames, modelQualifier, withModel, collapse };
-

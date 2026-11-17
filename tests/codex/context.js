@@ -10,6 +10,50 @@ function load(name, context) {
 }
 
 async function run() {
+  // Model-only detection must never inspect editor or transcript contents.
+  let modelReceive;
+  const modelReplies = [];
+  let preferred = {}, fallback = [];
+  const metadata = (text, attrs = {}, shown = true) => ({
+    textContent: text, getAttribute: name => attrs[name] || '',
+    getClientRects: () => shown ? [1] : []
+  });
+  const modelView = vm.createContext({
+    window: { addEventListener: (_, listener) => { modelReceive = listener; } },
+    document: { querySelectorAll(selector) {
+      const kind = /^\[data-composer-navigation-target="(model|reasoning)"\]$/.exec(selector)?.[1];
+      if (kind) return preferred[kind] || [];
+      assert(selector.startsWith('[data-composer-body] button,'),
+        'Only composer metadata controls may be queried');
+      return fallback;
+    } }
+  });
+  load('context-webview.js', modelView);
+  modelView.scmToolkitRegisterCodexSnapshot({ postMessage: reply => modelReplies.push(reply) });
+  const detect = async expected => {
+    await modelReceive({data:{type:'scm-toolkit-context-request',id:'model',modelOnly:true}});
+    assert.deepEqual(JSON.parse(JSON.stringify(modelReplies.at(-1).model)), expected);
+    assert.equal('text' in modelReplies.at(-1), false);
+  };
+  preferred = {model:[metadata('6')], reasoning:[metadata('Med')]};
+  await detect({name:'GPT-6',effort:'Medium'});
+  preferred.model = [metadata('6', {'aria-label':'GPT-6 Codex'})];
+  await detect({name:'GPT-6 Codex',effort:'Medium'});
+  preferred = {model:[metadata('GPT-6 Extra High')]};
+  await detect({name:'GPT-6',effort:'Extra High'});
+  preferred = {model:[metadata('6 Uber')]};
+  await detect({name:'GPT-6',effort:'Extra High'});
+  preferred = {};
+  fallback = [metadata('GPT-6.1', {}, false), metadata('6', {'title':'Select model'}),
+    metadata('Uber', {'aria-label':'Reasoning effort: Extra High'})];
+  await detect({name:'GPT-6',effort:'Extra High'});
+  fallback = [metadata('', {'aria-label':'Model: GPT-6'}), metadata('Light')];
+  await detect({name:'GPT-6',effort:'Low'});
+  fallback = [metadata('Choose model'), metadata('Default')];
+  await detect({name:'',effort:''});
+  fallback = [metadata('GPT-6', {}, false), metadata('High', {}, false)];
+  await detect({name:'',effort:''});
+
   const conversationId = '019c56c3-06fc-7db3-a928-9c3607e17129';
   let receive;
   const responses = [];
