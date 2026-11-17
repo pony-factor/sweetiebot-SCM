@@ -558,22 +558,7 @@ def commit_hook_environment():
     Preserve the caller's tool precedence and add conventional tool locations
     without sourcing shell profiles or changing Git's signing configuration.
     """
-    env = os.environ.copy()
-    directories = env.get('PATH', os.defpath).split(os.pathsep)
-    home = Path.home()
-    candidates = [Path('/opt/homebrew/bin'), Path('/usr/local/bin'),
-                  home / '.local/bin', home / 'Library/pnpm',
-                  home / '.local/share/pnpm', home / '.volta/bin',
-                  home / '.asdf/shims', home / '.local/share/mise/shims']
-    for name in ('PNPM_HOME', 'NVM_BIN'):
-        if env.get(name):
-            candidates.append(Path(env[name]))
-    for candidate in candidates:
-        value = str(candidate)
-        if value not in directories and candidate.is_dir():
-            directories.append(value)
-    env['PATH'] = os.pathsep.join(directories)
-    return env
+    return core.hook_environment()
 
 
 def commit_failure_message(result):
@@ -913,8 +898,13 @@ def branch_recovery_candidate(job):
 
 
 def permanent_push_error(job, result):
-    """Stop retrying remote branch namespace collisions; never expose raw Git output."""
+    """Stop retrying deterministic rejections; never expose raw Git output."""
     output = '\n'.join((result.stderr or '', result.stdout or ''))
+    if re.search(r'(?:pre-push|husky)', output, re.IGNORECASE) and re.search(
+            r'command not found|not found|cannot find', output, re.IGNORECASE):
+        return ('Push blocked: a Git pre-push hook could not find a required tool. '
+                'Install the repository hook dependencies, or enable Source control → '
+                'Skip Git hooks in Sweetiebot settings, then retry the push.')
     if not re.search(
             r"cannot lock ref 'refs/heads/[^']+': 'refs/heads/[^']+' exists; cannot create 'refs/heads/[^']+'",
             output, re.IGNORECASE):
@@ -1350,7 +1340,7 @@ def work(directory, commit_only=False):
                 retry_network_read(lambda: require_unmerged(job['branch'], job['remote']))
                 job['phase'] = 'pushing'
                 write_journal(file, job)
-                env = os.environ.copy()
+                env = commit_hook_environment()
                 env.setdefault('GIT_SSH_COMMAND', 'ssh -oBatchMode=yes')
                 result = git('-c', 'credential.interactive=false', 'push', '--porcelain', job['remote'],
                              job['sha'] + ':' + job['destination'], check=False, timeout=120, env=env)

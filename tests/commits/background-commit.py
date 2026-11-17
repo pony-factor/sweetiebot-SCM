@@ -1310,6 +1310,12 @@ class BackgroundCommitTests(unittest.TestCase):
         self.assertTrue(result['PATH'].startswith(current))
         self.assertEqual(result['PATH'].split(os.pathsep).count(str(tools)), 1)
 
+    def test_missing_push_hook_tool_has_actionable_error(self):
+        result = subprocess.CompletedProcess([], 1, '', '.husky/pre-push: line 1: pnpm: command not found')
+        message = worker.permanent_push_error({}, result)
+        self.assertIn('Skip Git hooks', message)
+        self.assertNotIn('line 1', message)
+
     def test_commit_failure_diagnostics_classify_without_exposing_hook_output(self):
         cases = [
             ('error: gpg failed to sign the data', 'Commit signing failed'),

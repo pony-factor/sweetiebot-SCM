@@ -338,6 +338,7 @@ SETTINGS = (
     Setting("hideSCMProgress", "scm-toolkit.hide-scm-progress", "Hide Source Control progress bar", "Hide the progress animation during Git operations and background refreshes.", "Source control"),
     Setting("inlineSuggestions", "scm-toolkit.inline-suggestions", "Inline suggestions", "Enable inline suggestions, including in the commit-message editor.", "Source control"),
     Setting("postCommitAction", "scm-toolkit.post-commit-action", "Push after committing", "Checked pushes after committing; unchecked does nothing.", "Message bar", "push_checkbox"),
+    Setting("skipGitHooks", "scm-toolkit.skip-git-hooks", "Skip Git hooks", "Skip repository Git hooks, including pre-commit and pre-push checks, for Sweetiebot Git operations. Off by default.", "Source control"),
     Setting("codexCoauthor", "scm-toolkit.codex-coauthor", "Co-author commit button", "Show the attributed commit action.", "Message bar"),
     Setting("codexCoauthorName", "scm-toolkit.codex-coauthor-name", "Commit co-author name", "Display name written into the Co-authored-by trailer; defaults to Codex.", "Message bar", "coauthor_name"),
     Setting("codexCoauthorEmail", "scm-toolkit.codex-coauthor-email", "Commit co-author email", "Email in the Co-authored-by trailer. To link a GitHub account, enter an address associated with that account.", "Message bar", "coauthor_email"),

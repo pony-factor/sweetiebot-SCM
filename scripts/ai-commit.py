@@ -176,6 +176,35 @@ def git_bytes(
     )
 
 
+def hook_environment():
+    """Make GUI Git hooks see installed tools without sourcing shell profiles."""
+    env = os.environ.copy()
+    directories = env.get('PATH', os.defpath).split(os.pathsep)
+    home = Path.home()
+    candidates = [Path('/opt/homebrew/bin'), Path('/usr/local/bin'),
+                  home / '.local/bin', home / 'Library/pnpm',
+                  home / '.local/share/pnpm', home / '.volta/bin',
+                  home / '.asdf/shims', home / '.local/share/mise/shims']
+    for name in ('PNPM_HOME', 'NVM_BIN'):
+        if env.get(name):
+            candidates.append(Path(env[name]))
+    # nvm installs Node and package-manager shims together under version/bin.
+    nvm = Path(env.get('NVM_DIR', str(home / '.nvm')))
+    candidates.extend(sorted(nvm.glob('versions/node/*/bin'), reverse=True))
+    for candidate in candidates:
+        value = str(candidate)
+        if value not in directories and candidate.is_dir():
+            directories.append(value)
+    env['PATH'] = os.pathsep.join(directories)
+    if git_config_bool('scm-toolkit.skip-git-hooks', False):
+        count = int(env.get('GIT_CONFIG_COUNT', '0'))
+        env[f'GIT_CONFIG_KEY_{count}'] = 'core.hooksPath'
+        env[f'GIT_CONFIG_VALUE_{count}'] = os.devnull
+        env['GIT_CONFIG_COUNT'] = str(count + 1)
+        env['HUSKY'] = '0'
+    return env
+
+
 def git_config_bool(key: str, default: bool) -> bool:
     result = subprocess.run(
         [REAL_GIT, "config", "--global", "--type=bool", "--get", key],
@@ -2396,6 +2425,8 @@ def main() -> None:
     index, subcommand = found
 
     GIT_GLOBAL_ARGS = argv[:index]
+    if subcommand in {'commit', 'push', 'pull', 'merge', 'rebase', 'cherry-pick'}:
+        os.environ.update(hook_environment())
     if subcommand == "reset" and "--" in argv[index + 1:]:
         # A pathspec reset cannot move HEAD. Keep index-only operations usable
         # even when optional async-commit dependencies are missing.

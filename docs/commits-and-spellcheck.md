@@ -2,6 +2,8 @@
 
 ## Normal and AI-assisted commit
 
+Sweetiebot Settings → Source control → **Skip Git hooks** skips repository hooks, including pre-commit and pre-push checks, for Git operations through Sweetiebot. It defaults to off and does not change the repository's hook configuration. With hooks enabled, both direct and background pushes add conventional Homebrew, pnpm, Volta, asdf, mise, and nvm tool locations to the inherited PATH. A background push with missing hook dependencies pauses with instructions to install them or enable this toggle before retrying.
+
 Stage and review the exact diff. Sweetiebot retains VS Code's Git commit behavior. **Commit (Same as Source Control Button)** and **Commit with Codex Co-author** have independent initially unbound shortcuts. Existing commit text is not overwritten by the commit action; local Ollama can produce a title when the message is **blank** and AI commits are enabled. Local commit instructions come from `~/.config/sweetiebot/commit-instructions.md`, seeded by [this template](../assets/commit-instructions.md). Git hooks, GPG signing, conflicts, remote limits and primary authorship remain relevant.
 
 | Mode | Behavior | Default |
