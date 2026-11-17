@@ -49,7 +49,7 @@ async function graphql(token, query, variables) {
 const THREAD_QUERY = `query($owner:String!,$name:String!,$number:Int!,$after:String) {
   repository(owner:$owner,name:$name) {
     pullRequest(number:$number) {
-      state headRefName headRefOid
+      state headRefName headRefOid headRepository { nameWithOwner }
       reviewThreads(first:100,after:$after) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -81,6 +81,38 @@ async function reviewThreads(token, repo, number) {
 function reviewSelection(threads) {
   return threads.filter(t => !t.isResolved && t.viewerCanReply &&
     t.viewerCanResolve && t.comments?.nodes?.length && t.path);
+}
+
+// A fork's PR normally lives in its parent, while its head remains in the fork.
+async function findReviewPullRequests(token, headRepository, branch, request = github) {
+  const metadata = await request(token, '/repos/' + headRepository);
+  if (metadata?.full_name?.toLowerCase() !== headRepository.toLowerCase()) {
+    throw new Error('GitHub could not verify the selected repository identity.');
+  }
+  const repositories = [headRepository];
+  if (metadata.fork) {
+    const parent = metadata.parent?.full_name;
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(parent || '')) {
+      throw new Error('GitHub could not verify the fork parent for review lookup.');
+    }
+    if (parent.toLowerCase() !== headRepository.toLowerCase()) repositories.push(parent);
+  }
+  const matches = [];
+  const owner = headRepository.split('/')[0];
+  for (const repo of repositories) {
+    const prs = await request(token, '/repos/' + repo + '/pulls?state=open&head=' +
+      encodeURIComponent(owner + ':' + branch) + '&per_page=100');
+    for (const pr of prs) {
+      if (pr.head?.repo?.full_name?.toLowerCase() === headRepository.toLowerCase() &&
+          pr.head.ref === branch && pr.state === 'open') matches.push({ ...pr, reviewRepository: repo });
+    }
+  }
+  return matches;
+}
+
+function matchesReviewHead(pr, branch, headRepository) {
+  return pr.state === 'OPEN' && pr.headRefName === branch &&
+    (!headRepository || pr.headRepository?.nameWithOwner?.toLowerCase() === headRepository.toLowerCase());
 }
 
 async function checkPublished(job, run = git) {
@@ -162,7 +194,7 @@ function replyBody(job, sha, explanation) {
 
 async function publishReply(token, job, sha, explanation) {
   const current = await reviewThreads(token, job.repo, job.number);
-  if (current.pr.state !== 'OPEN' || current.pr.headRefName !== job.branch ||
+  if (!matchesReviewHead(current.pr, job.branch, job.headRepository) ||
       current.pr.headRefOid !== sha) {
     throw new Error('PR head changed after the push. Review and re-select the comment.');
   }
@@ -247,8 +279,8 @@ function registerAiReviewReply(vscode, context) {
       const branch = await git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD');
       if (!branch) throw new Error('Check out a named feature branch before selecting a review.');
       const remote = vscode.workspace.getConfiguration('sweetiebot', repository.rootUri).get('remote', 'origin');
-      const repo = parseRemote(await git(root, 'remote', 'get-url', remote));
-      if (!repo) throw new Error('The selected remote must be a GitHub repository.');
+      const headRepository = parseRemote(await git(root, 'remote', 'get-url', remote));
+      if (!headRepository) throw new Error('The selected remote must be a GitHub repository.');
       const existing = pending.find(item => item.root === root && item.branch === branch);
       if (existing) {
         const decision = await vscode.window.showQuickPick([
@@ -269,16 +301,15 @@ function registerAiReviewReply(vscode, context) {
         return;
       }
       const session = await githubSession(vscode);
-      const [owner] = repo.split('/');
-      const prs = await github(session.accessToken, '/repos/' + repo +
-        '/pulls?state=open&head=' + encodeURIComponent(owner + ':' + branch) + '&per_page=100');
+      const prs = await findReviewPullRequests(session.accessToken, headRepository, branch);
       if (!prs.length) throw new Error('No open PR uses this repository and branch as its head.');
       const choice = prs.length === 1 ? prs[0] : (await vscode.window.showQuickPick(
-        prs.map(pr => ({ label: '#' + pr.number + ' ' + pr.title, pr })),
+        prs.map(pr => ({ label: '#' + pr.number + ' ' + pr.title, description: pr.reviewRepository, pr })),
         { title: 'Choose the pull request containing the AI review' }))?.pr;
       if (!choice) return;
+      const repo = choice.reviewRepository;
       const { pr, threads } = await reviewThreads(session.accessToken, repo, choice.number);
-      if (pr.state !== 'OPEN' || pr.headRefName !== branch) {
+      if (!matchesReviewHead(pr, branch, headRepository)) {
         throw new Error('The selected PR no longer points to the checked-out branch.');
       }
       const available = reviewSelection(threads);
@@ -296,7 +327,7 @@ function registerAiReviewReply(vscode, context) {
       if (!selected) return;
       const before = await git(root, 'rev-parse', 'HEAD');
       pending.push({
-        root, remote, repo, branch, before, number: choice.number,
+        root, remote, repo, headRepository, branch, before, number: choice.number,
         threadId: selected.thread.id, path: selected.thread.path,
         comment: selected.thread.comments.nodes[0].body
       });
@@ -309,6 +340,6 @@ function registerAiReviewReply(vscode, context) {
 }
 
 module.exports = {
-  parseRemote, reviewSelection, checkPublished, parseAssessment,
+  parseRemote, reviewSelection, findReviewPullRequests, matchesReviewHead, checkPublished, parseAssessment,
   replyBody, registerAiReviewReply
 };
