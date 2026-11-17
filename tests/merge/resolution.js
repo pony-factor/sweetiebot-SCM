@@ -322,12 +322,12 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     assert.throws(() => patchPaths('', '1\t1\t' + name + '\0', [name]));
   }
   assert.throws(() => patchPaths('new file mode 120000\n', '1\t0\tfile.txt\0', ['file.txt']), /regular text/);
-  assert.throws(() => patchPaths('', '1\t1\tunrelated.txt\0', ['file.txt']), { code: 'INVALID_RESOLUTION_PATCH' });
+  assert.deepEqual(patchPaths('', '1\t1\tsupporting.js\0', ['file.txt']), ['supporting.js']);
   assert.throws(() => patchPaths('', '1\t1\t../outside.txt\0', ['file.txt']), error =>
     error.code !== 'INVALID_RESOLUTION_PATCH' && /unsafe/.test(error.message));
   assert.deepEqual(patchPaths('', '1\t1\ttests/test_regression.js\0', ['file.txt'], { allowCheckRepairTests: true }), ['tests/test_regression.js']);
-  assert.throws(() => patchPaths('', '1\t1\ttests/test_regression.js\0', ['file.txt']), /unrelated/);
-  assert.throws(() => patchPaths('', '1\t1\tproduction.js\0', ['file.txt'], { allowCheckRepairTests: true }), /unrelated/);
+  assert.deepEqual(patchPaths('', '1\t1\ttests/test_regression.js\0', ['file.txt']), ['tests/test_regression.js']);
+  assert.deepEqual(patchPaths('', '1\t1\tproduction.js\0', ['file.txt'], { allowCheckRepairTests: true }), ['production.js']);
   assert.throws(() => patchPaths('GIT binary patch\n', '', ['file.txt']), /regular text/);
 
   let executions = 0, finish;

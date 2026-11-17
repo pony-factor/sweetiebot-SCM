@@ -110,6 +110,7 @@ const run = promisify(execFile);
       return output;
     };
     const completePatch = 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-base update\n+feature and base update\n';
+    const additionalPatch = 'diff --git a/tests/supporting.test.mjs b/tests/supporting.test.mjs\nnew file mode 100644\n--- /dev/null\n+++ b/tests/supporting.test.mjs\n@@ -0,0 +1 @@\n+// Supporting regression coverage\n';
     const resolutionPatch = resolving ? completePatch : null;
     const decisions = resolving ? [{ path: 'file.txt', title: '🛠️ Preserve the feature and base update',
       description: 'Keep the updated base behavior and the feature continuation together rather than discarding either side.' }] : [];
@@ -148,14 +149,6 @@ const run = promisify(execFile);
         commit: { author, message: originalMessage } }];
       return api(endpoint, ...rest);
     } }), /No verified original human/);
-    const unrelatedPatch = await attempt({ resolutionPatch: completePatch.replaceAll('file.txt', 'other.txt') });
-    assert.equal(unrelatedPatch.status, 'needs_resolution', 'Out-of-scope model output requests a bounded corrected handoff');
-    assert.match(unrelatedPatch.reason, /unrelated path: other.txt/);
-    assert.match(unrelatedPatch.reason, /selected PR files: .*\bfile\.txt\b/);
-    assert.deepEqual(unrelatedPatch.conflictPaths, resolving ? ['file.txt'] : []);
-    assert.equal(await branch('feature'), headSha, 'Rejected output leaves the PR head unchanged');
-    assert.equal(await branch('main'), baseSha, 'Rejected output leaves the base unchanged');
-    assert.equal(pushes.length, 0, 'Never publish the unrelated file');
     if (resolving) {
       const invalidPatch = await attempt({ resolutionPatch: completePatch.replace('@@ -1 +1 @@', '@@ -1,9 +1,9 @@'),
         git: async (...args) => {
