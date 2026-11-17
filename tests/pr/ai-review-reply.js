@@ -1,7 +1,8 @@
 'use strict';
 const assert = require('node:assert/strict');
 const {
-  parseRemote, reviewSelection, checkPublished, parseAssessment, replyBody
+  parseRemote, reviewSelection, findReviewPullRequests, matchesReviewHead,
+  checkPublished, parseAssessment, replyBody
 } = require('../../extension/codex/ai-review-reply');
 
 async function run() {
@@ -11,6 +12,40 @@ async function run() {
     'pony-factor/sweetiebot-SCM');
   assert.equal(parseRemote('https://evil.example/repo'), null);
   assert.equal(parseRemote('https://github.com/a/b/other'), null);
+  const routes = [];
+  const head = { ref: 'fix/review', repo: { full_name: 'contributor/project' } };
+  const request = async (_token, route) => {
+    routes.push(route);
+    if (route === '/repos/contributor/project') return {
+      full_name: 'contributor/project', fork: true, parent: { full_name: 'upstream/project' }
+    };
+    if (route.startsWith('/repos/contributor/project/pulls?')) return [];
+    assert.match(route, /^\/repos\/upstream\/project\/pulls\?/);
+    return [
+      { number: 9054, state: 'open', head },
+      { number: 2, state: 'open', head: { ...head, repo: { full_name: 'other/project' } } },
+      { number: 3, state: 'open', head: { ...head, ref: 'other-branch' } }
+    ];
+  };
+  const found = await findReviewPullRequests('test', 'contributor/project', 'fix/review', request);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].number, 9054);
+  assert.equal(found[0].reviewRepository, 'upstream/project');
+  assert.match(routes[2], /head=contributor%3Afix%2Freview/);
+  const sameRepo = await findReviewPullRequests('test', 'contributor/project', 'fix/review',
+    async (_token, route) => route.includes('/pulls?') ? [{ number: 1, state: 'open', head }] :
+      { full_name: 'contributor/project', fork: false });
+  assert.equal(sameRepo[0].reviewRepository, 'contributor/project');
+  await assert.rejects(() => findReviewPullRequests('test', 'contributor/project', 'fix/review',
+    async () => ({ full_name: 'wrong/project' })), /repository identity/);
+  await assert.rejects(() => findReviewPullRequests('test', 'contributor/project', 'fix/review',
+    async () => ({ full_name: 'contributor/project', fork: true })), /fork parent/);
+  const current = { state: 'OPEN', headRefName: 'fix/review',
+    headRepository: { nameWithOwner: 'contributor/project' } };
+  assert.equal(matchesReviewHead(current, 'fix/review', 'contributor/project'), true);
+  assert.equal(matchesReviewHead(current, 'fix/review', 'other/project'), false);
+  assert.equal(matchesReviewHead(current, 'other-branch', 'contributor/project'), false);
+  assert.equal(matchesReviewHead({ ...current, state: 'CLOSED' }, 'fix/review', 'contributor/project'), false);
   assert.equal(reviewSelection([
     { id: 'a', isResolved: false, viewerCanReply: true, viewerCanResolve: true, path: 'src/a.js', comments: { nodes: [{ body: 'fix' }] } },
     { id: 'b', isResolved: true, viewerCanReply: true, viewerCanResolve: true, path: 'src/a.js', comments: { nodes: [{ body: 'done' }] } },
