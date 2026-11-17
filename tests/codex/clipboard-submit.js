@@ -84,6 +84,10 @@ function surfaceWith(buttons) {
 assert.equal(surfaceWith([disabledSend]).mountTarget, disabledSend);
 assert.equal(surfaceWith([stop]).mountTarget, stop);
 assert.equal(surfaceWith([stop, queue]).mountTarget, queue);
+const mainSurface = surfaceWith([send]);
+const queuedEditor = {isConnected:true,getClientRects:()=>[1],closest:()=>({})};
+mainSurface.root.querySelectorAll = selector => selector === 'button' ? [send] : [queuedEditor, mainSurface.editor];
+assert.equal(hooks.findSurface().editor, mainSurface.editor, 'clipboard must skip the queued-message editor');
 console.log('Codex clipboard button action-selection checks passed.');
 
 
@@ -195,6 +199,41 @@ async function runClipboardChecks() {
     assert.equal(nativeClicks, 2, 'clicks native Send even when persistence lags');
     assert.equal(setCalls, 1);
     assert.equal(liveText, '', 'native Send clears the submitted document');
+
+    // Modern Codex exposes Steer as its primary action, without a Stop button.
+    // Explicit native queue submission must override that primary default.
+    let queued = 0;
+    const nativeProps = {
+        isResponseInProgress: true,
+        onStop() { throw Error('clipboard must never stop the response'); },
+        async handleSubmit(options) {
+            assert.equal(options.followUpSubmitAction, 'queue');
+            queued++;
+            liveText = '';
+        },
+    };
+    submit.getAttribute = key => key === 'aria-label' ? 'Steer' : null;
+    submit.__reactFiber$fixture = {memoizedProps:nativeProps};
+    submit.click = () => { throw Error('primary click would steer'); };
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(queued, 1, 'running follow-up explicitly enters the queue');
+    assert.equal(liveText, '');
+    nativeProps.isResponseInProgress = false;
+    root.querySelector = selector => selector.includes('queue-id') ? {} : null;
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(queued, 2, 'idle pending queue also retains FIFO order');
+    const currentRoot = {stateNode:{current:null}};
+    currentRoot.stateNode.current = currentRoot;
+    const committed = {memoizedProps:nativeProps,return:currentRoot};
+    submit.__reactFiber$fixture = {memoizedProps:{...nativeProps, handleSubmit(){throw Error('stale callback');}},
+        return:{stateNode:currentRoot.stateNode},alternate:committed};
+    assert.equal(hooks.nativeSubmit(submit), nativeProps, 'uses the committed React handler');
+    await hooks.sendClipboard(clipboardButton);
+    assert.equal(queued, 3);
+    delete submit.__reactFiber$fixture;
+    root.querySelector = () => null;
+    submit.getAttribute = key => key === 'aria-label' ? 'Send message' : null;
+    submit.click = () => { nativeClicks++; liveText = ''; };
 
     // Clipboard reads can await a host/permission roundtrip. User edits during
     // that await must survive rather than being overwritten and submitted.
