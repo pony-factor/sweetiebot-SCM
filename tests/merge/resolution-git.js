@@ -116,7 +116,7 @@ const run = promisify(execFile);
     const expected = { headSha, baseSha, base: 'main', head: 'feature', title: '🐛 Resolve feature' };
     const webModelNumber = '7.2';
     const attempt = (overrides = {}) => humanSquashMerge('owner/repo', 12, {
-      api, git: localGit, expected, operation: 'sync', resolutionPatch, decisions, assistantModelNumber: webModelNumber,
+      api, git: localGit, getAppActor: async () => null, expected, operation: 'sync', resolutionPatch, decisions, assistantModelNumber: webModelNumber,
       publicationDirectory:path.join(root,'receipts'),
       temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')), ...overrides
     });
@@ -148,7 +148,14 @@ const run = promisify(execFile);
         commit: { author, message: originalMessage } }];
       return api(endpoint, ...rest);
     } }), /No verified original human/);
-    await assert.rejects(attempt({ resolutionPatch: completePatch.replaceAll('file.txt', 'other.txt') }), /unrelated/);
+    const unrelatedPatch = await attempt({ resolutionPatch: completePatch.replaceAll('file.txt', 'other.txt') });
+    assert.equal(unrelatedPatch.status, 'needs_resolution', 'Out-of-scope model output requests a bounded corrected handoff');
+    assert.match(unrelatedPatch.reason, /unrelated path: other.txt/);
+    assert.match(unrelatedPatch.reason, /selected PR files: .*\bfile\.txt\b/);
+    assert.deepEqual(unrelatedPatch.conflictPaths, resolving ? ['file.txt'] : []);
+    assert.equal(await branch('feature'), headSha, 'Rejected output leaves the PR head unchanged');
+    assert.equal(await branch('main'), baseSha, 'Rejected output leaves the base unchanged');
+    assert.equal(pushes.length, 0, 'Never publish the unrelated file');
     if (resolving) {
       const invalidPatch = await attempt({ resolutionPatch: completePatch.replace('@@ -1 +1 @@', '@@ -1,9 +1,9 @@'),
         git: async (...args) => {
@@ -207,7 +214,7 @@ const run = promisify(execFile);
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
     assert.equal(await branch('main'), baseSha);
     const progress = [];
-    const result = await humanSquashMerge('owner/repo', 12, { api: dependentApi, git: localGit,
+    const result = await humanSquashMerge('owner/repo', 12, { api: dependentApi, git: localGit, getAppActor: async () => null,
       onProgress: event => progress.push(event), localGitMerge:true,
       expected: { ...expected, headSha: incremental.sha },
       publicationDirectory:path.join(root,'receipts'),

@@ -31,6 +31,19 @@ const { configuredMergeActor, commitIdentityArgs } = require('../../extension/gi
   assert.equal(writes[1].options.headers.Authorization,'Bearer '+token);
   assert.equal(JSON.parse(writes[1].options.body).merge_method,'squash');
   assert.equal(minted,2,'Git and merge writes share Lindsey credentials');
+  for (const route of ['branches/fix%2Fsummarize-port-disconnect', 'rules/branches/release%2Fv1%2E2']) {
+    await transport.api('repos/owner/repo/' + route);
+    assert.equal(writes.at(-1).url, 'https://api.github.com/repos/owner/repo/' + route);
+    assert.equal(writes.at(-1).options.headers.Authorization, 'Bearer lindsey-read');
+  }
+  for (const route of ['branches/fix%2F..%2Fother', 'branches/fix%5Cother',
+    'branches/fix%252Fother%2Fbranch', 'branches/fix%2F%2Fother',
+    'pulls%2F12', 'branches%2Ffix']) {
+    const before = writes.length;
+    await assert.rejects(transport.api('repos/owner/repo/' + route), /outside|restricted/);
+    assert.equal(writes.length, before, 'Invalid paths never reach authenticated fetch');
+  }
+  await assert.rejects(transport.api('repos/owner/repo/branches/fix%2Fbranch', 'DELETE'), /outside/);
   clock = 3590000;
   assert.notEqual(await transport.gitToken(),token,'Long CI waits refresh expiring credentials');
   await assert.rejects(transport.api('repos/other/repo/issues/1/comments','POST'),/outside/);

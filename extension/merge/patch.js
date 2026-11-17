@@ -15,8 +15,16 @@ function patchPaths(patch, numstat, allowedPaths, { allowCheckRepairTests = fals
   }
   const paths = numstat.split('\0').filter(Boolean).map(line => {
     const match = /^\d+\t\d+\t([^\0]+)$/.exec(line);
-    if (!match || !safePatchPath(match[1]) || (!allowedPaths.includes(match[1]) && !(allowCheckRepairTests && /^tests\/test_[\w.-]+\.(?:js|py)$/.test(match[1])))) {
-      throw Error('Resolution patch contains an unsafe, secret-bearing or unrelated path.');
+    if (!match || !safePatchPath(match[1])) {
+      throw Error('Resolution patch contains an unsafe or secret-bearing path.');
+    }
+    if (!allowedPaths.includes(match[1]) && !(allowCheckRepairTests && /^tests\/test_[\w.-]+\.(?:js|py)$/.test(match[1]))) {
+      // Reject the extra file without abandoning the selected PR. The model
+      // can regenerate a patch within the verified file set; the batch bounds
+      // those attempts. Unsafe paths above remain terminal failures.
+      throw Object.assign(Error('Resolution patch contains an unrelated path: ' + match[1] +
+        '. Restrict the replacement patch to the selected PR files: ' + allowedPaths.join(', ') + '.'),
+      { code: 'INVALID_RESOLUTION_PATCH' });
     }
     return match[1];
   });

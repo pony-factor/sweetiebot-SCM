@@ -48,6 +48,17 @@ const env = { SWEETIEBOT_BOT_IDENTITY_MODE: 'separate-apps' };
     return true;
   });
   assert.equal(called.length, 4, 'App failure never silently borrows the user quota');
+  for (const route of ['branches/fix%2Fsummarize-port-disconnect', 'rules/branches/release%2Fv1%2E2']) {
+    await readFetch('https://api.github.com/repos/' + repo + '/' + route);
+    assert.equal(called.at(-1).address, 'https://api.github.com/repos/' + repo + '/' + route);
+    assert.equal(called.at(-1).options.headers.Authorization, 'Bearer installation-2');
+  }
+  for (const route of ['branches/fix%2F..%2Fother', 'branches/fix%5Cother',
+    'branches/fix%252Fother%2Fbranch', 'branches/fix%2F%2Fother', 'pulls%2F12']) {
+    const before = called.length;
+    await assert.rejects(readFetch('https://api.github.com/repos/' + repo + '/' + route), /restricted/);
+    assert.equal(called.length, before);
+  }
   const permissionMessage = 'GitHub App lindsey installation is missing repository permissions: ' +
     'Checks: Read, Commit statuses: Read. Update the App permissions in GitHub, ' +
     'approve the updated organization installation, then retry Check connection.';
@@ -61,7 +72,7 @@ const env = { SWEETIEBOT_BOT_IDENTITY_MODE: 'separate-apps' };
     assert(error.message.includes(permissionMessage), 'New PR must name missing App permissions');
     return true;
   });
-  assert.equal(called.length, 4, 'Missing permissions must not fall back to user credentials');
+  assert.equal(called.length, 6, 'Missing permissions must not fall back to user credentials');
   let attempts = 0;
   const recoverable = createLindseyReadFetch(repo, { env, fetchImpl, now: () => now,
     getToken: async (...args) => {
