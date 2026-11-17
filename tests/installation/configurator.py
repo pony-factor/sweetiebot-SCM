@@ -1637,7 +1637,16 @@ class ManualRebuildTests(unittest.TestCase):
         self.assertEqual(args[-1], "--install")
         self.assertTrue(str(args[1]).endswith("/repair.py"))
         self.assertEqual(run.call_args.kwargs["cwd"], Path.home())
-        self.assertIn("Reload Window", message)
+        self.assertIn("Reload Window", message["message"])
+        self.assertFalse(message["restartRequired"])
+
+    def test_rebuild_preserves_browser_restart_requirement(self):
+        with patch("configurator.subprocess.run", return_value=SimpleNamespace(
+            returncode=0, stdout="Installed\nBrowser session changes require a full VS Code quit and restart after installation; Reload Window is not sufficient.\n", stderr="",
+        )):
+            result = configurator._manual_rebuild()
+        self.assertTrue(result["restartRequired"])
+        self.assertIn("Fully quit VS Code", result["message"])
 
     def test_rebuild_reports_installer_failure(self):
         with patch("configurator.subprocess.run", return_value=SimpleNamespace(
@@ -1689,6 +1698,11 @@ class ServerTests(unittest.TestCase):
 
     @patch("configurator.fetch_ollama_models", return_value=([], "Ollama offline"))
     def test_rebuild_endpoint_requires_token_and_prevents_overlap(self, _models):
+        for restart_required in (False, True):
+            with self.subTest(restart_required=restart_required):
+                self.check_rebuild_endpoint(restart_required)
+
+    def check_rebuild_endpoint(self, restart_required):
         opened = threading.Event()
         release = threading.Event()
         captured = {}
@@ -1698,7 +1712,8 @@ class ServerTests(unittest.TestCase):
             return True
         def rebuild():
             release.wait(5)
-            return "Rebuild complete. Reload VS Code."
+            return {"message": "Fully quit VS Code." if restart_required else "Rebuild complete. Reload VS Code.",
+                    "restartRequired": restart_required}
         with patch("configurator.webbrowser.open", side_effect=open_browser), \
              patch("configurator._manual_rebuild", side_effect=rebuild) as installer, \
              patch("configurator.print") as protocol:
@@ -1728,9 +1743,10 @@ class ServerTests(unittest.TestCase):
                 threading.Event().wait(0.05)
             self.assertTrue(status["finished"])
             self.assertFalse(status["error"])
-            self.assertIn("Reloading this VS Code window", status["message"])
+            self.assertEqual(status["restartRequired"], restart_required)
+            self.assertIn("Fully quit VS Code" if restart_required else "Reloading this VS Code window", status["message"])
             installer.assert_called_once()
-            protocol.assert_any_call(json.dumps({"rebuildComplete": True}), flush=True)
+            protocol.assert_any_call(json.dumps({"rebuildComplete": True, "restartRequired": restart_required}), flush=True)
             urllib.request.urlopen(urllib.request.Request(endpoint("/save"), data=b"action=cancel", method="POST")).close()
             thread.join(5)
             self.assertFalse(thread.is_alive())

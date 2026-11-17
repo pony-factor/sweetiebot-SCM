@@ -1437,7 +1437,7 @@ async function pollRebuildStatus() {{
   }}
 }}
 rebuildButton?.addEventListener('click', async () => {{
-  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? This VS Code window will reload when the rebuild succeeds.')) return;
+  if (!window.confirm('Update and reinstall Sweetiebot app customizations now? This window will reload unless browser changes require you to fully quit and restart VS Code.')) return;
   rebuildButton.disabled = true;
   rebuildStatus.textContent = 'Saving settings…';
   if (autosaveTimer) {{
@@ -1862,7 +1862,7 @@ def _result_page(saved: bool) -> str:
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>body{{margin:0;background:#0d1117;color:#f0f6fc;font:16px system-ui;display:grid;min-height:100vh;place-items:center}}main{{text-align:center;padding:32px}}p{{color:#8b949e}}</style></head><body><main><h1>{title}</h1><p>{detail} You may close this tab.</p></main></body></html>"""
 
 
-def _manual_rebuild() -> str:
+def _manual_rebuild() -> dict:
     """Run the explicit installer without changing the automatic-repair preference."""
     root = Path(__file__).resolve().parent
     candidates = (root / "codex-customizations" / "scripts" / "repair.py", root / "repair.py")
@@ -1882,7 +1882,13 @@ def _manual_rebuild() -> str:
         lines = (result.stderr or result.stdout).strip().splitlines()
         detail = lines[-1][:240] if lines else "Check the installer output."
         raise RuntimeError(f"Installer exited with status {result.returncode}: {detail}")
-    return "Rebuild complete. Run Developer: Reload Window in VS Code to apply it."
+    restart_required = "Browser session changes require a full VS Code quit and restart" in result.stdout
+    message = (
+        "Rebuild complete. Fully quit VS Code (Cmd+Q), then reopen it to apply browser session changes. Reload Window is not sufficient."
+        if restart_required else
+        "Rebuild complete. Run Developer: Reload Window in VS Code to apply it."
+    )
+    return {"message": message, "restartRequired": restart_required}
 
 
 def run_configurator(
@@ -1905,20 +1911,24 @@ def run_configurator(
     rebuild_status = {"running": False, "finished": False, "error": False, "message": ""}
 
     def rebuild_worker() -> None:
+        restart_required = False
         try:
-            message = _manual_rebuild()
+            result = _manual_rebuild()
+            message = result["message"]
+            restart_required = result["restartRequired"]
             failed = False
         except Exception as error:
             message = f"Rebuild failed: {error}"
             failed = True
         with rebuild_lock:
-            if not failed and parent_pid is not None:
+            if not failed and not restart_required and parent_pid is not None:
                 message = "Rebuild complete. Reloading this VS Code window…"
-            rebuild_status.update(running=False, finished=True, error=failed, message=message)
+            rebuild_status.update(running=False, finished=True, error=failed, message=message,
+                                  restartRequired=restart_required)
         if not failed and parent_pid is not None:
             # The owning extension host reloads only its own VS Code window.
             # Failed rebuilds keep the settings page and error visible.
-            print(json.dumps({"rebuildComplete": True}), flush=True)
+            print(json.dumps({"rebuildComplete": True, "restartRequired": restart_required}), flush=True)
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, content: str, status: int = 200) -> None:

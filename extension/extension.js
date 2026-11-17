@@ -224,6 +224,14 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false, welco
         if (message.rebuildComplete === true) {
           if (rebuildReloadRequested || configuratorProcess !== child) continue;
           rebuildReloadRequested = true;
+          if (message.restartRequired === true) {
+            // A renderer reload cannot activate the main-process browser patch.
+            // Keep the settings page open with the full restart instructions.
+            void Promise.resolve(vscode.window.showInformationMessage(
+              'Sweetiebot rebuilt. Fully quit VS Code (Cmd+Q), then reopen it to apply browser session changes. Reload Window is not sufficient.'
+            )).finally(() => { rebuildReloadRequested = false; });
+            continue;
+          }
           void (async () => {
             await stopSettingsServer();
             invalidateUserExtensionCache(context);
