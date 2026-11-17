@@ -424,7 +424,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   let timer;
   let stopped = false;
   let inserted = false;
-  let sendAttemptedAt = 0;
+  let sendAttemptedAt = null;
   const stop = () => {
     stopped = true;
     clearTimeout(timer);
@@ -448,7 +448,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
     const composer = primaryComposer?.getClientRects().length ? primaryComposer
       : document.querySelector('[contenteditable="true"][role="textbox"].ProseMirror');
     const text = normalize(composer?.value ?? composer?.innerText ?? composer?.textContent);
-    if (sendAttemptedAt) {
+    if (sendAttemptedAt !== null) {
       // A click alone does not establish submission. Wait for the owned draft
       // to clear before retiring its launch; never retry changed user text.
       if (composer && !text) { initialSubmitted = true; return stop(); }

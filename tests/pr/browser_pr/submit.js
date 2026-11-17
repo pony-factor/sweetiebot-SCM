@@ -86,6 +86,12 @@ let f = fixture({ disabled: true });
 assert.equal(f.clicks(), 0);
 f.button.disabled = false; f.tick(); assert.equal(f.clicks(), 1);
 assert.equal(f.window.location.search, ''); f.tick(); assert.equal(f.clicks(), 1);
+f = fixture();
+f.tick(250);
+assert.equal(f.clicks(), 1, 'A send at timestamp zero must not repeat while awaiting confirmation');
+f.composer.innerText = '';
+f.tick(250);
+assert.equal(f.clicks(), 1, 'Clearing the draft confirms submission without replay');
 f = fixture({ thinkingReady: false });
 f.tick(); assert.equal(f.clicks(), 0, 'Never send before maximum thinking is confirmed');
 f.setThinkingReady(true); f.tick(); assert.equal(f.clicks(), 1);
@@ -243,7 +249,9 @@ assert.equal(f.navigations.length, 0, 'A PR drafting launch cannot invoke Lindse
 // then and only then a last-resort JSON request; neither step repeats Git.
 f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),
   text:'',assistantText:'I prepared the conflict resolution but omitted the link.'});
-f.tick(250);f.composer.innerText='';f.tick(500);f.tick(6500);
+f.tick(250);f.composer.innerText='';f.tick(500);
+f.tick(500); // Allow the collector to observe the response after Send is confirmed.
+f.tick(6500);
 assert.match(f.composer.innerText,/did not contain a complete usable Apply/,'Missing link requests the encoded result');
 f.tick(500);
 assert.equal(f.clicks(),2,'The first follow-up is sent exactly once');
