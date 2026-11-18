@@ -23,7 +23,9 @@ ANCHOR = re.compile(
     r'(?P<subscriptions>[\w$]+)\.push\((?P<connection>[\w$]+)\.registerInternalNotificationHandler\('
     r'[\w$]+=>\{[\w$]+\.method===\"turn/completed\"&&[\w$]+\.invalidateGitReadCachesForTurn\('
 )
-VSCODE = re.compile(r'(?P<vscode>[\w$]+)\.window\.registerUriHandler\(')
+VSCODE = re.compile(
+    r'(?P<subscriptions>[\w$]+)\.push\((?P<vscode>[\w$]+)\.window\.registerUriHandler\('
+)
 ASSET = Path(__file__).resolve().parent.parent / 'assets/codex/keep-awake.js'
 
 
@@ -44,10 +46,15 @@ def transform(source, enabled=True, remove=False):
     if remove:
         return source
     matches = list(ANCHOR.finditer(source))
-    vscode = set(match['vscode'] for match in VSCODE.finditer(source))
-    if len(matches) != 1 or len(vscode) != 1:
+    if len(matches) != 1:
         raise ValueError('Unsupported Codex build: keep-awake activity anchor is ambiguous or missing.')
     match = matches[0]
+    # New bundles also contain a separate URI handler for fallback activation.
+    # Use the VS Code import owned by the same activation subscription list.
+    vscode = {item['vscode'] for item in VSCODE.finditer(source)
+              if item['subscriptions'] == match['subscriptions']}
+    if len(vscode) != 1:
+        raise ValueError('Unsupported Codex build: keep-awake activity anchor is ambiguous or missing.')
     original = match.group(0)
     replacement = original.replace('.push(',
         f'.push(scmToolkitRegisterCodexKeepAwake({match["connection"]},{next(iter(vscode))},{str(enabled).lower()}),', 1)

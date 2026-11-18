@@ -23,7 +23,11 @@ ANCHOR = re.compile(
     r'let (?P<watchdog>[\w$]+)=new [\w$]+\((?P<event>[\w$]+)=>\{'
     r'(?=this\.logger\.error\("Webview renderer did not become ready")'
 )
-CONTENT = re.compile(r'(?P<webview>[\w$]+)\.html=await this\.getWebviewContent\((?P=webview)\)')
+CONTENT = re.compile(
+    r'(?P<webview>[\w$]+)\.html=await (?P<content>'
+    r'this\.getWebviewContent\((?P=webview)\)|'
+    r'[\w$]+\(this\.extensionUri,(?P=webview),this\.webviewMetaTags\((?P=webview)\)\))'
+)
 
 
 def transform(source, remove=False):
@@ -49,7 +53,7 @@ def transform(source, remove=False):
     replacement = replacement.replace(f'({match["event"]}=>{{', f'(async {match["event"]}=>{{')
     replacement += (
         'if(!sweetiebotStartupRetried){sweetiebotStartupRetried=true;try{'
-        f'const sweetiebotHtml=await this.getWebviewContent({webview});'
+        f'const sweetiebotHtml=await {contents[0]["content"]};'
         f'if(!{watchdog}.disposed){{{webview}.html="";{webview}.html=sweetiebotHtml;{watchdog}.start();}}'
         'return;}catch{'
         f'if({watchdog}.disposed)return;'

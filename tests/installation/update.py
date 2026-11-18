@@ -13,6 +13,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 
 import io
 import json
+import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
@@ -44,6 +45,61 @@ class UpdateTests(unittest.TestCase):
         self.real_import_check = update.installer_imports
         self.import_check.start()
         self.addCleanup(self.import_check.stop)
+
+    def test_locked_cache_fetch_recovers_without_touching_existing_lock(self):
+        for lock_name in ('shallow.lock', 'FETCH_HEAD.lock'):
+            with self.subTest(lock=lock_name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                repository = root / 'upstream.git'
+                repository.mkdir()
+                lock = repository / lock_name
+                lock.write_bytes(b'owned by another fetch')
+                payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
+                           'scripts/repair.py': 'repair --core-only'}
+                calls = []
+
+                def run_git(target, *args):
+                    calls.append((target, args))
+                    if args[0] == 'fetch' and target == repository:
+                        raise subprocess.CalledProcessError(128, 'git', stderr=(
+                            f"fatal: Unable to create '{lock}': File exists.\n".encode()))
+                    if args[0] == 'show':
+                        return b'abc\n1700000000\n'
+                    if args[0] == 'archive':
+                        return archive(payload)
+                    return b''
+
+                with patch.object(update, 'git', side_effect=run_git):
+                    installer, revision = update.prepare_update(root, force=True)
+                self.assertEqual(revision, 'abc')
+                self.assertEqual(installer.read_text(), 'installer')
+                self.assertEqual(json.loads((root / 'candidate/scripts/build-revision.json').read_text()),
+                                 {'commit': 'abc', 'committed_at': 1700000000})
+                self.assertEqual(lock.read_bytes(), b'owned by another fetch')
+                recovery = next(target for target, args in calls if args[0] == 'init')
+                self.assertNotEqual(recovery, repository)
+                self.assertFalse(recovery.exists(), 'temporary recovery cache must be cleaned up')
+                self.assertEqual([target for target, args in calls if args[0] == 'fetch'],
+                                 [repository, recovery])
+
+    def test_fetch_errors_do_not_retry_indefinitely_or_hide_other_failures(self):
+        for detail, attempts in ((b'fatal: network unavailable', 1),
+                                 (b"fatal: Unable to create '/cache/shallow.lock': File exists.", 2)):
+            with self.subTest(detail=detail), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'upstream.git').mkdir()
+                failure = subprocess.CalledProcessError(128, 'git', stderr=detail)
+
+                def run_git(_target, *args):
+                    if args[0] == 'fetch':
+                        raise failure
+                    return b''
+
+                with patch.object(update, 'git', side_effect=run_git) as run:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        update.prepare_update(root, force=True)
+                self.assertEqual(sum(call.args[1] == 'fetch' for call in run.call_args_list), attempts)
+                self.assertEqual(list(root.glob('upstream-recovery-*')), [])
 
     def test_installer_import_check_catches_runtime_errors_without_running_main(self):
         with tempfile.TemporaryDirectory() as directory:

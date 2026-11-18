@@ -1654,7 +1654,14 @@ def repair_workbench(app, settings, *, check=False):
 
 def repair_core(app, settings, *, check=False):
     """Recover update-sensitive UI and profile routing without optional extensions."""
-    repair_workbench(app, settings, check=check)
+    workbench_error = None
+    try:
+        repair_workbench(app, settings, check=check)
+    except (ValueError, OSError) as error:
+        # App updates replace profile routing too. An unrelated workbench
+        # anchor must not leave saved browser sign-ins in an inaccessible store.
+        workbench_error = error
+        print(f"Warning: workbench repair skipped: {error}; continuing browser repair.", flush=True)
     # Browser compatibility must not prevent the already validated SCM repair.
     try:
         patches = browser_pr.patch_files(app)
@@ -1673,6 +1680,10 @@ def repair_core(app, settings, *, check=False):
         if any(path.name == 'mainImpl.js' and previous != updated
                for path, previous, updated in patches):
             print("Browser session changes require a full VS Code quit and restart after installation; Reload Window is not sufficient.", flush=True)
+    if workbench_error is not None:
+        # Preserve the failure status rather than claiming the entire repair
+        # succeeded; the independent browser patch above is still usable.
+        raise workbench_error
     if not check:
         print("Sweetiebot core repair complete.", flush=True)
 

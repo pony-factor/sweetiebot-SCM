@@ -25,7 +25,11 @@ CHECKOUT_START = '\n/* sweetiebot-github-pr-checkout:start */\n'
 CHECKOUT_END = '\n/* sweetiebot-github-pr-checkout:end */\n'
 DESCRIPTION_START = '\n/* sweetiebot-github-pr-description:start */\n'
 DESCRIPTION_END = '\n/* sweetiebot-github-pr-description:end */\n'
-DESCRIPTION = re.compile(r'async updateItemNow\(([\w$]+)\)\{var ([\w$]+),([\w$]+),([\w$]+);this\._item=\1,')
+DESCRIPTION = re.compile(
+    r'async updateItemNow\(([\w$]+)\)\{var ([\w$]+),([\w$]+),([\w$]+);'
+    r'(?=(?:const [\w$]+=!!this\._item&&this\.getStackRecommendationKey\(this\._item\)'
+    r'===this\.getStackRecommendationKey\(\1\);)?this\._item=\1,)'
+)
 TREE = re.compile(r'([\w$]+)\.window\.createTreeView\("pr:github",\{treeDataProvider:this,showCollapseAll:!0,(?:canSelectMany:(?:[\w$]+\(\)|![01]),)?manageCheckboxStateManually:!0\}\)')
 REFRESH_COMMAND = re.compile(r'([\w$]+)=>\{this\.prsTreeModel\.forceClearCache\(\)(?:,this\.refreshAllQueryResults\(!0\))?\}')
 FETCH_NOTICE = re.compile(
@@ -33,11 +37,25 @@ FETCH_NOTICE = re.compile(
 )
 CLEANUP = re.compile(
     r'else if\(\(await [\w$]+\.githubRepository\.getMetadata\(\)\)\.delete_branch_on_merge\)'
-    r'\{const ([\w$]+)=await [\w$]+\([\w$]+,[\w$]+\);return \1\.isReply\?void 0:\1\.message\}'
+    r'\{const (?:[\w$]+=\([\w$]+=\([\w$]+=[\w$]+\.head\)==null\?void 0:'
+    r'[\w$]+\.repositoryCloneUrl\.equals\([\w$]+\.base\.repositoryCloneUrl\)\)!=null\?'
+    r'[\w$]+:!1,)?(?P<result>[\w$]+)=await [\w$]+\([\w$]+,[\w$]+(?:,[\w$]+)?\);'
+    r'return (?P=result)\.isReply\?void 0:(?P=result)\.message\}'
 )
 NUMBER_LINK = re.compile(
     r'href:([\w$]+),title:\1,"data-vscode-context":JSON\.stringify\([\w$]+\),'
     r'onClick:[\w$]+\(([\w$]+)=>\{\2\.preventDefault\(\),([\w$]+)\(\)\},"onClick"\)'
+)
+TITLE_LINK = re.compile(
+    r'href:([\w$]+),title:\1,"data-vscode-context":([\w$]+)\?JSON\.stringify\(\2\):void 0,'
+    r'onClick:([\w$]+)\?([\w$]+)=>\{\4\.preventDefault\(\),\4\.stopPropagation\(\),\3\(\)\}:void 0'
+)
+STICKY_LINK = re.compile(
+    r'href:([\w$]+)\.url,title:\1\.url,"data-vscode-context":JSON\.stringify\('
+    r'\{url:\1\.url,preventDefaultContextMenuItems:!0,owner:\1\.owner,repo:\1\.repo,'
+    r'number:\1\.number,"github:copyMenu":!0\}\),'
+    r'onClick:([\w$]+)\(([\w$]+)=>\{\3\.preventDefault\(\),\3\.stopPropagation\(\),'
+    r'([\w$]+)\(\)\},"onClick"\)'
 )
 
 
@@ -47,28 +65,42 @@ def transform(source, kind, remove=False):
     if START in source:
         before, remainder = source.split(START)
         metadata, after = remainder.split(END)
-        original, replacement = json.loads(metadata.removeprefix("/* edit:").removesuffix(" */"))
+        edits = json.loads(metadata.removeprefix("/* edit:").removesuffix(" */"))
+        if isinstance(edits[0], str):
+            edits = [edits]  # Existing installations record one edit.
         source = before + after
-        if source.count(replacement) != 1:
-            raise ValueError('GitHub PR patch changed; refusing to overwrite it.')
-        source = source.replace(replacement, original, 1)
+        for original, replacement in reversed(edits):
+            if source.count(replacement) != 1:
+                raise ValueError('GitHub PR patch changed; refusing to overwrite it.')
+            source = source.replace(replacement, original, 1)
     if remove:
         return source
     pattern = CLEANUP if kind == 'host' else NUMBER_LINK
     matches = list(pattern.finditer(source))
-    if len(matches) != 1:
+    modern = [] if kind == 'host' else [list(TITLE_LINK.finditer(source)), list(STICKY_LINK.finditer(source))]
+    if kind == 'webview' and not matches and all(len(items) == 1 for items in modern):
+        matches = [items[0] for items in modern]
+    elif len(matches) != 1 or any(modern):
         raise ValueError(f'Unsupported GitHub PR {kind} build: expected one matching anchor.')
-    original = matches[0].group()
-    if kind == 'host':
-        # Leave explicitly configured native automatic deletion and manual deletion intact.
-        replacement = original[:original.index('{')] + '{return void 0}'
-    else:
-        # React's existing handler remains the sole opener; workbench link interception sees no href.
-        opener = matches[0].group(3)
-        replacement = ('role:"link",tabIndex:0,onKeyDown:event=>{if(event.key==="Enter")'
-                       '{event.preventDefault();' + opener + '()}},'
-                       + original.replace('href:', '"data-sweetiebot-url":', 1))
-    return source.replace(original, replacement, 1) + START + "/* edit:" + json.dumps([original, replacement]) + " */" + END
+    edits = []
+    for match in matches:
+        original = match.group()
+        if kind == 'host':
+            # Leave explicitly configured native automatic deletion and manual deletion intact.
+            replacement = original[:original.index('{')] + '{return void 0}'
+        else:
+            conditional = match.re is TITLE_LINK
+            opener = match.group(4 if match.re is STICKY_LINK else 3)
+            guard = f'&&{opener}' if conditional else ''
+            fallback = f'href:{opener}?void 0:{match[1]},' if conditional else ''
+            # React remains the sole opener when a handler exists. Preserve
+            # native navigation for the shared title component without one.
+            replacement = ('role:"link",tabIndex:0,onKeyDown:event=>{if(event.key==="Enter"'
+                           + guard + '){event.preventDefault();' + opener + '()}},' + fallback
+                           + original.replace('href:', '"data-sweetiebot-url":', 1))
+        edits.append([original, replacement])
+        source = source.replace(original, replacement, 1)
+    return source + START + "/* edit:" + json.dumps(edits[0] if len(edits) == 1 else edits) + " */" + END
 
 
 def bundled_refresh_helper():
@@ -160,7 +192,7 @@ def transform_description(source, remove=False):
         'if(!sweetiebotResolved)throw new Error("Failed to load pull request description");'
         f'{model}=sweetiebotResolved;}}'
     )
-    replacement = original.replace(f'this._item={model},', hydration + f'this._item={model},')
+    replacement = original + hydration
     return source.replace(original, replacement, 1) + DESCRIPTION_START + '/* edit:' + json.dumps([original, replacement]) + ' */' + DESCRIPTION_END
 
 
