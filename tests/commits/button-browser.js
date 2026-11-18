@@ -301,6 +301,31 @@ const css = name => fs.readFileSync(path.join(__dirname, '../../assets/workbench
     await page.mouse.up();
     assert.equal(await page.locator('button').textContent(), 'Commit');
     assert.equal(await page.evaluate(() => widget.scmToolkitPressState), undefined);
+
+    // Responsive message bars keep the branch picker beside the editor.
+    // A full-width flex basis previously pushed Message onto another row.
+    await page.goto('about:blank');
+    await page.setContent(`<div class="scm-view">
+      <div class="scm-editor scm-toolkit-responsive-message-bar">
+        <button class="scm-toolkit-branch"><span class="scm-toolkit-branch-label">main</span><span>⌄</span></button>
+        <div class="scm-editor-container">Message</div>
+      </div>
+    </div>`);
+    await page.addStyleTag({content: theme + css('picker.css') + css('outlined-buttons.css')});
+    for (const width of [1080, 640, 320]) {
+      await page.locator('.scm-editor').evaluate((node, width) => { node.style.width = width + 'px'; }, width);
+      for (const name of ['main', 'feature/a-very-long-branch-name-that-must-stay-truncated']) {
+        await page.locator('.scm-toolkit-branch-label').evaluate((node, name) => { node.textContent = name; }, name);
+        const branch = await page.locator('.scm-toolkit-branch').boundingBox();
+        const editor = await page.locator('.scm-editor-container').boundingBox();
+        assert(branch.width > 0 && branch.width <= width * 0.28 + 1,
+          `Branch picker stays compact at ${width}px (${name})`);
+        assert(Math.abs(branch.y + branch.height / 2 - editor.y - editor.height / 2) < 1,
+          `Branch picker and Message share a row at ${width}px (${name})`);
+        assert(editor.x >= branch.x + branch.width - 1 && editor.width >= 128,
+          'Message retains usable space beside the branch picker');
+      }
+    }
     assert.deepEqual(errors, []);
     console.log('Commit button browser tests passed');
   } finally {
