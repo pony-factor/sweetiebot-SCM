@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -1036,6 +1037,15 @@ def read_build_revision() -> str:
     return revision if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision) else ""
 
 
+def read_build_committed_at() -> int | None:
+    try:
+        payload = json.loads(BUILD_REVISION_FILE.read_text())
+    except (OSError, ValueError, TypeError):
+        return None
+    timestamp = payload.get("committed_at") if isinstance(payload, dict) else None
+    return timestamp if type(timestamp) is int and timestamp > 0 else None
+
+
 SIDEBAR_CATEGORIES = (
     ("Source Control & Commits", ("Message bar", "Source control", "Commits")),
     ("Branches & Workspaces", ("Branch names",)),
@@ -1059,6 +1069,7 @@ def render_form(
     commit_hotkey: str | None = None,
     codex_commit_hotkey: str | None = None,
     build_revision: str | None = None,
+    build_committed_at: int | None = None,
 ) -> str:
     current = dict(current)
     if current.get("kefaniaShowCloseButton") is False:
@@ -1272,10 +1283,15 @@ def render_form(
     submit_label = action_label
     submit_hidden = "" if finish_on_save else " hidden"
     revision = read_build_revision() if build_revision is None else build_revision
+    committed_at = read_build_committed_at() if build_revision is None else build_committed_at
+    age_pill = ""
+    if type(committed_at) is int and committed_at > 0:
+        days = max(0, int((time.time() - committed_at) // 86400))
+        age_pill = f'<span class="settings-build-revision">{days} {"day" if days == 1 else "days"} ago</span>'
     revision_pill = (
         f'<span class="settings-build-revision" '
         f'title="Built from commit {revision}" '
-        f'aria-label="Built from commit {revision}">{revision[:8]}</span>'
+        f'aria-label="Built from commit {revision}">{revision[:8]}</span>{age_pill}'
         if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision)
         else ""
     )

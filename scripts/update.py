@@ -140,7 +140,8 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
         repository.mkdir(parents=True)
         git(repository, "init", "--bare")
     git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "refs/heads/main")
-    revision = git(repository, "rev-parse", "FETCH_HEAD").decode().strip()
+    metadata = git(repository, "show", "-s", "--format=%H%n%ct", "FETCH_HEAD").decode().strip()
+    revision, _, committed_at = metadata.partition("\n")
     marker = cache / "installed-revision"
     candidate = cache / "candidate"
     if candidate.exists():
@@ -148,9 +149,10 @@ def prepare_update(cache, extensions_dir=None, *, force=False):
     candidate.mkdir()
     extract_sources(git(repository, "archive", revision, *FORMATS), candidate)
     # Git archives have no .git metadata. Record FETCH_HEAD before installation.
-    (candidate / "scripts/build-revision.json").write_text(
-        json.dumps({"commit": revision}) + "\n"
-    )
+    build = {"commit": revision}
+    if committed_at.isdigit():
+        build["committed_at"] = int(committed_at)
+    (candidate / "scripts/build-revision.json").write_text(json.dumps(build) + "\n")
     # Do not downgrade the bootstrap to a release that cannot update itself.
     if not all((candidate / "scripts" / name).is_file()
                for name in ("update.py", "repair.py", "install.py")):

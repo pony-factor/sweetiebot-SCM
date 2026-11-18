@@ -140,6 +140,26 @@ class SubmissionTests(unittest.TestCase):
                 marker.write_text('{"commit": "malformed"}')
                 self.assertEqual(configurator.read_build_revision(), "")
 
+    def test_build_age_uses_commit_time_in_whole_days(self):
+        now = 1800000000
+        for seconds, label in ((0, "0 days ago"), (86400, "1 day ago"),
+                               (3 * 86400 + 3600, "3 days ago"), (-86400, "0 days ago")):
+            with self.subTest(seconds=seconds), patch.object(configurator.time, "time", return_value=now):
+                page = configurator.render_form(
+                    dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save",
+                    build_revision="a" * 40, build_committed_at=now - seconds,
+                )
+                self.assertIn(f'>{label}</span>', page)
+
+    def test_build_age_reads_bundled_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "build-revision.json"
+            with patch.object(configurator, "BUILD_REVISION_FILE", marker):
+                for value, expected in ((1795000000, 1795000000), ("bad", None),
+                                        (True, None), (-1, None)):
+                    marker.write_text(json.dumps({"committed_at": value}))
+                    self.assertEqual(configurator.read_build_committed_at(), expected)
+
     def test_sidebar_centers_pill_headings_and_tabs(self):
         page = configurator.render_form(dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save")
         styles = page.split("<style>", 1)[1].split("</style>", 1)[0]

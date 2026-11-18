@@ -284,10 +284,10 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             config.write_text("# local build")
             from unittest.mock import patch
             with patch.object(workspace_search.subprocess, "run") as run:
-                run.return_value.stdout = "c" * 40 + "\n"
+                run.return_value.stdout = "c" * 40 + "\n1795000000\n"
                 self.assertEqual(
                     json.loads(workspace_search.build_revision_bytes(config)),
-                    {"commit": "c" * 40},
+                    {"commit": "c" * 40, "committed_at": 1795000000},
                 )
                 run.assert_called_once()
             marker = scripts / "build-revision.json"
@@ -321,6 +321,13 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             )
             self.assertTrue((destination / "configurator.py").is_file())
             self.assertTrue((destination / "build-revision.json").is_file())
+            bundled_marker = destination / "codex-customizations/scripts/build-revision.json"
+            self.assertEqual(bundled_marker.read_bytes(), (destination / "build-revision.json").read_bytes())
+            # An offline repair must retain the SHA without access to .git.
+            self.assertEqual(
+                workspace_search.build_revision_bytes(bundled_marker),
+                (destination / "build-revision.json").read_bytes(),
+            )
             self.assertTrue((destination / "codex-sticker.py").is_file())
             self.assertTrue((destination / "codex-button-icon.py").is_file())
             self.assertTrue((destination / "commit-hotkey.py").is_file())

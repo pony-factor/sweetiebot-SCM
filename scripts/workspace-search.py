@@ -152,17 +152,22 @@ def build_revision_bytes(source: Path) -> bytes:
         return source.read_bytes()
     root = source.parent.parent
     revision = ""
+    committed_at = ""
     if (root / ".git").exists():
         try:
-            revision = subprocess.run(
-                ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+            metadata = subprocess.run(
+                ["git", "-C", str(root), "show", "-s", "--format=%H%n%ct", "HEAD"],
                 check=True, capture_output=True, text=True, timeout=5,
             ).stdout.strip()
+            revision, _, committed_at = metadata.partition("\n")
         except (OSError, subprocess.SubprocessError):
             pass
     if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision):
         revision = ""
-    return (json.dumps({"commit": revision}) + "\n").encode("utf-8")
+    payload = {"commit": revision}
+    if revision and committed_at.isdigit():
+        payload["committed_at"] = int(committed_at)
+    return (json.dumps(payload) + "\n").encode("utf-8")
 
 
 def source_files(root: Path | None = None) -> dict[Path, Path]:
@@ -214,6 +219,9 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     # Retain every extension runtime file for future repairs, not only known suffixes.
     for relative, source in runtime_files(here.parent / "extension", allow_missing=root is not None).items():
         files[Path("codex-customizations/extension") / relative] = source
+    # Local installs generate the marker without adding it to the checkout.
+    # Bundle it for offline repairs too, which run without the source .git.
+    files[Path("codex-customizations/scripts/build-revision.json")] = files[Path("build-revision.json")]
     return dict(sorted(files.items()))
 
 
@@ -224,7 +232,7 @@ def expected_bytes(
 ) -> bytes:
     if relative == Path("package.json"):
         return (json.dumps(render_package(settings), indent=2) + "\n").encode()
-    if relative == Path("build-revision.json"):
+    if relative in (Path("build-revision.json"), Path("codex-customizations/scripts/build-revision.json")):
         return build_revision_bytes(source)
     return source.read_bytes()
 
@@ -327,7 +335,7 @@ def sync_extension(
     for relative, source in source_files().items():
         if relative.parent != Path("."):
             (temp / relative.parent).mkdir(parents=True, exist_ok=True)
-        if relative in (Path("package.json"), Path("build-revision.json")):
+        if relative in (Path("package.json"), Path("build-revision.json"), Path("codex-customizations/scripts/build-revision.json")):
             (temp / relative).write_bytes(expected_bytes(relative, source, settings))
         else:
             shutil.copy2(source, temp / relative)
