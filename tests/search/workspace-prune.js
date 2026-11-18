@@ -184,9 +184,25 @@ function fixture({
       baseDirectory: base, alive: pid => pid === 12, run: neverRunGit
     }), [], 'Live workspace sessions must be preserved');
     await fs.rm(path.join(workspace, '.sweetiebot-session-12-test.json'));
+    const lock = path.join(base, '.sweetiebot-workspace-prune.lock');
+    await fs.writeFile(lock, JSON.stringify({ pid: process.pid }));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: pid => pid === process.pid, run: neverRunGit
+    }), [], 'A live cleanup worker retains its lock');
+    await fs.writeFile(lock, '');
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, alive: () => false, run: neverRunGit
-    }), [workspace], 'Idle shared-main metadata should be pruned');
+    }), [], 'A fresh empty lock may belong to a worker still writing its owner');
+    const staleLockTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await fs.utimes(lock, staleLockTime, staleLockTime);
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: () => false, run: neverRunGit
+    }), [workspace], 'An abandoned legacy lock must not disable cleanup forever');
+    await fs.writeFile(lock, JSON.stringify({ pid: 999 }));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: () => false, run: neverRunGit
+    }), [], 'A dead worker lock is reclaimed even without remaining candidates');
+    assert.equal(await fs.stat(lock).then(() => true, () => false), false);
     assert.equal(await fs.readFile(path.join(original, '.missing')).then(
       () => true, () => false), false, 'Original checkout must never be deleted');
     assert.equal((await fs.stat(original)).isDirectory(), true);
@@ -271,6 +287,26 @@ function fixture({
       baseDirectory: base, run, alive: () => false
     }), [], 'A legacy saved workspace reference protects its topic worktree');
     await fs.rm(legacySaved, { recursive: true });
+    await fs.mkdir(saved);
+    const retargetedContents = JSON.stringify({ folders: [{ path: '../topic-id/repo' }] });
+    await fs.writeFile(path.join(saved, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'shared-main', repositories: [],
+      workspaceFileContents: JSON.stringify({ folders: [{ path: original }] })
+    }));
+    await fs.writeFile(savedWorkspaceFile, retargetedContents);
+    await fs.writeFile(path.join(saved, '.sweetiebot-activated'), 'Activated');
+    await fs.utimes(path.join(saved, '.sweetiebot-activated'), older, older);
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false, groups: [group], dryRun: true
+    }), [], 'A targeted scan still honors saved references outside its selection');
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false, groups: [saved]
+    }), [saved], 'A closed workspace retargeted by branch handoff is archived');
+    const savedRecovery = path.join(base, '.sweetiebot-recovery');
+    const savedArchives = await fs.readdir(savedRecovery);
+    assert.equal(await fs.readFile(path.join(savedRecovery, savedArchives[0],
+      path.basename(saved), path.basename(savedWorkspaceFile)), 'utf8'), retargetedContents,
+    'Retargeted saved workspace contents remain recoverable');
     dirty = true;
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
@@ -297,7 +333,7 @@ function fixture({
       baseDirectory: base, run, alive: () => false
     }), [group], 'Merged ancestor tips in clean, idle worktrees are safely detached');
     const recoveryRoot = path.join(base, '.sweetiebot-recovery');
-    const archives = await fs.readdir(recoveryRoot);
+    const archives = (await fs.readdir(recoveryRoot)).filter(name => name.startsWith('topic-id-'));
     assert.equal(archives.length, 1);
     assert.equal(await fs.readFile(path.join(recoveryRoot, archives[0],
       '.sweetiebot-handoff-backup', 'fixture.patch'), 'utf8'), 'preserve recovery data',

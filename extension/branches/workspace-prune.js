@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
+const { promisify, isDeepStrictEqual } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace-trust');
 const { isWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
 
@@ -51,6 +51,65 @@ async function jsonFile(io, file) {
 async function isPlainDirectory(io, folder) {
   try { return (await io.lstat(folder)).isDirectory(); }
   catch { return false; }
+}
+
+async function workspaceLease(io, lock, alive) {
+  let lease;
+  try { lease = await io.open(lock, 'wx', 0o600); }
+  catch (error) {
+    if (error.code !== 'EEXIST') return null;
+    // Older versions left an empty lock permanently after a crash. New locks
+    // record their owner so only a dead worker's lease can be reclaimed.
+    const before = await io.lstat(lock).catch(() => null);
+    if (!before?.isFile()) return null;
+    const owner = await jsonFile(io, lock);
+    const stale = owner && Number.isSafeInteger(owner.pid) && owner.pid > 0
+      ? !alive(owner.pid)
+      : before.size === 0 && Date.now() - before.mtimeMs > 24 * 60 * 60 * 1000;
+    if (!stale) return null;
+    const current = await io.lstat(lock).catch(() => null);
+    if (!current || current.ino !== before.ino || current.dev !== before.dev) return null;
+    await io.rm(lock, { force: true });
+    try { lease = await io.open(lock, 'wx', 0o600); }
+    catch { return null; }
+  }
+  try {
+    await lease.writeFile?.(JSON.stringify({ pid: process.pid }) + '\n');
+    return lease;
+  } catch (error) {
+    await lease.close();
+    await io.rm(lock, { force: true });
+    throw error;
+  }
+}
+
+async function managedRetarget(io, group, baseDirectory, recorded, current) {
+  try {
+    const before = JSON.parse(recorded), after = JSON.parse(current);
+    if (!Array.isArray(before.folders) || !Array.isArray(after.folders) ||
+        !after.folders.length || before.folders.length !== after.folders.length) return false;
+    const withoutPaths = workspace => ({ ...workspace,
+      folders: workspace.folders.map(({ path: _path, ...rest }) => rest) });
+    if (!isDeepStrictEqual(withoutPaths(before), withoutPaths(after)) ||
+        isDeepStrictEqual(before.folders, after.folders)) return false;
+    for (const folder of after.folders) {
+      if (typeof folder.path !== 'string' || !folder.path) return false;
+      const root = path.resolve(group, folder.path), target = path.dirname(root);
+      if (!await isWorkspaceDirectory(io, target, baseDirectory)) return false;
+      const manifest = await jsonFile(io, path.join(target, MANIFEST));
+      if (!['topic-worktree', 'main-worktree'].includes(manifest?.kind) ||
+          !manifest.repositories?.includes(path.basename(root))) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
+async function archiveRecovery(io, source, baseDirectory, label) {
+  const recovery = path.join(baseDirectory, '.sweetiebot-recovery');
+  await io.mkdir(recovery, { recursive: true });
+  if (!await isPlainDirectory(io, recovery)) throw Error('Unsafe recovery directory');
+  const destination = await io.mkdtemp(path.join(recovery, label + '-'));
+  await io.rename(source, path.join(destination, path.basename(source)));
 }
 
 async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = IDLE_MS } = {}) {
@@ -105,8 +164,10 @@ async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = ID
     // Never discard edited or unreadable saved settings.
     if (workspaceFiles.length !== 1 || typeof manifest.workspaceFileContents !== 'string') return null;
     try {
-      if (await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8') !==
-          manifest.workspaceFileContents) return null;
+      const current = await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8');
+      if (current !== manifest.workspaceFileContents &&
+          !(kind === 'shared-main' && await managedRetarget(io, group, baseDirectory,
+            manifest.workspaceFileContents, current))) return null;
     } catch { return null; }
   } else if (workspaceFiles.length) return null;
   // Merge-proof directories only belong to legacy independent clones.
@@ -271,11 +332,7 @@ async function cleanWorktree(group, name, kind, io, run, dryRun, {
   // them intact outside the workspace rather than deleting or reading them.
   const backup = path.join(group, HANDOFF_BACKUP);
   if (await isPlainDirectory(io, backup)) {
-    const recovery = path.join(baseDirectory, '.sweetiebot-recovery');
-    await io.mkdir(recovery, { recursive: true });
-    if (!await isPlainDirectory(io, recovery)) throw Error('Unsafe recovery directory');
-    const destination = await io.mkdtemp(path.join(recovery, path.basename(group) + '-'));
-    await io.rename(backup, path.join(destination, HANDOFF_BACKUP));
+    await archiveRecovery(io, backup, baseDirectory, path.basename(group));
   }
   if (kind === 'topic-worktree') {
     // Compare-and-delete preserves any commit created during removal. Squash
@@ -323,12 +380,11 @@ async function pruneManagedWorkspaces({
   now = Date.now(), alive = isAlive, dryRun = false, log = () => {}, groups
 } = {}) {
   if (!await isPlainDirectory(io, baseDirectory)) return [];
-  // Multiple VS Code windows run this extension. A process-wide exclusive
-  // directory lock prevents overlapping deletion scans across windows.
+  // Multiple VS Code windows run this extension. An exclusive file lease
+  // prevents overlapping deletion scans across windows.
   const lock = path.join(baseDirectory, '.sweetiebot-workspace-prune.lock');
-  let lease;
-  try { lease = await io.open(lock, 'wx', 0o600); }
-  catch { return []; }
+  const lease = await workspaceLease(io, lock, alive);
+  if (!lease) return [];
   const pruned = [];
   try {
     const entries = await io.readdir(baseDirectory, { withFileTypes: true });
@@ -380,10 +436,17 @@ async function pruneManagedWorkspaces({
           if (!dryRun) await io.rm(group, { recursive: true, force: false });
         } else if (kind === 'shared-main') {
           if (!await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) continue;
-          if (!dryRun) await io.rm(group, { recursive: true, force: false });
+          if (!dryRun) {
+            const manifest = await jsonFile(io, path.join(group, MANIFEST));
+            const workspace = (await io.readdir(group)).find(name => name.endsWith('.code-workspace'));
+            const current = await io.readFile(path.join(group, workspace), 'utf8');
+            if (current !== manifest.workspaceFileContents) {
+              await archiveRecovery(io, group, baseDirectory, path.basename(group));
+            } else await io.rm(group, { recursive: true, force: false });
+          }
         } else if (kind === 'topic-worktree' || kind === 'main-worktree') {
           if (await hasSavedWorkspaceReference(io, candidates.filter(candidate =>
-            candidate !== group && (!pruned.includes(candidate) || dryRun)),
+            candidate !== group && !pruned.includes(candidate)),
           path.join(group, names[0]))) continue;
           if (!await cleanWorktree(group, names[0], kind, io, run, dryRun,
             { baseDirectory, alive })) continue;
@@ -412,9 +475,8 @@ async function releaseClosedWorktree(group, {
 } = {}) {
   if (!path.isAbsolute(group) || !await isPlainDirectory(io, baseDirectory)) return false;
   const lock = path.join(baseDirectory, '.sweetiebot-workspace-prune.lock');
-  let lease;
-  try { lease = await io.open(lock, 'wx', 0o600); }
-  catch { return false; }
+  const lease = await workspaceLease(io, lock, alive);
+  if (!lease) return false;
   try {
     const eligible = () => eligibleGroup(io, group, baseDirectory, Date.now(), alive, { idleMs });
     const names = await eligible();
