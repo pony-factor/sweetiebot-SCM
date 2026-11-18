@@ -214,6 +214,9 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     # Retain every extension runtime file for future repairs, not only known suffixes.
     for relative, source in runtime_files(here.parent / "extension", allow_missing=root is not None).items():
         files[Path("codex-customizations/extension") / relative] = source
+    # Local installs generate the marker without adding it to the checkout.
+    # Bundle it for offline repairs too, which run without the source .git.
+    files[Path("codex-customizations/scripts/build-revision.json")] = files[Path("build-revision.json")]
     return dict(sorted(files.items()))
 
 
@@ -224,7 +227,7 @@ def expected_bytes(
 ) -> bytes:
     if relative == Path("package.json"):
         return (json.dumps(render_package(settings), indent=2) + "\n").encode()
-    if relative == Path("build-revision.json"):
+    if relative in (Path("build-revision.json"), Path("codex-customizations/scripts/build-revision.json")):
         return build_revision_bytes(source)
     return source.read_bytes()
 
@@ -327,7 +330,7 @@ def sync_extension(
     for relative, source in source_files().items():
         if relative.parent != Path("."):
             (temp / relative.parent).mkdir(parents=True, exist_ok=True)
-        if relative in (Path("package.json"), Path("build-revision.json")):
+        if relative in (Path("package.json"), Path("build-revision.json"), Path("codex-customizations/scripts/build-revision.json")):
             (temp / relative).write_bytes(expected_bytes(relative, source, settings))
         else:
             shutil.copy2(source, temp / relative)

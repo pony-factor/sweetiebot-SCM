@@ -321,6 +321,13 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             )
             self.assertTrue((destination / "configurator.py").is_file())
             self.assertTrue((destination / "build-revision.json").is_file())
+            bundled_marker = destination / "codex-customizations/scripts/build-revision.json"
+            self.assertEqual(bundled_marker.read_bytes(), (destination / "build-revision.json").read_bytes())
+            # An offline repair must retain the SHA without access to .git.
+            self.assertEqual(
+                workspace_search.build_revision_bytes(bundled_marker),
+                (destination / "build-revision.json").read_bytes(),
+            )
             self.assertTrue((destination / "codex-sticker.py").is_file())
             self.assertTrue((destination / "codex-button-icon.py").is_file())
             self.assertTrue((destination / "commit-hotkey.py").is_file())
