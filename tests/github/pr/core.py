@@ -19,7 +19,15 @@ import unittest
 import github_pr
 
 HOST = 'else if((await pr.githubRepository.getMetadata()).delete_branch_on_merge){const result=await prompt(repo,pr);return result.isReply?void 0:result.message}'
+HOST_0180 = ('else if((await pr.githubRepository.getMetadata()).delete_branch_on_merge){'
+             'const same=(b=(a=pr.head)==null?void 0:a.repositoryCloneUrl.equals(pr.base.repositoryCloneUrl))!=null?b:!1,'
+             'result=await prompt(repo,pr,same);return result.isReply?void 0:result.message}')
 LINK = 'href:url,title:url,"data-vscode-context":JSON.stringify(context),onClick:wrap(event=>{event.preventDefault(),open()},"onClick")'
+TITLE_LINK_0180 = ('href:url,title:url,"data-vscode-context":context?JSON.stringify(context):void 0,'
+                   'onClick:open?event=>{event.preventDefault(),event.stopPropagation(),open()}:void 0')
+STICKY_LINK_0180 = ('href:pr.url,title:pr.url,"data-vscode-context":JSON.stringify({url:pr.url,'
+                    'preventDefaultContextMenuItems:!0,owner:pr.owner,repo:pr.repo,number:pr.number,"github:copyMenu":!0}),'
+                    'onClick:wrap(event=>{event.preventDefault(),event.stopPropagation(),open()},"onClick")')
 
 
 class GitHubPRTests(unittest.TestCase):
@@ -95,7 +103,7 @@ helper.checkFolderMergeEligibility({}, '').then(result => assert.equal(result.el
             github_pr.transform_description(patched.replace('sweetiebotResolved;', 'changed;', 1))
         script = '''
 const assert=require('node:assert/strict');
-class Panel { PATCHED }
+class Panel { getStackRecommendationKey(model){return model.number} PATCHED }
 (async()=>{
  for(const [body,bodyHTML,expected] of [['Text',undefined,1],['Text','',1],
    ['Text','  ',1],['Text','<p>Text</p>',0],['',undefined,0]]) {
@@ -114,8 +122,15 @@ class Panel { PATCHED }
  await assert.rejects(panel.updateItemNow({body:'Text',remote:{},number:214}),/offline/);
  assert.equal(panel.context,undefined);
 })().catch(error=>{console.error(error);process.exitCode=1});
-'''.replace('PATCHED', patched)
-        subprocess.run(['node', '-e', script], check=True)
+'''
+        stacked = source.replace('this._item=e,',
+                                 'const same=!!this._item&&this.getStackRecommendationKey(this._item)===this.getStackRecommendationKey(e);this._item=e,')
+        for variant in (source, stacked):
+            with self.subTest(stacked=variant == stacked):
+                transformed = github_pr.transform_description(variant)
+                self.assertEqual(github_pr.transform_description(transformed), transformed)
+                self.assertEqual(github_pr.transform_description(transformed, remove=True), variant)
+                subprocess.run(['node', '-e', script.replace('PATCHED', transformed)], check=True)
 
     def test_timeout_notice_is_short_and_preserves_other_errors(self):
         notice = 's.l10n.t("Fetching pull requests failed: {0}",Pe(l))'
@@ -216,7 +231,9 @@ assert(errors.includes('API rate limit exceeded'));
 const assert = require('node:assert/strict');
 async function check(body, configured, deletes) {
  let prompts=0, automaticCalls=0;
- const repo={}, pr={githubRepository:{getMetadata:async()=>({delete_branch_on_merge:deletes})}};
+ const repo={}, pr={githubRepository:{getMetadata:async()=>({delete_branch_on_merge:deletes})},
+   head:{repositoryCloneUrl:{equals:()=>true}},base:{repositoryCloneUrl:{}}};
+ let a,b;
  const prompt=async()=>{prompts++;return {isReply:false,message:{}}};
  const automatic=async()=>{automaticCalls++};
  const fn = new Function('configured','repo','pr','prompt','automatic','return (async()=>{'+body+'})()');
@@ -230,7 +247,48 @@ async function check(body, configured, deletes) {
  assert.deepEqual(await check(after,false,false),{prompts:0,automaticCalls:0});
  assert.deepEqual(await check(after,true,true),{prompts:0,automaticCalls:1});
 })().catch(error=>{console.error(error);process.exitCode=1});
-'''.replace('BEFORE', json.dumps(original)).replace('AFTER', json.dumps('if(configured)await automatic(repo,pr);' + patched))
+'''
+        for host in (HOST, HOST_0180):
+            with self.subTest(modern=host == HOST_0180):
+                transformed = github_pr.transform(host, 'host')
+                self.assertEqual(github_pr.transform(transformed, 'host'), transformed)
+                self.assertEqual(github_pr.transform(transformed, 'host', remove=True), host)
+                prefix = 'if(configured)await automatic(repo,pr);'
+                subprocess.run(['node', '-e', script.replace('BEFORE', json.dumps(prefix + host))
+                                .replace('AFTER', json.dumps(prefix + transformed.split(github_pr.START)[0]))], check=True)
+
+    def test_shared_and_sticky_number_links_each_open_once_in_0180(self):
+        source = 'const title=({' + TITLE_LINK_0180 + '}),sticky=({' + STICKY_LINK_0180 + '});'
+        patched = github_pr.transform(source, 'webview')
+        self.assertEqual(github_pr.transform(patched, 'webview'), patched)
+        self.assertEqual(github_pr.transform(patched, 'webview', remove=True), source)
+        for invalid in (TITLE_LINK_0180, STICKY_LINK_0180, source + source):
+            with self.assertRaises(ValueError):
+                github_pr.transform(invalid, 'webview')
+        script = '''
+const assert=require('node:assert/strict');
+let opens=0;
+const url='https://github.com/owner/repo/pull/33',context={},wrap=fn=>fn;
+const pr={url,owner:'owner',repo:'repo',number:33};
+function links(open){PATCHED;return [title,sticky];}
+const [title,sticky]=links(()=>{opens++});
+for(const link of [title,sticky]){
+ const before=opens;
+ if(link.href)opens++;
+ link.onClick({preventDefault(){},stopPropagation(){}});
+ assert.equal(opens,before+1,'one click opens only once');
+ link.onKeyDown({key:'Enter',preventDefault(){}});
+ assert.equal(opens,before+2);
+ assert.equal(link.title,url);
+ assert.equal(link.role,'link');assert.equal(link.tabIndex,0);
+}
+assert.equal(title['data-vscode-context'],JSON.stringify(context));
+assert.equal(JSON.parse(sticky['data-vscode-context']).number,33);
+const [nativeTitle]=links(undefined);
+assert.equal(nativeTitle.href,url,'shared title without callback keeps native navigation');
+assert.equal(nativeTitle.onClick,undefined);
+nativeTitle.onKeyDown({key:'Enter',preventDefault(){throw new Error('native navigation was blocked')}});
+'''.replace('PATCHED', patched)
         subprocess.run(['node', '-e', script], check=True)
 
     def test_number_link_uses_one_opener_and_retains_keyboard_support(self):
