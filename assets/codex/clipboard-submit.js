@@ -36,8 +36,16 @@
         return Boolean(element && element.isConnected && element.getClientRects().length);
     }
 
+    function composerControl(button) {
+        // Queued messages expose their own Steer/Send actions. The native rail
+        // exclusion also works before the optional queue bridge tags its rows.
+        return Boolean(button && !button.closest?.(
+            '[data-composer-rail], [data-scm-toolkit-queue-id], .scm-toolkit-queue-editor'
+        ));
+    }
+
     function classify(button, includeDisabled = false) {
-        if (!button || button.id === BUTTON_ID || !visible(button)
+        if (!composerControl(button) || button.id === BUTTON_ID || !visible(button)
             || (!includeDisabled && (button.disabled || button.getAttribute('aria-disabled') === 'true'))) return '';
         const name = label(button);
         if (/\b(stop|cancel|interrupt|pause|voice|dictat|microphone|retry)\b/i.test(name)) return '';
@@ -79,7 +87,7 @@
     // Mounting must not depend on an enabled Send button: after a chat starts,
     // Send can be disabled (empty draft) or replaced by Stop during a run.
     function chooseMountTarget(buttons, active) {
-        const candidates = buttons.filter(button => button && button.id !== BUTTON_ID && visible(button));
+        const candidates = buttons.filter(button => composerControl(button) && button.id !== BUTTON_ID && visible(button));
         const kind = button => RUNNING_CONTROL.test(label(button)) ? 'stop' : classify(button, true);
         const find = (target, enabledOnly = false) => candidates.find(button =>
             kind(button) === target && (!enabledOnly
@@ -90,7 +98,8 @@
 
     function isRunning(root) {
         return [...root.querySelectorAll('button')].some(button =>
-            visible(button) && (RUNNING_CONTROL.test(label(button)) || nativeSubmit(button)?.isResponseInProgress))
+            composerControl(button) && visible(button)
+                && (RUNNING_CONTROL.test(label(button)) || nativeSubmit(button)?.isResponseInProgress))
             || Boolean(root.querySelector('[data-state="streaming"], [data-state="generating"], [data-state="running"]'));
     }
 

@@ -66,6 +66,25 @@ assert.equal(hooks.chooseMountTarget([stop, disabledSend], true), stop);
 assert.equal(hooks.chooseMountTarget([stop, queue], true), queue);
 assert.equal(hooks.chooseAction([stop], true), null, 'never click Stop instead of queueing');
 
+// Queue-row Steer buttons appear before the composer in DOM order. They must
+// never own the clipboard icon or receive its submission, even before tagging.
+const queuedActions = ['[data-composer-rail]', '[data-scm-toolkit-queue-id]', '.scm-toolkit-queue-editor']
+    .flatMap(container => ['Steer', 'Queue message', 'Send message', 'Stop response'].map(name => {
+        const action = button(name);
+        action.closest = selector => selector.includes(container) ? {} : null;
+        return action;
+    }));
+for (const action of queuedActions) {
+    assert.equal(hooks.classify(action), '', 'queue controls are not composer actions');
+    assert.equal(hooks.chooseMountTarget([action, disabledSend], true), disabledSend);
+    assert.equal(hooks.chooseMountTarget([action], true), null);
+    assert.equal(hooks.chooseAction([action, queue], true, true), queue);
+    assert.equal(hooks.chooseAction([action], true, true), null);
+}
+const composerSteer = button('Steer');
+assert.equal(hooks.chooseMountTarget([...queuedActions, composerSteer], true), composerSteer,
+    'the composer primary action can itself be Steer');
+
 // Exercise the composer search as well as the target selector: the original
 // bug dropped the entire composer surface when Send was disabled or absent.
 function surfaceWith(buttons) {
@@ -84,6 +103,8 @@ function surfaceWith(buttons) {
 assert.equal(surfaceWith([disabledSend]).mountTarget, disabledSend);
 assert.equal(surfaceWith([stop]).mountTarget, stop);
 assert.equal(surfaceWith([stop, queue]).mountTarget, queue);
+assert.equal(surfaceWith([...queuedActions, disabledSend]).mountTarget, disabledSend,
+    'queue controls preceding the empty composer cannot capture its clipboard icon');
 const mainSurface = surfaceWith([send]);
 const queuedEditor = {isConnected:true,getClientRects:()=>[1],closest:()=>({})};
 mainSurface.root.querySelectorAll = selector => selector === 'button' ? [send] : [queuedEditor, mainSurface.editor];

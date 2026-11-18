@@ -170,15 +170,18 @@ def prune_origin_tracking(repo):
     return sorted(before - origin_tracking_refs(repo))
 
 
-def merged_pr_head_matches(pr, expected_oid):
-    """A deleted PR head ref can have null headRefOid; use its recorded final commit."""
+def merged_pr_head_matches(pr, expected_oid, repo=None):
+    """Prove the local tip belongs to the merged PR, including an older tip."""
     oid = pr.get("headRefOid")
-    if oid is not None:
-        return oid == expected_oid
-    commits = pr.get("commits")
-    return bool(isinstance(commits, list) and commits
-                and isinstance(commits[-1], dict)
-                and commits[-1].get("oid") == expected_oid)
+    if oid is None:
+        commits = pr.get("commits")
+        oid = (commits[-1].get("oid") if isinstance(commits, list) and commits
+               and isinstance(commits[-1], dict) else None)
+    if not isinstance(oid, str) or not re.fullmatch(r"[0-9a-f]{40,64}", oid):
+        return False
+    return oid == expected_oid or (repo is not None and run(
+        [GIT, "merge-base", "--is-ancestor", expected_oid, oid], cwd=repo,
+        timeout=10).returncode == 0)
 
 
 def current_branch(repo):
@@ -223,8 +226,7 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
             if (pr.get("state") == "MERGED" and pr.get("mergedAt")
                     and not pr.get("isCrossRepository")
                     and pr.get("baseRefName") == default_branch
-                    and pr.get("headRefName") == branch
-                    and pr.get("headRefOid") in (None, local_oid)):
+                    and pr.get("headRefName") == branch):
                 candidates[(branch, local_oid)] = pr.get("number")
 
     pruned = []
@@ -249,7 +251,7 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
                 or not verified.get("mergedAt") or verified.get("isCrossRepository")
                 or verified.get("baseRefName") != default_branch
                 or verified.get("headRefName") != branch
-                or not merged_pr_head_matches(verified, expected_oid)):
+                or not merged_pr_head_matches(verified, expected_oid, repo)):
             continue
         if branch in checked_out_branches(repo):
             if not return_to_default(repo, branch, default_branch, expected_oid, dry_run):

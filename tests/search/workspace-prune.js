@@ -132,6 +132,8 @@ function fixture({
   assert.deepEqual(await linked.scan(), [], 'Symlinked repository parents are preserved');
   const nestedDirty = fixture({ nested: true, dirty: true });
   assert.deepEqual(await nestedDirty.scan(), [], 'Nested dirty clones are preserved');
+  assert.deepEqual(await fixture({ ageHours: 0.2 }).scan(), [GROUP],
+    'Completed workspaces become eligible after ten minutes, not an hour');
 
   for (const [label, config] of Object.entries({
     neverActivated: { activated: false },
@@ -182,9 +184,25 @@ function fixture({
       baseDirectory: base, alive: pid => pid === 12, run: neverRunGit
     }), [], 'Live workspace sessions must be preserved');
     await fs.rm(path.join(workspace, '.sweetiebot-session-12-test.json'));
+    const lock = path.join(base, '.sweetiebot-workspace-prune.lock');
+    await fs.writeFile(lock, JSON.stringify({ pid: process.pid }));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: pid => pid === process.pid, run: neverRunGit
+    }), [], 'A live cleanup worker retains its lock');
+    await fs.writeFile(lock, '');
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, alive: () => false, run: neverRunGit
-    }), [workspace], 'Idle shared-main metadata should be pruned');
+    }), [], 'A fresh empty lock may belong to a worker still writing its owner');
+    const staleLockTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await fs.utimes(lock, staleLockTime, staleLockTime);
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: () => false, run: neverRunGit
+    }), [workspace], 'An abandoned legacy lock must not disable cleanup forever');
+    await fs.writeFile(lock, JSON.stringify({ pid: 999 }));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, alive: () => false, run: neverRunGit
+    }), [], 'A dead worker lock is reclaimed even without remaining candidates');
+    assert.equal(await fs.stat(lock).then(() => true, () => false), false);
     assert.equal(await fs.readFile(path.join(original, '.missing')).then(
       () => true, () => false), false, 'Original checkout must never be deleted');
     assert.equal((await fs.stat(original)).isDirectory(), true);
@@ -199,13 +217,13 @@ function fixture({
     await fs.writeFile(path.join(group, '.sweetiebot-activated'), 'Activated');
     await fs.utimes(path.join(group, '.sweetiebot-activated'), older, older);
     const sha = 'a'.repeat(40), operations = [];
-    let approved = true, dirty = false;
+    let approved = true, dirty = false, mergedHead = sha, ancestor = false;
     const run = async (binary, args, cwd) => {
       operations.push([binary, ...args]);
       if (binary === 'gh') {
         if (args[1] === 'view') return JSON.stringify({
           state: approved ? 'MERGED' : 'OPEN', mergedAt: approved ? '2026-10-20' : null,
-          baseRefName: 'main', headRefName: 'topic', headRefOid: sha,
+          baseRefName: 'main', headRefName: 'topic', headRefOid: mergedHead,
           isCrossRepository: false
         });
         if (args.includes('open')) return '[]';
@@ -230,7 +248,8 @@ function fixture({
         case 'status': return dirty ? '?? user-file' : '';
         case 'remote': return 'https://github.com/org/repo.git';
         case 'fetch': return '';
-        case 'branch': return '';
+        case 'update-ref': return '';
+        case 'merge-base': return ancestor ? '' : null;
       }
       throw Error('Unexpected operation: ' + args.join(' '));
     };
@@ -247,6 +266,14 @@ function fixture({
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
     }), [], 'A saved workspace reference protects its topic worktree');
+    await fs.writeFile(savedWorkspaceFile,
+      JSON.stringify({ folders: [{ path: '../topic-id/repo' }] }));
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [], 'A relative saved workspace reference also protects its target');
+    const { hasSavedWorkspaceReference } = require('../../extension/branches/workspace-prune');
+    assert.equal(await hasSavedWorkspaceReference(fs, [saved], path.join(base, 'unrelated')), false,
+      'Relative saved paths must not block every unrelated checkout');
     await fs.rm(saved, { recursive: true });
     // Existing windows using the historical filename still protect worktrees.
     const legacySaved = path.join(base, 'repo', 'legacy-window');
@@ -260,6 +287,26 @@ function fixture({
       baseDirectory: base, run, alive: () => false
     }), [], 'A legacy saved workspace reference protects its topic worktree');
     await fs.rm(legacySaved, { recursive: true });
+    await fs.mkdir(saved);
+    const retargetedContents = JSON.stringify({ folders: [{ path: '../topic-id/repo' }] });
+    await fs.writeFile(path.join(saved, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'shared-main', repositories: [],
+      workspaceFileContents: JSON.stringify({ folders: [{ path: original }] })
+    }));
+    await fs.writeFile(savedWorkspaceFile, retargetedContents);
+    await fs.writeFile(path.join(saved, '.sweetiebot-activated'), 'Activated');
+    await fs.utimes(path.join(saved, '.sweetiebot-activated'), older, older);
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false, groups: [group], dryRun: true
+    }), [], 'A targeted scan still honors saved references outside its selection');
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false, groups: [saved]
+    }), [saved], 'A closed workspace retargeted by branch handoff is archived');
+    const savedRecovery = path.join(base, '.sweetiebot-recovery');
+    const savedArchives = await fs.readdir(savedRecovery);
+    assert.equal(await fs.readFile(path.join(savedRecovery, savedArchives[0],
+      path.basename(saved), path.basename(savedWorkspaceFile)), 'utf8'), retargetedContents,
+    'Retargeted saved workspace contents remain recoverable');
     dirty = true;
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
@@ -270,13 +317,32 @@ function fixture({
       baseDirectory: base, run, alive: () => false
     }), [], 'Unmerged topic branches must be preserved');
     approved = true;
+    mergedHead = 'b'.repeat(40);
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
-    }), [group], 'Merged, clean, idle topic worktrees are safely detached');
+    }), [], 'A divergent tip cannot be retired merely because its PR merged');
+    ancestor = true;
+    const backup = path.join(group, '.sweetiebot-handoff-backup');
+    await fs.mkdir(backup);
+    await fs.writeFile(path.join(backup, 'fixture.patch'), 'preserve recovery data');
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false, dryRun: true
+    }), [group], 'Dry-run recognizes an older merged tip with a handoff backup');
+    assert.equal(await fs.readFile(path.join(backup, 'fixture.patch'), 'utf8'), 'preserve recovery data');
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run, alive: () => false
+    }), [group], 'Merged ancestor tips in clean, idle worktrees are safely detached');
+    const recoveryRoot = path.join(base, '.sweetiebot-recovery');
+    const archives = (await fs.readdir(recoveryRoot)).filter(name => name.startsWith('topic-id-'));
+    assert.equal(archives.length, 1);
+    assert.equal(await fs.readFile(path.join(recoveryRoot, archives[0],
+      '.sweetiebot-handoff-backup', 'fixture.patch'), 'utf8'), 'preserve recovery data',
+    'Handoff recovery data is archived intact outside the removed worktree');
     assert(operations.some(args => args[0] === 'git' && args[1] === 'worktree' &&
       args[2] === 'remove'), 'Git, rather than recursive deletion, detaches worktrees');
-    assert(operations.some(args => args[0] === 'git' && args[1] === 'branch' &&
-      args[2] === '-D'), 'Verified squash-merged topic branch is retired');
+    assert(operations.some(args => args[0] === 'git' && args[1] === 'update-ref' &&
+      args[2] === '-d' && args[3] === 'refs/heads/topic' && args[4] === sha),
+    'Verified topic branch is retired only if its tip has not changed');
 
     // An unused temporary main checkout is removed only when its HEAD is
     // already included in origin/main; local unpublished commits protect it.

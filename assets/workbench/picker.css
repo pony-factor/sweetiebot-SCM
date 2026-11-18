@@ -1150,6 +1150,14 @@ body:has(.scm-toolkit-spellcheck-popup[open]) .webview {
     max-width: 100%;
 }
 
+/* Wrapping the message controls must not turn the branch picker into a row. */
+.scm-view .scm-editor.scm-toolkit-responsive-message-bar > .scm-toolkit-branch {
+    flex: 0 1 auto;
+    width: auto;
+    max-width: 28%;
+    box-sizing: border-box;
+}
+
 .scm-view .scm-toolkit-message-break {
     flex: 0 0 100%;
     height: 0;

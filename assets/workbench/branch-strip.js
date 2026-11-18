@@ -34,6 +34,19 @@ function scmToolkitBranchStripPrLabel(pr) {
     return pr?.number ? `#${pr.number}` : 'PR';
 }
 
+function scmToolkitBranchStripPlacement(rect, viewportWidth, viewportHeight, contentHeight) {
+    const margin = 8, gap = 4;
+    const width = Math.max(0, Math.min(Math.max(320, rect.width), 420, viewportWidth - margin * 2));
+    const above = Math.max(0, rect.top - margin - gap);
+    const below = Math.max(0, viewportHeight - margin - rect.bottom - gap);
+    const desired = Math.min(360, contentHeight);
+    const placeBelow = below >= desired || below >= above;
+    const height = Math.min(desired, placeBelow ? below : above);
+    return { width, height,
+        left: Math.max(margin, Math.min(rect.left, viewportWidth - width - margin)),
+        top: placeBelow ? rect.bottom + gap : rect.top - height - gap };
+}
+
 // A compact, vertical branch popup opened from the existing SCM branch button.
 // The native branch picker stays available as the overflow action and elsewhere.
 function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, openNativePicker, trigger) {
@@ -113,22 +126,17 @@ function scmToolkitCreateBranchStrip(widget, commands, notifications, settings, 
     };
     const position = () => {
         const rect = trigger.getBoundingClientRect();
-        const view = widget.element.closest('.scm-view');
-        const host = view?.getBoundingClientRect() || rect;
-        // Fill the SCM width, but let the popup escape a short bottom panel.
-        // It is mounted on the workbench, so either side can use the viewport.
-        const width = Math.max(0, Math.min(host.width || win.innerWidth - 16,
-            win.innerWidth - 16));
-        const above = Math.max(0, rect.top - 8 - 4);
-        const below = Math.max(0, win.innerHeight - 8 - rect.bottom - 4);
-        const placeBelow = below >= above;
-        const height = Math.min(Math.max(above, below), win.innerHeight - 16);
-        bar.style.width = `${width}px`;
-        bar.style.left = `${Math.max(8, Math.min(host.left, win.innerWidth - width - 8))}px`;
-        bar.style.height = `${height}px`;
-        bar.style.maxHeight = `${win.innerHeight - 16}px`;
-        bar.style.top = `${placeBelow ? rect.bottom + 4
-            : Math.max(8, rect.top - height - 4)}px`;
+        // Establish the final width before measuring wrapped notes and rows.
+        const initial = scmToolkitBranchStripPlacement(rect, win.innerWidth, win.innerHeight, 360);
+        bar.style.width = `${initial.width}px`;
+        bar.style.height = 'auto';
+        bar.style.maxHeight = 'none';
+        const placement = scmToolkitBranchStripPlacement(rect, win.innerWidth, win.innerHeight,
+            header.getBoundingClientRect().height + scroll.scrollHeight + 2);
+        for (const property of ['width', 'height', 'left', 'top']) {
+            bar.style[property] = `${placement[property]}px`;
+        }
+        bar.style.maxHeight = `${placement.height}px`;
     };
 
     const render = (list, featuredCount, prStatus, remoteStatus = lastRemoteStatus) => {

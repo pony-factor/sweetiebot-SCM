@@ -157,6 +157,15 @@ class BranchCleanupTests(unittest.TestCase):
         self.assertEqual(prune.prune_repo(self.repo), [])
         self.assertTrue(self.exists())
 
+    def test_local_ancestor_of_verified_merged_head_is_pruned(self):
+        self.git('switch', '-c', 'pr-final', 'topic')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                 'commit', '--allow-empty', '-m', 'Later merged PR commit')
+        self.pr['headRefOid'] = self.git('rev-parse', 'HEAD')
+        self.git('switch', 'main')
+        self.assertEqual(len(prune.prune_repo(self.repo)), 1)
+        self.assertFalse(self.exists())
+
     def test_checked_out_worktree_is_preserved(self):
         self.git('worktree', 'add', str(self.repo / 'other'), 'topic')
         self.assertEqual(prune.prune_repo(self.repo), [])

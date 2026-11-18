@@ -3,17 +3,18 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
+const { promisify, isDeepStrictEqual } = require('node:util');
 const { independentWorkspaceParent } = require('./workspace-trust');
 const { isWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
 
 const execFileAsync = promisify(execFile);
-const IDLE_MS = 60 * 60 * 1000;
+const IDLE_MS = 10 * 60 * 1000;
 const SCAN_MS = 10 * 60 * 1000;
 const MANIFEST = '.sweetiebot-workspace.json';
 const ACTIVATED = '.sweetiebot-activated';
 const PROOFS = '.sweetiebot-merged';
 const SESSION_PREFIX = '.sweetiebot-session-';
+const HANDOFF_BACKUP = '.sweetiebot-handoff-backup';
 
 async function command(binary, args, cwd) {
   // macOS GUI-launched VS Code may omit Homebrew paths from its environment.
@@ -52,6 +53,65 @@ async function isPlainDirectory(io, folder) {
   catch { return false; }
 }
 
+async function workspaceLease(io, lock, alive) {
+  let lease;
+  try { lease = await io.open(lock, 'wx', 0o600); }
+  catch (error) {
+    if (error.code !== 'EEXIST') return null;
+    // Older versions left an empty lock permanently after a crash. New locks
+    // record their owner so only a dead worker's lease can be reclaimed.
+    const before = await io.lstat(lock).catch(() => null);
+    if (!before?.isFile()) return null;
+    const owner = await jsonFile(io, lock);
+    const stale = owner && Number.isSafeInteger(owner.pid) && owner.pid > 0
+      ? !alive(owner.pid)
+      : before.size === 0 && Date.now() - before.mtimeMs > 24 * 60 * 60 * 1000;
+    if (!stale) return null;
+    const current = await io.lstat(lock).catch(() => null);
+    if (!current || current.ino !== before.ino || current.dev !== before.dev) return null;
+    await io.rm(lock, { force: true });
+    try { lease = await io.open(lock, 'wx', 0o600); }
+    catch { return null; }
+  }
+  try {
+    await lease.writeFile?.(JSON.stringify({ pid: process.pid }) + '\n');
+    return lease;
+  } catch (error) {
+    await lease.close();
+    await io.rm(lock, { force: true });
+    throw error;
+  }
+}
+
+async function managedRetarget(io, group, baseDirectory, recorded, current) {
+  try {
+    const before = JSON.parse(recorded), after = JSON.parse(current);
+    if (!Array.isArray(before.folders) || !Array.isArray(after.folders) ||
+        !after.folders.length || before.folders.length !== after.folders.length) return false;
+    const withoutPaths = workspace => ({ ...workspace,
+      folders: workspace.folders.map(({ path: _path, ...rest }) => rest) });
+    if (!isDeepStrictEqual(withoutPaths(before), withoutPaths(after)) ||
+        isDeepStrictEqual(before.folders, after.folders)) return false;
+    for (const folder of after.folders) {
+      if (typeof folder.path !== 'string' || !folder.path) return false;
+      const root = path.resolve(group, folder.path), target = path.dirname(root);
+      if (!await isWorkspaceDirectory(io, target, baseDirectory)) return false;
+      const manifest = await jsonFile(io, path.join(target, MANIFEST));
+      if (!['topic-worktree', 'main-worktree'].includes(manifest?.kind) ||
+          !manifest.repositories?.includes(path.basename(root))) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
+async function archiveRecovery(io, source, baseDirectory, label) {
+  const recovery = path.join(baseDirectory, '.sweetiebot-recovery');
+  await io.mkdir(recovery, { recursive: true });
+  if (!await isPlainDirectory(io, recovery)) throw Error('Unsafe recovery directory');
+  const destination = await io.mkdtemp(path.join(recovery, label + '-'));
+  await io.rename(source, path.join(destination, path.basename(source)));
+}
+
 async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = IDLE_MS } = {}) {
   if (!await isWorkspaceDirectory(io, group, baseDirectory) || !await isPlainDirectory(io, group)) return null;
   const manifest = await jsonFile(io, path.join(group, MANIFEST));
@@ -78,7 +138,7 @@ async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = ID
   if (!lastActive.isFile() || now - lastActive.mtimeMs < idleMs) return null;
 
   const workspaceNames = new Set(['workspace.code-workspace', workspaceFileName(group)]);
-  const allowed = new Set([MANIFEST, ACTIVATED, PROOFS, ...workspaceNames, ...names]);
+  const allowed = new Set([MANIFEST, ACTIVATED, PROOFS, HANDOFF_BACKUP, ...workspaceNames, ...names]);
   const entries = await io.readdir(group, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name.startsWith(SESSION_PREFIX) && entry.isFile()) {
@@ -90,6 +150,8 @@ async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = ID
     if (!allowed.has(entry.name) || entry.isSymbolicLink()) return null;
     if (names.includes(entry.name) && !entry.isDirectory()) return null;
     if (entry.name === PROOFS && !entry.isDirectory()) return null;
+    if (entry.name === HANDOFF_BACKUP && (!['topic-worktree', 'main-worktree'].includes(kind)
+        || !entry.isDirectory())) return null;
     if ((entry.name === MANIFEST || entry.name === ACTIVATED ||
          workspaceNames.has(entry.name)) && !entry.isFile()) return null;
   }
@@ -102,8 +164,10 @@ async function eligibleGroup(io, group, baseDirectory, now, alive, { idleMs = ID
     // Never discard edited or unreadable saved settings.
     if (workspaceFiles.length !== 1 || typeof manifest.workspaceFileContents !== 'string') return null;
     try {
-      if (await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8') !==
-          manifest.workspaceFileContents) return null;
+      const current = await io.readFile(path.join(group, workspaceFiles[0].name), 'utf8');
+      if (current !== manifest.workspaceFileContents &&
+          !(kind === 'shared-main' && await managedRetarget(io, group, baseDirectory,
+            manifest.workspaceFileContents, current))) return null;
     } catch { return null; }
   } else if (workspaceFiles.length) return null;
   // Merge-proof directories only belong to legacy independent clones.
@@ -190,7 +254,9 @@ async function cleanClone(group, name, io, run) {
 
 // A linked worktree shares its Git objects with the original repository. Never
 // recursively remove the checkout: Git must detach it from the shared database.
-async function cleanWorktree(group, name, kind, io, run, dryRun) {
+async function cleanWorktree(group, name, kind, io, run, dryRun, {
+  baseDirectory = path.dirname(path.dirname(group)), alive = isAlive
+} = {}) {
   const cwd = path.join(group, name);
   if (await run('git', ['rev-parse', '--show-toplevel'], cwd) !== cwd) return false;
   const common = await run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
@@ -241,9 +307,12 @@ async function cleanWorktree(group, name, kind, io, run, dryRun) {
       if (value === null) return false;
       let pr;
       try { pr = JSON.parse(value); } catch { return false; }
+      const mergedHead = pr.headRefOid ?? pr.commits?.at(-1)?.oid;
       if (pr.state === 'MERGED' && pr.mergedAt && !pr.isCrossRepository &&
           pr.baseRefName === 'main' && pr.headRefName === branch &&
-          (pr.headRefOid ?? pr.commits?.at(-1)?.oid) === head) {
+          /^[0-9a-f]{40,64}$/.test(mergedHead || '') &&
+          (mergedHead === head || await run('git',
+            ['merge-base', '--is-ancestor', head, mergedHead], cwd) !== null)) {
         verified = true;
         break;
       }
@@ -253,17 +322,23 @@ async function cleanWorktree(group, name, kind, io, run, dryRun) {
 
   // Repeat checks immediately before invoking Git's non-forced worktree
   // removal. A concurrent writer makes Git refuse the removal as well.
-  if (!await eligibleGroup(io, group, path.dirname(path.dirname(group)), Date.now(), isAlive)) return false;
+  if (!await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) return false;
   if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '' ||
       await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd) !== branch ||
       await run('git', ['rev-parse', 'HEAD'], cwd) !== head) return false;
   if (dryRun) return true;
   if (await run('git', ['worktree', 'remove', '--', cwd], original) === null) return false;
+  // Handoff backups contain recovery data, not pending checkout edits. Move
+  // them intact outside the workspace rather than deleting or reading them.
+  const backup = path.join(group, HANDOFF_BACKUP);
+  if (await isPlainDirectory(io, backup)) {
+    await archiveRecovery(io, backup, baseDirectory, path.basename(group));
+  }
   if (kind === 'topic-worktree') {
-    // Squash merges require -D, since the original PR commits are not
-    // ancestors of main. The branch tip was verified against the merged PR.
+    // Compare-and-delete preserves any commit created during removal. Squash
+    // merges do not satisfy Git's ordinary branch-deletion ancestry check.
     if (await run('git', ['rev-parse', 'refs/heads/' + branch], original) === head) {
-      await run('git', ['branch', '-D', '--', branch], original);
+      await run('git', ['update-ref', '-d', 'refs/heads/' + branch, head], original);
     }
   }
   // Git removed the checkout; only Sweetiebot's small metadata remains.
@@ -290,8 +365,9 @@ async function hasSavedWorkspaceReference(io, groups, worktree) {
     } catch { return true; } // Unknown references are not proof of safety.
     if (!Array.isArray(saved.folders)) return true;
     for (const folder of saved.folders) {
-      if (typeof folder.path !== 'string' || !path.isAbsolute(folder.path)) return true;
-      const relative = path.relative(worktree, folder.path);
+      if (typeof folder.path !== 'string' || !folder.path) return true;
+      // VS Code saves folder paths relative to the .code-workspace file.
+      const relative = path.relative(worktree, path.resolve(group, folder.path));
       if (relative === '' || (relative !== '..' &&
           !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))) return true;
     }
@@ -301,15 +377,14 @@ async function hasSavedWorkspaceReference(io, groups, worktree) {
 
 async function pruneManagedWorkspaces({
   baseDirectory = independentWorkspaceParent(), io = fs, run = command,
-  now = Date.now(), alive = isAlive, dryRun = false, log = () => {}
+  now = Date.now(), alive = isAlive, dryRun = false, log = () => {}, groups
 } = {}) {
   if (!await isPlainDirectory(io, baseDirectory)) return [];
-  // Multiple VS Code windows run this extension. A process-wide exclusive
-  // directory lock prevents overlapping deletion scans across windows.
+  // Multiple VS Code windows run this extension. An exclusive file lease
+  // prevents overlapping deletion scans across windows.
   const lock = path.join(baseDirectory, '.sweetiebot-workspace-prune.lock');
-  let lease;
-  try { lease = await io.open(lock, 'wx', 0o600); }
-  catch { return []; }
+  const lease = await workspaceLease(io, lock, alive);
+  if (!lease) return [];
   const pruned = [];
   try {
     const entries = await io.readdir(baseDirectory, { withFileTypes: true });
@@ -339,6 +414,8 @@ async function pruneManagedWorkspaces({
     }
     candidates.sort((a, b) => (ranks[kinds.get(a)] ?? 4) - (ranks[kinds.get(b)] ?? 4));
     for (const group of candidates) {
+      // A targeted scan still inspects all saved workspace references.
+      if (groups && !groups.includes(group)) continue;
       try {
         const names = await eligibleGroup(io, group, baseDirectory, now, alive);
         if (!names) continue;
@@ -359,12 +436,20 @@ async function pruneManagedWorkspaces({
           if (!dryRun) await io.rm(group, { recursive: true, force: false });
         } else if (kind === 'shared-main') {
           if (!await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) continue;
-          if (!dryRun) await io.rm(group, { recursive: true, force: false });
+          if (!dryRun) {
+            const manifest = await jsonFile(io, path.join(group, MANIFEST));
+            const workspace = (await io.readdir(group)).find(name => name.endsWith('.code-workspace'));
+            const current = await io.readFile(path.join(group, workspace), 'utf8');
+            if (current !== manifest.workspaceFileContents) {
+              await archiveRecovery(io, group, baseDirectory, path.basename(group));
+            } else await io.rm(group, { recursive: true, force: false });
+          }
         } else if (kind === 'topic-worktree' || kind === 'main-worktree') {
           if (await hasSavedWorkspaceReference(io, candidates.filter(candidate =>
-            candidate !== group && (!pruned.includes(candidate) || dryRun)),
+            candidate !== group && !pruned.includes(candidate)),
           path.join(group, names[0]))) continue;
-          if (!await cleanWorktree(group, names[0], kind, io, run, dryRun)) continue;
+          if (!await cleanWorktree(group, names[0], kind, io, run, dryRun,
+            { baseDirectory, alive })) continue;
         } else continue;
         pruned.push(group);
         log((dryRun ? 'Would prune ' : 'Pruned ') + group);
@@ -390,9 +475,8 @@ async function releaseClosedWorktree(group, {
 } = {}) {
   if (!path.isAbsolute(group) || !await isPlainDirectory(io, baseDirectory)) return false;
   const lock = path.join(baseDirectory, '.sweetiebot-workspace-prune.lock');
-  let lease;
-  try { lease = await io.open(lock, 'wx', 0o600); }
-  catch { return false; }
+  const lease = await workspaceLease(io, lock, alive);
+  if (!lease) return false;
   try {
     const eligible = () => eligibleGroup(io, group, baseDirectory, Date.now(), alive, { idleMs });
     const names = await eligible();

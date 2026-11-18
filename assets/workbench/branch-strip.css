@@ -1,4 +1,4 @@
-/* Branch picker fills the SCM width and opens into available viewport space. */
+/* Click-opened branch dropdown stays anchored to its trigger. */
 .monaco-workbench .scm-toolkit-branch-strip {
     position: fixed;
     z-index: 2600;
