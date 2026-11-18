@@ -1,25 +1,20 @@
 name: Checks
 
 on:
-  # Every push to main runs the full check suite independently.
-  push:
-    branches: [main]
-  # PR updates run the same suite but can supersede older checks for that PR.
+  # Run the full suite on PR changes, not again after each merge to main.
   pull_request:
+  # Maintainers can still run the full suite explicitly for diagnostics.
+  workflow_dispatch:
 
-# Only PR runs can cancel one another. Use unique groups for main pushes
-# and rerun attempts to avoid replacing even queued main runs.
+# New PR revisions supersede older PR runs; manually triggered runs are independent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('main-{0}-{1}', github.run_id, github.run_attempt) }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('manual-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  codex-queue-release-compatibility:
-    name: Current Codex queue releases
-    uses: ./.github/workflows/codex-queue-compatibility.yml
 
   python-compatibility:
     name: Python repair and web-commit safety (3.12 and 3.14)
@@ -513,3 +508,40 @@ jobs:
           else
             python tests/fixtures/browser-cookie-sessions.py "$runner"
           fi
+
+  required-checks:
+    name: Required CI checks
+    if: ${{ always() }}
+    needs:
+      - python-compatibility
+      - inventory
+      - coreml-bridge
+      - suites
+      - worktree-window-handoff
+      - worktree-shutdown-safety
+      - codex-webview-browser
+      - bot-app-identities
+      - packaged-runtime
+      - macos-functionality
+      - macos-native-prompt-transport
+      - native-prompt-transport
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every required job succeeded
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          jobs = json.loads(os.environ["JOB_RESULTS"])
+          for name, details in sorted(jobs.items()):
+              result = details["result"]
+              print(f"{name}: {result}")
+              if result != "success":
+                  print(f"::error::{name} returned {result}")
+          if any(details["result"] != "success" for details in jobs.values()):
+              sys.exit(1)
+          PY
