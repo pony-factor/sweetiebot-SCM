@@ -2091,6 +2091,24 @@ class IndependentRepairTests(WorkbenchFixture):
         self.assertNotIn(install.browser_pr.START, self.preload.read_text())
         self.assertIn('browser repair skipped', self.output.getvalue())
 
+    def test_core_repair_restores_browser_even_if_workbench_is_unsupported(self):
+        self.paths[0].write_text('unsupported workbench lifecycle')
+        with self.assertRaises(ValueError):
+            self.run_installer('--core-only')
+        self.assertEqual(self.paths[0].read_text(), 'unsupported workbench lifecycle')
+        self.assertIn(install.browser_pr.STORAGE_START, self.native_main.read_text())
+        self.assertIn(install.browser_pr.START, self.preload.read_text())
+        self.assertIn('continuing browser repair', self.output.getvalue())
+        self.assertIn('full VS Code quit and restart', self.output.getvalue())
+        self.assertNotIn('Sweetiebot core repair complete.', self.output.getvalue())
+
+    def test_core_check_never_writes_when_workbench_is_unsupported(self):
+        self.paths[0].write_text('unsupported workbench lifecycle')
+        before = [p.read_bytes() for p in self.files]
+        with self.assertRaises(ValueError):
+            self.run_installer('--core-only', '--check')
+        self.assertEqual([p.read_bytes() for p in self.files], before)
+
     def test_core_check_never_writes(self):
         before = [p.read_bytes() for p in self.files]
         self.run_installer('--core-only', '--check')
