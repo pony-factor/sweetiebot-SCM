@@ -13,10 +13,11 @@
   const hidden = new Set((layout.hidden || []).filter(id => id !== "input"));
   const style = document.createElement("style");
   style.textContent = [
-    ".scm-toolkit-custom-layout-controlled{display:flex!important;flex-wrap:wrap;}",
+    ".scm-toolkit-custom-layout-controlled{display:flex!important;flex-wrap:wrap;justify-content:flex-start!important;}",
+    ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group{display:contents!important;}",
     ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
-    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
-    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
+    ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
+    ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
   ].join("\n");
   document.head.append(style);
 
@@ -65,8 +66,16 @@
     let candidate = node;
     while (candidate.parentElement && candidate.parentElement !== footer
       && footer.contains(candidate.parentElement)) candidate = candidate.parentElement;
-    // An action group must not be concealed or moved as a unit.
-    if (candidate !== node && candidate.querySelectorAll("button").length > 1) return node;
+    // Native action groups can contain both alignment groups. Expose their
+    // children to the footer flex layout without moving React-owned nodes.
+    if (candidate !== node && candidate.querySelectorAll("button").length > 1) {
+      for (let parent = node.parentElement; parent && parent !== footer;
+        parent = parent.parentElement) {
+        if (!parent.classList.contains("scm-toolkit-layout-group"))
+          parent.classList.add("scm-toolkit-layout-group");
+      }
+      return node;
+    }
     return candidate;
   }
 
@@ -83,7 +92,7 @@
     const ordered = [...left, ...right];
     const firstRight = right.find(id => {
       const target = slot(controls[id], footer);
-      return target?.parentElement === footer;
+      return target && footer.contains(target) && !hidden.has(id);
     });
     if (!footer.classList.contains("scm-toolkit-custom-layout-controlled"))
       footer.classList.add("scm-toolkit-custom-layout-controlled");
@@ -99,7 +108,7 @@
       const order = id === "input" ? "-1" : String(index);
       if (target.style.order !== order) target.style.order = order;
       if (id === "input" && target.style.flexBasis !== "100%") target.style.flexBasis = "100%";
-      if (target.parentElement === footer) {
+      if (footer.contains(target)) {
         target.classList.toggle("scm-toolkit-layout-aligned", true);
         target.classList.toggle("scm-toolkit-layout-right-start", id === firstRight);
       }

@@ -599,6 +599,45 @@ def run():
             assert layout_page.locator('textarea').input_value() == 'Retained draft'
             assert layout_page.locator('button').count() == 5
         layout_page.close()
+        # Native action groups share one wrapper across left/right controls.
+        # Saved alignment must work without reparenting those React nodes.
+        alignment_page = browser.new_page()
+        alignment_page.set_content('''<html data-codex-window-type="extension"><head><style>
+            .ComposerLayoutFooter_fixture {width:560px;gap:4px}
+            .actions {display:flex;gap:4px}
+            textarea {box-sizing:border-box;width:100%;height:40px}
+            button {width:28px;height:28px}
+            </style></head><body><div data-composer-body>
+            <div class="ComposerLayoutFooter_fixture">
+            <div class="AdaptiveFooterInput_fixture"><textarea>Retained draft</textarea></div>
+            <div class="actions">
+            <button data-composer-navigation-target="attachments">+</button>
+            <button data-composer-navigation-target="permissions">A</button>
+            <button id="scm-toolkit-codex-clipboard-submit">C</button>
+            <button class="bg-composer-primary" aria-label="Stop">S</button>
+            <button data-composer-navigation-target="run-location">U</button>
+            </div></div></div></body></html>''')
+        alignment_page.add_script_tag(content=(ASSETS / 'composer/layout.js').read_text().replace(
+            '__SCM_TOOLKIT_COMPOSER_LAYOUT__',
+            '{left:["location","input","attachments"],right:["clipboard","send"],hidden:["access"]}'))
+        alignment_page.wait_for_function('document.querySelector(".scm-toolkit-layout-right-start")')
+        for width in (560, 240):
+            alignment_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
+            geometry = alignment_page.evaluate('''() => {
+                const root=document.querySelector('.ComposerLayoutFooter_fixture').getBoundingClientRect();
+                const input=document.querySelector('textarea').getBoundingClientRect();
+                const pie=document.querySelector('[data-composer-navigation-target="run-location"]').getBoundingClientRect();
+                const send=document.querySelector('[aria-label="Stop"]').getBoundingClientRect();
+                const add=document.querySelector('[data-composer-navigation-target="attachments"]').getBoundingClientRect();
+                return {pieLeft:pie.left-root.left,sendRight:root.right-send.right,
+                    ordered:pie.right<=add.left && add.right<send.left,
+                    below:pie.top>=input.bottom && send.top>=input.bottom};
+            }''')
+            assert abs(geometry['pieLeft']) < 1 and abs(geometry['sendRight']) < 1, (width, geometry)
+            assert geometry['ordered'] and geometry['below'], (width, geometry)
+            assert alignment_page.locator('textarea').input_value() == 'Retained draft'
+            assert alignment_page.locator('.actions > button').count() == 5
+        alignment_page.close()
         browser.close()
 
 if __name__ == "__main__":
