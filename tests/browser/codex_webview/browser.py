@@ -574,7 +574,7 @@ def run():
         layout_page = browser.new_page()
         layout_page.set_content('''<html data-codex-window-type="extension"><head><style>
             .ComposerLayoutFooter_fixture {width:560px;gap:4px}
-            .AdaptiveFooterInput_fixture {min-width:0}
+            .AdaptiveFooterInput_fixture {width:100%;padding:0 12px;margin-inline:-8px}
             textarea {box-sizing:border-box;width:100%;height:40px}
             button {width:28px;height:28px}
             </style></head><body><div data-composer-body>
@@ -596,6 +596,7 @@ def run():
                 const input=document.querySelector('textarea').getBoundingClientRect();
                 return [...document.querySelectorAll('button')].every(button=>button.getBoundingClientRect().top>=input.bottom);
             }'''), width
+            assert layout_page.eval_on_selector('.ComposerLayoutFooter_fixture', 'el=>el.scrollWidth<=el.clientWidth'), width
             assert layout_page.locator('textarea').input_value() == 'Retained draft'
             assert layout_page.locator('button').count() == 5
         layout_page.close()
