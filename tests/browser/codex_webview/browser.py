@@ -258,6 +258,17 @@ def run():
         bar = page.get_by_role('progressbar', name='Five-hour Codex usage remaining')
         surface = page.locator('#meter-surface')
         page.wait_for_function('document.getElementById("meter-control").disabled')
+        # Native footer label line boxes must not lift the pie above the
+        # vertical center of its neighboring toolbar buttons.
+        page.locator('#meter-control').evaluate('''button => {
+            button.style.cssText='height:32px;padding:0 8px;line-height:24px';
+            const label=document.createElement('span');
+            const meter=button.querySelector('scm-toolkit-usage-meter');
+            button.append(label); label.append(meter);
+        }''')
+        pie_bounds = meter.locator('scm-toolkit-usage-pie').bounding_box()
+        button_bounds = page.locator('#meter-control').bounding_box()
+        assert abs(pie_bounds['y']+pie_bounds['height']/2-button_bounds['y']-button_bounds['height']/2) < 1
         for width in (320, 200, 640):
             surface.evaluate('(el,width) => el.style.width=width+"px"', width)
             for percent in (100, 50, 11, 10, 1, 0):
@@ -343,6 +354,19 @@ def run():
         assert bar.evaluate('el => el.parentElement.id') == 'meter-surface'
         bounds, outer = bar.bounding_box(), surface.bounding_box()
         assert abs(bounds['y'] + bounds['height'] - outer['y'] - outer['height']) < 1
+        # React can remove an injected child or replace the input surface
+        # while the sibling usage meter remains mounted and unchanged.
+        bar.evaluate('el=>el.remove()')
+        page.wait_for_function('document.querySelector("#meter-surface > .scm-toolkit-usage-bar")?.getAttribute("aria-valuenow")==="35"')
+        surface.evaluate('''surface => {
+            const replacement=surface.cloneNode(true);
+            replacement.querySelectorAll('.scm-toolkit-usage-bar').forEach(el=>el.remove());
+            surface.replaceWith(replacement);
+        }''')
+        page.wait_for_function('document.querySelector("#meter-surface > .scm-toolkit-usage-bar")?.getAttribute("aria-valuenow")==="35"')
+        assert bar.is_visible(), 'Weekly bar recovers without another usage-data update'
+        assert page.locator('.scm-toolkit-usage-bar').count() == 1
+        assert surface.locator('textarea').input_value() == 'Untouched draft'
         # Custom layouts must find sibling-rail usage and position it even when
         # access is hidden. Test actual painting, not just nonzero DOM bounds.
         page.evaluate('''() => {
