@@ -374,7 +374,7 @@
     background: var(--vscode-editorHoverWidget-background);
     box-shadow: 0 2px 8px var(--vscode-widget-shadow);
     color: var(--vscode-editorHoverWidget-foreground);
-    font-family: var(--vscode-font-family);
+    font-family: var(--vscode-font-family, Helvetica, Arial, sans-serif);
     font-size: 12px;
     font-weight: normal;
     line-height: 18px;
