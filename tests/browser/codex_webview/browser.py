@@ -638,6 +638,24 @@ def run():
             assert geometry['ordered'] and geometry['below'], (width, geometry)
             assert alignment_page.locator('textarea').input_value() == 'Retained draft'
             assert alignment_page.locator('.actions > button').count() == 5
+        # The unconfigured native model wrapper expands and right-aligns its
+        # contents. It must not consume the free space ahead of the left icons.
+        alignment_page.evaluate('''() => {
+            const model=document.createElement('div');
+            model.id='native-model';
+            model.style.cssText='flex:1;margin-inline-start:auto;display:flex;justify-content:flex-end';
+            model.innerHTML='<button aria-label="Select model" style="width:100px">6.1 Sol Med</button>';
+            document.querySelector('.actions').prepend(model);
+        }''')
+        for width in (560, 360):
+            alignment_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
+            alignment_page.wait_for_function('''() => {
+                const root=document.querySelector('.ComposerLayoutFooter_fixture').getBoundingClientRect();
+                const model=document.getElementById('native-model').getBoundingClientRect();
+                const pie=document.querySelector('[data-composer-navigation-target="run-location"]').getBoundingClientRect();
+                const send=document.querySelector('[aria-label="Stop"]').getBoundingClientRect();
+                return Math.abs(model.left-root.left)<1 && pie.left<=model.right+8 && Math.abs(root.right-send.right)<1;
+            }''')
         alignment_page.close()
         browser.close()
 

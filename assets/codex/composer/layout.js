@@ -16,6 +16,7 @@
     ".scm-toolkit-custom-layout-controlled{display:flex!important;flex-wrap:wrap;justify-content:flex-start!important;box-sizing:border-box;min-width:0;max-width:100%;}",
     ".scm-toolkit-custom-layout-controlled [class*=AdaptiveFooterInput_]{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;flex:1 1 100%;margin-inline:0!important;}",
     ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group{display:contents!important;}",
+    ".scm-toolkit-custom-layout-controlled>*,.scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group>*{flex-grow:0!important;margin-inline-start:0!important;}",
     ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
     ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
     ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
