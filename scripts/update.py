@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 from workspace_search import default_extensions_dir, source_files
 from extension_assets import include_runtime_relative
@@ -134,20 +135,39 @@ def release_retains_extension_html(candidate):
     return True
 
 
+def fetch_release(repository):
+    git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "refs/heads/main")
+    metadata = git(repository, "show", "-s", "--format=%H%n%ct", "FETCH_HEAD").decode().strip()
+    revision = metadata.partition("\n")[0]
+    return metadata, git(repository, "archive", revision, *FORMATS)
+
+
 def prepare_update(cache, extensions_dir=None, *, force=False):
     repository = cache / "upstream.git"
     if not repository.exists():
         repository.mkdir(parents=True)
         git(repository, "init", "--bare")
-    git(repository, "fetch", "--depth=1", "--no-tags", REMOTE, "refs/heads/main")
-    metadata = git(repository, "show", "-s", "--format=%H%n%ct", "FETCH_HEAD").decode().strip()
+    try:
+        metadata, sources = fetch_release(repository)
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr or b""
+        if b"Unable to create '" not in detail or b".lock': File exists" not in detail:
+            raise
+        # An interrupted fetch can leave shallow.lock indefinitely. Never
+        # remove it: another Git process could still own it. Retry once in an
+        # independent cache, keeping the original repository untouched.
+        print('Update cache is locked; retrying in an isolated Git cache.', flush=True)
+        with tempfile.TemporaryDirectory(prefix="upstream-recovery-", dir=cache) as directory:
+            recovery = Path(directory)
+            git(recovery, "init", "--bare")
+            metadata, sources = fetch_release(recovery)
     revision, _, committed_at = metadata.partition("\n")
     marker = cache / "installed-revision"
     candidate = cache / "candidate"
     if candidate.exists():
         shutil.rmtree(candidate)
     candidate.mkdir()
-    extract_sources(git(repository, "archive", revision, *FORMATS), candidate)
+    extract_sources(sources, candidate)
     # Git archives have no .git metadata. Record FETCH_HEAD before installation.
     build = {"commit": revision}
     if committed_at.isdigit():

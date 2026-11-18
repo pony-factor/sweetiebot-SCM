@@ -22,6 +22,8 @@ SOURCE = '''async function initialize(webview) {
 let watchdog=new Watchdog(event=>{this.logger.error("Webview renderer did not become ready");webview.html="failed";errors++});
 webview.html=await this.getWebviewContent(webview);watchdog.start();return watchdog;
 }'''
+EXTRACTED_LOADER = SOURCE.replace('this.getWebviewContent(webview)',
+                                 'loadContent(this.extensionUri,webview,this.webviewMetaTags(webview))')
 
 
 class CodexStartupTests(unittest.TestCase):
@@ -40,6 +42,7 @@ class CodexStartupTests(unittest.TestCase):
         script = '''
 const assert=require('node:assert/strict');
 let errors=0;
+function loadContent(uri,view,provider){return provider.getWebviewContent(view)}
 class Watchdog {
  constructor(onTimeout){this.onTimeout=onTimeout;this.starts=0;this.disposed=false;}
  start(){this.starts++;}
@@ -49,7 +52,7 @@ SOURCE
  const writes=[];
  const view={set html(value){writes.push(value)}};
  let reads=0;
- const provider={logger:{error(){}},async getWebviewContent(){reads++;return 'renderer'}};
+ const provider={logger:{error(){}},webviewMetaTags(){return this},async getWebviewContent(){reads++;return 'renderer'}};
  const watchdog=await initialize.call(provider,view);
  await watchdog.onTimeout({});
  assert.equal(reads,2);assert.equal(watchdog.starts,2);
@@ -74,5 +77,10 @@ SOURCE
  await broken.onTimeout({});
  assert.equal(errors,2,'failed content reload preserves the normal error');
 })().catch(error=>{console.error(error);process.exitCode=1});
-'''.replace('SOURCE', codex_startup.transform(SOURCE))
-        subprocess.run(['node', '-e', script], check=True)
+'''
+        for source in (SOURCE, EXTRACTED_LOADER):
+            with self.subTest(extracted=source == EXTRACTED_LOADER):
+                patched = codex_startup.transform(source)
+                self.assertEqual(codex_startup.transform(patched), patched)
+                self.assertEqual(codex_startup.transform(patched, remove=True), source)
+                subprocess.run(['node', '-e', script.replace('SOURCE', patched)], check=True)

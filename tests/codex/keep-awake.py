@@ -38,6 +38,17 @@ class KeepAwakePatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Incomplete'):
             codex_keep_awake.transform(self.SOURCE + codex_keep_awake.START)
 
+    def test_fallback_activation_namespace_does_not_confuse_main_activation(self):
+        fallback = 't.subscriptions.push(fallback.window.registerUriHandler(other));'
+        source = fallback + self.SOURCE
+        patched = codex_keep_awake.transform(source)
+        self.assertIn('scmToolkitRegisterCodexKeepAwake(c,v,true)', patched)
+        self.assertEqual(codex_keep_awake.transform(patched), patched)
+        self.assertEqual(codex_keep_awake.transform(patched, remove=True), source)
+        ambiguous = self.SOURCE + 'e.push(other.window.registerUriHandler(uri));'
+        with self.assertRaisesRegex(ValueError, 'Unsupported Codex build'):
+            codex_keep_awake.transform(ambiguous)
+
     def test_context_patch_can_be_updated_and_removed_independently(self):
         source = self.SOURCE + 's.push(v.window.registerWebviewViewProvider(View.viewType,provider,{}));'
         context = codex_context.transform(source, 'host')
