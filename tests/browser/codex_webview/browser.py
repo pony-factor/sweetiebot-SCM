@@ -643,7 +643,7 @@ def run():
         alignment_page.evaluate('''() => {
             const model=document.createElement('div');
             model.id='native-model';
-            model.style.cssText='flex:1;margin-inline-start:auto;display:flex;justify-content:flex-end';
+            model.style.cssText='flex:1;min-width:0;margin-inline-start:auto;display:flex;justify-content:flex-end';
             model.innerHTML='<button aria-label="Select model" style="width:100px">6.1 Sol Med</button>';
             document.querySelector('.actions').prepend(model);
         }''')
@@ -654,7 +654,8 @@ def run():
                 const model=document.getElementById('native-model').getBoundingClientRect();
                 const pie=document.querySelector('[data-composer-navigation-target="run-location"]').getBoundingClientRect();
                 const send=document.querySelector('[aria-label="Stop"]').getBoundingClientRect();
-                return Math.abs(model.left-root.left)<1 && pie.left<=model.right+8 && Math.abs(root.right-send.right)<1;
+                const label=model.width>=99;
+                return label && Math.abs(model.left-root.left)<1 && pie.left>=model.right && pie.left<=model.right+8 && Math.abs(root.right-send.right)<1;
             }''')
         alignment_page.close()
         browser.close()
