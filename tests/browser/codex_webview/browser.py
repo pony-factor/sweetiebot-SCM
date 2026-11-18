@@ -657,6 +657,25 @@ def run():
                 const label=model.width>=99;
                 return label && Math.abs(model.left-root.left)<1 && pie.left>=model.right && pie.left<=model.right+8 && Math.abs(root.right-send.right)<1;
             }''')
+        # React replaces the action button when moving between idle, working,
+        # and queued states. Queue uses the native primary-solid color class.
+        alignment_page.locator('#scm-toolkit-codex-clipboard-submit').evaluate('el=>el.remove()')
+        for action, color in [('Queue', 'bg-primary-solid'), ('Steer', 'bg-primary-solid'),
+                              ('Send', 'bg-composer-primary'), ('Stop', 'bg-composer-primary')]:
+            alignment_page.evaluate('''([action,color]) => {
+                const old=document.querySelector('.actions > button.bg-composer-primary, .actions > button.bg-primary-solid');
+                const replacement=document.createElement('button');
+                replacement.className=color;
+                replacement.setAttribute('aria-label',action);
+                replacement.textContent='S';
+                old.replaceWith(replacement);
+            }''', [action, color])
+            alignment_page.wait_for_function('''() => {
+                const footer=document.querySelector('.ComposerLayoutFooter_fixture');
+                const button=footer.querySelector('button.bg-composer-primary, button.bg-primary-solid');
+                return button.classList.contains('scm-toolkit-layout-right-start')
+                    && Math.abs(footer.getBoundingClientRect().right-button.getBoundingClientRect().right)<1;
+            }''')
         alignment_page.close()
         browser.close()
 

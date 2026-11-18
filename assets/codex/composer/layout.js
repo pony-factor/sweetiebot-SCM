@@ -55,9 +55,10 @@
         access: find(b => b.getAttribute("data-composer-navigation-target") === "permissions"),
         location: find(b => b.getAttribute("data-composer-navigation-target") === "run-location"),
         clipboard: find(b => b.id === "scm-toolkit-codex-clipboard-submit"),
-        send: find(b => b.matches("button.bg-composer-primary")
-          && /\b(send|stop|interrupt|submit|cancel run)\b/i.test(label(b))
-          && !/\b(queue|settings|dictation)\b/i.test(label(b)))
+        send: find(b => footer.contains(b)
+          && b.matches("button.bg-composer-primary, button.bg-primary-solid")
+          && /\b(send|stop|interrupt|submit|cancel run|queue|steer)\b/i.test(label(b))
+          && !/\b(settings|dictation)\b/i.test(label(b)))
       }
     };
   }
