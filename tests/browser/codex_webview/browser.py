@@ -569,6 +569,36 @@ def run():
         assert hidden_page.locator('textarea').input_value() == 'Retained draft'
         hidden_page.close()
         print('PASS: hide-times compacts native transcript and composer notices before paint without changing user text')
+        # Saved layouts may list icons before the input. The input still owns
+        # the first row, with both alignment groups below its retained draft.
+        layout_page = browser.new_page()
+        layout_page.set_content('''<html data-codex-window-type="extension"><head><style>
+            .ComposerLayoutFooter_fixture {width:560px;gap:4px}
+            .AdaptiveFooterInput_fixture {min-width:0}
+            textarea {box-sizing:border-box;width:100%;height:40px}
+            button {width:28px;height:28px}
+            </style></head><body><div data-composer-body>
+            <div class="ComposerLayoutFooter_fixture">
+            <button data-composer-navigation-target="attachments">+</button>
+            <button data-composer-navigation-target="permissions">A</button>
+            <button data-composer-navigation-target="run-location">U</button>
+            <button id="scm-toolkit-codex-clipboard-submit">C</button>
+            <button class="bg-composer-primary" aria-label="Send">S</button>
+            <div class="AdaptiveFooterInput_fixture"><textarea>Retained draft</textarea></div>
+            </div></div></body></html>''')
+        layout_page.add_script_tag(content=(ASSETS / 'composer/layout.js').read_text().replace(
+            '__SCM_TOOLKIT_COMPOSER_LAYOUT__',
+            '{left:["attachments","access","input","location"],right:["clipboard","send"],hidden:[]}'))
+        layout_page.wait_for_function('document.querySelector(".scm-toolkit-custom-layout-controlled")')
+        for width in (560, 240):
+            layout_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
+            assert layout_page.evaluate('''() => {
+                const input=document.querySelector('textarea').getBoundingClientRect();
+                return [...document.querySelectorAll('button')].every(button=>button.getBoundingClientRect().top>=input.bottom);
+            }'''), width
+            assert layout_page.locator('textarea').input_value() == 'Retained draft'
+            assert layout_page.locator('button').count() == 5
+        layout_page.close()
         browser.close()
 
 if __name__ == "__main__":

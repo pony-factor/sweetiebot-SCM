@@ -13,6 +13,7 @@
   const hidden = new Set((layout.hidden || []).filter(id => id !== "input"));
   const style = document.createElement("style");
   style.textContent = [
+    ".scm-toolkit-custom-layout-controlled{display:flex!important;flex-wrap:wrap;}",
     ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
     ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
     ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
@@ -95,7 +96,8 @@
       const target = slot(node, footer);
       if (!target || reserved.has(target)) return;
       reserved.add(target);
-      if (target.style.order !== String(index)) target.style.order = String(index);
+      const order = id === "input" ? "-1" : String(index);
+      if (target.style.order !== order) target.style.order = order;
       if (id === "input" && target.style.flexBasis !== "100%") target.style.flexBasis = "100%";
       if (target.parentElement === footer) {
         target.classList.toggle("scm-toolkit-layout-aligned", true);
