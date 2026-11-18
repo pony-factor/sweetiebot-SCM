@@ -284,10 +284,10 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
             config.write_text("# local build")
             from unittest.mock import patch
             with patch.object(workspace_search.subprocess, "run") as run:
-                run.return_value.stdout = "c" * 40 + "\n"
+                run.return_value.stdout = "c" * 40 + "\n1795000000\n"
                 self.assertEqual(
                     json.loads(workspace_search.build_revision_bytes(config)),
-                    {"commit": "c" * 40},
+                    {"commit": "c" * 40, "committed_at": 1795000000},
                 )
                 run.assert_called_once()
             marker = scripts / "build-revision.json"

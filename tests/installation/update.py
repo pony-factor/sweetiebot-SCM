@@ -294,13 +294,13 @@ class UpdateTests(unittest.TestCase):
             helper = wrapper.with_name(wrapper.name + '-spellcheck.py')
 
             def prepare(force=False):
-                with patch.object(update, 'git', side_effect=[b'', b'abc\n', archive(payload)]), patch.dict(update.os.environ, {'SCM_TOOLKIT_AI_WRAPPER_PATH': str(wrapper)}), patch.object(Path, 'home', return_value=root):
+                with patch.object(update, 'git', side_effect=[b'', b'abc\n1795000000\n', archive(payload)]), patch.dict(update.os.environ, {'SCM_TOOLKIT_AI_WRAPPER_PATH': str(wrapper)}), patch.object(Path, 'home', return_value=root):
                     return update.prepare_update(cache, extensions, force=force)
 
             self.assertIsNotNone(prepare())
             self.assertEqual(
                 json.loads((cache / "candidate/scripts/build-revision.json").read_text()),
-                {"commit": "abc"},
+                {"commit": "abc", "committed_at": 1795000000},
             )
             update.extract_sources(archive(payload), installed)
             # Matching bundle metadata is insufficient without active runtime files.

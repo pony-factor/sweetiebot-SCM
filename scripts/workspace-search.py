@@ -152,17 +152,22 @@ def build_revision_bytes(source: Path) -> bytes:
         return source.read_bytes()
     root = source.parent.parent
     revision = ""
+    committed_at = ""
     if (root / ".git").exists():
         try:
-            revision = subprocess.run(
-                ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+            metadata = subprocess.run(
+                ["git", "-C", str(root), "show", "-s", "--format=%H%n%ct", "HEAD"],
                 check=True, capture_output=True, text=True, timeout=5,
             ).stdout.strip()
+            revision, _, committed_at = metadata.partition("\n")
         except (OSError, subprocess.SubprocessError):
             pass
     if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision):
         revision = ""
-    return (json.dumps({"commit": revision}) + "\n").encode("utf-8")
+    payload = {"commit": revision}
+    if revision and committed_at.isdigit():
+        payload["committed_at"] = int(committed_at)
+    return (json.dumps(payload) + "\n").encode("utf-8")
 
 
 def source_files(root: Path | None = None) -> dict[Path, Path]:

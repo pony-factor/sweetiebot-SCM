@@ -25,6 +25,7 @@ import tempfile
 from pathlib import Path
 
 from extension_assets import runtime_files
+from workspace_search import build_revision_bytes
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "Sweetiebot Installer.app"
@@ -54,12 +55,18 @@ def source_files():
 
 def source_digest(files):
     digest = hashlib.sha256()
+    digest.update(installer_revision_bytes())
     for relative, source in [(Path("assets/installer.applescript"), ROOT / "assets/installer.applescript"), *files.items()]:
         data = source.read_bytes()
         digest.update(str(relative).encode() + b"\0")
         digest.update(len(data).to_bytes(8, "big"))
         digest.update(data)
     return digest.hexdigest()
+
+
+def installer_revision_bytes():
+    marker = ROOT / "scripts/build-revision.json"
+    return build_revision_bytes(marker if marker.is_file() else ROOT / "scripts/configurator.py")
 
 
 def up_to_date(destination, files, digest, fingerprint):
@@ -128,6 +135,7 @@ def build(destination: Path, identity: str = SIGNING_IDENTITY) -> None:
             target = payload / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+        (payload / "scripts/build-revision.json").write_bytes(installer_revision_bytes())
         info_path = app / "Contents/Info.plist"
         with info_path.open("rb") as stream:
             info = plistlib.load(stream)
