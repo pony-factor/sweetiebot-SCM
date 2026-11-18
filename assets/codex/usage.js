@@ -264,6 +264,10 @@ function scmToolkitKeepUsageFresh(refetch) {
                 this.pie = document.createElement('scm-toolkit-usage-pie');
                 this.append(this.pie);
             }
+            this.update();
+        }
+        ensureBar() {
+            if (!this.isConnected) return false;
             let surface = this.closest('[data-composer-surface-variant]');
             // Newer composers place the utility rail beside the input surface.
             // Stay within the nearest composer, rather than selecting another chat.
@@ -273,17 +277,23 @@ function scmToolkitKeepUsageFresh(refetch) {
                 surface = scope.querySelector('[data-composer-surface-variant]');
                 break;
             }
-            if (surface && !this.bar) {
+            if (!surface) return false;
+            if (!this.bar) {
                 this.bar = document.createElement('div');
                 this.bar.className = 'scm-toolkit-usage-bar';
                 this.bar.setAttribute('role', 'progressbar');
                 this.bar.setAttribute('aria-label', 'Five-hour Codex usage remaining');
                 this.bar.setAttribute('aria-valuemin', '0');
                 this.bar.setAttribute('aria-valuemax', '100');
-                surface.classList.add('scm-toolkit-usage-surface');
-                surface.append(this.bar);
             }
-            this.update();
+            if (this.bar.parentElement === surface) return false;
+            const previous = this.bar.parentElement;
+            surface.classList.add('scm-toolkit-usage-surface');
+            surface.append(this.bar);
+            if (previous && !previous.querySelector('.scm-toolkit-usage-bar')) {
+                previous.classList.remove('scm-toolkit-usage-surface');
+            }
+            return true;
         }
         disconnectedCallback() {
             const surface = this.bar?.parentElement;
@@ -295,6 +305,7 @@ function scmToolkitKeepUsageFresh(refetch) {
         }
         attributeChangedCallback() { this.update(); }
         update() {
+            this.ensureBar();
             const percent = scmToolkitUsagePiePercent(this.getAttribute('percent'));
             const weekly = this.hasAttribute('weekly-percent');
             const weeklyPercent = weekly ? scmToolkitUsagePiePercent(this.getAttribute('weekly-percent')) : null;
@@ -392,7 +403,11 @@ function scmToolkitKeepUsageFresh(refetch) {
       [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
       }
-      scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; }
+      scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; vertical-align:middle; }
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter),
+      button[data-composer-navigation-target="run-location"] :has(> scm-toolkit-usage-meter) {
+        display:inline-flex; align-items:center;
+      }
       .scm-toolkit-usage-surface { position:relative; }
       .scm-toolkit-usage-bar {
         position:absolute; left:0; bottom:0; height:2px; pointer-events:none;
@@ -410,6 +425,11 @@ function scmToolkitKeepUsageFresh(refetch) {
     document.head.append(style);
 
     const refresh = () => {
+        // Codex can replace the input surface without remounting its sibling
+        // usage meter, or remove our bar while reconciling native children.
+        for (const meter of document.querySelectorAll('scm-toolkit-usage-meter')) {
+            if (meter.ensureBar?.()) meter.update();
+        }
         if (localOnly) for (const button of document.querySelectorAll('button[data-composer-navigation-target="run-location"]')) {
             if (!button.disabled) button.disabled = true;
             const exhausted = button.querySelector(

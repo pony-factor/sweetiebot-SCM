@@ -13,9 +13,13 @@
   const hidden = new Set((layout.hidden || []).filter(id => id !== "input"));
   const style = document.createElement("style");
   style.textContent = [
+    ".scm-toolkit-custom-layout-controlled{display:flex!important;flex-wrap:wrap;justify-content:flex-start!important;box-sizing:border-box;min-width:0;max-width:100%;}",
+    ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group{display:contents!important;}",
+    ".scm-toolkit-custom-layout-controlled>*,.scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group>*{flex:0 0 auto!important;margin-inline-start:0!important;}",
+    ".scm-toolkit-custom-layout-controlled [class*=AdaptiveFooterInput_]{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;flex:1 1 100%!important;margin-inline:0!important;}",
     ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
-    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
-    ".scm-toolkit-custom-layout-controlled>.scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
+    ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
+    ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
   ].join("\n");
   document.head.append(style);
 
@@ -51,9 +55,10 @@
         access: find(b => b.getAttribute("data-composer-navigation-target") === "permissions"),
         location: find(b => b.getAttribute("data-composer-navigation-target") === "run-location"),
         clipboard: find(b => b.id === "scm-toolkit-codex-clipboard-submit"),
-        send: find(b => b.matches("button.bg-composer-primary")
-          && /\b(send|stop|interrupt|submit|cancel run)\b/i.test(label(b))
-          && !/\b(queue|settings|dictation)\b/i.test(label(b)))
+        send: find(b => footer.contains(b)
+          && b.matches("button.bg-composer-primary, button.bg-primary-solid")
+          && /\b(send|stop|interrupt|submit|cancel run|queue|steer)\b/i.test(label(b))
+          && !/\b(settings|dictation)\b/i.test(label(b)))
       }
     };
   }
@@ -64,8 +69,16 @@
     let candidate = node;
     while (candidate.parentElement && candidate.parentElement !== footer
       && footer.contains(candidate.parentElement)) candidate = candidate.parentElement;
-    // An action group must not be concealed or moved as a unit.
-    if (candidate !== node && candidate.querySelectorAll("button").length > 1) return node;
+    // Native action groups can contain both alignment groups. Expose their
+    // children to the footer flex layout without moving React-owned nodes.
+    if (candidate !== node && candidate.querySelectorAll("button").length > 1) {
+      for (let parent = node.parentElement; parent && parent !== footer;
+        parent = parent.parentElement) {
+        if (!parent.classList.contains("scm-toolkit-layout-group"))
+          parent.classList.add("scm-toolkit-layout-group");
+      }
+      return node;
+    }
     return candidate;
   }
 
@@ -82,7 +95,7 @@
     const ordered = [...left, ...right];
     const firstRight = right.find(id => {
       const target = slot(controls[id], footer);
-      return target?.parentElement === footer;
+      return target && footer.contains(target) && !hidden.has(id);
     });
     if (!footer.classList.contains("scm-toolkit-custom-layout-controlled"))
       footer.classList.add("scm-toolkit-custom-layout-controlled");
@@ -95,9 +108,10 @@
       const target = slot(node, footer);
       if (!target || reserved.has(target)) return;
       reserved.add(target);
-      if (target.style.order !== String(index)) target.style.order = String(index);
+      const order = id === "input" ? "-1" : String(index);
+      if (target.style.order !== order) target.style.order = order;
       if (id === "input" && target.style.flexBasis !== "100%") target.style.flexBasis = "100%";
-      if (target.parentElement === footer) {
+      if (footer.contains(target)) {
         target.classList.toggle("scm-toolkit-layout-aligned", true);
         target.classList.toggle("scm-toolkit-layout-right-start", id === firstRight);
       }

@@ -258,6 +258,17 @@ def run():
         bar = page.get_by_role('progressbar', name='Five-hour Codex usage remaining')
         surface = page.locator('#meter-surface')
         page.wait_for_function('document.getElementById("meter-control").disabled')
+        # Native footer label line boxes must not lift the pie above the
+        # vertical center of its neighboring toolbar buttons.
+        page.locator('#meter-control').evaluate('''button => {
+            button.style.cssText='height:32px;padding:0 8px;line-height:24px';
+            const label=document.createElement('span');
+            const meter=button.querySelector('scm-toolkit-usage-meter');
+            button.append(label); label.append(meter);
+        }''')
+        pie_bounds = meter.locator('scm-toolkit-usage-pie').bounding_box()
+        button_bounds = page.locator('#meter-control').bounding_box()
+        assert abs(pie_bounds['y']+pie_bounds['height']/2-button_bounds['y']-button_bounds['height']/2) < 1
         for width in (320, 200, 640):
             surface.evaluate('(el,width) => el.style.width=width+"px"', width)
             for percent in (100, 50, 11, 10, 1, 0):
@@ -343,6 +354,19 @@ def run():
         assert bar.evaluate('el => el.parentElement.id') == 'meter-surface'
         bounds, outer = bar.bounding_box(), surface.bounding_box()
         assert abs(bounds['y'] + bounds['height'] - outer['y'] - outer['height']) < 1
+        # React can remove an injected child or replace the input surface
+        # while the sibling usage meter remains mounted and unchanged.
+        bar.evaluate('el=>el.remove()')
+        page.wait_for_function('document.querySelector("#meter-surface > .scm-toolkit-usage-bar")?.getAttribute("aria-valuenow")==="35"')
+        surface.evaluate('''surface => {
+            const replacement=surface.cloneNode(true);
+            replacement.querySelectorAll('.scm-toolkit-usage-bar').forEach(el=>el.remove());
+            surface.replaceWith(replacement);
+        }''')
+        page.wait_for_function('document.querySelector("#meter-surface > .scm-toolkit-usage-bar")?.getAttribute("aria-valuenow")==="35"')
+        assert bar.is_visible(), 'Weekly bar recovers without another usage-data update'
+        assert page.locator('.scm-toolkit-usage-bar').count() == 1
+        assert surface.locator('textarea').input_value() == 'Untouched draft'
         # Custom layouts must find sibling-rail usage and position it even when
         # access is hidden. Test actual painting, not just nonzero DOM bounds.
         page.evaluate('''() => {
@@ -569,6 +593,114 @@ def run():
         assert hidden_page.locator('textarea').input_value() == 'Retained draft'
         hidden_page.close()
         print('PASS: hide-times compacts native transcript and composer notices before paint without changing user text')
+        # Saved layouts may list icons before the input. The input still owns
+        # the first row, with both alignment groups below its retained draft.
+        layout_page = browser.new_page()
+        layout_page.set_content('''<html data-codex-window-type="extension"><head><style>
+            .ComposerLayoutFooter_fixture {width:560px;gap:4px}
+            .AdaptiveFooterInput_fixture {width:100%;padding:0 12px;margin-inline:-8px}
+            textarea {box-sizing:border-box;width:100%;height:40px}
+            button {width:28px;height:28px}
+            </style></head><body><div data-composer-body>
+            <div class="ComposerLayoutFooter_fixture">
+            <button data-composer-navigation-target="attachments">+</button>
+            <button data-composer-navigation-target="permissions">A</button>
+            <button data-composer-navigation-target="run-location">U</button>
+            <button id="scm-toolkit-codex-clipboard-submit">C</button>
+            <button class="bg-composer-primary" aria-label="Send">S</button>
+            <div class="AdaptiveFooterInput_fixture"><textarea>Retained draft</textarea></div>
+            </div></div></body></html>''')
+        layout_page.add_script_tag(content=(ASSETS / 'composer/layout.js').read_text().replace(
+            '__SCM_TOOLKIT_COMPOSER_LAYOUT__',
+            '{left:["attachments","access","input","location"],right:["clipboard","send"],hidden:[]}'))
+        layout_page.wait_for_function('document.querySelector(".scm-toolkit-custom-layout-controlled")')
+        for width in (560, 240):
+            layout_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
+            assert layout_page.evaluate('''() => {
+                const input=document.querySelector('textarea').getBoundingClientRect();
+                return [...document.querySelectorAll('button')].every(button=>button.getBoundingClientRect().top>=input.bottom);
+            }'''), width
+            assert layout_page.eval_on_selector('.ComposerLayoutFooter_fixture', 'el=>el.scrollWidth<=el.clientWidth'), width
+            assert layout_page.locator('textarea').input_value() == 'Retained draft'
+            assert layout_page.locator('button').count() == 5
+        layout_page.close()
+        # Native action groups share one wrapper across left/right controls.
+        # Saved alignment must work without reparenting those React nodes.
+        alignment_page = browser.new_page()
+        alignment_page.set_content('''<html data-codex-window-type="extension"><head><style>
+            .ComposerLayoutFooter_fixture {width:560px;gap:4px}
+            .actions {display:flex;gap:4px}
+            textarea {box-sizing:border-box;width:100%;height:40px}
+            button {width:28px;height:28px}
+            </style></head><body><div data-composer-body>
+            <div class="ComposerLayoutFooter_fixture">
+            <div class="AdaptiveFooterInput_fixture"><textarea>Retained draft</textarea></div>
+            <div class="actions">
+            <button data-composer-navigation-target="attachments">+</button>
+            <button data-composer-navigation-target="permissions">A</button>
+            <button id="scm-toolkit-codex-clipboard-submit">C</button>
+            <button class="bg-composer-primary" aria-label="Stop">S</button>
+            <button data-composer-navigation-target="run-location">U</button>
+            </div></div></div></body></html>''')
+        alignment_page.add_script_tag(content=(ASSETS / 'composer/layout.js').read_text().replace(
+            '__SCM_TOOLKIT_COMPOSER_LAYOUT__',
+            '{left:["location","input","attachments"],right:["clipboard","send"],hidden:["access"]}'))
+        alignment_page.wait_for_function('document.querySelector(".scm-toolkit-layout-right-start")')
+        for width in (560, 240):
+            alignment_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
+            geometry = alignment_page.evaluate('''() => {
+                const root=document.querySelector('.ComposerLayoutFooter_fixture').getBoundingClientRect();
+                const input=document.querySelector('textarea').getBoundingClientRect();
+                const pie=document.querySelector('[data-composer-navigation-target="run-location"]').getBoundingClientRect();
+                const send=document.querySelector('[aria-label="Stop"]').getBoundingClientRect();
+                const add=document.querySelector('[data-composer-navigation-target="attachments"]').getBoundingClientRect();
+                return {pieLeft:pie.left-root.left,sendRight:root.right-send.right,
+                    ordered:pie.right<=add.left && add.right<send.left,
+                    below:pie.top>=input.bottom && send.top>=input.bottom};
+            }''')
+            assert abs(geometry['pieLeft']) < 1 and abs(geometry['sendRight']) < 1, (width, geometry)
+            assert geometry['ordered'] and geometry['below'], (width, geometry)
+            assert alignment_page.locator('textarea').input_value() == 'Retained draft'
+            assert alignment_page.locator('.actions > button').count() == 5
+        # The unconfigured native model wrapper expands and right-aligns its
+        # contents. It must not consume the free space ahead of the left icons.
+        alignment_page.evaluate('''() => {
+            const model=document.createElement('div');
+            model.id='native-model';
+            model.style.cssText='flex:1;min-width:0;margin-inline-start:auto;display:flex;justify-content:flex-end';
+            model.innerHTML='<button aria-label="Select model" style="width:100px">6.1 Sol Med</button>';
+            document.querySelector('.actions').prepend(model);
+        }''')
+        for width in (560, 360):
+            alignment_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
+            alignment_page.wait_for_function('''() => {
+                const root=document.querySelector('.ComposerLayoutFooter_fixture').getBoundingClientRect();
+                const model=document.getElementById('native-model').getBoundingClientRect();
+                const pie=document.querySelector('[data-composer-navigation-target="run-location"]').getBoundingClientRect();
+                const send=document.querySelector('[aria-label="Stop"]').getBoundingClientRect();
+                const label=model.width>=99;
+                return label && Math.abs(model.left-root.left)<1 && pie.left>=model.right && pie.left<=model.right+8 && Math.abs(root.right-send.right)<1;
+            }''')
+        # React replaces the action button when moving between idle, working,
+        # and queued states. Queue uses the native primary-solid color class.
+        alignment_page.locator('#scm-toolkit-codex-clipboard-submit').evaluate('el=>el.remove()')
+        for action, color in [('Queue', 'bg-primary-solid'), ('Steer', 'bg-primary-solid'),
+                              ('Send', 'bg-composer-primary'), ('Stop', 'bg-composer-primary')]:
+            alignment_page.evaluate('''([action,color]) => {
+                const old=document.querySelector('.actions > button.bg-composer-primary, .actions > button.bg-primary-solid');
+                const replacement=document.createElement('button');
+                replacement.className=color;
+                replacement.setAttribute('aria-label',action);
+                replacement.textContent='S';
+                old.replaceWith(replacement);
+            }''', [action, color])
+            alignment_page.wait_for_function('''() => {
+                const footer=document.querySelector('.ComposerLayoutFooter_fixture');
+                const button=footer.querySelector('button.bg-composer-primary, button.bg-primary-solid');
+                return button.classList.contains('scm-toolkit-layout-right-start')
+                    && Math.abs(footer.getBoundingClientRect().right-button.getBoundingClientRect().right)<1;
+            }''')
+        alignment_page.close()
         browser.close()
 
 if __name__ == "__main__":
