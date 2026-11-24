@@ -701,6 +701,32 @@ def run():
                     && Math.abs(footer.getBoundingClientRect().right-button.getBoundingClientRect().right)<1;
             }''')
         alignment_page.close()
+        # Codex renders complementary home/chat labels in one location button.
+        # Usage alignment must preserve their native display rules.
+        duplicate_page = browser.new_page()
+        duplicate_page.set_content('''<html data-codex-window-type="extension"><head></head><body>
+          <section data-composer-surface-variant="default"><div data-composer-body></div>
+            <button data-composer-navigation-target="run-location"><span data-composer-footer-collapse>
+              <span class="in-data-[composer-placement=home]:hidden"><scm-toolkit-usage-meter percent="75"></scm-toolkit-usage-meter></span>
+              <span class="hidden in-data-[composer-placement=home]:inline"><scm-toolkit-usage-meter percent="75"></scm-toolkit-usage-meter></span>
+            </span></button>
+          </section></body></html>''')
+        duplicate_page.evaluate('''() => {
+          const style=document.createElement('style');
+          style.textContent='.hidden{display:none}'
+            +'[data-composer-placement="home"] .'+CSS.escape('in-data-[composer-placement=home]:hidden')+'{display:none}'
+            +'[data-composer-placement="home"] .'+CSS.escape('in-data-[composer-placement=home]:inline')+'{display:inline}';
+          document.head.append(style);
+        }''')
+        duplicate_page.add_script_tag(content=(ASSETS / 'usage.js').read_text())
+        for width in (260, 360, 640):
+            duplicate_page.set_viewport_size({'width': width, 'height': 400})
+            for placement in ('chat', 'home', 'chat'):
+                duplicate_page.evaluate('(value)=>document.body.setAttribute("data-composer-placement",value)', placement)
+                pies = duplicate_page.locator('scm-toolkit-usage-pie')
+                assert pies.count() == 2
+                assert sum(pies.nth(i).is_visible() for i in range(2)) == 1, (width, placement)
+        duplicate_page.close()
         browser.close()
 
 if __name__ == "__main__":

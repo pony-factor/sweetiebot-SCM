@@ -406,8 +406,7 @@ function scmToolkitKeepUsageFresh(refetch) {
         display: inline-flex !important;
       }
       scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; vertical-align:middle; }
-      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter),
-      button[data-composer-navigation-target="run-location"] :has(> scm-toolkit-usage-meter) {
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) {
         display:inline-flex; align-items:center;
       }
       .scm-toolkit-usage-surface { position:relative; }
