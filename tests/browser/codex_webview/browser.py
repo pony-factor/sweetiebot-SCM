@@ -81,6 +81,48 @@ def run():
         # configured color without recoloring unrelated info/status elements.
         sys.path.insert(0, str(ROOT / 'scripts'))
         import codex_colors
+        queue_frame = browser.new_page(viewport={'width': 320, 'height': 200})
+        queue_frame.set_content('''<!doctype html><html data-codex-window-type="extension">
+          <style>
+            @layer theme, components;
+            @layer components {
+              [data-composer-rail] {
+                margin-bottom:-16px; padding-bottom:16px; overflow:clip;
+                border:1px solid var(--vscode-widget-border); border-bottom-width:0;
+                border-radius:16px 16px 0 0;
+              }
+              [data-composer-rail-item] {border:1px solid; padding:6px; margin-bottom:-4px}
+            }
+            html {--vscode-widget-border:#33bb55; --vscode-input-background:#111; background:#000; color:#ccc}
+            #queue-frame, #composer-frame {width:220px}
+          </style>
+          <div id="queue-frame" data-composer-rail data-composer-rail-placement="above">
+            <div data-composer-rail-item data-composer-rail-framed>Queue paused</div>
+            <div data-composer-rail-item data-composer-rail-framed>Queued message</div>
+          </div>
+          <div id="composer-frame"><textarea>Draft</textarea></div>
+        ''')
+        queue_frame.add_style_tag(content=codex_colors.transform('', {}))
+        rail = queue_frame.locator('#queue-frame')
+        assert rail.evaluate('el => getComputedStyle(el).borderBottomLeftRadius') == '8px'
+        assert rail.evaluate('el => getComputedStyle(el).borderBottomWidth') == '1px'
+        assert queue_frame.locator('#composer-frame').bounding_box()['y'] == (
+            rail.bounding_box()['y'] + rail.bounding_box()['height'] + 8
+        )
+        screenshot = base64.b64encode(rail.screenshot()).decode('ascii')
+        bottom_pixel = queue_frame.evaluate('''async screenshot => {
+          const image = new Image();
+          image.src = 'data:image/png;base64,' + screenshot;
+          await image.decode();
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0);
+          return Array.from(context.getImageData(image.width >> 1, image.height - 1, 1, 1).data);
+        }''', screenshot)
+        assert bottom_pixel == [51, 187, 85, 255], bottom_pixel
+        queue_frame.close()
         page.set_content('<html data-codex-window-type="extension"><head><style>@layer theme,base,components,utilities; @layer utilities {.bg-info-solid{background:blue} .fill-text-info{fill:blue}}</style></head><body><button><span data-thread-title>Chat</span><span class="icon-xs scale-50"><span id="unread-dot" class="bg-info-solid"></span></span><span id="unread-count" style="color:var(--color-text-info)">3</span></button><span id="unrelated-dot" class="bg-info-solid"></span><svg><circle id="side-chat-dot" class="fill-text-info" cx="12.6" cy="3.2" r="2.6"/></svg></body></html>')
         page.add_style_tag(content=codex_colors.transform('', {'codexNewChatDotColor':'#ab12cd'}))
         assert page.eval_on_selector('#unread-dot', 'el => getComputedStyle(el).backgroundColor') == 'rgb(171, 18, 205)'
@@ -383,6 +425,8 @@ def run():
             document.documentElement.dataset.codexWindowType = 'extension';
             document.getElementById('compact-footer').remove();
             const footer = document.querySelector('.ComposerLayoutFooter_fixture');
+            footer.classList.remove('ComposerLayoutFooter_fixture');
+            footer.setAttribute('data-composer-footer-responsive', '');
             footer.style.right = '8px';
             footer.append(document.getElementById('add-files'));
             window.usageLayout = {left:['location','input','attachments'],
@@ -393,6 +437,15 @@ def run():
             '__SCM_TOOLKIT_COMPOSER_LAYOUT__', 'window.usageLayout'))
         page.wait_for_function('document.querySelector(".scm-toolkit-location-slot")')
         page.wait_for_function('document.getElementById("access-control").classList.contains("scm-toolkit-layout-concealed")')
+        page.evaluate('''() => {
+            const alternate = document.getElementById('access-control').cloneNode(true);
+            alternate.id = 'alternate-access-control';
+            alternate.className = '';
+            document.body.prepend(alternate);
+        }''')
+        alternate_access = page.locator('#alternate-access-control')
+        assert alternate_access.evaluate('el => getComputedStyle(el).opacity') == '0'
+        assert alternate_access.evaluate('el => el.getClientRects().length') > 0
         for width in (260, 640, 280):
             surface.evaluate('(el,width) => el.style.width=width+"px"', width)
             page.wait_for_function('''() => {

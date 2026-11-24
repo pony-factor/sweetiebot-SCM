@@ -452,7 +452,6 @@ SETTINGS = (
     Setting("codexResetTimePieIndicator", "scm-toolkit.codex-reset-time-pie-indicator", "Reset countdown pie indicators", "Show a time-remaining pie beside each five-hour and weekly Codex usage-menu reset countdown. Pies empty as the reset approaches; hiding reset times overrides this setting. Off by default.", "Codex"),
     Setting("codexHidePromotions", "scm-toolkit.codex-hide-promotions", "Hide Codex promotions", "Hide promotional panels in Codex.", "Codex"),
     Setting("codexShortModelLabels", "scm-toolkit.codex-short-model-labels", "Short model labels", "Shorten the active model display: remove GPT, use Med for Medium, Low for Light, and Uber for Extra high.", "Codex"),
-    Setting("codexHidePermissionsIcon", "scm-toolkit.codex-hide-permissions-icon", "Hide permissions icon", "Choose permissions from Change permissions below instead of the Codex composer icon.", "Codex"),
     Setting("codexComposerLayout", "scm-toolkit.codex-composer-layout", "Composer layout", "Reorder and hide Codex composer controls with a fallback menu.", "Codex", "codex_layout"),
     Setting("codexFlatComposer", "scm-toolkit.codex-flat-composer", "Flat prompt box", "Use a compact prompt surface with subtle corners, no shadow, and a theme-colored focus border.", "Codex"),
     Setting("codexHideAccessLabel", "scm-toolkit.codex-hide-access-label", "Hide access label", "Show only the icon for the Codex access control, hiding labels such as Full access.", "Codex"),
@@ -790,10 +789,6 @@ def _pack_controls(current: dict[str, object]) -> str:
 
 
 def _setting_control(setting: Setting, current: object) -> str:
-    if setting.name == "codexHidePermissionsIcon":
-        # Retain a disabled field for settings inventory; it is omitted from FormData.
-        # Visibility is now controlled by the Codex composer layout instead.
-        return '<input type="hidden" name="codexHidePermissionsIcon" value="true" disabled>'
     if setting.name == "kefaniaShowCloseButton":
         return ""
     if setting.name in MESSAGE_BAR_VISIBILITY_SETTINGS or setting.name == "inlineSuggestions":

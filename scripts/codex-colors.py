@@ -136,6 +136,7 @@ def transform(css, settings, remove=False):
         f'{{ color: {dot_color} !important; background-color: color-mix(in srgb, {dot_color} 18%, transparent) !important; '
         f'box-shadow: inset 0 0 0 1px color-mix(in srgb, {dot_color} 72%, transparent) !important; }}',
     ])
+    rules.append((Path(__file__).resolve().parent.parent / 'assets/codex/queue-rail.css').read_text())
     if not settings.get('codexShowQueuedDelete', True):
         rules.append(f'{scope} [data-scm-toolkit-queue-id] button[aria-label="Delete queued message"] {{ display: none !important; }}')
     if settings.get('codexShowQueuePause', False):

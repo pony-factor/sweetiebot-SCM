@@ -1462,6 +1462,27 @@ class SubmissionTests(unittest.TestCase):
 class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_bool")
     @patch("toolkit_settings.read_git_string")
+    def test_access_visibility_uses_composer_layout(self, read_string, read_bool):
+        legacy_key = "scm-toolkit.codex-hide-permissions-icon"
+        read_bool.side_effect = lambda key, default: key == legacy_key or default
+        read_string.side_effect = lambda key, default, preserve_empty=False: default
+
+        default_layout = json.loads(toolkit_settings.load_settings()["codexComposerLayout"])
+        self.assertIn("access", default_layout["left"])
+
+        default_layout["left"].remove("access")
+        default_layout["hidden"].append("access")
+        saved_layout = json.dumps(default_layout)
+        read_string.side_effect = lambda key, default, preserve_empty=False: (
+            saved_layout if key == "scm-toolkit.codex-composer-layout" else default
+        )
+
+        settings = toolkit_settings.load_settings()
+        self.assertEqual(settings["codexComposerLayout"], saved_layout)
+        self.assertNotIn(legacy_key, [call.args[0] for call in read_bool.call_args_list])
+
+    @patch("toolkit_settings.read_git_bool")
+    @patch("toolkit_settings.read_git_string")
     def test_disabled_staged_whitespace_setting_loads(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: default
         read_bool.side_effect = lambda key, default: (
