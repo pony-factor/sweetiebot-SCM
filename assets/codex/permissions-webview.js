@@ -1,11 +1,6 @@
 function scmToolkitRegisterCodexPermissionsMenu(api) {
-    const style = document.createElement('style');
-    style.textContent = ':root[data-sweetiebot-hide-permissions]:not([data-sweetiebot-composer-access-visible]) button[data-composer-navigation-target="permissions"]{opacity:0!important;position:absolute!important;width:1px!important;min-width:0!important;padding:0!important;pointer-events:none!important}';
-    document.head.append(style);
     window.addEventListener('message', event => {
-        if (event.data?.type === 'sweetiebot-permissions-visibility') {
-            document.documentElement.toggleAttribute('data-sweetiebot-hide-permissions', event.data.hidden === true);
-        } else if (event.data?.type === 'sweetiebot-open-permissions') {
+        if (event.data?.type === 'sweetiebot-open-permissions') {
             const button = [...document.querySelectorAll('button[data-composer-navigation-target="permissions"]')]
                 .find(element => element.getClientRects().length);
             const reply = opened => api.postMessage({type: 'sweetiebot-permissions-opened', id: event.data.id, opened: !!opened});
@@ -22,5 +17,4 @@ function scmToolkitRegisterCodexPermissionsMenu(api) {
             });
         }
     });
-    api.postMessage({type: 'sweetiebot-permissions-ready'});
 }

@@ -157,7 +157,6 @@ async function ensureSettingsServer(context, openBrowserWhenReady = false, welco
       cloudRepositorySync: scm.get('cloudRepositorySync', false),
       codexKeepAwake: scm.get('codexKeepAwake', true),
       codexContinueAtReset: scm.get('codexContinueAtReset', false),
-      codexHidePermissionsIcon: scm.get('codexHidePermissionsIcon', false),
       pullRequestAutoRefresh: scm.get('pullRequestAutoRefresh', true),
       pullRequestQuickMerge: scm.get('pullRequestQuickMerge', true),
       autoPublishPullRequests: scm.get('autoPublishPullRequests', true),

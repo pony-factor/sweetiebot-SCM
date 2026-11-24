@@ -4,17 +4,12 @@ function scmToolkitRegisterCodexPermissions(provider, vscode) {
     const pending = new Map();
     const originalInitialize = provider.initializeWebview;
     const originalHandle = provider.handleMessage;
-    const update = webview => webview.postMessage({
-        type: 'sweetiebot-permissions-visibility',
-        hidden: vscode.workspace?.getConfiguration('sweetiebot')?.get('codexHidePermissionsIcon', false) === true
-    });
     provider.initializeWebview = function(webview, role, onDispose, ...args) {
         views.add(webview);
         onDispose(() => views.delete(webview));
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
     provider.handleMessage = function(webview, message) {
-        if (message?.type === 'sweetiebot-permissions-ready') { void update(webview); return; }
         if (message?.type === 'sweetiebot-permissions-opened') {
             const request = pending.get(message.id);
             if (!request || request.webview !== webview) return;
@@ -25,11 +20,6 @@ function scmToolkitRegisterCodexPermissions(provider, vscode) {
         }
         return originalHandle.call(this, webview, message);
     };
-    const changed = vscode.workspace?.onDidChangeConfiguration?.(event => {
-        if (event.affectsConfiguration('sweetiebot.codexHidePermissionsIcon')) {
-            for (const view of views) void update(view);
-        }
-    });
     const command = vscode.commands.registerCommand('sweetiebot.codex.openPermissions', async () => {
         await vscode.commands.executeCommand('chatgpt.openSidebar');
         provider.sidebarView?.show?.(false);
@@ -45,7 +35,7 @@ function scmToolkitRegisterCodexPermissions(provider, vscode) {
         });
     });
     return {dispose() {
-        changed?.dispose(); command.dispose(); views.clear();
+        command.dispose(); views.clear();
         for (const request of pending.values()) {clearTimeout(request.timer); request.reject(new Error('Codex permissions chooser closed.'));}
         pending.clear();
         provider.initializeWebview = originalInitialize;

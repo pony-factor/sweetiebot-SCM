@@ -18,7 +18,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 import subprocess
 from pathlib import Path
 
-from codex_composer_layout import DEFAULT_LAYOUT_JSON as CODEX_LAYOUT_DEFAULT_JSON, parse_layout as parse_codex_layout, serialize_layout as serialize_codex_layout
+from codex_composer_layout import DEFAULT_LAYOUT_JSON as CODEX_LAYOUT_DEFAULT_JSON
 from message_bar import DEFAULT_MESSAGE_BAR_LAYOUT_JSON, MESSAGE_BAR_VISIBILITY_SETTINGS, parse_message_bar_layout
 
 
@@ -173,7 +173,6 @@ DEFAULT_SETTINGS = {
     "codexComposerLayout": CODEX_LAYOUT_DEFAULT_JSON,
     "codexFlatComposer": False,
     "codexHideAccessLabel": False,
-    "codexHidePermissionsIcon": False,
     "codexInlineLocation": True,
     "codexShowQueuedDelete": True,
     "codexShowQueuePause": False,
@@ -248,13 +247,6 @@ def load_settings():
                 default,
                 preserve_empty=name == "branchNameDisabledPacks",
             )
-    # Migrate the old permissions-hide toggle only until a layout is explicitly saved.
-    if (settings["codexHidePermissionsIcon"]
-            and read_git_string(SETTING_KEYS["codexComposerLayout"], None) is None):
-        layout = parse_codex_layout(settings["codexComposerLayout"])
-        layout["left"].remove("access")
-        layout["hidden"].append("access")
-        settings["codexComposerLayout"] = serialize_codex_layout(layout)
     # Honor an existing right-hand preference until the user saves a dropdown choice.
     new_position = read_git_string(SETTING_KEYS["kefaniaCloseButtonPosition"], None)
     if new_position is None:
@@ -449,7 +441,6 @@ SETTING_KEYS = {
     "codexComposerLayout": "scm-toolkit.codex-composer-layout",
     "codexFlatComposer": "scm-toolkit.codex-flat-composer",
     "codexHideAccessLabel": "scm-toolkit.codex-hide-access-label",
-    "codexHidePermissionsIcon": "scm-toolkit.codex-hide-permissions-icon",
     "codexInlineLocation": "scm-toolkit.codex-inline-location",
     "codexShowQueuedDelete": "scm-toolkit.codex-show-queued-delete",
     "codexShowQueuePause": "scm-toolkit.codex-show-queue-pause",
@@ -536,7 +527,6 @@ VSCODE_SETTINGS = {
         "spellcheckDateFormat": "spellcheckDateFormat",
         "codexKeepAwake": "codexKeepAwake",
         "codexContinueAtReset": "codexContinueAtReset",
-        "codexHidePermissionsIcon": "codexHidePermissionsIcon",
         "durableBackgroundCommits": "durableBackgroundCommits",
     },
     "appUpdateSettings": {"mode": "nativeAppUpdateMode"},

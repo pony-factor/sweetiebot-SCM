@@ -742,11 +742,6 @@
           "minimum": 60,
           "maximum": 3600
         },
-        "sweetiebot.codexHidePermissionsIcon": {
-          "type": "boolean",
-          "default": false,
-          "description": "Hide the Codex permissions icon; use Change permissions in Magic Settings instead."
-        },
         "sweetiebot.mergeAutoFixCi": {
           "type": "boolean",
           "default": true,

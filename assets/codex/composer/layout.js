@@ -91,9 +91,6 @@
     const found = locate();
     if (!found) return;
     const { footer, controls } = found;
-    // Custom layouts own access visibility, overriding the older hide-icon preference.
-    if (!document.documentElement.hasAttribute("data-sweetiebot-composer-access-visible"))
-      document.documentElement.setAttribute("data-sweetiebot-composer-access-visible", "");
     const left = layout.left || (layout.visible || []).filter(id => id !== "send");
     const right = layout.right || (layout.visible || []).filter(id => id === "send");
     const ordered = [...left, ...right];
