@@ -551,18 +551,33 @@ def run():
         compact_page = browser.new_page(viewport={"width": 320, "height": 600})
         # Actual pre-render compaction has already removed the CTA copy. The
         # marker is recognized only within a live composer-owned status card.
-        compact_page.set_content('''<main><section data-codex-composer-root>
-          <aside id="compact-card"><div><strong>Rate limited</strong>
-            <span data-scm-toolkit-rate-limited="true"></span></div>
-            <button aria-label="Dismiss usage banner">Dismiss</button></aside>
-          <textarea>Retained draft</textarea>
+        compact_page.set_content('''<style>
+          #shell, #shell-inner {background: black}
+          #shell::before, #shell-inner::after {content: ""; background: linear-gradient(black, black)}
+          #prompt-surface, #queue-rail {background: rgb(20, 30, 40)}
+        </style><main><section id="shell" data-codex-composer-root>
+          <div id="shell-inner">
+            <div id="queue-rail" data-composer-rail>Queued message</div>
+            <aside id="compact-card"><div><strong>Rate limited</strong>
+              <span data-scm-toolkit-rate-limited="true"></span></div>
+              <button aria-label="Dismiss usage banner">Dismiss</button></aside>
+            <div id="prompt-surface" data-composer-surface-variant="default"><textarea>Retained draft</textarea></div>
+          </div>
         </section></main>''')
         compact_page.add_script_tag(content=rate_script)
         compact_page.wait_for_selector('#compact-card img', state='visible')
         assert compact_page.locator('#compact-card strong').is_visible()
         assert compact_page.get_by_role('button', name='Dismiss usage banner').is_visible()
         assert compact_page.locator('textarea').input_value() == 'Retained draft'
+        for selector in ('#shell', '#shell-inner'):
+            assert compact_page.locator(selector).evaluate('(el) => getComputedStyle(el).backgroundColor') == 'rgba(0, 0, 0, 0)'
+        for selector, pseudo in (('#shell', '::before'), ('#shell-inner', '::after')):
+            assert compact_page.locator(selector).evaluate('(el, pseudo) => getComputedStyle(el, pseudo).backgroundImage', pseudo) == 'none'
+        for selector in ('#prompt-surface', '#queue-rail'):
+            assert compact_page.locator(selector).evaluate('(el) => getComputedStyle(el).backgroundColor') == 'rgb(20, 30, 40)'
+        assert compact_page.locator('#compact-card img').evaluate('(el) => getComputedStyle(el).borderTopWidth') == '1px'
         compact_page.locator('#compact-card').evaluate('card => card.remove()')
+        assert compact_page.locator('#shell').evaluate('(el) => getComputedStyle(el).backgroundColor') == 'rgb(0, 0, 0)'
         assert compact_page.locator('[data-scm-toolkit-native-rate-limit-pony]').count() == 0
         compact_page.close()
         print('PASS: composer-owned pre-render marker mounts Twilight and retains native heading')
