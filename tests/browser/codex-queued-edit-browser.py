@@ -71,6 +71,8 @@ def run():
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.add_script_tag(content=(ASSETS / 'queued-edit-bridge.js').read_text())
         page.add_script_tag(content=(ASSETS / 'queued-edit.js').read_text())
+        # Rail framing is now loaded by the Codex style transformation.
+        page.add_style_tag(content=(ASSETS / 'queue-rail.css').read_text())
         # Independently framed native panels must stay inside the rail corners,
         # including rails without the native attached class's overflow clipping.
         page.evaluate('''() => {
@@ -80,7 +82,7 @@ def run():
           rail.setAttribute('data-composer-rail', '');
           rail.setAttribute('data-composer-rail-placement', 'above');
           rail.style.cssText = 'position:fixed;left:16px;top:16px;width:244px;z-index:100;--vscode-input-background:#000;--vscode-foreground:#888;color:#888;font:12px system-ui';
-          rail.innerHTML = '<div data-composer-rail-item style="border:1px solid gray;height:32px">Changes</div><div data-composer-rail-item style="border:1px solid gray;height:96px">Queued messages</div>';
+          rail.innerHTML = '<div data-composer-rail-item data-composer-rail-framed style="border:1px solid gray;height:32px">Changes</div><div data-composer-rail-item data-composer-rail-framed style="border:1px solid gray;height:96px">Queued messages</div>';
           document.body.append(rail);
         }''')
         assert page.eval_on_selector('#corner-fixture', 'el => getComputedStyle(el).borderRadius') == '8px'
