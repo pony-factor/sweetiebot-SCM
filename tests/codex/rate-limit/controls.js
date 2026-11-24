@@ -483,6 +483,18 @@ observerText.textContent = warningCopy;
 mutationCallback([{target: observerText, addedNodes: []}]);
 assert.equal(observerMessage.textContent, 'Rate limited');
 assert.equal(queuedSyncCount, 2);
+// Editing the composer or a native questionnaire must not rediscover every
+// historic rate-limit label. Newly rendered external warnings still do.
+const isolatedInput = {nodeType: 1, closest: () => ({})};
+mutationCallback([{type: 'childList', target: isolatedInput, addedNodes: [], removedNodes: []}]);
+assert.equal(queuedSyncCount, 2);
+const transcriptMessage = {nodeType: 1, closest: () => ({})};
+mutationCallback([{type: 'childList', target: syntheticDocument, addedNodes: [transcriptMessage], removedNodes: []}]);
+assert.equal(queuedSyncCount, 2);
+observerText.textContent = warningCopy;
+mutationCallback([{type: 'childList', target: syntheticDocument, addedNodes: [observerMessage], removedNodes: []}]);
+assert.equal(observerMessage.textContent, 'Rate limited');
+assert.equal(queuedSyncCount, 3);
 
 // Disabling the optional sticker must preserve compaction and avoid image
 // creation or mutating the composer notice into a sticker card.

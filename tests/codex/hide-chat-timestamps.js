@@ -158,6 +158,27 @@ observer.callback([{ type: 'attributes', target: splitTimestamp,
 assert.equal(splitTimestamp.getAttribute('data-scm-toolkit-hidden-chat-timestamp'), 'true');
 assert.equal(splitTimestamp.getAttribute('aria-hidden'), 'true');
 
+// React can replace a transcript with hundreds of sibling message roots in
+// one mutation. Their common transcript text must be read once for the batch,
+// while a later mutation gets a fresh cache rather than stale timestamp text.
+let transcriptReads = 0;
+const transcript = new FakeElement('');
+transcript.parentElement = document.body;
+Object.defineProperty(transcript, 'textContent', {get() {
+    transcriptReads++;
+    return 'Historic conversation content '.repeat(2000);
+}});
+const messages = Array.from({length: 300}, () => {
+    const message = new FakeElement('Ordinary message');
+    message.parentElement = transcript;
+    message.childTextNodes = [{nodeType: 3, textContent: message.textContent, parentElement: message}];
+    return message;
+});
+observer.callback([{type: 'childList', target: transcript, addedNodes: messages}]);
+assert.equal(transcriptReads, 1, 'sibling remounts share the aggregate-text cache');
+observer.callback([{type: 'childList', target: transcript, addedNodes: messages}]);
+assert.equal(transcriptReads, 2, 'the next observer delivery re-reads changed ancestors');
+
 // Multiple Codex bundles must not install competing observers.
 vm.runInContext(
     fs.readFileSync(path.join(__dirname, '../../assets/codex/hide/chat-timestamps.js'), 'utf8'),

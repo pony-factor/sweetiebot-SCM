@@ -284,4 +284,36 @@ context.scmToolkitApplyUsageDialogRelativeTimes({
 assert.equal(resetRows[0].textContent, '');
 assert.equal(resetRows[1].textContent, '');
 
+// Mutation refreshes inspect new/changed labels, preserving the periodic full
+// refresh without rescanning historic messages on every composer keystroke.
+let usageMutationCallback;
+let fullTextScans = 0;
+const observedDocument = {
+    createElement: () => ({textContent: ''}),
+    head: {append() {}},
+    querySelectorAll(selector) {
+        if (selector === '*') fullTextScans++;
+        return [];
+    },
+};
+const observerContext = vm.createContext({...context,
+    document: observedDocument,
+    scmToolkitHideUsageResetTimes: false,
+    MutationObserver: class {
+        constructor(callback) { usageMutationCallback = callback; }
+        observe() {}
+    },
+});
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../../assets/codex/usage.js'), 'utf8'), observerContext);
+assert.equal(fullTextScans, 1);
+const changedLabel = {nodeType: 1, children: [], textContent: 'Your rate limit resets in 0m.',
+    querySelectorAll: () => [], closest: () => null};
+usageMutationCallback([{type: 'childList', target: observedDocument, addedNodes: [changedLabel]}]);
+assert.equal(changedLabel.textContent, 'Your rate limit resets in 1m.');
+assert.equal(fullTextScans, 1);
+changedLabel.textContent = 'Your rate limit resets in 0m.';
+usageMutationCallback([{type: 'characterData', target: {parentElement: changedLabel}}]);
+assert.equal(changedLabel.textContent, 'Your rate limit resets in 1m.');
+assert.equal(fullTextScans, 1);
+
 console.log('Codex five-hour usage and reset regression checks passed.');

@@ -140,15 +140,17 @@ function scmToolkitCompactUntimedRateLimitNode(node) {
     return true;
 }
 
-function scmToolkitCompactUntimedRateLimitBranch(root) {
+function scmToolkitCompactUntimedRateLimitBranch(root, descendants = true) {
     if (!root) return;
+    const element = root.nodeType === 3 ? root.parentElement : root;
+    if (element?.closest?.('[contenteditable], [role="textbox"], [role="dialog"], [role="menu"], [role="tooltip"], ' + scmToolkitQueuedPromptSelector)) return;
     const candidates = new Set();
     // Handle changes to existing text nodes as well as entirely new messages.
     let ancestor = root.nodeType === 3 ? root.parentElement : root;
     for (let depth = 0; ancestor && depth < 7; depth++, ancestor = ancestor.parentElement) {
         if (ancestor.matches?.('p, span, div, [role="status"], [role="alert"]')) candidates.add(ancestor);
     }
-    for (const descendant of root.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || []) {
+    for (const descendant of descendants ? root.querySelectorAll?.('p, span, div, [role="status"], [role="alert"]') || [] : []) {
         candidates.add(descendant);
     }
     // Deepest elements first, so a wrapper cannot swallow a matching label.
@@ -706,12 +708,21 @@ function scmToolkitSyncRateLimitPony(root) {
         // Respond within the observer's microtask, not in the subsequently
         // queued general sync, so React rerenders do not flash the full copy.
         for (const mutation of mutations) {
-            scmToolkitCompactUntimedRateLimitBranch(mutation.target);
+            scmToolkitCompactUntimedRateLimitBranch(mutation.target, mutation.type !== 'childList');
             for (const added of mutation.addedNodes || []) {
                 scmToolkitCompactUntimedRateLimitBranch(added);
             }
         }
-        sync();
+        // Typing, questionnaire input, queued previews, and streamed transcript
+        // text cannot create an eligible footer/banner. Keep warning compaction
+        // above synchronous, but avoid rediscovering all document statuses.
+        const excluded = scmToolkitCodexEditorSelector + ', ' + scmToolkitRateLimitTranscriptSelector + ', ' + scmToolkitQueuedPromptSelector;
+        const isolated = node => (node?.nodeType === 3 ? node.parentElement : node)?.closest?.(excluded);
+        if (mutations.some(mutation => {
+            if (isolated(mutation.target)) return false;
+            const changed = [...mutation.addedNodes || [], ...mutation.removedNodes || []];
+            return !changed.length || changed.some(node => !isolated(node));
+        })) sync();
     };
     new MutationObserver(onMutations).observe(document, { childList: true, subtree: true, characterData: true });
     scmToolkitCompactUntimedRateLimitBranch(document);
