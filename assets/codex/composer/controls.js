@@ -45,7 +45,7 @@
             }
             if (!composer || composer === document.body || composer === document.documentElement) return;
             const access = composer.querySelector('button[data-composer-navigation-target="permissions"]');
-            const footer = access.closest('[class*="ComposerLayoutFooter_"]');
+            const footer = access.closest('[data-composer-footer-responsive], [class*="ComposerLayoutFooter_"]');
             // Reserve a custom-layout slot while preserving the native React
             // node in its utility rail. Hidden access is not a placement anchor.
             if (footer && globalThis.scmToolkitCodexComposerLayout && !footer.contains(location)) {

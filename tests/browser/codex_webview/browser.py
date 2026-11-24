@@ -373,6 +373,8 @@ def run():
             document.documentElement.dataset.codexWindowType = 'extension';
             document.getElementById('compact-footer').remove();
             const footer = document.querySelector('.ComposerLayoutFooter_fixture');
+            footer.classList.remove('ComposerLayoutFooter_fixture');
+            footer.setAttribute('data-composer-footer-responsive', '');
             footer.style.right = '8px';
             footer.append(document.getElementById('add-files'));
             window.usageLayout = {left:['location','input','attachments'],
@@ -383,6 +385,15 @@ def run():
             '__SCM_TOOLKIT_COMPOSER_LAYOUT__', 'window.usageLayout'))
         page.wait_for_function('document.querySelector(".scm-toolkit-location-slot")')
         page.wait_for_function('document.getElementById("access-control").classList.contains("scm-toolkit-layout-concealed")')
+        page.evaluate('''() => {
+            const alternate = document.getElementById('access-control').cloneNode(true);
+            alternate.id = 'alternate-access-control';
+            alternate.className = '';
+            document.body.prepend(alternate);
+        }''')
+        alternate_access = page.locator('#alternate-access-control')
+        assert alternate_access.evaluate('el => getComputedStyle(el).opacity') == '0'
+        assert alternate_access.evaluate('el => el.getClientRects().length') > 0
         for width in (260, 640, 280):
             surface.evaluate('(el,width) => el.style.width=width+"px"', width)
             page.wait_for_function('''() => {

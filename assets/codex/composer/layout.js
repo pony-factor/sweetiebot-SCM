@@ -11,13 +11,18 @@
     clipboard: "Clipboard Send / Queue", send: "Send / Stop"
   };
   const hidden = new Set((layout.hidden || []).filter(id => id !== "input"));
+  const accessSelector = 'button[data-composer-navigation-target="permissions"]';
+  const footerSelector = '[data-composer-footer-responsive], [class*="ComposerLayoutFooter_"]';
+  const conceal = "position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;";
   const style = document.createElement("style");
   style.textContent = [
     ".scm-toolkit-custom-layout-controlled{display:flex!important;flex-wrap:wrap;justify-content:flex-start!important;box-sizing:border-box;min-width:0;max-width:100%;}",
     ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group{display:contents!important;}",
     ".scm-toolkit-custom-layout-controlled>*,.scm-toolkit-custom-layout-controlled .scm-toolkit-layout-group>*{flex:0 0 auto!important;margin-inline-start:0!important;}",
     ".scm-toolkit-custom-layout-controlled [class*=AdaptiveFooterInput_]{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;flex:1 1 100%!important;margin-inline:0!important;}",
-    ".scm-toolkit-layout-concealed{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;opacity:0!important;pointer-events:none!important;}",
+    `.scm-toolkit-layout-concealed{${conceal}}`,
+    // Codex can mount access buttons outside the footer or in multiple composer variants.
+    hidden.has("access") ? `:root[data-codex-window-type="extension"] ${accessSelector}{${conceal}}` : "",
     ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-aligned{margin-inline-start:0!important;}",
     ".scm-toolkit-custom-layout-controlled .scm-toolkit-layout-right-start{margin-inline-start:auto!important;}"
   ].join("\n");
@@ -29,10 +34,9 @@
   }
 
   function locate() {
-    const anchor = document.querySelector('button[data-composer-navigation-target="permissions"]');
-    const footer = anchor?.closest('[class*="ComposerLayoutFooter_"]')
+    const footer = document.querySelector(`:is(${footerSelector}):has(${accessSelector})`)
       || document.querySelector(".scm-toolkit-composer-footer")
-      || document.querySelector('[class*="ComposerLayoutFooter_"]');
+      || document.querySelector(footerSelector);
     if (!footer || !footer.isConnected) return null;
     let composer = footer.closest("[data-composer-body]") || footer.parentElement;
     if (!composer) return null;
@@ -52,7 +56,7 @@
         input,
         attachments: find(b => b.getAttribute("data-composer-navigation-target") === "attachments"
           || /^(add (context|files?|attachment)|attach files?)/i.test(label(b))),
-        access: find(b => b.getAttribute("data-composer-navigation-target") === "permissions"),
+        access: footer.querySelector(accessSelector) || find(b => b.matches(accessSelector)),
         location: find(b => b.getAttribute("data-composer-navigation-target") === "run-location"),
         clipboard: find(b => b.id === "scm-toolkit-codex-clipboard-submit"),
         send: find(b => footer.contains(b)
