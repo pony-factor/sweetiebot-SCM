@@ -13,7 +13,7 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../assets/codex/send
 function button(name) {
     return {
         isConnected: true, disabled: false, id: '', type: 'button', textContent: '',
-        getClientRects: () => [1], getAttribute: key => key === 'aria-label' ? name : null,
+        name, getClientRects: () => [1], getAttribute(key) { return key === 'aria-label' ? this.name : null; },
     };
 }
 const send = button('Send message');
@@ -23,6 +23,7 @@ const root = {
     isConnected: true,
     getClientRects: () => [1],
     parentElement: document.body,
+    contains: candidate => buttons.includes(candidate),
     querySelectorAll: selector => selector === 'button' ? buttons : [editor],
 };
 send.parentElement = root;
@@ -36,12 +37,14 @@ async function check() {
     send.click = () => {submitted++; editor.value = '';};
     let prevented = 0;
     hooks.onClick({
-        isTrusted:true, defaultPrevented:false, button:0, target:{closest:()=>send},
+        isTrusted:true, defaultPrevented:false, button:0, detail:1, target:{closest:()=>send},
         preventDefault(){prevented++;}, stopImmediatePropagation(){},
     });
+    hooks.onClick({isTrusted:true, defaultPrevented:false, button:0, detail:1,
+        target:{closest:()=>send}, preventDefault(){prevented++;}, stopImmediatePropagation(){}});
     // Yield for the native stop/send sequence; no second click is needed.
     for (let i=0; i<10 && !submitted; i++) await new Promise(resolve=>setImmediate(resolve));
-    assert.equal(prevented, 1);
+    assert.equal(prevented, 2, 'both pointer clicks are captured during one interruption');
     assert.equal(stopped, 1);
     assert.equal(submitted, 1);
     hooks.onClick({isTrusted:false, defaultPrevented:false, button:0, target:{closest:()=>send}});
@@ -54,8 +57,7 @@ async function check() {
     let nativeStops = 0, queued = 0;
     const props = {
         isResponseInProgress: true,
-        onStop() { nativeStops++; props.isResponseInProgress = false; },
-        handleSubmit() {},
+        onStop() { nativeStops++; props.isResponseInProgress = false; queue.name = 'Send message'; },
     };
     queue.__reactFiber$fixture = {memoizedProps: props};
     queue.click = () => {queued++;};
@@ -69,6 +71,7 @@ async function check() {
     assert.equal(hooks.controls(queue), null, 'idle Send keeps native behavior');
 
     // Use committed React props, not a stale alternate that reports idle.
+    queue.name = 'Queue';
     const stale = {memoizedProps: {...props}, stateNode: {}};
     const current = {memoizedProps: props};
     stale.alternate = current;
@@ -76,6 +79,18 @@ async function check() {
     queue.__reactFiber$fixture = stale;
     props.isResponseInProgress = true;
     assert.equal(hooks.nativeRun(queue), props);
+
+    props.onStop = () => { props.isResponseInProgress = false; };
+    assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
+    assert.equal(queued, 1, 'an idle but still Queue-labelled control is never replayed');
+    assert.equal(editor.value, 'interrupt with this draft');
+    props.isResponseInProgress = true;
+    const rail = button('Steer');
+    rail.closest = () => ({});
+    assert.equal(hooks.isSend(rail), false, 'queued-message row actions stay native');
+    assert.equal(hooks.isImmediateSend(button('Steer')), false);
+    assert.equal(hooks.isImmediateSend(button('Queue')), false);
+    assert.equal(hooks.isImmediateSend(button('Send message')), true);
 
     props.onStop = () => { editor.value = 'new user edit'; props.isResponseInProgress = false; };
     assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
