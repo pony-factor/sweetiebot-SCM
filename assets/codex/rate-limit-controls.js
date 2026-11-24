@@ -691,6 +691,20 @@ function scmToolkitSyncRateLimitPony(root) {
     globalThis.scmToolkitResetShortcutInstalled = true;
     const style = document.createElement('style');
     style.textContent = '[data-scm-toolkit-compact-limit="true"]{font-size:0!important}[data-scm-toolkit-compact-limit="true"]::after{content:"Rate limited";font-size:12px}[data-scm-toolkit-rate-limit-pony="true"]{display:flex!important;width:max-content!important;height:auto!important;min-width:0!important;min-height:0!important;max-width:100%!important;padding:0!important;margin-inline:auto!important;align-self:center!important;overflow:hidden!important}[data-scm-toolkit-native-rate-limit-pony="true"]{width:100%!important;align-self:stretch!important;justify-content:center!important;overflow:visible!important}[data-scm-toolkit-native-rate-limit-banner="true"],[data-scm-toolkit-native-rate-limit-frame="true"]{border-width:0!important;border-style:none!important;outline:none!important;box-shadow:none!important;background:transparent!important;background-image:none!important}[data-scm-toolkit-sticker-redundant="true"],[data-scm-toolkit-hidden-blank-rail="true"]{display:none!important}';
+    // The outer composer can paint a solid strip (or a gradient pseudo-element)
+    // behind the sticker even after its own card has been cleared. Remove only
+    // the shared shell's paint while artwork is present, not the input surface.
+    const stickerShell = ':is([data-codex-composer-root]:has([data-scm-toolkit-rate-limit-pony="true"] img), [data-codex-composer-root] :has([data-scm-toolkit-rate-limit-pony="true"] img):has([data-composer-body], [data-composer-surface-variant])):not([data-composer-body], [data-composer-surface-variant], [data-composer-rail])';
+    style.textContent += `
+      ${stickerShell}, ${stickerShell}::before, ${stickerShell}::after,
+      [data-scm-toolkit-native-rate-limit-frame="true"]::before,
+      [data-scm-toolkit-native-rate-limit-frame="true"]::after {
+        background: transparent !important;
+        background-image: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+    `;
     (document.head || document.documentElement).appendChild(style);
     let queued = false;
     const sync = () => {
