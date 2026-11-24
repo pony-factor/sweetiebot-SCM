@@ -200,22 +200,6 @@
     if (!owner) { owner = crypto.randomUUID(); sessionStorage.setItem(OWNER_KEY, owner); }
     const style = document.createElement('style');
     style.textContent = `
-      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"] {
-        --composer-rail-tuck:0px; --composer-rail-overlap:0px;
-        margin-bottom:8px !important; padding-bottom:0 !important;
-        border:1px solid color-mix(in srgb,var(--vscode-foreground,#888) 22%,transparent);
-        border-radius:8px !important; corner-shape:round !important;
-        /* Rail items can be framed independently; clip their square corners. */
-        overflow:clip !important;
-        background:var(--vscode-input-background,var(--color-surface-primary));
-        color:var(--vscode-input-foreground,var(--vscode-foreground));
-      }
-      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"]::after { display:none; }
-      :root[data-codex-window-type="extension"] [data-composer-rail][data-composer-rail-placement="above"] [data-composer-rail-item] {
-        margin-bottom:0 !important; padding-bottom:0 !important;
-        background:transparent !important; border-color:var(--vscode-widget-border,transparent) !important;
-        color:inherit !important;
-      }
       :root[data-codex-window-type="extension"] [data-composer-rail] button:not(.scm-toolkit-queue-save):not(.scm-toolkit-queue-cancel) {
         color:var(--scm-toolkit-queue-accent,var(--color-codex-drop-overlay,var(--vscode-focusBorder))) !important;
       }

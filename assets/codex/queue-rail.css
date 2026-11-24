@@ -1,0 +1,23 @@
+/* A framed rail is detached from the composer and owns all four edges. */
+:root[data-codex-window-type=extension] [data-composer-rail][data-composer-rail-placement=above]:has([data-composer-rail-framed]) {
+  --composer-rail-tuck: 0px !important;
+  --composer-rail-overlap: 0px !important;
+  margin-bottom: 8px !important;
+  padding-bottom: 0 !important;
+  border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground, #888) 22%, transparent)) !important;
+  border-radius: 8px !important;
+  corner-shape: round !important;
+  background: var(--vscode-input-background, var(--color-surface-primary)) !important;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+}
+:root[data-codex-window-type=extension] [data-composer-rail][data-composer-rail-placement=above]:has([data-composer-rail-framed]):not(.scm-toolkit-location-overflow) {
+  overflow: clip !important;
+}
+:root[data-codex-window-type=extension] [data-composer-rail][data-composer-rail-placement=above]:has([data-composer-rail-framed]) [data-composer-rail-item] {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+  background: transparent !important;
+  border-inline-color: transparent !important;
+  border-bottom-color: transparent !important;
+  color: inherit !important;
+}
