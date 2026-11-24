@@ -157,14 +157,17 @@
             this.notify = notify;
         }
         async readHostPause(coordinator) {
-            if (this.adapter.hostId !== 'local') return;
+            if (this.adapter.hostId !== 'local' || this.legacyHost) return;
             const state = await coordinator.deferAutomaticTurns(this.adapter.threadId, 'sweetiebot-user-pause');
             if (typeof state === 'boolean') return state;
-            // An older host ignores the extra argument and returns a lease.
+            // Older hosts ignore the extra argument and acquire a real lease.
+            // Releasing it can wake the queue, so never repeat this probe on
+            // subsequent native store notifications (including dispatch itself).
+            this.legacyHost = true;
             (state?.[Symbol.dispose] ?? state?.dispose)?.call(state);
         }
         async refresh() {
-            if (this.pending || this.disposed || this.adapter.hostId !== 'local') return;
+            if (this.pending || this.disposed || this.legacyHost || this.adapter.hostId !== 'local') return;
             this.pending = true;
             try {
                 const paused = await this.readHostPause(await this.adapter.coordinator());
