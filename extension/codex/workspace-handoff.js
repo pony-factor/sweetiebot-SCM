@@ -49,12 +49,12 @@ async function prepareCodexHandoff(vscode, from) {
     ? await vscode.commands.executeCommand('sweetiebot.codexDraft.read') : null;
   const attachments = commands.includes('sweetiebot.codexDraft.readAttachments')
     ? await vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments') : null;
-  const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
   const draft = saved?.draft ?? null;
   const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
   if (saved?.scope && attachments?.scope && (saved.scope !== attachments.scope || saved.generation !== attachments.generation)) {
     throw Error('The branch changed while capturing the Codex draft. Retry the checkout switch.');
   }
+  const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
   if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
   return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts,
     ...(saved?.scope || attachments?.scope ? { draftScope: saved?.scope || attachments.scope,
@@ -82,11 +82,31 @@ async function retryCodexComposerFocus(vscode, focus, isCurrent = () => true,
 }
 
 function registerCodexWorkspaceHandoff(vscode, context) {
+  const pending = () => {
+    const workspace = vscode.workspace.workspaceFile?.fsPath;
+    return workspace ? context.globalState.get(keyFor(workspace)) : undefined;
+  };
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.pendingQueue', () => {
+    const plan = pending();
+    if (!plan?.threadId || plan.continuationText?.startsWith('The user moved this same chat into a disposable experiment on branch ')) return;
+    if (!(vscode.workspace.workspaceFolders || []).some(folder => folder.uri.scheme === 'file'
+      && folder.uri.fsPath === plan.destination)) return;
+    return { id: plan.id, threadId: plan.threadId, turnId: plan.turnId, queuePaused: plan.queuePaused };
+  }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.save', async ({ workspace, plan }) => {
     await context.globalState.update(keyFor(workspace), plan);
   }));
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.clear', async workspace => {
     await context.globalState.update(keyFor(workspace), undefined);
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.consumeContinuation', async ({ workspace, id }) => {
+    if (workspace !== vscode.workspace.workspaceFile?.fsPath) return false;
+    const key = keyFor(workspace);
+    const plan = context.globalState.get(key);
+    if (!plan?.wasActive || plan.id !== id) return false;
+    // Journal the attempt before submitting. A lost reply must not start another turn.
+    await context.globalState.update(key, { ...plan, wasActive: false });
+    return true;
   }));
   let focusGeneration = 0;
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.codexHandoff.restoreFocusWhenReady', focus => {
@@ -117,16 +137,13 @@ function registerCodexWorkspaceHandoff(vscode, context) {
       const extension = vscode.extensions.getExtension('openai.chatgpt');
       if (!extension) throw new Error('Codex is unavailable in the destination window.');
       await extension.activate();
-      // Consume automatic continuation before sending it. A window crash or
-      // failed response must never submit the same continuation a second time.
-      await context.globalState.update(key, { ...plan, wasActive: false });
       if (!plan.draftsConsumed) {
         if (plan.draftScope) await vscode.commands.executeCommand('sweetiebot.codexDraft.adopt', plan);
         else {
           if (plan.draft != null) await vscode.commands.executeCommand('sweetiebot.codexDraft.write', plan.draft);
           if (plan.attachmentDrafts) await vscode.commands.executeCommand('sweetiebot.codexDraft.writeAttachments', handoffAttachments(plan));
         }
-        await context.globalState.update(key, { ...plan, wasActive: false, draftsConsumed: true });
+        await context.globalState.update(key, { ...plan, draftsConsumed: true });
       }
       if (plan.draftOnly) {
         if (plan.composerFocus) {
@@ -136,7 +153,7 @@ function registerCodexWorkspaceHandoff(vscode, context) {
         await context.globalState.update(key, undefined);
         return;
       }
-      const result = await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff', plan);
+      const result = await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff', { ...plan, journalWorkspace: workspace });
       if (result?.threadId !== plan.threadId) throw new Error('The destination did not confirm the same Codex chat.');
       // Once complete, ordinary reloads must not reopen a chat the user has left.
       await context.globalState.update(key, undefined);
