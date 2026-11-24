@@ -413,6 +413,7 @@
     "browser/codex_webview/browser.py",
     "browser/codex_webview/iframe.py",
     "browser/codex-queued-edit-browser.py",
+    "browser/codex-submission-performance.py",
     "browser/workflow-recovery-browser.py"
   ]
 }

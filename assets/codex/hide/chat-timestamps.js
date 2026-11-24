@@ -109,13 +109,24 @@
         return Boolean(element.querySelector('button,a,input,textarea,select,[contenteditable="true"]'));
     }
 
-    function timestampContainer(node) {
+    const timestampExcluded = 'p,blockquote,pre,code,a,button,[role="textbox"],[class*="markdown"],[class*="prose"],[data-testid*="message-content"],[contenteditable="true"]';
+
+    function timestampLabel(element, labels) {
+        if (!labels.has(element)) {
+            const text = normalize(element.textContent);
+            labels.set(element, text.length <= 64 ? text : '');
+        }
+        return labels.get(element);
+    }
+
+    function timestampContainer(node, labels) {
         let element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+        if (element?.closest?.(timestampExcluded)) return null;
         // Timestamp labels can be split into several text nodes or spans.
         // Find a small exact-match ancestor without hiding its surrounding row.
         let found = null;
         for (let depth = 0; element && depth < 5; depth += 1, element = element.parentElement) {
-            if (looksLikeTimestamp(element.textContent)) {
+            if (looksLikeTimestamp(timestampLabel(element, labels))) {
                 found = element;
                 break;
             }
@@ -123,9 +134,9 @@
         }
         if (!found) return null;
         // A matching time inside prose is user content, not a chat separator.
-        if (found.closest?.('p,blockquote,pre,code,a,button,[role="textbox"],[class*="markdown"],[class*="prose"],[data-testid*="message-content"],[contenteditable="true"]')) return null;
+        if (found.closest?.(timestampExcluded)) return null;
 
-        const label = normalize(found.textContent);
+        const label = timestampLabel(found, labels);
         let best = found;
         for (let depth = 0; depth < 5; depth += 1) {
             const parent = best.parentElement;
@@ -133,7 +144,7 @@
                 !parent
                 || parent === document.body
                 || parent === document.documentElement
-                || normalize(parent.textContent) !== label
+                || timestampLabel(parent, labels) !== label
                 || hasInteractiveContent(parent)
             ) {
                 break;
@@ -145,8 +156,7 @@
         return best;
     }
 
-    function hideTimestamp(node) {
-        const container = timestampContainer(node);
+    function hideTimestamp(container) {
         if (!container) return;
 
         if (container.getAttribute(hiddenAttribute) !== 'true') {
@@ -161,41 +171,46 @@
         }
     }
 
-    function processTextNode(node) {
-        if (timestampContainer(node)) hideTimestamp(node);
+    function processTextNode(node, labels) {
+        const container = timestampContainer(node, labels);
+        if (container) hideTimestamp(container);
         else if (!globalThis.scmToolkitShowCannon && activityLeadPattern.test(normalize(node.textContent))) relabelActivityDuration(node);
         else if (!globalThis.scmToolkitShowCannon && normalize(node.textContent) === 'Activity') relabelActivityDuration(node);
     }
 
-    function hasTimestampAncestor(node) {
+    function hasTimestampAncestor(node, labels) {
         let parent = node.parentElement;
+        if (parent?.closest?.(timestampExcluded)) return false;
         for (let depth = 0; parent && depth < 5; depth += 1, parent = parent.parentElement) {
-            if (looksLikeTimestamp(parent.textContent)) return true;
+            if (looksLikeTimestamp(timestampLabel(parent, labels))) return true;
             if (parent === document.body || parent === document.documentElement) break;
         }
         return false;
     }
 
-    function scan(root) {
+    function scan(root, labels = new WeakMap()) {
         if (!root) return;
+        // A React transcript remount can contain thousands of text nodes with
+        // the same ancestors. Read each ancestor's aggregate text once per
+        // scan, rather than rebuilding and normalizing it for every leaf.
         // Reinstall the stylesheet if the host replaces the webview <head>.
         installStyle();
 
         if (root.nodeType === Node.TEXT_NODE) {
-            processTextNode(root);
+            processTextNode(root, labels);
             return;
         }
 
         if (!(root instanceof Element) && root !== document) return;
 
-        if (root !== document && timestampContainer(root)) hideTimestamp(root);
+        if (root !== document) hideTimestamp(timestampContainer(root, labels));
         const walker = document.createTreeWalker(
             root,
             NodeFilter.SHOW_TEXT,
             {
                 acceptNode(node) {
                     return looksLikeTimestamp(node.textContent)
-                        || hasTimestampAncestor(node)
+                        || hasTimestampAncestor(node, labels)
                         || activityLeadPattern.test(normalize(node.textContent))
                         || normalize(node.textContent) === 'Activity'
                         ? NodeFilter.FILTER_ACCEPT
@@ -206,24 +221,25 @@
 
         const matches = [];
         while (walker.nextNode()) matches.push(walker.currentNode);
-        matches.forEach(processTextNode);
+        matches.forEach(node => processTextNode(node, labels));
     }
 
     function start() {
         installStyle();
         scan(document);
         const observer = new MutationObserver((records) => {
+            const labels = new WeakMap();
             for (const record of records) {
                 if (record.type === 'attributes') {
                     // React may remove our marker or accessible hiding state.
-                    scan(record.target);
+                    scan(record.target, labels);
                     continue;
                 }
                 if (record.type === 'characterData') {
-                    scan(record.target);
+                    scan(record.target, labels);
                     continue;
                 }
-                for (const node of record.addedNodes) scan(node);
+                for (const node of record.addedNodes) scan(node, labels);
             }
         });
         observer.observe(document.documentElement, {

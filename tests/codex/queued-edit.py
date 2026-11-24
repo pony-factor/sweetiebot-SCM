@@ -27,11 +27,12 @@ ROWS = ('function Row(e){let {messageId:id,position:position,fullMessageText:tex
 INLINE_STORE = ('function hook(thread){let scope=useScope(),host=useHost(thread),get=async()=>manager(scope,host).getTurnCoordinator();'
                 'return{threadKey:{threadId:thread,hostId:host},messages:[],visibleMessages:[],actions:wrap(actions)}}async '
                 'function next(){}function wrap(e){return {...e,beginEdit:e.remove,restoreEdit:e.restore}}')
+PLAIN_ROWS = ROWS.replace('initial:!1,animate:motion', 'children:content')
 
 
 class QueuedEditPatchTests(unittest.TestCase):
     def test_adapters_are_idempotent_and_fully_reversible(self):
-        for kind, source in [('store', STORE), ('store', INLINE_STORE), ('rows', ROWS)]:
+        for kind, source in [('store', STORE), ('store', INLINE_STORE), ('rows', ROWS), ('rows', PLAIN_ROWS)]:
             with self.subTest(kind=kind):
                 patched = patcher.transform(source, kind)
                 self.assertEqual(patcher.transform(patched, kind), patched)
@@ -40,6 +41,15 @@ class QueuedEditPatchTests(unittest.TestCase):
                                text=True, capture_output=True, check=True)
         self.assertIn('scmToolkitRegisterQueueStore(thread,host,result,()=>manager(scope,host).getTurnCoordinator())', patcher.transform(STORE, 'store'))
         self.assertIn('ref:scmToolkitQueueRowRef(nativeRef,id,host)', patcher.transform(ROWS, 'rows'))
+
+    def test_plain_row_ref_is_scoped_to_native_queue_component(self):
+        unrelated = 'function other(){return jsx("div",{ref:otherRef,style:otherStyle,children:content})}'
+        source = unrelated + PLAIN_ROWS
+        patched = patcher.transform(source, 'rows')
+        self.assertIn(unrelated, patched)
+        self.assertIn('ref:scmToolkitQueueRowRef(nativeRef,id,host),style:style,children:', patched)
+        self.assertIn('"data-scm-toolkit-queue-preview":!0', patched)
+        self.assertEqual(patcher.transform(patched, 'rows', False), source)
 
     def test_inline_store_keeps_native_actions_and_registers_the_coordinator(self):
         script = ('globalThis.useScope=()=>"scope";globalThis.useHost=()=>"local";'

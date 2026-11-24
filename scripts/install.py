@@ -601,7 +601,7 @@ def window_title_repository_edits(js):
 
 def window_title_refresh_edits(js):
     # Resolve the title service's own window, including secondary windows.
-    window = re.search(r'doUpdateTitle\(\)\{[^}]*?let [\w$]+=([\w$]+\(this\.windowId,!0\)\.window);', js)
+    window = re.search(r'doUpdateTitle\(\)\{(?:(?!getFullWindowTitle\(\)\{)[\s\S])*?let [\w$]+=([\w$]+\(this\.windowId,!0\)\.window);', js)
     if not window:
         return []  # Synthetic fixtures without a native window.
     listener = 'registerListeners(){this._register(this.configurationService.onDidChangeConfiguration('
@@ -655,14 +655,34 @@ def window_title_naming_edits(js):
     config = re.search(r'onConfigurationChanged\(([\w$]+)\)\{let ([\w$]+)=\1.affectsConfiguration\("window.title"\)', js)
     variables = re.search(r'checkTitleVariables\(\)\{let ([\w$]+)=this.configurationService.getValue\("window.title"\)', js)
     update = re.search(r'doUpdateTitle\(\)\{let ([\w$]+)=this.getFullWindowTitle\(\);if\(\1!==this.title\)\{', js)
-    if not config or not variables or not update:
+    # VS Code 1.147 also refreshes folder-location metadata when the title
+    # stays unchanged. Preserve that branch while tracking our visible heading.
+    folder_update = re.search(
+        r'doUpdateTitle\(\)\{let ([\w$]+)=this.getFullWindowTitle\(\),'
+        r'([\w$]+)=this.folderLocationInfo,([\w$]+)=\2\?'
+        r'`\$\{\2.uri.toString\(\)\}\|\$\{\2.label\}\|'
+        r'\$\{\2.description\?\?""\}\|\$\{\2.icon\?\.id\?\?""\}`:"",'
+        r'([\w$]+)=\3!==this.folderLocationKey;'
+        r'if\(this.folderLocationKey=\3,\1===this.title\)'
+        r'\4&&this.onDidChangeEmitter.fire\(\);else\{', js)
+    if update:
+        update_edit = (update.group(0), f'doUpdateTitle(){{let {update.group(1)}=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle();if({update.group(1)}!==this.title||scmToolkitHeading!==this.scmToolkitHeading){{this.scmToolkitHeading=scmToolkitHeading;')
+    elif folder_update:
+        before = folder_update.group(0)
+        after = before.replace('=this.getFullWindowTitle(),', '=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle(),', 1)
+        after = after.replace(f'{folder_update.group(1)}===this.title)', f'{folder_update.group(1)}===this.title&&scmToolkitHeading===this.scmToolkitHeading)', 1)
+        after += 'this.scmToolkitHeading=scmToolkitHeading;'
+        update_edit = (before, after)
+    else:
+        update_edit = None
+    if not config or not variables or not update_edit:
         raise ValueError("Unsupported VS Code build: window naming listeners do not match.")
     focused = f'this.titleIncludesFocusedView={variables.group(1)}.includes("${{focusedView}}")'
     if js.count(focused) != 1:
         raise ValueError("Unsupported VS Code build: window naming focus listener does not match.")
     return [
         (original, replacement),
-        (update.group(0), f'doUpdateTitle(){{let {update.group(1)}=this.getFullWindowTitle(),scmToolkitHeading=this.getWindowTitle();if({update.group(1)}!==this.title||scmToolkitHeading!==this.scmToolkitHeading){{this.scmToolkitHeading=scmToolkitHeading;'),
+        update_edit,
         ('isCustomTitleFormat(){', 'isCustomTitleFormat(){if(this.configurationService.getValue("sweetiebot.windowHeading")||(this.configurationService.getValue("sweetiebot.windowShowPushingStatus")!==false&&this.contextKeyService.getContextKeyValue("sweetiebot.pushPending")))return!0;'),
         (config.group(0), config.group(0) + f'||{config.group(1)}.affectsConfiguration("sweetiebot.windowHeading")||{config.group(1)}.affectsConfiguration("sweetiebot.windowName")||{config.group(1)}.affectsConfiguration("sweetiebot.windowShowModifiedStatus")||{config.group(1)}.affectsConfiguration("sweetiebot.windowShowPushingStatus")'),
         (variables.group(0), variables.group(0).replace('this.configurationService.getValue("window.title")',
@@ -746,7 +766,7 @@ def pr_workspace_explorer_edits(js):
         r"get singleViewPaneContainerTitle\(\)\{return this\.name\}"
         r"get autoReveal\(\)\{return this\._autoReveal\}"
         rf"set autoReveal\((?P<arg>{ident})\)\{{this\._autoReveal=(?P=arg)\}}"
-        r"get name\(\)\{return this\.labelService\.getWorkspaceLabel\(this\.contextService\.getWorkspace\(\)\)\}"
+        r"get name\(\)\{return this\.labelService\.getWorkspaceLabel\(this\.contextService\.getWorkspace\(\)(?:,\{withLocation:!0\})?\)\}"
     )
     titles = list(title_pattern.finditer(js))
     if len(titles) != 1:

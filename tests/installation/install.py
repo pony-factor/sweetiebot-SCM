@@ -317,6 +317,50 @@ getWindowTitle(){let z=this.configurationService.getValue("window.title");typeof
             assert.equal(title.getFullWindowTitle(),'file.md — Code');
         '''], check=True, capture_output=True, text=True)
 
+    def test_window_naming_preserves_folder_location_updates(self):
+        native = '''class Title {
+initialize(){this.checkTitleVariables(),this.registerListeners()}
+registerListeners(){this._register(this.configurationService.onDidChangeConfiguration(()=>{}))}
+onConfigurationChanged(e){let t=e.affectsConfiguration("window.title");t&&this.checkTitleVariables()}
+onActiveEditorChange(){this.titleIncludesEditorState&&this.activeEditorListeners.add(this.decorationsService.onDidChangeDecorations(()=>this.titleUpdater.schedule()))}
+checkTitleVariables(){let e=this.configurationService.getValue("window.title");this.titleIncludesFocusedView=e.includes("${focusedView}")}
+doUpdateTitle(){let e=this.getFullWindowTitle(),t=this.folderLocationInfo,i=t?`${t.uri.toString()}|${t.label}|${t.description??""}|${t.icon?.id??""}`:"",n=i!==this.folderLocationKey;if(this.folderLocationKey=i,e===this.title)n&&this.onDidChangeEmitter.fire();else{let r=e;let a=getWindow(this.windowId,!0).window;a.document.title=r,this.title=e,this.onDidChangeEmitter.fire()}}
+getFullWindowTitle(){let{prefix:e,suffix:t}=this.getTitleDecorations(),i=this.getWindowTitle()||this.productService.nameLong;return i}
+getWindowTitle(){let z=this.configurationService.getValue("window.title");return z}isCustomTitleFormat(){return!1}
+}'''
+        original = workbench_fixture() + native
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
+        transformed = native
+        for before, after in (install.window_title_push_edits(native)
+                              + install.window_title_naming_edits(native)
+                              + install.window_title_refresh_edits(native)):
+            self.assertEqual(transformed.count(before), 1)
+            transformed = transformed.replace(before, after)
+        subprocess.run(['node', '-e', '''
+const assert=require('node:assert/strict');
+const win={document:{title:''},addEventListener(){},removeEventListener(){},setTimeout(){},clearTimeout(){}};
+function getWindow(){return {window:win}}
+''' + transformed + '''
+const values={'window.title':'native','sweetiebot.windowName':'fixed','sweetiebot.windowHeading':'heading'};
+let changes=0;
+const title=new Title();
+Object.assign(title,{configurationService:{getValue:key=>values[key],onDidChangeConfiguration:()=>({})},
+contextKeyService:{getContextKeyValue:()=>false},productService:{nameLong:'Code'},
+getTitleDecorations:()=>({}),onDidChangeEmitter:{fire:()=>changes++},
+_register(){},registerVariables(){},titleUpdater:{schedule(){}}});
+title.initialize();title.doUpdateTitle();assert.equal(changes,1);assert.equal(win.document.title,'fixed');
+title.doUpdateTitle();assert.equal(changes,1);
+values['sweetiebot.windowHeading']='new heading';title.doUpdateTitle();
+assert.equal(changes,2);assert.equal(title.scmToolkitHeading,'new heading');assert.equal(win.document.title,'fixed');
+title.folderLocationInfo={uri:{toString:()=>'/repo'},label:'repo'};title.doUpdateTitle();
+assert.equal(changes,3);assert.equal(title.folderLocationKey,'/repo|repo||');
+title.doUpdateTitle();assert.equal(changes,3);
+values['sweetiebot.windowName']='new title';title.doUpdateTitle();assert.equal(changes,4);
+assert.equal(win.document.title,'new title');
+'''], check=True, capture_output=True, text=True)
+
     def test_window_push_title_is_reversible_and_tracks_context(self):
         title = (
             'this.checkTitleVariables(),this.registerListeners();'
@@ -1097,6 +1141,15 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             install.transform(*patched, remove=True, settings=SETTINGS),
             (original, "base-css"),
         )
+
+    def test_explorer_supports_workspace_label_with_location(self):
+        original = workbench_fixture() + pr_explorer_fixture().replace(
+            'getWorkspaceLabel(this.contextService.getWorkspace())',
+            'getWorkspaceLabel(this.contextService.getWorkspace(),{withLocation:!0})')
+        patched = install.transform(original, 'base-css', settings=SETTINGS)
+        self.assertIn('folders[0].name:this.labelService.getWorkspaceLabel(this.contextService.getWorkspace(),{withLocation:!0})', patched[0])
+        self.assertEqual(install.transform(*patched, settings=SETTINGS), patched)
+        self.assertEqual(install.transform(*patched, remove=True), (original, 'base-css'))
 
     def test_pr_explorer_rejects_ambiguous_or_changed_native_anchor(self):
         source = workbench_fixture() + pr_explorer_fixture()

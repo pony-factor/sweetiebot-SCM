@@ -114,7 +114,8 @@ function scmToolkitRelativeUsageResetLabel(text, now = Date.now()) {
 
 function scmToolkitCorrectLastMinuteUsageLabels(root) {
     if (!root || typeof root.querySelectorAll !== 'function') return;
-    for (const element of root.querySelectorAll('*')) {
+    const elements = root.nodeType === 1 ? [root, ...root.querySelectorAll('*')] : root.querySelectorAll('*');
+    for (const element of elements) {
         if (Array.from(element.children || []).length) continue;
         const current = String(element.textContent || '');
         if (!/\bin 0m\b/i.test(current)) continue;
@@ -133,7 +134,8 @@ function scmToolkitApplyUsageDialogRelativeTimes(root, now = Date.now()) {
         typeof scmToolkitUsageResetCountdown === 'undefined'
         || scmToolkitUsageResetCountdown;
     if (!countdownEnabled && !hideResetTimes) return;
-    for (const dialog of root.querySelectorAll('[role="dialog"]')) {
+    const dialogs = root.matches?.('[role="dialog"]') ? [root] : root.querySelectorAll('[role="dialog"]');
+    for (const dialog of dialogs) {
         const dialogText = String(dialog.textContent || '');
         if (!/5 hour usage limit/i.test(dialogText) || !/Weekly usage limit/i.test(dialogText)) continue;
 
@@ -404,8 +406,7 @@ function scmToolkitKeepUsageFresh(refetch) {
         display: inline-flex !important;
       }
       scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; vertical-align:middle; }
-      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter),
-      button[data-composer-navigation-target="run-location"] :has(> scm-toolkit-usage-meter) {
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) {
         display:inline-flex; align-items:center;
       }
       .scm-toolkit-usage-surface { position:relative; }
@@ -424,7 +425,7 @@ function scmToolkitKeepUsageFresh(refetch) {
     ` : '');
     document.head.append(style);
 
-    const refresh = () => {
+    const refresh = (roots = [document]) => {
         // Codex can replace the input surface without remounting its sibling
         // usage meter, or remove our bar while reconciling native children.
         for (const meter of document.querySelectorAll('scm-toolkit-usage-meter')) {
@@ -437,10 +438,27 @@ function scmToolkitKeepUsageFresh(refetch) {
             const label = exhausted ? 'Rate limited' : 'Five-hour Codex usage remaining';
             if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
         }
-        scmToolkitApplyUsageDialogRelativeTimes(document);
-        scmToolkitCorrectLastMinuteUsageLabels(document);
+        for (const root of roots) {
+            const dialog = root.closest?.('[role="dialog"]');
+            scmToolkitApplyUsageDialogRelativeTimes(dialog || root);
+            scmToolkitCorrectLastMinuteUsageLabels(root);
+        }
     };
-    const observer = new MutationObserver(refresh);
+    const observer = new MutationObserver(records => {
+        // Composer edits and streamed tokens should not revisit every historic
+        // message. Added subtrees and changed text contain the new labels;
+        // meter rebinding above still handles removals and replaced composers.
+        const roots = new Set();
+        for (const record of records) {
+            if (record.type === 'characterData') {
+                if (record.target.parentElement) roots.add(record.target.parentElement);
+            } else for (const node of record.addedNodes || []) {
+                const root = node.nodeType === 3 ? node.parentElement : node;
+                if (root?.querySelectorAll) roots.add(root);
+            }
+        }
+        refresh(roots);
+    });
     observer.observe(document, { childList: true, characterData: true, subtree: true });
     refresh();
     setInterval(refresh, 30000);

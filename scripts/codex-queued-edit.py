@@ -77,7 +77,17 @@ def transform(source, kind, enabled=True):
         edits.append([original, replacement])
     elif kind == 'rows':
         props = re.search(rf'\{{messageId:({IDENT}),position:{IDENT},fullMessageText:{IDENT},.*?hostId:({IDENT}),isEditing:', source)
-        refs = list(re.finditer(rf'ref:({IDENT}),style:({IDENT}),initial:!1,animate:', source))
+        # Codex replaced the motion row with a plain div in 26.1120. Scope
+        # the ref to the queue component so unrelated native refs stay intact.
+        row = source
+        if props is not None:
+            declarations = list(re.finditer(rf'function {IDENT}\([^)]*\)\{{', source))
+            preceding = [match for match in declarations if match.start() < props.start()]
+            if preceding:
+                start = preceding[-1].start()
+                end = next((match.start() for match in declarations if match.start() > props.start()), len(source))
+                row = source[start:end]
+        refs = list(re.finditer(rf'ref:({IDENT}),style:({IDENT}),(?:initial:!1,animate:|children:)', row))
         preview = list(re.finditer(rf'"aria-label":{IDENT}\.formatMessage\(\{{id:`composer\.queuedMessage\.preview\.trigger\.label`', source))
         if props is None or len(refs) != 1 or len(preview) != 1:
             raise ValueError('Unsupported Codex queued-message row adapter.')

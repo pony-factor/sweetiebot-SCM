@@ -16,7 +16,7 @@
     }
 
     function replaceHeading(element) {
-        if (!nearTop(element) || element.closest?.(excluded)) return;
+        if (element.closest?.(excluded) || !nearTop(element)) return;
         // A header's own text may include labels from neighboring action buttons,
         // so compare only non-interactive text nodes below.
         // A real sidebar header can contain action buttons next to its title.
@@ -32,17 +32,25 @@
         const titleText = normalize(nodes.map(part => part.nodeValue).join(''));
         if (titleText !== combined && titleText !== 'Codex') return;
         nodes.forEach((node, index) => {
-            node.nodeValue = index === 0 ? label : '';
+            const next = index === 0 ? label : '';
+            if (node.nodeValue !== next) node.nodeValue = next;
         });
     }
 
-    function scan() {
-        document.querySelectorAll(selectors).forEach(replaceHeading);
+    function scan(root = document) {
+        if (!root) return;
+        if (root.nodeType === 3) root = root.parentElement;
+        if (!root || root.closest?.(excluded)) return;
+        // A text update can change one part of a split heading. Inspect its
+        // closest heading as a whole, without revisiting the conversation.
+        const heading = root.closest?.(selectors);
+        if (heading) replaceHeading(heading);
+        root.querySelectorAll?.(selectors).forEach(replaceHeading);
         // Some Codex versions use a plain div for the header rather than an h1.
         // Match only the *complete* compound title near the top of the webview.
-        const root = document.body;
-        if (!root) return;
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const textRoot = root === document ? document.body : root;
+        if (!textRoot) return;
+        const walker = document.createTreeWalker(textRoot, NodeFilter.SHOW_TEXT);
         let node, count = 0;
         while ((node = walker.nextNode()) && count++ < 200) {
             if (normalize(node.nodeValue) !== combined) continue;
@@ -55,7 +63,19 @@
 
     function start() {
         scan();
-        const observer = new MutationObserver(scan);
+        const observer = new MutationObserver(records => {
+            const roots = new Set();
+            for (const record of records) {
+                if (record.type === 'characterData') roots.add(record.target);
+                else {
+                    // Removed/replaced title nodes can leave a split heading.
+                    const heading = record.target.closest?.(selectors);
+                    if (heading) roots.add(heading);
+                    for (const node of record.addedNodes) roots.add(node);
+                }
+            }
+            roots.forEach(scan);
+        });
         observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     }
 
