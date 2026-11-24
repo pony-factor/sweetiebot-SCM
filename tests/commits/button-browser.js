@@ -220,30 +220,41 @@ const css = name => fs.readFileSync(path.join(__dirname, '../../assets/workbench
     await page.mouse.up();
 
     // A clean repository renders Sync as a single native button. Its wand
-    // must share the same outline and border press feedback as Commit.
+    // must share the same inset, outline and border press feedback as Commit.
     await setup(true);
-    await page.addStyleTag({content: theme + css('picker.css') + css('outlined-buttons.css')});
+    await page.addStyleTag({content: theme + `
+      .scm-view .button-container { display: flex; padding-left: 11px; }
+      .scm-view .button-container > .monaco-button-dropdown { display: flex; flex-grow: 1; }
+    ` + css('picker.css') + css('outlined-buttons.css')});
     await page.evaluate(() => widget.setButton({ title: 'Flip & Gust' }));
     await page.evaluate(() => {
       const container = document.getElementById('actions');
       container.classList.add('scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings');
-      container.style.margin = '0';
+      container.style.removeProperty('margin');
       const wand = document.createElement('button');
       wand.className = 'scm-toolkit-settings';
       wand.textContent = '🪄';
       container.append(wand);
+      container.insertAdjacentHTML('afterend', `
+        <div class="button-container">
+          <div class="monaco-button-dropdown">
+            <button class="monaco-button">Commit</button>
+            <button class="monaco-button monaco-dropdown-button">Menu</button>
+            <button class="scm-toolkit-settings">🪄</button>
+          </div>
+        </div>
+      `);
     });
-    let compactWidth;
     for (const width of [320, 900]) {
       await page.locator('.scm-view').evaluate((node, width) => { node.style.width = width + 'px'; }, width);
       const action = await page.locator('#actions').boundingBox();
+      const commit = await page.locator('.monaco-button-dropdown').boundingBox();
       const main = await page.locator('#actions > .monaco-button').boundingBox();
       const settings = await page.locator('#actions > .scm-toolkit-settings').boundingBox();
-      assert(action.width < width, 'Sync fits its contents within the action row');
-      compactWidth ??= action.width;
-      assert.equal(action.width, compactWidth, 'Extra panel space does not widen Sync');
+      assert.equal(action.x, commit.x, 'Sync has the same leading inset as Commit');
+      assert.equal(action.width, commit.width, 'Sync has the same width as Commit');
       assert(Math.abs(settings.x + settings.width - (action.x + action.width - 1)) < 1,
-        'Settings stays at the right edge of the compact action');
+        'Settings stays at the right edge of the action');
       assert(Math.abs(main.x + main.width - settings.x) < 1, 'Settings sits immediately beside Sync');
     }
     assert.equal(await page.locator('#actions').evaluate(node => getComputedStyle(node).borderTopStyle), 'solid');

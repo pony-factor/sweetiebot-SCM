@@ -645,15 +645,14 @@
     border-bottom-right-radius: 0;
 }
 
-/* Native Sync uses a single button instead of the Commit dropdown. Give it
-   the same continuous action box so Magic Settings stays attached. */
+/* Match the Commit dropdown's inset from the native action row. Sync draws
+   its outline on the row itself, so use a margin in place of the row padding. */
 .scm-view:not(.scm-history-view) .button-container.scm-toolkit-single-action-settings {
     display: flex;
     align-items: stretch;
     box-sizing: border-box;
-    width: fit-content;
-    max-width: 100%;
     height: 28px;
+    margin-left: 11px;
     padding-inline: 0;
     border: 1px solid var(--vscode-button-border, transparent);
     border-radius: var(--vscode-cornerRadius-small, 4px);
