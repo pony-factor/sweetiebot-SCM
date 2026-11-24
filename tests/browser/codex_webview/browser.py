@@ -218,8 +218,10 @@ def run():
                   #compact-footer { container: composer-footer / inline-size; width:260px; }
                   #compact-controls { display:flex; flex-wrap:wrap; }
                   #model-row { flex-basis:100%; }
+                  [class~="[--footer-collapsed-display:none]"] { --footer-collapsed-display:none; }
                   @container composer-footer (width <= 300px) {
                     [data-composer-footer-collapse=xs] { display:none; }
+                    .native-collapsible-value { display:var(--footer-collapsed-display); }
                   }
                 </style>
                 <div id="compact-footer"><div id="compact-controls">
@@ -233,11 +235,19 @@ def run():
                 </div></div>`);
             document.getElementById('usage-value').append(document.getElementById('codex-usage-pie'));
         }""")
-        for width in (260, 640, 280):
-            page.eval_on_selector('#compact-footer', '(el, width) => el.style.width = width + "px"', width)
-            assert page.locator('#codex-usage-pie').is_visible(), width
-            assert page.locator('#permissions-label').is_visible() == (width > 300), width
-            assert page.eval_on_selector('#compact-footer', 'el => el.scrollWidth <= el.clientWidth'), width
+        for native_collapse in (False, True):
+            if native_collapse:
+                page.eval_on_selector('#compact-controls', """el => {
+                    for (const label of el.querySelectorAll('[data-composer-footer-collapse]')) {
+                        label.removeAttribute('data-composer-footer-collapse');
+                        label.className = 'native-collapsible-value [--footer-collapsed-display:none]';
+                    }
+                }""")
+            for width in (240, 640, 280):
+                page.eval_on_selector('#compact-footer', '(el, width) => el.style.width = width + "px"', width)
+                assert page.locator('#codex-usage-pie').is_visible(), (native_collapse, width)
+                assert page.locator('#permissions-label').is_visible() == (width > 300), width
+                assert page.eval_on_selector('#compact-footer', 'el => el.scrollWidth <= el.clientWidth'), width
         assert page.locator('#codex-usage-pie').bounding_box()['width'] == 12
         # The five-hour bar stays flush with the input surface, retreating from
         # right to left, and shares the pie's normal and final-ten-percent colors.

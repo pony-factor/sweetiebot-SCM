@@ -396,14 +396,17 @@ function scmToolkitKeepUsageFresh(refetch) {
 (() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
 
-    // Native narrow-footer rules hide the entire value, including our 12px pie.
-    // Keep only pie-bearing location values visible; other labels still collapse.
+    // Keep pie-bearing location values visible under both native collapse rules.
     const style = document.createElement('style');
     const localOnly = typeof scmToolkitCloudTasks === 'undefined' || !scmToolkitCloudTasks;
     style.textContent = `
       button[data-composer-navigation-target="run-location"]
       [data-composer-footer-collapse]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
         display: inline-flex !important;
+      }
+      button[data-composer-navigation-target="run-location"]
+      [class~="[--footer-collapsed-display:none]"]:has(:is(scm-toolkit-usage-pie, scm-toolkit-usage-meter)) {
+        --footer-collapsed-display: inline-flex !important;
       }
       scm-toolkit-usage-meter { display:inline-flex; align-items:center; flex:none; vertical-align:middle; }
       button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) {
