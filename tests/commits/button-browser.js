@@ -223,6 +223,7 @@ const css = name => fs.readFileSync(path.join(__dirname, '../../assets/workbench
     // must share the same outline and border press feedback as Commit.
     await setup(true);
     await page.addStyleTag({content: theme + css('picker.css') + css('outlined-buttons.css')});
+    await page.evaluate(() => widget.setButton({ title: 'Flip & Gust' }));
     await page.evaluate(() => {
       const container = document.getElementById('actions');
       container.classList.add('scm-toolkit-commit-settings', 'scm-toolkit-single-action-settings');
@@ -232,15 +233,18 @@ const css = name => fs.readFileSync(path.join(__dirname, '../../assets/workbench
       wand.textContent = '🪄';
       container.append(wand);
     });
+    let compactWidth;
     for (const width of [320, 900]) {
       await page.locator('.scm-view').evaluate((node, width) => { node.style.width = width + 'px'; }, width);
       const action = await page.locator('#actions').boundingBox();
       const main = await page.locator('#actions > .monaco-button').boundingBox();
       const settings = await page.locator('#actions > .scm-toolkit-settings').boundingBox();
-      assert.equal(action.width, width, 'Sync must fill the available action row');
+      assert(action.width < width, 'Sync fits its contents within the action row');
+      compactWidth ??= action.width;
+      assert.equal(action.width, compactWidth, 'Extra panel space does not widen Sync');
       assert(Math.abs(settings.x + settings.width - (action.x + action.width - 1)) < 1,
-        'Settings stays at the right edge of the full-width action');
-      assert(main.width > width - 40, 'The main action expands with the row');
+        'Settings stays at the right edge of the compact action');
+      assert(Math.abs(main.x + main.width - settings.x) < 1, 'Settings sits immediately beside Sync');
     }
     assert.equal(await page.locator('#actions').evaluate(node => getComputedStyle(node).borderTopStyle), 'solid');
     assert.equal(await page.locator('#actions > .monaco-button').evaluate(node => getComputedStyle(node).borderTopWidth), '0px');
