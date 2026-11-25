@@ -36,7 +36,7 @@ const PR_CROSS_REFERENCE_RULES = 'Place every GitHub pull-request, issue, and co
 async function readLudicrousMode(run = promisify(execFile)) {
   try {
     const { stdout } = await run('git',
-      ['config', '--global', '--type=bool', '--get', 'scm-toolkit.ludicrous-mode'],
+      ['config', '--global', '--type=bool', '--get', 'sweetiebot.ludicrous-mode'],
       { cwd: homedir(), timeout: 3000, encoding: 'utf8' });
     return stdout.trim() === 'true';
   } catch { return false; }

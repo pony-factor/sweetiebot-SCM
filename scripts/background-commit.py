@@ -1167,7 +1167,7 @@ def start_spellcheck(job, journal):
         return
     if state() != (job['branch'], job['sha']):
         return
-    if not core.git_config_bool('scm-toolkit.post-commit-spellcheck', False):
+    if not core.git_config_bool('sweetiebot.post-commit-spellcheck', False):
         return
     import post_commit_spellcheck as spellcheck
     if spellcheck.repository_spellcheck_disabled([]):

@@ -29,9 +29,16 @@ async function check(defaultName) {
   const repo = { rootUri: { fsPath: work } };
   assert.equal(await resolveDefaultBranch(repo), defaultName,
     'Use actual remote HEAD even when main also exists');
-  git(work, 'config', '--local', 'scm-toolkit.default-branch', 'custom');
+  git(work, 'config', '--local', 'sweetiebot.default-branch', 'custom');
   assert.equal(await resolveDefaultBranch({ rootUri: { fsPath: work } }), 'custom',
     'Repository-local override takes precedence');
+  git(work, 'config', '--local', '--unset-all', 'sweetiebot.default-branch');
+  git(work, 'config', '--local', 'scm-toolkit.default-branch', 'legacy-custom');
+  assert.equal(await resolveDefaultBranch({ rootUri: { fsPath: work } }), 'legacy-custom',
+    'Older repository overrides remain effective after global migration');
+  git(work, 'config', '--local', 'sweetiebot.default-branch', 'canonical-custom');
+  assert.equal(await resolveDefaultBranch({ rootUri: { fsPath: work } }), 'canonical-custom',
+    'Canonical local overrides win when both names exist');
 }
 (async () => {
   try {

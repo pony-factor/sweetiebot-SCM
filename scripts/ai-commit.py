@@ -215,7 +215,7 @@ def hook_environment():
         if value not in directories and candidate.is_dir():
             directories.append(value)
     env['PATH'] = os.pathsep.join(directories)
-    if git_config_bool('scm-toolkit.skip-git-hooks', False):
+    if git_config_bool('sweetiebot.skip-git-hooks', False):
         count = int(env.get('GIT_CONFIG_COUNT', '0'))
         env[f'GIT_CONFIG_KEY_{count}'] = 'core.hooksPath'
         env[f'GIT_CONFIG_VALUE_{count}'] = os.devnull
@@ -260,12 +260,12 @@ def git_config_float(key: str, default: float) -> float:
 
 
 def feature_enabled() -> bool:
-    return git_config_bool("scm-toolkit.ai-commit", True)
+    return git_config_bool("sweetiebot.ai-commit", True)
 
 
 def commit_fallback_enabled() -> bool:
     """Allow a simple commit summary when Ollama cannot produce a valid one."""
-    return git_config_bool("scm-toolkit.ai-commit-fallback", True)
+    return git_config_bool("sweetiebot.ai-commit-fallback", True)
 
 
 def generation_integer_setting(key, default, maximum):
@@ -284,13 +284,13 @@ def generation_request_seconds():
     # commit prompt can exceed Ollama's default even after model preparation.
     default = 300 if coreml_backend_enabled() else GENERATION_REQUEST_SECONDS
     return generation_integer_setting(
-        'scm-toolkit.ai-commit-request-timeout-seconds', default, 900)
+        'sweetiebot.ai-commit-request-timeout-seconds', default, 900)
 
 
 def generation_attempts():
     options = GENERATION_OPTIONS.get()
     return options[1] if options else generation_integer_setting(
-        'scm-toolkit.ai-commit-attempts', MAX_GENERATION_ATTEMPTS, 10)
+        'sweetiebot.ai-commit-attempts', MAX_GENERATION_ATTEMPTS, 10)
 
 
 def generation_budget_seconds():
@@ -299,23 +299,23 @@ def generation_budget_seconds():
 
 def title_explanations_enabled() -> bool:
     """Opt in to short model-written title notes, without changing the Git message."""
-    return git_config_bool("scm-toolkit.ai-title-explanations", False)
+    return git_config_bool("sweetiebot.ai-title-explanations", False)
 
 
 def staged_whitespace_enabled() -> bool:
-    return git_config_bool("scm-toolkit.normalize-staged-whitespace", True)
+    return git_config_bool("sweetiebot.normalize-staged-whitespace", True)
 
 
 def manual_spellcheck_enabled() -> bool:
-    return git_config_bool("scm-toolkit.spellcheck-preview", False)
+    return git_config_bool("sweetiebot.spellcheck-preview", False)
 
 
 def default_branch_description_enabled() -> bool:
-    return git_config_bool("scm-toolkit.ai-default-branch-description", True)
+    return git_config_bool("sweetiebot.ai-default-branch-description", True)
 
 
 def configured_default_branch() -> str:
-    return git_config_string("scm-toolkit.default-branch", "main")
+    return git_config_string("sweetiebot.default-branch", "main")
 
 
 def current_branch() -> str:
@@ -324,7 +324,7 @@ def current_branch() -> str:
 
 def should_add_default_branch_description() -> bool:
     # Detailed style is optional on topic branches; default-branch behavior is unchanged.
-    return git_config_bool("scm-toolkit.ai-detailed-commit-style", False) or (
+    return git_config_bool("sweetiebot.ai-detailed-commit-style", False) or (
         default_branch_description_enabled()
         and current_branch() == configured_default_branch()
     )
@@ -334,22 +334,22 @@ def configured_models() -> tuple[str, str]:
     if coreml_backend_enabled():
         return (
             os.environ.get("SWEETIEBOT_ANE_MODEL") or git_config_string(
-                "scm-toolkit.ai-coreml-model", "qwen3.5-2b"),
+                "sweetiebot.ai-coreml-model", "qwen3.5-2b"),
             os.environ.get("SWEETIEBOT_ANE_LOW_MEMORY_MODEL") or git_config_string(
-                "scm-toolkit.ai-coreml-low-memory-model", "qwen3.5-0.8b"),
+                "sweetiebot.ai-coreml-low-memory-model", "qwen3.5-0.8b"),
         )
     primary = os.environ.get("SCM_TOOLKIT_AI_MODEL") or git_config_string(
-        "scm-toolkit.ai-commit-model", DEFAULT_MODEL
+        "sweetiebot.ai-commit-model", DEFAULT_MODEL
     )
     low_memory = os.environ.get("SCM_TOOLKIT_AI_LOW_MEMORY_MODEL") or git_config_string(
-        "scm-toolkit.ai-commit-low-memory-model", DEFAULT_LOW_MEMORY_MODEL
+        "sweetiebot.ai-commit-low-memory-model", DEFAULT_LOW_MEMORY_MODEL
     )
     return primary, low_memory
 
 
 def configured_spellcheck_model() -> str:
     return os.environ.get("SCM_TOOLKIT_SPELLCHECK_MODEL") or git_config_string(
-        "scm-toolkit.spellcheck-model", DEFAULT_SPELLCHECK_MODEL
+        "sweetiebot.spellcheck-model", DEFAULT_SPELLCHECK_MODEL
     )
 
 
@@ -369,7 +369,7 @@ def spellcheck_thinking_capabilities(model: str) -> tuple[str | bool, ...]:
 
 def spellcheck_thinking_options(model: str) -> dict[str, str | bool]:
     """Omit unsupported thinking controls, retaining the model default."""
-    effort = git_config_string("scm-toolkit.spellcheck-thinking-effort", "default")
+    effort = git_config_string("sweetiebot.spellcheck-thinking-effort", "default")
     if effort not in ("low", "medium", "high"):
         return {}
     supported = spellcheck_thinking_capabilities(model)
@@ -387,7 +387,7 @@ def low_memory_threshold_gib() -> float:
             return float(value)
         except ValueError:
             pass
-    return git_config_float("scm-toolkit.ai-low-memory-gib", DEFAULT_LOW_MEMORY_GIB)
+    return git_config_float("sweetiebot.ai-low-memory-gib", DEFAULT_LOW_MEMORY_GIB)
 
 
 def available_memory_bytes() -> int | None:
@@ -588,12 +588,12 @@ def manual_message_location(args: list[str]) -> tuple[int, str] | None:
 
 def draft_spelling_settings() -> tuple[str, list[str], str]:
     """Read local preferences independently of Git commit generation."""
-    style = git_config_string("scm-toolkit.draft-spellcheck-style", "spelling")
+    style = git_config_string("sweetiebot.draft-spellcheck-style", "spelling")
     if style not in ("spelling", "grammar"):
         style = "spelling"
-    vocabulary = git_config_string("scm-toolkit.draft-spellcheck-vocabulary", "")
+    vocabulary = git_config_string("sweetiebot.draft-spellcheck-vocabulary", "")
     terms = [term.strip() for term in vocabulary.splitlines() if term.strip()][:100]
-    guidance = git_config_string("scm-toolkit.draft-spellcheck-guidance", "")
+    guidance = git_config_string("sweetiebot.draft-spellcheck-guidance", "")
     return style, terms, guidance[:2000]
 
 
@@ -1257,7 +1257,7 @@ def commit_instructions_path() -> Path:
 
 
 def emoji_priority_enabled() -> bool:
-    return git_config_bool("scm-toolkit.ai-emoji-priority-rules", True)
+    return git_config_bool("sweetiebot.ai-emoji-priority-rules", True)
 
 
 def commit_instructions() -> str:
@@ -1513,7 +1513,7 @@ def emoji_for_change(title: str, files: list[str]) -> str:
 
 def configured_backends() -> tuple[str, ...]:
     preference = os.environ.get("SWEETIEBOT_AI_BACKEND") or git_config_string(
-        "scm-toolkit.ai-backend", "ollama")
+        "sweetiebot.ai-backend", "ollama")
     backends = tuple(dict.fromkeys(part.strip() for part in preference.split(",")))
     # Preserve the Ollama default for unknown legacy settings.
     return backends if backends and all(item in {"coreml", "ollama"} for item in backends) else ("ollama",)
@@ -1525,7 +1525,7 @@ def coreml_backend_enabled() -> bool:
 
 def coreml_command() -> str:
     return os.environ.get("SWEETIEBOT_ANE_COMMAND") or git_config_string(
-        "scm-toolkit.ai-coreml-command",
+        "sweetiebot.ai-coreml-command",
         "~/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane")
 
 
@@ -1546,7 +1546,7 @@ def ollama_json(path: str, payload: dict | None = None, timeout: int | None = No
             return coreml_backend.generate(coreml_command(), payload, timeout)
         raise ValueError("Core ML commit backend does not support " + path)
     base = os.environ.get("SCM_TOOLKIT_AI_OLLAMA_URL") or git_config_string(
-        "scm-toolkit.ai-ollama-url", OLLAMA_BASE
+        "sweetiebot.ai-ollama-url", OLLAMA_BASE
     )
     parsed = urlsplit(base)
     if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
@@ -2398,7 +2398,7 @@ def load_post_commit_spellcheck():
 
 
 def post_commit_spellcheck_enabled() -> bool:
-    if not git_config_bool("scm-toolkit.post-commit-spellcheck", False):
+    if not git_config_bool("sweetiebot.post-commit-spellcheck", False):
         return False
     try:
         return not load_post_commit_spellcheck().repository_spellcheck_disabled(GIT_GLOBAL_ARGS)
@@ -2449,7 +2449,7 @@ def main() -> None:
             # independent formatting preference only controls the emoji in
             # an accepted Spellcheck Changes commit, not ordinary commits or
             # manual draft titles.
-            if not git_config_bool("scm-toolkit.spellcheck-changes-emoji", True):
+            if not git_config_bool("sweetiebot.spellcheck-changes-emoji", True):
                 title = re.sub(r"^(?:" + EMOJI_PATTERN + r"\s*)+", "", title).strip()
                 if not title:
                     raise ValueError("Generated title contains no words after its emoji")

@@ -20,8 +20,8 @@ test('post-commit spellcheck toolbar reads and persists the same global Git opt-
   assert.equal(await postCommitSpellcheck('get', git), true);
   assert.equal(await postCommitSpellcheck('toggle', git), false);
   assert.deepEqual(calls.filter(args => !args.includes('--get')), [
-    ['config', '--global', 'scm-toolkit.post-commit-spellcheck', 'true'],
-    ['config', '--global', 'scm-toolkit.post-commit-spellcheck', 'false']
+    ['config', '--global', 'sweetiebot.post-commit-spellcheck', 'true'],
+    ['config', '--global', 'sweetiebot.post-commit-spellcheck', 'false']
   ]);
 });
 test('post-commit spellcheck toolbar does not mask Git config errors', async () => {
