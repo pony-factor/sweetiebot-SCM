@@ -27,6 +27,21 @@ function lindseyScript(repoRoot, folders = [], configured = process.env.LINDSEY_
   throw new Error('Lindsey Sync is not available locally. Open the lindsey-sync repository in this VS Code workspace, keep it under ~/GitHub/pony-factor or ~/GitHub, put it beside this repository, or set LINDSEY_SYNC_REPO.');
 }
 
+function checkLindseyResolver(vscode, root, env = process.env) {
+  lindseyScript(root, vscode.workspace?.workspaceFolders || [], env.LINDSEY_SYNC_REPO);
+  if (!env.LINDSEY_RESOLVE_SECRET?.trim()) {
+    throw new Error('Set LINDSEY_RESOLVE_SECRET in the VS Code environment before syncing with Lindsey.');
+  }
+  let endpoint;
+  try { endpoint = new URL(env.LINDSEY_RESOLVE_URL); } catch { /* Report invalid and missing URLs alike. */ }
+  const validProtocol = endpoint?.protocol === 'https:' || (endpoint?.protocol === 'http:'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname));
+  if (!validProtocol || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+      || endpoint.pathname !== '/resolve-conflicts') {
+    throw new Error('Set LINDSEY_RESOLVE_URL to the HTTPS /resolve-conflicts endpoint in the VS Code environment (HTTP localhost is allowed).');
+  }
+}
+
 function isConflictState(repository) {
   return Boolean(repository.state?.mergeChanges?.length);
 }
@@ -172,5 +187,5 @@ async function offerConflictRecoveryOptions(vscode, repository, propose = genera
   return undefined;
 }
 
-module.exports = { isConflictState, lindseyScript, safeRelative, inspectPreview,
+module.exports = { isConflictState, lindseyScript, checkLindseyResolver, safeRelative, inspectPreview,
   applyPreview, generatePreview, offerConflictRecoveryOptions };
