@@ -1389,10 +1389,15 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       return true;
     };
     const commitSync = async headBefore => {
+      const finalTree = await git(['write-tree']);
+      if (finalTree === await git(['rev-parse', headBefore + '^{tree}'])) {
+        // Clear a prepared merge without manufacturing an ancestry-only commit.
+        if (strategy === 'merge') await git(['merge', '--quit']);
+        return;
+      }
       if (!resolution) return commit(resolved
         ? `🛠️ Resolve conflicts syncing ${branch} to ${defaultBranch}\n\nApply reviewed Lindsey conflict resolutions and incorporate incoming ${defaultBranch} changes.`
         : publish ? message : routineCommitMessage);
-      const finalTree = await git(['write-tree']);
       const temporary = await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-sync-decisions-'));
       try {
         const isolatedGit = async (...args) => (await promisify(execFile)('git', args, {
@@ -1403,7 +1408,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           git: isolatedGit, directory: root, messageDirectory: temporary, headSha: headBefore,
           baseSha: resolution.targetSha, finalTree, conflicts: resolution.paths, decisions: resolution.decisions,
           author: publish.author, automationCommitter: publish.author, base: defaultBranch,
-          preserveMergeAncestry: strategy === 'merge', skipUnchanged: true
+          preserveMergeAncestry: strategy === 'merge'
         });
         await checkBranch();
         if (await git(['rev-parse', 'HEAD']) !== headBefore || await git(['rev-parse', target]) !== resolution.targetSha

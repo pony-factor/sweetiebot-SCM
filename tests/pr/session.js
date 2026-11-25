@@ -201,7 +201,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       const syncPrompt = await localPrompt(syncUrl);
       assert(syncPrompt.includes(syncPR.url));
       assert.match(syncPrompt, /supporting source or test files/);
-      assert.match(syncPrompt, /one commit for each file decision/);
+      assert.match(syncPrompt, /one commit per related repair category/);
       const callback = new URLSearchParams(destination.hash.slice(1)).get('return_to');
       const submit = item => fetchBeforeSync(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json'
@@ -329,7 +329,10 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert(directPrompt.includes('DIRECT WEB REPAIR'));
     assert(directPrompt.includes('Implement the selected repair directly'));
     assert(directPrompt.includes('Do not bury conflict decisions'));
-    assert(directPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
+    assert(directPrompt.includes('one explanatory commit per cohesive repair category'));
+    assert(directPrompt.includes('When synchronization has remaining nonconflicting incoming changes, append a separate sync commit containing only those changes'));
+    assert(directPrompt.includes('record incoming ancestry in the final substantive category instead'));
+    assert(directPrompt.includes('Never create an unchanged commit'));
     assert(!new URLSearchParams(new URL(embeddedUrl).hash.slice(1)).has('return_to'),'Direct web repairs have no local apply callback');
     // App-enabled web repairs launch the same branch-only executor route.
     const localOption = manualBlockerActions({ ...pr, state: 'conflict' }).find(item => item.id === 'resolve-conflicts-local');
@@ -350,7 +353,10 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     const actionRequest = JSON.parse(await fs.readFile(path.join(actionDirectory, 'request.json'), 'utf8'));
     const actionPrompt = new URLSearchParams(new URL(actionRequest.mergeUrl).hash.slice(1)).get('q');
     assert(actionPrompt.includes('LOCAL KEFANIA REPAIR'));
-    assert(actionPrompt.includes('one explanatory commit per actual conflicted file'));
+    assert(actionPrompt.includes('one explanatory decision per actual conflicted file'));
+    assert(actionPrompt.includes('shared emoji-led groupTitle'));
+    assert(actionPrompt.includes('one commit per related repair category, skipping unchanged groups'));
+    assert(actionPrompt.includes('record incoming ancestry in the final substantive category instead'));
     assert(!actionPrompt.includes('DIRECT WEB REPAIR'));
     assert(actionPrompt.includes('does not authorize merging or closing'));
     assert.equal(actionRequest.options.syncOnly, true, 'Implementation follow-ups receive only branch synchronization authority');

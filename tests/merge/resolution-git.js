@@ -244,6 +244,10 @@ const run = promisify(execFile);
     assert(pushes.every(args=>!args.some(arg => arg.startsWith('--force'))), 'Incremental updates use an ordinary push');
     assert.equal(await branch('child'), childSha, 'Append-only parent sync does not change its child branch');
     await git('--git-dir=' + remote, 'merge-base', '--is-ancestor', headSha, incremental.sha);
+    for (const commit of (await git('--git-dir=' + remote, 'rev-list', '--first-parent', headSha + '..' + incremental.sha)).split('\n').filter(Boolean)) {
+      assert.notEqual(await git('--git-dir=' + remote, 'rev-parse', commit + '^{tree}'),
+        await git('--git-dir=' + remote, 'rev-parse', commit + '^1^{tree}'), 'Every runner-created commit must change its first-parent tree');
+    }
     assert.equal(await branch('main'), baseSha);
     const progress = [];
     const result = await humanSquashMerge('owner/repo', 12, { api: dependentApi, git: localGit, getAppActor: async () => null,

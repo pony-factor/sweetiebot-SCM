@@ -59,6 +59,9 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   const verifiedTree = integratedTree ? await git('write-tree') :
     await git('rev-parse', headSha + '^{tree}');
   if (verifiedTree !== tree) throw Error('The locally verified integration tree changed.');
+  if (tree === await git('rev-parse', baseSha + '^{tree}')) {
+    return blocked('The integrated tree matches the destination; refusing an empty local merge commit.');
+  }
   onProgress('preparing-merge',{sha:headSha});
   // Use the actual local committer for signature attribution, while preserving
   // the selected PR author. Signing is preferred even if commit.gpgsign is off.
@@ -87,7 +90,8 @@ async function localAuthorMerge({ repository, number, original, headSha, baseSha
   const [name,email,committerName,committerEmail,...body]=(await git('show','-s','--format=%an%x00%ae%x00%cn%x00%ce%x00%B',sha)).split('\0');
   verifyCommit({commit:{author:{name,email},committer:{name:committerName,email:committerEmail},message:body.join('\0')}},message,commitAuthor,verification);
   if (signMerge && !/(?:^|\n)gpgsig /.test(await git('cat-file','-p',sha))) throw Error('Local merge commit is missing its configured signature; no branch was pushed.');
-  if (await git('rev-parse',sha+'^1')!==baseSha || await git('rev-parse',sha+'^2')!==headSha) throw Error('Local merge ancestry does not preserve the selected base and head.');
+  if (await git('rev-parse',sha+'^1')!==baseSha || await git('rev-parse',sha+'^2')!==headSha ||
+      await git('rev-parse',sha+'^{tree}')!==tree) throw Error('Local merge does not preserve the selected base, head and changed integration tree.');
   const changed = await checkSnapshot();
   if (changed) return blocked(changed);
   onProgress('merging',{sha,title:message.split('\n')[0]});
