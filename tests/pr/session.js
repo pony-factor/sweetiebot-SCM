@@ -156,24 +156,30 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       headSha: 'b'.repeat(40), url: 'https://github.com/pony-factor/example/pull/290' };
     const syncRepository = 'pony-factor/example';
     const syncCalls = [];
-    const syncReviews = [];
     const syncContext = { ...context, subscriptions: [] };
     const project = 'https://chatgpt.com/g/g-p-fixture/project';
     const syncHost = { ...source, ProgressLocation: { Notification: 15 },
       window: {
         withProgress: (_options, task) => task({ report() {} }),
-        async showTextDocument(document) { syncReviews.push(document); },
-        async showInformationMessage(_message, action) {
-          assert.equal(action, 'Apply and publish with Lindsey');
-          return undefined;
-        }
+        async showTextDocument() { assert.fail('Sync must not open a second review'); },
+        async showInformationMessage() { assert.fail('Sync must not ask for another approval'); }
       },
       workspace: { getConfiguration: () => ({ get: (key, fallback) =>
-        key === 'chatgptProjectUrl' ? project : fallback }), async openTextDocument(document) { return document; } },
+        key === 'chatgptProjectUrl' ? project : fallback }) },
       authentication: { async getSession() { return { accessToken: 'fixture', scopes: ['repo'] }; } },
       commands: { async executeCommand(...args) { syncCalls.push(args); } }
     };
     const fetchBeforeSync = globalThis.fetch;
+    const resolution = require('../../extension/merge/resolution');
+    const invokeBeforeSync = resolution.invokeResolutionCLI;
+    let executionCount = 0;
+    resolution.invokeResolutionCLI = async (input, snapshot) => {
+      executionCount++;
+      assert.equal(snapshot.repository, syncRepository);
+      assert.equal(input.results[0].decisions[0].path, 'fixture.js');
+      return { repository: syncRepository, results: [{ number: syncPR.number, status: 'synced',
+        unchanged: true, sha: syncPR.headSha, previousHeadSha: syncPR.headSha }] };
+    };
     globalThis.fetch = async address => {
       const endpoint = new URL(address).pathname;
       const base = { ref: syncPR.base, commit: { sha: 'a'.repeat(40) } };
@@ -195,7 +201,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       const syncPrompt = await localPrompt(syncUrl);
       assert(syncPrompt.includes(syncPR.url));
       assert.match(syncPrompt, /supporting source or test files/);
-      assert.match(syncPrompt, /maintainer reviews the result locally before Lindsey publishes/);
+      assert.match(syncPrompt, /one commit for each file decision/);
       const callback = new URLSearchParams(destination.hash.slice(1)).get('return_to');
       const submit = item => fetchBeforeSync(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json'
@@ -205,13 +211,13 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       const rejected = await submit({ operation: 'merge' });
       assert.equal(rejected.status, 400);
       assert.match((await rejected.json()).error, /merging is not authorized/);
-      const declined = await submit({ operation: 'sync', decisions: [{ path: 'fixture.js', keepBase: true,
+      const applied = await submit({ operation: 'sync', decisions: [{ path: 'fixture.js', keepBase: true,
         title: '🛠️ Retain the incoming implementation', description: 'The incoming change handles this case.' }] });
-      assert.equal(declined.status, 200);
-      assert.match((await declined.json()).results[0].reason, /was not approved/);
-      assert.equal(syncReviews.length, 1);
-      assert.match(syncReviews[0].content, /Proposed branch sync for PR #290/);
+      assert.equal(applied.status, 200);
+      assert.equal((await applied.json()).results[0].status, 'synced');
+      assert.equal(executionCount, 1);
     } finally {
+      resolution.invokeResolutionCLI = invokeBeforeSync;
       globalThis.fetch = fetchBeforeSync;
       for (const disposable of syncContext.subscriptions) disposable.dispose();
     }

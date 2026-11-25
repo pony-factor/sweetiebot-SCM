@@ -58,7 +58,7 @@ async function reviewSyncConflicts(vscode, repository, details, {
   await unchanged();
   for (;;) {
     const choice = await vscode.window.showQuickPick([
-      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Lindsey or ChatGPT prepares conflict proposals for review before the App publishes' }] : []),
+      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Resolve conflicts and sync the PR branch with the incoming base' }] : []),
       { id: 'inspect', label: '$(diff) Inspect conflict preview', description: 'Read Git conflict details; no files are changed' },
       { id: 'resolve', label: '$(tools) Start conflict resolution', description: 'Proceed to Git merge editor without auto-committing' },
       { id: 'own', label: '$(git-commit) Make my own commit first', description: 'Prefill an editable commit title and cancel this sync' },

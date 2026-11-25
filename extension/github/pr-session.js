@@ -73,35 +73,6 @@ async function launchSyncPullRequestRepair(vscode, context, root, selection, syn
   } catch (error) { handoff.dispose(); throw error; }
 }
 
-async function approveSyncPullRequestRepair(vscode, item) {
-  if (!item.patch && !item.resolutionHunks?.length && !item.repairChecks && !item.decisions?.length) return true;
-  if (item.patch) {
-    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-review-patch-'));
-    try {
-      const patch = path.join(temporary, 'proposal.patch');
-      await fs.writeFile(patch, item.patch, { mode: 0o600 });
-      await require('../merge/patch').inspectResolutionPatch(item.patch, patch, async (...args) =>
-        (await run('git', args, { cwd: temporary, timeout: 15000, maxBuffer: 1024 * 1024 })).stdout);
-    } finally { await fs.rm(temporary, { recursive: true, force: true }); }
-  }
-  const review = await vscode.workspace.openTextDocument({ language: 'plaintext', content: [
-    'Proposed branch sync for PR #' + item.number, 'Head: ' + item.headSha, 'Incoming: ' + item.baseSha,
-    item.explanation, ...item.decisions.map(file => [
-      file.path + (file.keepBase ? ' (keep incoming version)' : ''), file.title, file.description
-    ].join('\n'))
-  ].filter(Boolean).join('\n\n') });
-  await vscode.window.showTextDocument(review, { preview: false });
-  if (item.patch || item.resolutionHunks.length) {
-    const changes = await vscode.workspace.openTextDocument(item.patch
-      ? { language: 'diff', content: item.patch }
-      : { language: 'json', content: JSON.stringify(item.resolutionHunks, null, 2) });
-    await vscode.window.showTextDocument(changes, { preview: false, viewColumn: vscode.ViewColumn.Beside });
-  }
-  const apply = 'Apply and publish with Lindsey';
-  return await vscode.window.showInformationMessage(
-    'Review the PR repair and any supporting changes before Lindsey updates the PR branch.', apply) === apply;
-}
-
 async function refreshSyncedCheckout(root, { remote, head, branch }, sha) {
   const git = async (...args) => (await run('git', args, { cwd: root, timeout: 20000,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout.trim();
@@ -237,10 +208,9 @@ function localResolutionRunner(vscode, root, token, { syncOnly, reviewSync, getD
     const controller = await getDashboard?.();
     if (reviewSync) {
       for (const item of validateSyncResolution(result, snapshot)) {
-        if (item.headSha !== reviewSync.head || !await approveSyncPullRequestRepair(vscode, item)) {
+        if (item.headSha !== reviewSync.head) {
           return { repository: snapshot.repository, results: [{ number: item.number, status: 'blocked',
-            reason: item.headSha !== reviewSync.head ? 'The PR head changed. Start a fresh sync review.'
-              : 'The proposed PR repair was not approved.' }] };
+            reason: 'The PR head changed. Start a fresh sync.' }] };
         }
       }
     }

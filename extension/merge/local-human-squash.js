@@ -509,7 +509,12 @@ async function humanSquashMerge(repository, number, {
       const keptBase = new Set(decisions.filter(item => item.keepBase).map(item => item.path));
       if ([...keptBase].some(name => !conflicts.includes(name) || resolvedFiles.includes(name)) ||
           conflicts.some(name => !keptBase.has(name) && !resolvedFiles.includes(name))) {
-        throw Error('Resolve every conflicted file in the patch or explicitly keep the incoming file unchanged.');
+        const reason = 'Resolve every conflicted file in the patch or explicitly keep the incoming file unchanged.';
+        if (operation === 'sync') {
+          return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
+            conflictPaths: conflicts, reason };
+        }
+        throw Error(reason);
       }
       if (operation === 'sync') supportingDecisionFiles = resolvedFiles.filter(name => !conflicts.includes(name));
       if (decisions.some(item => !conflicts.includes(item.path) && !supportingDecisionFiles.includes(item.path))) {
