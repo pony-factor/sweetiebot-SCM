@@ -168,6 +168,53 @@ async function run() {
     };
     assert.equal(await webPreview(), undefined);
     assert(git('ls-files', '-u'), 'ChatGPT review does not stage the conflict');
+    // The complete ChatGPT handoff, preview, and application must support
+    // more than eight conflicted files without staging them.
+    const names = ['file.txt', ...Array.from({ length: 8 }, (_, i) => 'file-' + i + '.txt')];
+    for (const name of names.slice(1)) {
+      fs.writeFileSync(path.join(root, name), untouched + diff3);
+      execFileSync('git', ['update-index', '--index-info'], {
+        cwd: root, input: index.replaceAll('file.txt', name)
+      });
+    }
+    const reviewed = [];
+    webUI.commands.executeCommand = async (command, value, candidatePath) => {
+      if (command === 'vscode.diff') {
+        reviewed.push(path.basename(value));
+        assert.equal(fs.readFileSync(candidatePath, 'utf8'), untouched + 'combined implementation\n');
+        return;
+      }
+      assert.equal(command, 'workbench.action.browser.open');
+      const callback = new URLSearchParams(new URL(value.url).hash.slice(1)).get('return_to');
+      const { prompt } = await (await fetch(callback + '/prompt')).json();
+      const evidence = JSON.parse(prompt.slice(prompt.lastIndexOf('\n\n') + 2));
+      assert.deepEqual(evidence.files.map(file => file.path).sort(), [...names].sort());
+      const proposal = {
+        headSha: base, baseSha: details.target,
+        resolutionHunks: evidence.files.map(file => ({
+          path: file.path, hunks: [{ index: 0, choice: 'custom', resolved: 'combined implementation\n' }]
+        })),
+        decisions: evidence.files.map(file => ({
+          path: file.path, title: '🛠️ Keep both changes', description: 'Both sides add an independent line.'
+        }))
+      };
+      const post = result => fetch(callback, {
+        method: 'POST', headers: { Origin: new URL(callback).origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: 1, repository, results: [result] })
+      });
+      assert.equal((await post({ ...proposal, resolutionHunks: proposal.resolutionHunks.slice(1) })).status, 400);
+      assert.equal((await post({ ...proposal, decisions: proposal.decisions.slice(1) })).status, 400);
+      assert.deepEqual(await (await post(proposal)).json(), { syncPreview: true });
+    };
+    approve = true;
+    const multiple = await webPreview();
+    assert.deepEqual(reviewed.sort(), [...names].sort());
+    assert.deepEqual(multiple.files.map(file => file.path).sort(), [...names].sort());
+    assert.equal(multiple.decisions.length, names.length);
+    for (const name of names) {
+      assert.equal(fs.readFileSync(path.join(root, name), 'utf8'), untouched + 'combined implementation\n');
+      assert(git('ls-files', '-u', '--', name), 'Review must not stage ' + name);
+    }
     const failedPreview = stderr => generatePreview(syncUI, mockRepo, {
       ...previewOptions, run: async () => { throw Object.assign(new Error('Command failed'), { stderr }); }
     });

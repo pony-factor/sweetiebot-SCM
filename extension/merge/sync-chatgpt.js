@@ -29,9 +29,11 @@ async function readConflicts(root) {
     if (!stages.has(name)) stages.set(name, new Set());
     stages.get(name).add(stage);
   }
-  if (!stages.size || stages.size > 8 || [...stages.values()].some(set => !set.has('2') || !set.has('3'))) {
-    throw Error('ChatGPT conflict review supports up to eight files with content on both sides of the merge.');
+  if (!stages.size || [...stages.values()].some(set => !set.has('2') || !set.has('3'))) {
+    throw Error('ChatGPT conflict review requires conflicted files with content on both sides of the merge.');
   }
+  // Match the shared resolution-hunk and decision validators.
+  if (stages.size > 512) throw Error('ChatGPT conflict review exceeds the 512-file resolution protocol limit.');
   const realRoot = await fs.realpath(root);
   const files = new Map();
   for (const name of stages.keys()) {
