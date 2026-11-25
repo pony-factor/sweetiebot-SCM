@@ -108,6 +108,21 @@ function fixture() {
     await moveRepositoryEditors(aliased.vscode, actual, destination);
     assert.deepEqual(aliased.closed, [aliased.text]);
     assert.equal(aliased.calls[0][1].fsPath, path.join(destination, 'new', 'draft.md'));
+
+    const active = path.join(temporary, 'active');
+    await fs.mkdir(active);
+    await fs.writeFile(path.join(active, 'file.md'), '');
+    await fs.writeFile(path.join(active, 'dirty.md'), '');
+    const rerouted = fixture();
+    rerouted.text.input.uri = file(path.join(actual, 'file.md'));
+    const unsaved = { isDirty: true, input: { uri: file(path.join(actual, 'dirty.md')) } };
+    const missing = { input: { uri: file(path.join(actual, 'missing.md')) } };
+    rerouted.group.tabs.push(unsaved, missing);
+    await moveRepositoryEditors(rerouted.vscode, actual, active, { existingOnly: true });
+    assert.deepEqual(rerouted.closed, [rerouted.text]);
+    assert.equal(rerouted.calls[0][1].fsPath, path.join(active, 'file.md'));
+    assert(rerouted.group.tabs.includes(unsaved));
+    assert(rerouted.group.tabs.includes(missing));
   } finally {
     await fs.rm(temporary, { recursive: true, force: true });
   }

@@ -365,7 +365,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Show only the primary Git checkout in each window's Source Control."
+          "description": "Use the window's primary Git checkout for Source Control, Codex, and files opened from linked worktrees."
         },
         "sweetiebot.automaticWorkspaceCleanup": {
           "type": "boolean",
