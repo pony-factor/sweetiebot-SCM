@@ -64,13 +64,17 @@ and use **Check comment permissions** to verify the saved installation. This
 check covers Issues and Pull requests write access alongside the existing
 read-only checks, and does not post a comment, submit a review, or merge code.
 
-**Resolve and sync with Lindsey** uses the same saved GitHub App key. Sweetiebot
-discovers the resolver from the App's HTTPS `/webhook` URL and authenticates
-before starting the merge. The resolver verifies the signed request and the
-publishing repository's installation before processing the conflicting files.
-This requires a compatible local `lindsey-sync` checkout and server deployment.
-If the server and Sweetiebot use different keys for the App, the server must
-also trust the public key corresponding to the saved Sweetiebot key.
+**Resolve and sync with Lindsey** offers the full PR repair in ChatGPT when an
+open pull request matches the branch and incoming revision. The review
+can include related source or tests needed for the fix. Lindsey publishes to the
+PR branch after you approve the proposed edits.
+
+For other branches, Sweetiebot discovers the resolver from the App's HTTPS
+`/webhook` URL and authenticates with the saved GitHub App key. The resolver
+verifies the signed request and the publishing repository's installation. This
+requires a compatible local `lindsey-sync` checkout and server deployment. If
+the server and Sweetiebot use different keys for the App, the server must also
+trust the public key corresponding to the saved Sweetiebot key.
 
 If the resolver is unavailable, Sweetiebot offers to send the textual conflict
 hunks, their common-ancestor versions, and nearby code to ChatGPT in the

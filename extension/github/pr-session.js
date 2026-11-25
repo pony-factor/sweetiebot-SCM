@@ -45,6 +45,60 @@ async function launchBlockerWebSession(vscode, context, root, url, number, selec
     { sessionTitle: `Resolve #${number} [${path.basename(root.fsPath)}]`, ...(selection ? { syncOnly: true } : {}) }, url, selection);
 }
 
+async function launchSyncPullRequestRepair(vscode, context, root, selection, sync) {
+  const [pr] = selection.pullRequests;
+  const { chatgptMergeUrl } = require('../codex/chatgpt-project');
+  const project = vscode.workspace.getConfiguration('sweetiebot').get('chatgptProjectUrl', '');
+  const url = chatgptMergeUrl([
+    'Investigate the full pull request ' + pr.url + ' and current upstream using read-only repository tools.',
+    'Compare both branches with their common ancestor. Inspect related callers and tests to understand each change. Use a complete patch if the integration needs supporting source or tests outside the conflicts.',
+    'Use the local branch-only handoff. Do not write to GitHub, merge or close the PR. The maintainer reviews your proposal before Lindsey publishes it.'
+  ].join('\n\n'), project);
+  return launchSession(vscode, context, root, {
+    sessionTitle: `Sync #${pr.number} [${path.basename(root.fsPath)}]`,
+    syncOnly: true, reviewSync: { remote: sync.publishingRemote, head: pr.headSha, branch: pr.head }
+  }, url, selection);
+}
+
+async function approveSyncPullRequestRepair(vscode, item) {
+  if (!item.patch && !item.resolutionHunks?.length && !item.repairChecks && !item.decisions?.length) return true;
+  if (item.patch) {
+    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-review-patch-'));
+    try {
+      const patch = path.join(temporary, 'proposal.patch');
+      await fs.writeFile(patch, item.patch, { mode: 0o600 });
+      const { stdout } = await run('git', ['apply', '--numstat', '-z', '--', patch], {
+        cwd: temporary, timeout: 15000, maxBuffer: 1024 * 1024
+      });
+      require('../merge/patch').patchPaths(item.patch, stdout);
+    } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+  }
+  const review = await vscode.workspace.openTextDocument({ language: 'plaintext', content: [
+    'Proposed branch sync for PR #' + item.number, 'Head: ' + item.headSha, 'Incoming: ' + item.baseSha,
+    item.explanation, ...item.decisions.map(file => [file.path, file.title, file.description].join('\n'))
+  ].filter(Boolean).join('\n\n') });
+  await vscode.window.showTextDocument(review, { preview: false });
+  const changes = await vscode.workspace.openTextDocument(item.patch
+    ? { language: 'diff', content: item.patch }
+    : { language: 'json', content: JSON.stringify(item.resolutionHunks, null, 2) });
+  await vscode.window.showTextDocument(changes, { preview: false, viewColumn: vscode.ViewColumn.Beside });
+  const apply = 'Apply and publish with Lindsey';
+  return await vscode.window.showInformationMessage(
+    'Review the PR repair and any supporting changes before Lindsey updates the PR branch.', apply) === apply;
+}
+
+async function refreshSyncedCheckout(root, { remote, head, branch }, sha) {
+  const git = async (...args) => (await run('git', args, { cwd: root, timeout: 20000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })).stdout.trim();
+  const unchanged = async () => await git('symbolic-ref', '--short', 'HEAD') === branch &&
+    await git('rev-parse', 'HEAD') === head && !await git('status', '--porcelain');
+  if (!remote || !/^[a-f0-9]{40}$/i.test(sha || '') || !await unchanged()) return false;
+  await git('fetch', '--no-tags', '--', remote, 'refs/heads/' + branch);
+  if (await git('rev-parse', 'FETCH_HEAD') !== sha || !await unchanged()) return false;
+  await git('merge', '--ff-only', sha);
+  return true;
+}
+
 async function launchBlockerCodexSession(vscode, context, root, task) {
   return launchSession(vscode, context, root,
     { sessionTitle: `Codex #${task.number} [${task.head}]`,
@@ -379,8 +433,24 @@ async function resumePRSession(vscode, context) {
         { numbers: result.results.map(item => item.number), branchOnly: input.options?.syncOnly === true ||
           result.results.every(item=>item.operation==='sync') }, async report => {
         const controller = await resumeMergeDashboard(vscode, directory, context);
+        if (input.options?.reviewSync) {
+          const items = require('../merge/resolution').validateSyncResolution(result, snapshot);
+          for (const item of items) {
+            if (item.headSha !== input.options.reviewSync.head || !await approveSyncPullRequestRepair(vscode, item)) {
+              return { repository: snapshot.repository, results: [{ number: item.number, status: 'blocked',
+                reason: item.headSha !== input.options.reviewSync.head ? 'The PR head changed. Start a fresh sync review.'
+                  : 'The proposed PR repair was not approved.' }] };
+            }
+          }
+        }
         const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
           event => { report(event); controller?.recordLocalProgress?.(event); });
+        if (input.options?.reviewSync) {
+          const synced = executed.results.find(item => item.status === 'synced' && !item.unchanged);
+          if (synced && !await refreshSyncedCheckout(root.fsPath, input.options.reviewSync, synced.sha).catch(() => false)) {
+            void vscode.window.showInformationMessage('Lindsey published the PR repair. The original checkout still needs to pull the updated branch.');
+          }
+        }
         const summaryErrors = await mergePublications.record(snapshot, result, executed);
         return { ...executed, summaryErrors };
       }), require('../merge/runner-layout').executionResources(result, snapshot, input.options?.syncOnly === true));
@@ -544,4 +614,4 @@ async function closePRSession(vscode, context) {
 }
 
 module.exports = { sessionDirectory, launchPRSession, launchMergeSession, launchBlockerWebSession,
-  launchBlockerCodexSession, resumePRSession, closePRSession, publishOptionalMergeSummaries };
+  launchBlockerCodexSession, launchSyncPullRequestRepair, resumePRSession, closePRSession, publishOptionalMergeSummaries };

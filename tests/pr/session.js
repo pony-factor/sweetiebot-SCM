@@ -17,7 +17,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { launchPRSession, launchMergeSession, resumePRSession, sessionDirectory, closePRSession,
-  publishOptionalMergeSummaries, launchBlockerCodexSession } = require('../../extension/github/pr-session');
+  publishOptionalMergeSummaries, launchBlockerCodexSession,
+  launchSyncPullRequestRepair } = require('../../extension/github/pr-session');
 const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActions } = require('../../extension/merge/blocker-actions');
 
 (async () => {
@@ -151,6 +152,17 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert.equal(mergeCalls.length, 4, 'Reloading never resubmits a bulk merge');
     await launchMergeSession(source, context, root, mergeUrl);
     assert.notEqual(calls.at(-1)[1].fsPath, mergeWorkspace.fsPath, 'Each merge request owns an independent workspace');
+    const syncPR = { number: 290, title: 'Branch repair fixture', head: 'topic', base: 'main',
+      headSha: 'b'.repeat(40), url: 'https://github.com/pony-factor/example/pull/290' };
+    assert.equal(await launchSyncPullRequestRepair(source, context, root,
+      { repository: 'pony-factor/example', pullRequests: [syncPR] }, { publishingRemote: 'origin' }), true);
+    const syncDirectory = path.dirname(calls.at(-1)[1].fsPath);
+    const syncRequest = JSON.parse(await fs.readFile(path.join(syncDirectory, 'request.json'), 'utf8'));
+    assert.equal(syncRequest.options.syncOnly, true);
+    assert.deepEqual(syncRequest.options.reviewSync, { remote: 'origin', head: syncPR.headSha, branch: syncPR.head });
+    const syncPrompt = new URLSearchParams(new URL(syncRequest.mergeUrl).hash.slice(1)).get('q');
+    assert(syncPrompt.includes(syncPR.url));
+    assert.match(syncPrompt, /supporting source or tests/);
 
     // A selected batch persists only its public PR snapshot in the dedicated
     // workspace and restores a live dashboard without resubmitting ChatGPT.

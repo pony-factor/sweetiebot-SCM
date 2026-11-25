@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
-  githubRepository, reviewSyncConflicts, reportBody,
+  githubRepository, findSyncPullRequest, reviewSyncConflicts, reportBody,
   queueSyncReport, publishSyncReports
 } = require('../../../extension/merge/sync-review');
 
@@ -145,6 +145,36 @@ async function run() {
     const browser = await reviewSyncConflicts(vscode, repository, lindsey, fallback);
     assert.equal(browser.browser, true);
     assert.equal(await browser.lindsey(root, 'preview'), 'preview');
+    const repoName = lindsey.publishingRepository;
+    const pr = { number: 290, title: 'Integration fixture', state: 'open',
+      html_url: 'https://github.com/' + repoName + '/pull/290',
+      head: { ref: 'topic', sha, repo: { full_name: repoName } },
+      base: { ref: 'main', sha: target, repo: { full_name: repoName } } };
+    const selection = await findSyncPullRequest(lindsey, async endpoint => {
+      assert.match(endpoint, /pulls\?state=open&head=owner%3Atopic&base=main/);
+      return [pr, { ...pr, draft: true }, { ...pr, head: { ...pr.head, sha: before } }];
+    });
+    assert.equal(selection.pullRequests[0].number, pr.number);
+    assert.equal(await findSyncPullRequest(lindsey, async () => [{ ...pr, base: { ...pr.base, sha: before } }]), undefined);
+    assert.equal(await findSyncPullRequest(lindsey, async () => [pr, pr]), undefined);
+    vscode.window.showWarningMessage = async (_message, { modal, detail }, action) => {
+      assert.equal(modal, true);
+      assert.match(detail, /PR #290.*related source and tests/);
+      return action;
+    };
+    choices = ['lindsey'];
+    let launched = 0;
+    assert.equal(await reviewSyncConflicts(vscode, repository, lindsey, {
+      ...fallback, findPullRequest: async () => selection,
+      launchPullRequestRepair: async (uri, selected, sync) => {
+        launched++;
+        assert.equal(uri.fsPath, root);
+        assert.equal(selected, selection);
+        assert.equal(sync, lindsey);
+      }
+    }), false);
+    assert.equal(launched, 1);
+    assert.equal(git('status', '--porcelain'), '', 'The PR repair owns a separate integration and leaves the local checkout ready');
     choices = ['lindsey'];
     const prepare = () => {};
     assert.deepEqual(await reviewSyncConflicts(vscode, repository, lindsey, {

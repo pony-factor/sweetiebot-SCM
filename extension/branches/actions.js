@@ -1322,7 +1322,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       const targetSha = await git(['rev-parse', target]);
       const approved = await reviewConflicts(repository, {
         branch, defaultBranch, remote, strategy, targetRef: target, head: headBefore, target: targetSha,
-        publishingRepository: publish?.repository
+        publishingRepository: publish?.repository, publishingRemote
       });
       if (!approved) return false;
       conflictChoice = approved;
@@ -1613,7 +1613,10 @@ function registerBranchCommands(vscode, context) {
               } : {})
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
-              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
+              reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details, {
+                launchPullRequestRepair: (root, selection, sync) =>
+                  require('../github/pr-session').launchSyncPullRequestRepair(vscode, context, root, selection, sync)
+              }),
               resolveConflicts: async (repo, lindsey) => {
                 try { return await generatePreview(vscode, repo, { sync: true, lindsey }); }
                 catch (error) {

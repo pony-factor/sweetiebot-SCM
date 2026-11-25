@@ -18,8 +18,27 @@ function githubRepository(url) {
   const found = String(url || '').match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
   return found ? found[1] + '/' + found[2] : null;
 }
+
+async function findSyncPullRequest(details, api = githubApi) {
+  const { publishingRepository: repo, branch, defaultBranch, head, target } = details;
+  const query = new URLSearchParams({ state: 'open', head: repo.split('/')[0] + ':' + branch,
+    base: defaultBranch, per_page: '100' });
+  const pulls = await api('repos/' + repo + '/pulls?' + query);
+  const matching = pulls.filter(pr => pr.state === 'open' && !pr.draft && !pr.merged &&
+    pr.head?.repo?.full_name === repo && pr.head.ref === branch && pr.head.sha === head &&
+    pr.base?.repo?.full_name === repo && pr.base.ref === defaultBranch && pr.base.sha === target &&
+    Number.isSafeInteger(pr.number) && pr.number > 0 && pr.title &&
+    pr.html_url === 'https://github.com/' + repo + '/pull/' + pr.number);
+  if (matching.length !== 1) return undefined;
+  const pr = matching[0];
+  return { repository: repo, pullRequests: [
+    { number: pr.number, title: pr.title, url: pr.html_url, head: branch, headSha: head, base: defaultBranch }
+  ] };
+}
+
 async function reviewSyncConflicts(vscode, repository, details, {
-  connect = checkLindseyResolver, prepareInChatGPT = prepareChatGPTSyncPreview
+  connect = checkLindseyResolver, prepareInChatGPT = prepareChatGPTSyncPreview,
+  launchPullRequestRepair, findPullRequest = findSyncPullRequest
 } = {}) {
   const { branch, defaultBranch, remote, head, target, strategy } = details;
   const root = repository.rootUri?.fsPath;
@@ -46,6 +65,21 @@ async function reviewSyncConflicts(vscode, repository, details, {
     if (!choice || choice.id === 'cancel') return false;
     await unchanged();
     if (choice.id === 'lindsey') {
+      const selection = launchPullRequestRepair
+        ? await findPullRequest(details).catch(() => undefined) : undefined;
+      if (selection) {
+        const pr = selection.pullRequests[0];
+        const repair = 'Open PR repair in ChatGPT';
+        const approved = await vscode.window.showWarningMessage(
+          'Review the full pull request with ChatGPT?', { modal: true,
+            detail: 'ChatGPT can inspect PR #' + pr.number + ', the current base, and related source and tests. '
+              + 'Review the proposed edits before Lindsey publishes the file decisions and syncs ' + branch
+              + ' with upstream merge ancestry.' }, repair);
+        if (approved !== repair) continue;
+        await unchanged();
+        await launchPullRequestRepair(repository.rootUri, selection, details);
+        return false;
+      }
       try {
         return { lindsey: await connect(vscode, root, details.publishingRepository) };
       } catch (error) {
@@ -202,5 +236,5 @@ function registerSyncReportPublisher(vscode, context) {
   context.subscriptions.push({ dispose() { disposed = true; clearInterval(timer); } });
   void poll().catch(() => {});
 }
-module.exports = { githubRepository, reviewSyncConflicts, reportBody,
+module.exports = { githubRepository, findSyncPullRequest, reviewSyncConflicts, reportBody,
   queueSyncReport, publishSyncReports, registerSyncReportPublisher };
