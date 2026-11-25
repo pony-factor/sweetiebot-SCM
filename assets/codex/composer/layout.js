@@ -75,14 +75,18 @@
     while (candidate.parentElement && candidate.parentElement !== footer
       && footer.contains(candidate.parentElement)) candidate = candidate.parentElement;
     // Native action groups can contain both alignment groups. Expose their
-    // children to the footer flex layout without moving React-owned nodes.
+    // slots to the footer while retaining each control's own wrapper.
     if (candidate !== node && candidate.querySelectorAll("button").length > 1) {
-      for (let parent = node.parentElement; parent && parent !== footer;
+      let control = node;
+      while (control.parentElement !== footer && control.parentElement.querySelectorAll("button").length === 1) {
+        control = control.parentElement;
+      }
+      for (let parent = control.parentElement; parent && parent !== footer;
         parent = parent.parentElement) {
         if (!parent.classList.contains("scm-toolkit-layout-group"))
           parent.classList.add("scm-toolkit-layout-group");
       }
-      return node;
+      return control;
     }
     return candidate;
   }
