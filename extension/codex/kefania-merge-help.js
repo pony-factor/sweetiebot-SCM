@@ -28,7 +28,7 @@ async function openKefaniaMergeHelp(vscode, context, rootUri, repository, publis
   start(vscode, { repository, pullRequests: [{
     number: pr.number, title: pr.title, url,
     head: pr.head.ref, base: pr.base.ref, headSha: pr.head.sha
-  }] }, auth.accessToken, { context, rootUri });
+  }] }, auth.accessToken, { context, rootUri, refreshOnOpen: true });
   return true;
 }
 

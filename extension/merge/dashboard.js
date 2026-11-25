@@ -7,12 +7,14 @@ const { parseReportOptions, stripReportOptions, blockerOptions, manualBlockerAct
 const { createReactionChoices } = require('./reaction-choices');
 const { createMergeDashboardPersistence } = require('./dashboard-persistence');
 const { deferredCiRepairCandidate, deferredConflictRepairCandidate } = require('./auto-ci-repair');
+const { describeMergeChecks, readMergeChecks } = require('./checks');
 
 const REPORT_MARKER = '<!-- sweetiebot-merge-report -->';
 const REVIEW_MARKER = '<!-- sweetiebot-merge-review -->';
 const SHA = /^[0-9a-f]{40,64}$/i;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const TIMELINE_MODES = ['hidden', 'relative', 'clock'];
+const CHECKABLE_MERGE_STATES = new Set(['blocked', 'unstable']);
 const ROUTINE_BATCH_PHASES = new Set(['verifying', 'reviewing', 'applying', 'refreshing']);
 const ROUTINE_LOCAL_STAGES = new Set([
   'preparing', 'message-prepared', 'integrating', 'applying-resolution',
@@ -169,13 +171,12 @@ function mergePhase(pr, previous, checkResults = null) {
   if (pr.state !== 'open') return 'blocked';
   if (pr.mergeable_state === 'dirty' || pr.mergeable === false) return 'conflict';
   if (previous.review) return 'review';
-  if (pr.mergeable_state === 'unstable') {
+  if (CHECKABLE_MERGE_STATES.has(pr.mergeable_state)) {
     if (checkResults?.state === 'pending') return 'checks-pending';
     if (checkResults?.state === 'failed') return 'checks';
-    // Do not claim a check failed when the check API cannot confirm one.
+    // GitHub can also block an open PR for reviews or repository rules.
     return 'blocked';
   }
-  if (pr.mergeable_state === 'blocked') return 'blocked';
   if (previous.sawConflict && pr.mergeable === true && pr.head?.sha !== previous.originalHead) {
     return 'resolved';
   }
@@ -292,7 +293,7 @@ function postedReviewActivity(notes) {
 
 // Observe GitHub state and dispatch explicit user decisions. Never infer
 // successful conflict resolution from an AI assertion or stale snapshot.
-function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch,
+function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalThis.fetch, refreshOnOpen = false,
   initialRateLimit, intervalMs, setTimer = setInterval, clearTimer = clearInterval,
   context, rootUri, launchAction = launchBlockerAction, onRefresh = async () => {}, onFocusWorker = async () => {}, onViewportChange = async () => {}, onClose = () => {}, viewColumn = vscode.ViewColumn?.Two || 2 } = {}) {
   const selection = validateSelection(rawSelection);
@@ -539,19 +540,19 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       item.inlineReviewComments = normalizeInlineReviewComments(notes.inlineComments);
       item.analysis = notes.analysis;
     }
-    // GitHub's `unstable` mergeability is not proof of failed CI. Check the
-    // current head before distinguishing unfinished checks from failures.
+    // GitHub can report `blocked` for a failed required check. Check the
+    // current head to distinguish CI failures from other merge restrictions.
     let checkResults = null;
     if (info.state === 'open' && !info.merged && !info.merged_at &&
         info.mergeable !== false && !item.review &&
-        info.mergeable_state === 'unstable' && SHA.test(info.head?.sha || '')) {
+        CHECKABLE_MERGE_STATES.has(info.mergeable_state) && SHA.test(info.head?.sha || '')) {
       const prefix = 'repos/' + selection.repository;
       const checkApi = endpoint => {
         if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');
         return githubGet(readFetch, token, selection.repository, endpoint.slice(prefix.length));
       };
-      checkResults = await require('./checks').readMergeChecks(
-        checkApi, selection.repository, info.head.sha, { expectChecks: true });
+      checkResults = await readMergeChecks(checkApi, selection.repository, info.head.sha,
+        { expectChecks: info.mergeable_state === 'unstable' });
     }
     const next = mergePhase(info, item, checkResults);
     item.state = next;
@@ -572,9 +573,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       review: 'Human review required',
       queued: 'GitHub reports the pull request is queued',
       'checks-pending': 'PR is open; checks are queued or in progress',
-      checks: 'PR is open; one or more checks failed',
+      checks: checkResults?.state === 'failed' ? describeMergeChecks(checkResults) : 'PR is open; one or more checks failed',
       blocked: info.state !== 'open' ? 'GitHub PR state is unavailable; merging is blocked'
-        : checkResults?.state === 'passed' ? 'Checks passed; waiting for GitHub to clear its merge restriction'
+        : checkResults?.state === 'passed' && checkResults.hasChecks ? 'Checks passed; GitHub is still blocking the merge'
         : 'PR is open; merging is blocked',
       updated: 'PR head differs from the selected snapshot',
       waiting: 'GitHub reports the PR is open; awaiting merge'
@@ -925,7 +926,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
     onClose();
   });
   publish();
-  void refresh();
+  void refresh({ force: refreshOnOpen });
   return { panel, refresh, selection, flushLocalState: () => persistence.flush(), recordLocalProgress(event) {
     const pr = byNumber.get(event?.number);
     if (!pr) return;
