@@ -501,60 +501,21 @@ async function resumePRSession(vscode, context) {
     }
     if (selection) {
       const auth = await require('./session').githubSession(vscode);
-      const { invokeResolutionCLI } = require('../merge/resolution');
-      const { githubGet } = require('../merge/dashboard');
-      // Local handoff verification uses the same human GitHub session as Git.
-      const readFetch = globalThis.fetch;
-      const prefix = 'repos/' + selection.repository;
+      const syncOnly = input.options?.syncOnly === true;
+      const reviewSync = input.options?.reviewSync;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
-      const runLocal = (result, snapshot) => queueLocalExecution(() => require('../merge/progress').withMergeProgress(vscode,
-        { numbers: result.results.map(item => item.number), branchOnly: input.options?.syncOnly === true ||
-          result.results.every(item=>item.operation==='sync') }, async report => {
-        const controller = await resumeMergeDashboard(vscode, directory, context);
-        if (input.options?.reviewSync) {
-          const items = require('../merge/resolution').validateSyncResolution(result, snapshot);
-          for (const item of items) {
-            if (item.headSha !== input.options.reviewSync.head || !await approveSyncPullRequestRepair(vscode, item)) {
-              return { repository: snapshot.repository, results: [{ number: item.number, status: 'blocked',
-                reason: item.headSha !== input.options.reviewSync.head ? 'The PR head changed. Start a fresh sync review.'
-                  : 'The proposed PR repair was not approved.' }] };
-            }
-          }
-        }
-        const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
-          event => { report(event); controller?.recordLocalProgress?.(event); });
-        if (input.options?.reviewSync) {
-          const synced = executed.results.find(item => item.status === 'synced' && !item.unchanged);
-          if (synced && !await refreshSyncedCheckout(root.fsPath, input.options.reviewSync, synced.sha).catch(() => false)) {
-            void vscode.window.showInformationMessage('Lindsey published the PR repair. The original checkout still needs to pull the updated branch.');
-          }
-        }
-        const summaryErrors = await mergePublications.record(snapshot, result, executed);
-        return { ...executed, summaryErrors };
-      }), require('../merge/runner-layout').executionResources(result, snapshot, input.options?.syncOnly === true));
-      if (!input.options?.syncOnly) {
+      const api = mergeReadAPI(selection.repository, auth.accessToken);
+      const runLocal = localResolutionRunner(vscode, root, auth.accessToken, {
+        syncOnly, reviewSync, getDashboard: () => resumeMergeDashboard(vscode, directory, context),
+        recordPublication: (...args) => mergePublications.record(...args)
+      });
+      if (!syncOnly) {
         activeRepairRuntime?.dispose();
-        activeRepairRuntime=createBulkRepairRuntime(vscode,context,root,selection,endpoint=>{
-          if (!endpoint.startsWith(prefix+'/')) throw Error('Repair API request is outside the selected repository.');
-          return githubGet(readFetch,auth.accessToken,selection.repository,endpoint.slice(prefix.length));
-        },runLocal);
+        activeRepairRuntime = createBulkRepairRuntime(vscode, context, root, selection, api, runLocal);
       }
-      if (input.options?.syncOnly) {
-        handoff = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
-          title: 'Preparing Lindsey PR fix ' + selection.pullRequests.map(pr => '#' + pr.number).join(', '), cancellable: false
-        }, progress => require('../merge/batch').createMergeBatch(selection, {
-          persistentHandoffs:true,
-          onProgress: update => progress.report(update),
-          branchOnly: true,
-          fullSyncRepair: Boolean(input.options.reviewSync),
-          api: endpoint => {
-            if (!endpoint.startsWith(prefix + '/')) throw Error('Repair API request is outside the selected repository.');
-            return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
-          },
-          destination: url.origin + url.pathname,
-          makePrompt: () => initialPrompt + '\n\n' + require('../merge/review-policy').statusUpdateInstructions(
-            vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true),
-          execute: runLocal,
+      if (syncOnly) {
+        handoff = await prepareBranchRepair(vscode, selection, url, {
+          reviewSync, api, execute: runLocal,
           onResult: async result => {
             const controller = await resumeMergeDashboard(vscode, directory, context);
             controller?.recordLocalResult?.(result);
@@ -564,7 +525,7 @@ async function resumePRSession(vscode, context) {
             mergeDashboardController?.recordBatchState?.(state);
             require('../merge/session-completion').updateMergeSessionCompletion(vscode, selection, state);
           }
-        }));
+        });
       } else {
       const blockerReports = {};
       const keepAwake = require('../merge/keep-awake').createMergeKeepAwake();
@@ -579,10 +540,7 @@ async function resumePRSession(vscode, context) {
       const startBatch = progress => require('../merge/parallel-merge-batch').createParallelMergeBatch(selection, {
         persistentHandoffs:true,
         onProgress: update => progress?.report(update),
-        api: endpoint => {
-          if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
-          return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
-        },
+        api,
         destination: url.origin + url.pathname,
         makePrompt: snapshot => require('./pull-request-batch').batchMergePrompt({
           repositoryUrl: 'https://github.com/' + snapshot.repository,
