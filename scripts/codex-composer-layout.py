@@ -85,7 +85,7 @@ def render_control(current):
             '<div class="codex-layout-head"><strong>Codex composer layout</strong>'
             '<button type="button" id="codex-layout-reset">Reset</button></div>'
             '<small>Drag icons to reorder or choose a control and placement below. '
-            'Drop controls below to hide them; the message input stays left.</small>'
+            'Drop controls below to hide them.</small>'
             '<div class="codex-layout-pickers"><label for="codex-layout-control-picker">Control'
             '<select id="codex-layout-control-picker" aria-label="Choose a composer control">' +
             "".join('<option value="' + key + '">' + html.escape(label) + '</option>'
@@ -110,12 +110,14 @@ def render_control(current):
             'data-codex-layout-zone="hidden">' + "".join(map(item, layout["hidden"])) + '</div>'
             '<small>Use ↔ to cycle alignment or Alt+arrow keys to reorder; '
             'Send and Stop share the Pegasus wing position.</small>'
+            '<small class="codex-layout-apply">Use <strong>Rebuild app</strong> to apply the saved layout to Codex.</small>'
             '</section>')
 
 
 CONFIG_STYLE = """
 .codex-layout-editor{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .codex-layout-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.codex-layout-apply{display:block;margin-top:6px}
 .codex-layout-pickers{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
 .codex-layout-editor .codex-layout-pickers label{display:flex;flex:1 1 160px;flex-direction:column;gap:5px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
 .codex-layout-pickers select{width:100%;min-height:34px;padding:5px 24px 5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:inherit;cursor:pointer}
