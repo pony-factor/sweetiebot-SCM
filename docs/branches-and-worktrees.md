@@ -16,6 +16,16 @@ An explicit checkout handoff transfers the captured draft once and retires the m
 
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
+## Launch development environments
+
+Use the play icon in Source Control or **Sweetiebot: Launch Development Environment** to run the selected local checkout. The first launch asks you to choose a preset and configure it; subsequent launches can reuse or edit the preset. Saved configurations live in Sweetiebot's local extension state, keyed by the origin remote (or checkout path when there is no origin), not in repository files.
+
+- **Isolated Brave extension** (macOS, extension manifest at the checkout root): opens the selected checkout as an unpacked extension in a persistent checkout-specific browser profile. Sign in separately; normal browser cookies and extension settings are not imported. Close the test browser manually and reload its extension after edits.
+- **Localhost server**: enter an executable and arguments as a JSON array, e.g. `["npm","run","dev"]`, and the local HTTP(S) URL. The task runs in the checkout and opens the URL only after it responds while the task is active. An already responding URL is rejected before launch. Canceling the readiness wait leaves the task running.
+- **Custom process**: run an explicit executable and arguments in a VS Code task terminal. Package scripts named `dev` or `start` are suggested, not executed automatically.
+
+Click the play icon again to manage a running task, stop it, or restart it. Install project dependencies yourself. Only trusted local workspaces are supported; there is no automatic execution during checkout or startup.
+
 ## Source Control Graph in worktree windows
 
 VS Code's built-in Source Control Graph can initially appear empty while Git discovers a newly opened linked worktree. Sweetiebot requests a bounded status refresh after discovery and follows up once for linked worktrees or missing HEAD metadata. This does not fetch, check out, or modify any branch.
