@@ -51,7 +51,7 @@ async function launchSyncPullRequestRepair(vscode, context, root, selection, syn
   const project = vscode.workspace.getConfiguration('sweetiebot').get('chatgptProjectUrl', '');
   const url = chatgptMergeUrl([
     'Investigate the full pull request ' + pr.url + ' and current upstream using read-only repository tools.',
-    'Compare both branches with their common ancestor. Inspect related callers and tests to understand each change. Use a complete patch if the integration needs supporting source or tests outside the conflicts.',
+    'First return patch:null so Lindsey can identify the exact conflict paths with local Git. In the next round, compare both branches with their common ancestor. Inspect related callers and tests to understand each change. Use a complete patch if the integration needs supporting source or tests outside the conflicts.',
     'Use the local branch-only handoff. Do not write to GitHub, merge or close the PR. The maintainer reviews your proposal before Lindsey publishes it.'
   ].join('\n\n'), project);
   return launchSession(vscode, context, root, {
@@ -67,10 +67,8 @@ async function approveSyncPullRequestRepair(vscode, item) {
     try {
       const patch = path.join(temporary, 'proposal.patch');
       await fs.writeFile(patch, item.patch, { mode: 0o600 });
-      const { stdout } = await run('git', ['apply', '--numstat', '-z', '--', patch], {
-        cwd: temporary, timeout: 15000, maxBuffer: 1024 * 1024
-      });
-      require('../merge/patch').patchPaths(item.patch, stdout);
+      await require('../merge/patch').inspectResolutionPatch(item.patch, patch, async (...args) =>
+        (await run('git', args, { cwd: temporary, timeout: 15000, maxBuffer: 1024 * 1024 })).stdout);
     } finally { await fs.rm(temporary, { recursive: true, force: true }); }
   }
   const review = await vscode.workspace.openTextDocument({ language: 'plaintext', content: [

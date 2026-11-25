@@ -433,7 +433,7 @@ el('merge-help').textContent=state.mergeHelpOpening?'Opening Lindsey…':'Review
 el('merge-help-status').textContent=state.errors?.mergeHelp||(state.mergeHelpOpened?'Lindsey’s PR-specific resolution view is open. This pull request has not been merged.':'');
 el('merge-history').hidden=state.mergeChoice!=='SQUASH_AUTHOR_CHOICE_REQUIRED'||Boolean(state.mergeResult);
 el('merge-history-help').hidden=el('merge-history').hidden;
-el('merge-local-signed').hidden=state.mergeChoice!=='SQUASH_AUTHOR_CHOICE_REQUIRED'||state.localSignedMergeAvailable!==true||Boolean(state.mergeResult);
+el('merge-local-signed').hidden=!state.result||state.localSignedMergeAvailable!==true||Boolean(state.mergeResult);
 el('merge-local-signed').disabled=Boolean(state.merging);
 el('merge-local-signed-help').hidden=el('merge-local-signed').hidden;
 el('publication').textContent='';
@@ -481,7 +481,7 @@ el('merge-help').onclick=async()=>{
 el('merge-history').onclick=async()=>{el('merge-history').disabled=true;showMergeStarting();try{const response=await fetch(root+'/merge-history',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await response.json();if(!response.ok)throw new Error(result.error);await refresh()}catch(error){el('merge-progress').hidden=true;el('merge-error').textContent=error.message}finally{el('merge-history').disabled=false}};
 el('merge-local-signed').onclick=async()=>{
   const state=await (await fetch(root+'/state')).json();
-  if(!state.result||state.mergeResult||state.merging||state.mergeChoice!=='SQUASH_AUTHOR_CHOICE_REQUIRED'||state.localSignedMergeAvailable!==true)return;
+  if(!state.result||state.mergeResult||state.merging||state.localSignedMergeAvailable!==true)return;
   // Explicit confirmation is required even in Ludicrous mode: publication
   // preserves the PR branch and may not yield a GitHub merged badge.
   if(!confirm('Sign and publish a squash commit locally for #'+state.result.number+'? The original PR branch will remain unchanged. GitHub may not mark the PR merged.'))return;
@@ -489,7 +489,7 @@ el('merge-local-signed').onclick=async()=>{
   try{const response=await fetch(root+'/merge-local-signed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Local signed squash failed.');const updated=await refresh();
     if(result.merged===true&&state.closeAfterMerge===true&&!keepOpenForPony(state)&&updated&&!keepOpenForPony(updated))await el('close-confirmation').onclick();
-  }catch(error){el('merge-progress').hidden=true;el('merge-error').textContent=error.message||'Local signing failed. Check your Git signing configuration.';}
+  }catch(error){el('merge-progress').hidden=true;await refresh();el('merge-error').textContent=error.message||'Local signing failed. Check your Git signing configuration.';}
   finally{el('merge-local-signed').disabled=false;}
 };
 el('close-confirmation').onclick=async()=>{

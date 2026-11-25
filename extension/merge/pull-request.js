@@ -113,6 +113,10 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (!pr.user?.login || !['Bot', 'User'].includes(pr.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a bot-authored squash.');
   }
+  if (directLocal && (pr.mergeable === false || pr.mergeable_state === 'dirty')) {
+    throw Object.assign(new Error('Resolve overlapping edits on this pull request before squashing.'),
+      { code: 'SWEETIEBOT_MERGE_CONFLICT' });
+  }
   // Compare live branch tips, not the potentially stale PR base.sha.
   const readBaseTip = async () => {
     const branch = await request('repos/' + repository + '/branches/' + encodeURIComponent(base));
@@ -192,7 +196,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     if (landed?.published === true && SHA.test(landed.sha || '')) return { ...landed, url: result.url, commitUrl: landed.url };
     if (landed?.merged !== true || landed.githubMerged === false || !SHA.test(landed.sha || '')) {
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
-        landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' } : {});
+        landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' }
+          : landed?.status === 'needs_resolution' ? { code: 'SWEETIEBOT_MERGE_CONFLICT' } : {});
     }
     return { merged: true, sha: landed.sha, url: result.url,
       number: result.number, base, author: landed.author,

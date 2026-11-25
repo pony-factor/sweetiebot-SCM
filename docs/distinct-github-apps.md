@@ -76,9 +76,7 @@ requires a compatible local `lindsey-sync` checkout and server deployment. If
 the server and Sweetiebot use different keys for the App, the server must also
 trust the public key corresponding to the saved Sweetiebot key.
 
-If the resolver is unavailable, Sweetiebot offers to send the textual conflict
-hunks, their common-ancestor versions, and nearby code to ChatGPT in the
-integrated browser. Review the proposed diffs and
+If the resolver is unavailable, selecting **Resolve and sync with Lindsey** opens ChatGPT in the integrated browser with the textual conflict hunks, their common-ancestor versions, and nearby code. Review the proposed diffs and per-file explanations before approving. Lindsey commits each file-level change with its explanation, then commits the rest of the upstream sync separately.
 per-file explanations before approving. Lindsey commits each file-level change
 with its explanation, then commits the rest of the upstream sync separately.
 The connection is still the **Lindsey GitHub App**: its installation token is the
