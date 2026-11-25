@@ -32,7 +32,24 @@ body{margin:0;min-height:100vh;background:var(--vscode-editor-background);color:
   background:var(--merge-surface);box-shadow:0 6px 24px rgba(0,0,0,.06)
 }
 .eyebrow{color:var(--merge-muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.status-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
 h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
+#saved-handoff:not([hidden]){
+  display:grid;place-items:center;flex:none;width:36px;height:36px;
+  border:1px solid var(--merge-border);border-radius:9px;color:var(--merge-muted)
+}
+#saved-handoff:hover{color:var(--vscode-editor-foreground);background:var(--vscode-editor-background)}
+#saved-handoff:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+.download-icon{
+  position:relative;width:16px;height:16px;border:1.5px solid currentColor;border-top:0;
+  clip-path:polygon(0 62%,24% 62%,24% 0,76% 0,76% 62%,100% 62%,100% 100%,0 100%);
+  border-radius:0 0 3px 3px
+}
+.download-icon::before{content:"";position:absolute;top:0;left:50%;height:9px;border-left:1.5px solid currentColor;transform:translateX(-50%)}
+.download-icon::after{
+  content:"";position:absolute;top:4px;left:50%;width:6px;height:6px;
+  border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:translateX(-50%) rotate(45deg)
+}
 #status{margin:0 0 20px;color:var(--merge-muted);overflow-wrap:anywhere}
 .result-list{display:grid;gap:10px}
 .pr-result{border:1px solid var(--merge-border);border-radius:12px;background:var(--vscode-editor-background);padding:14px 16px;min-width:0}
@@ -65,10 +82,17 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
 </header>
 <main class="handoff-content">
   <section class="status-panel" aria-labelledby="report-title">
-    <div class="eyebrow">Lindsey merge workflow</div>
-    <h2 id="report-title">Local Git results</h2>
+    <header class="status-panel-heading">
+      <div>
+        <div class="eyebrow">Lindsey merge workflow</div>
+        <h2 id="report-title">Local Git results</h2>
+      </div>
+      <a id="saved-handoff" hidden download="lindsey-handoff-url.txt"
+        aria-label="Save original handoff link" title="Save original handoff link">
+        <span class="download-icon" aria-hidden="true"></span>
+      </a>
+    </header>
     <p id="status" role="status" aria-live="polite">Receiving the prepared resolution…</p>
-    <a id="saved-handoff" hidden download="lindsey-handoff-url.txt">Save original handoff link</a>
     <div id="results" class="result-list" aria-label="Pull request outcomes"></div>
   </section>
 </main>
