@@ -15,10 +15,10 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 import html
 import json
 
-IDS = ("input", "attachments", "access", "location", "clipboard", "send")
-LABELS = ("Message input", "Attachments", "Access permissions",
+IDS = ("input", "model", "attachments", "access", "location", "clipboard", "send")
+LABELS = ("Message input", "Model / thinking", "Attachments", "Access permissions",
           "Computer / location / usage", "Clipboard Send / Queue", "Send / Stop (wing)")
-ICONS = {"attachments": "⌁", "access": "♙",
+ICONS = {"model": "🧠", "attachments": "⌁", "access": "♙",
          "location": "◎", "clipboard": "▤", "send": "➤"}
 DEFAULT_LAYOUT = {"left": list(IDS[:-1]), "right": ["send"], "hidden": []}
 DEFAULT_LAYOUT_JSON = json.dumps(DEFAULT_LAYOUT, separators=(",", ":"))
@@ -50,12 +50,19 @@ def parse_layout(value):
     if any(not isinstance(zone, list) for zone in zones):
         raise ValueError("Codex composer zones must be lists.")
     combined = sum(zones, [])
-    if (len(combined) != len(IDS) or any(not isinstance(item, str) for item in combined)
-            or set(combined) != set(IDS)):
+    if any(not isinstance(item, str) for item in combined):
+        raise ValueError("Codex composer layout contains missing, duplicate or unknown controls.")
+    controls = set(combined)
+    legacy = controls == set(IDS) - {"model"}
+    if len(combined) != len(controls) or (not legacy and controls != set(IDS)):
         raise ValueError("Codex composer layout contains missing, duplicate or unknown controls.")
     if "input" not in obj["left"]:
         raise ValueError("The Codex input must remain left aligned and available.")
     result = {name: obj[name][:] for name in ("left", "right", "hidden")}
+    if legacy:
+        # The native model picker occupied the leading toolbar position.
+        index = 1 if result["left"][0] == "input" else 0
+        result["left"].insert(index, "model")
     return result
 
 
@@ -276,9 +283,12 @@ CONFIG_SCRIPT = """
     });
   }
   document.getElementById("codex-layout-reset").addEventListener("click", () => {
-    ["attachments","access","location","clipboard"].forEach(id =>
-      zone("left").append(byId.get(id)));
-    zone("right").append(byId.get("send"));
+    const defaults = __SCM_TOOLKIT_DEFAULT_LAYOUT__;
+    for (const name of names) {
+      for (const id of defaults[name]) {
+        if (id !== "input") zone(name).append(byId.get(id));
+      }
+    }
     clearDrop();
     updateActions();
     sync();
@@ -286,4 +296,4 @@ CONFIG_SCRIPT = """
   updateActions();
   updatePicker();
 })();
-"""
+""".replace("__SCM_TOOLKIT_DEFAULT_LAYOUT__", DEFAULT_LAYOUT_JSON)

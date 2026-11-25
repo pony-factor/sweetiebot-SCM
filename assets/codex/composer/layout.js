@@ -6,7 +6,7 @@
   globalThis.scmToolkitCodexComposerLayout = true;
   const layout = __SCM_TOOLKIT_COMPOSER_LAYOUT__;
   const names = {
-    input: "Message input", attachments: "Attachments",
+    input: "Message input", model: "Model / thinking", attachments: "Attachments",
     access: "Access permissions", location: "Computer / location / usage",
     clipboard: "Clipboard Send / Queue", send: "Send / Stop"
   };
@@ -54,6 +54,7 @@
       footer,
       controls: {
         input,
+        model: footer.querySelector('button:is([data-composer-navigation-target="model"], [data-composer-navigation-target="reasoning"])'),
         attachments: find(b => b.getAttribute("data-composer-navigation-target") === "attachments"
           || /^(add (context|files?|attachment)|attach files?)/i.test(label(b))),
         access: footer.querySelector(accessSelector) || find(b => b.matches(accessSelector)),
