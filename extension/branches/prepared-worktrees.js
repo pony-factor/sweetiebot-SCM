@@ -143,7 +143,7 @@ async function freshBase(root, defaultBranch, remote, { run = git, now = Date.no
     const url = await run(['-C', root, 'remote', 'get-url', remote]);
     if (createHash('sha256').update(url).digest('hex') !== receipt.remoteIdentity) return null;
     const refs = await run(['-C', root, 'rev-parse', 'refs/heads/' + defaultBranch + '^{commit}', upstream + '^{commit}']);
-    const [local, tracking] = refs.split(/\\s+/);
+    const [local, tracking] = refs.split(/\s+/);
     // Cache only an equal, recently fetched base. Behind/ahead/diverged,
     // changed upstream or changed remote tip all use the original sync flow.
     return local === receipt.sha && tracking === receipt.sha ? local : null;

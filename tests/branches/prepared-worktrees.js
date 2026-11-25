@@ -74,6 +74,9 @@ test('prepared worktrees refresh, claim exclusively and preserve dirty or unreac
     await noteFetch(root, 'origin', 'main', { run, now: 1000 });
     assert.equal(await freshBase(root, 'main', 'origin', { run, now: 2000 }), second);
     assert.equal(await freshBase(root, 'main', 'origin', { run, now: 61000 }), null);
+    await git('update-ref', 'refs/heads/main', initial);
+    assert.equal(await freshBase(root, 'main', 'origin', { run, now: 2000 }), null);
+    await git('update-ref', 'refs/heads/main', second);
     await git('update-ref', 'refs/remotes/origin/main', initial);
     assert.equal(await freshBase(root, 'main', 'origin', { run, now: 2000 }), null);
   } finally {
