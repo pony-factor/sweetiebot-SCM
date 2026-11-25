@@ -573,14 +573,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       review: 'Human review required',
       queued: 'GitHub reports the pull request is queued',
       'checks-pending': 'PR is open; checks are queued or in progress',
-      checks: checkResults?.state === 'failed' ? describeMergeChecks(checkResults) : '',
       blocked: info.state !== 'open' ? 'GitHub PR state is unavailable; merging is blocked'
         : checkResults?.state === 'passed' && checkResults.hasChecks ? 'Checks passed; GitHub is still blocking the merge'
         : 'PR is open; merging is blocked',
       updated: 'PR head differs from the selected snapshot',
       waiting: 'GitHub reports the PR is open; awaiting merge'
     };
-    item.statusMessage = labels[next];
+    item.statusMessage = next === 'checks' ? describeMergeChecks(checkResults) : labels[next];
     if (before !== next || previousMessage !== item.statusMessage) {
       addEvent(item, next, item.statusMessage);
     }
@@ -711,7 +710,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
           if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');
           return githubGet(readFetch, token, selection.repository, endpoint.slice(prefix.length));
         };
-        const checks = ci ? await require('./checks').readMergeChecks(
+        const checks = ci ? await readMergeChecks(
           checkApi, selection.repository, candidate.headSha) : null;
         if (ci && checks.state !== 'failed') {
           addEvent(pr, 'updated', 'Automatic CI repair skipped · current checks are ' + checks.state);
