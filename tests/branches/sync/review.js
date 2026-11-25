@@ -120,8 +120,22 @@ async function run() {
     assert.equal(await reviewSyncConflicts(vscode, repository, review), false);
     choices = ['resolve'];
     assert.equal(await reviewSyncConflicts(vscode, repository, review), true);
+    const lindsey = { ...review, publishingRepository: 'owner/publishing-fork' };
     choices = ['lindsey'];
-    assert.equal(await reviewSyncConflicts(vscode, repository, { ...review, appIdentity: true }), 'lindsey');
+    await assert.rejects(reviewSyncConflicts(vscode, repository, lindsey, {
+      connect: async () => { throw Error('Resolver unavailable'); }
+    }), /Resolver unavailable/);
+    assert.equal(git('status', '--porcelain'), '', 'Setup errors leave the topic checkout clean');
+    choices = ['lindsey'];
+    const prepare = () => {};
+    assert.deepEqual(await reviewSyncConflicts(vscode, repository, lindsey, {
+      connect: async (host, checkout, targetRepo) => {
+        assert.equal(host, vscode);
+        assert.equal(checkout, root);
+        assert.equal(targetRepo, 'owner/publishing-fork');
+        return prepare;
+      }
+    }), { lindsey: prepare });
     await assert.rejects(reviewSyncConflicts(vscode, repository, { ...review, head: before }),
       /revisions or working files changed/);
   } finally {
