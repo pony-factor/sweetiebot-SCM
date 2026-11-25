@@ -1320,7 +1320,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       const targetSha = await git(['rev-parse', target]);
       const approved = await reviewConflicts(repository, {
         branch, defaultBranch, remote, strategy, targetRef: target, head: headBefore, target: targetSha,
-        appIdentity: Boolean(publish)
+        publishingRepository: publish?.repository
       });
       if (!approved) return false;
       conflictChoice = approved;
@@ -1337,7 +1337,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     const merge = async (args, headBefore, expectedTree) => {
       try { await git(args); }
       catch (error) {
-        if (expectedTree !== null || conflictChoice !== 'lindsey' || !publish
+        if (expectedTree !== null || !conflictChoice?.lindsey || !publish
             || typeof resolveConflicts !== 'function') throw error;
         const unmerged = await git(['ls-files', '-u', '-z']);
         if (!unmerged) throw error;
@@ -1345,7 +1345,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         if (!paths.every(safeRelative)) throw Error('Unsupported sync conflict paths.');
         const index = await git(['ls-files', '--stage', '-z']);
         const targetSha = await git(['rev-parse', target]);
-        const proposal = await resolveConflicts(repository);
+        const proposal = await resolveConflicts(repository, conflictChoice.lindsey);
         if (!proposal) return false;
         await checkBranch();
         if (await git(['rev-parse', 'HEAD']) !== headBefore
@@ -1577,8 +1577,8 @@ function registerBranchCommands(vscode, context) {
             } : {}),
             ...(command === 'sweetiebot.syncBranch' && vscode.window ? {
               reviewConflicts: (repo, details) => reviewSyncConflicts(vscode, repo, details),
-              resolveConflicts: async repo => {
-                try { return await generatePreview(vscode, repo, { sync: true }); }
+              resolveConflicts: async (repo, lindsey) => {
+                try { return await generatePreview(vscode, repo, { sync: true, lindsey }); }
                 catch (error) {
                   // Do not replace a failed Lindsey launch with the generic
                   // conflict picker: that hides the reason Sync stopped.

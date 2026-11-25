@@ -7,6 +7,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { promisify } = require('node:util');
+const { pathToFileURL } = require('node:url');
+const { connectLindseyResolver } = require('./lindsey-resolver-auth');
 
 const exec = promisify(execFile);
 const sha256 = data => createHash('sha256').update(data).digest('hex');
@@ -27,19 +29,14 @@ function lindseyScript(repoRoot, folders = [], configured = process.env.LINDSEY_
   throw new Error('Lindsey Sync is not available locally. Open the lindsey-sync repository in this VS Code workspace, keep it under ~/GitHub/pony-factor or ~/GitHub, put it beside this repository, or set LINDSEY_SYNC_REPO.');
 }
 
-function checkLindseyResolver(vscode, root, env = process.env) {
-  lindseyScript(root, vscode.workspace?.workspaceFolders || [], env.LINDSEY_SYNC_REPO);
-  if (!env.LINDSEY_RESOLVE_SECRET?.trim()) {
-    throw new Error('Set LINDSEY_RESOLVE_SECRET in the VS Code environment before syncing with Lindsey.');
+async function checkLindseyResolver(vscode, root, repository) {
+  const script = lindseyScript(root, vscode.workspace?.workspaceFolders || []);
+  const { prepareConflictPreview } = await import(pathToFileURL(script).href);
+  if (typeof prepareConflictPreview !== 'function') {
+    throw Error('Update the local lindsey-sync checkout to a version that supports the saved Lindsey App connection.');
   }
-  let endpoint;
-  try { endpoint = new URL(env.LINDSEY_RESOLVE_URL); } catch { /* Report invalid and missing URLs alike. */ }
-  const validProtocol = endpoint?.protocol === 'https:' || (endpoint?.protocol === 'http:'
-    && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname));
-  if (!validProtocol || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
-      || endpoint.pathname !== '/resolve-conflicts') {
-    throw new Error('Set LINDSEY_RESOLVE_URL to the HTTPS /resolve-conflicts endpoint in the VS Code environment (HTTP localhost is allowed).');
-  }
+  const requestResolution = await connectLindseyResolver(repository);
+  return (repo, output) => prepareConflictPreview(repo, output, requestResolution);
 }
 
 function isConflictState(repository) {
@@ -122,19 +119,22 @@ async function applyPreview(repository, temporary, manifest) {
   return files.length;
 }
 
-async function generatePreview(vscode, repository, { sync = false, run = exec, findScript = lindseyScript } = {}) {
+async function generatePreview(vscode, repository, { sync = false, lindsey, run = exec, findScript = lindseyScript } = {}) {
   const root = repository.rootUri?.fsPath;
   if (!root) throw new Error('No local Git repository selected.');
-  const script = findScript(root, vscode.workspace?.workspaceFolders || []);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-lindsey-'));
   try {
-    let stdout;
-    try {
-      ({ stdout } = await run(process.execPath,
+    let manifest;
+    if (lindsey) {
+      manifest = await lindsey(root, temporary);
+    } else try {
+      const script = findScript(root, vscode.workspace?.workspaceFolders || []);
+      const { stdout } = await run(process.execPath,
         [script, '--repo', root, '--output', temporary], {
           cwd: root, timeout: 180000, maxBuffer: 1024 * 1024,
           env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', GIT_TERMINAL_PROMPT: '0' }
-        }));
+        });
+      manifest = JSON.parse(stdout);
     } catch (error) {
       // Never send provider output through the Git error formatter, which
       // mistakes the resolver's filename for an ordinary merge failure.
@@ -144,7 +144,6 @@ async function generatePreview(vscode, repository, { sync = false, run = exec, f
         ? 'Lindsey conflict resolution service is not configured. Configure LINDSEY_RESOLVE_URL and LINDSEY_RESOLVE_SECRET in the local VS Code environment, then retry. No resolutions were applied.'
         : 'Lindsey could not prepare conflict proposals. Check the local resolution service and retry. No resolutions were applied.');
     }
-    const manifest = JSON.parse(stdout);
     const files = await inspectPreview(repository, temporary, manifest);
     for (const file of files) {
       await vscode.commands.executeCommand('vscode.diff',
