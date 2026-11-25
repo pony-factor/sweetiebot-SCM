@@ -417,7 +417,8 @@ function scmToolkitKeepUsageFresh(refetch) {
         position:absolute; left:0; bottom:0; height:2px; pointer-events:none;
         border-radius:0 1px 1px 0; z-index:1;
       }
-      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) svg {
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter)
+      :is(svg, [class*="ComposerDropdownLabelIcon_"]) {
         display:none;
       }
     ` + (localOnly ? `
