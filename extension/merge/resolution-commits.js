@@ -12,7 +12,7 @@ function decisionTitle(value, field) {
   const subject = emoji ? title.slice(emoji.length).trimStart() : title;
   const normalized = `${emoji || '🛠️'} ${subject}`;
   if (!subject || titleEmoji.test(subject) || normalized.length > 160 || /[\r\n\x00\u2028\u2029]/.test(value ?? '')) {
-    throw Error(`${field} must be a one-line emoji decision title with text and at most 160 characters.`);
+    throw Error(`${field} must have a nonempty subject, no line breaks or NUL characters, and at most one leading emoji; the normalized title must not exceed 160 characters.`);
   }
   return normalized;
 }

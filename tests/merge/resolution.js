@@ -272,6 +272,13 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   ];
   const branchOnly = { ...input, results: [{ ...input.results[0], operation: 'sync', decisions }] };
   assert.equal(validateSyncResolution(branchOnly, selection)[0].operation, 'sync');
+  for (const title of ['🛠️', '🛠️ 🐛 Fix', 'a\nb', 'a\x00b', 'a\u2028b', 'x'.repeat(160)]) {
+    for (const field of ['title', 'groupTitle']) {
+      const invalid = [decisions[0], { ...decisions[1], [field]: title }];
+      assert.throws(() => validateSyncResolution({ ...branchOnly, results: [{ ...branchOnly.results[0], decisions: invalid }] }, selection),
+        new RegExp('Resolution decision 2 ' + field + ' must have a nonempty subject, no line breaks or NUL characters, and at most one leading emoji; the normalized title must not exceed 160 characters\\.'));
+    }
+  }
   assert.throws(() => validateSyncResolution(input, selection), /merging is not authorized/);
   const synced = await executeResolution(branchOnly, selection, { merge: async (repo, number, options) => {
     assert.equal(options.operation, 'sync');
