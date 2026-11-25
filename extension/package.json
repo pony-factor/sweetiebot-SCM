@@ -21,6 +21,7 @@
   "activationEvents": [
     "onCommand:sweetiebot.codexHandoff.pendingQueue",
     "onCommand:sweetiebot.returnHome",
+    "onCommand:sweetiebot.launchDevelopment",
     "onCommand:sweetiebot.resolveDefaultBranch",
     "onCommand:sweetiebot.openPullRequestChat",
     "onCommand:sweetiebot.pullRequestEligibility",
@@ -104,6 +105,12 @@
       ]
     },
     "commands": [
+      {
+        "command": "sweetiebot.launchDevelopment",
+        "title": "Launch Development Environment",
+        "category": "Sweetiebot",
+        "icon": "$(play)"
+      },
       {
         "command": "sweetiebot.setCodexSharedConversationUrl",
         "title": "Set Shared Codex Conversation Link",
@@ -281,6 +288,11 @@
         }
       ],
       "scm/title": [
+        {
+          "command": "sweetiebot.launchDevelopment",
+          "when": "!isWeb && isWorkspaceTrusted",
+          "group": "navigation@74"
+        },
         {
           "command": "sweetiebot.openExperimentWorkspace",
           "when": "!isWeb",

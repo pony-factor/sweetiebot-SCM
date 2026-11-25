@@ -422,6 +422,7 @@ async function activate(context) {
     console.warn('Sweetiebot could not configure workspace browser storage:', error.message);
   }
   registerCodexDraftCommands(vscode, context);
+  require('./branches/development-launcher').registerDevelopmentLauncher(vscode, context);
   // The workbench reads branch preferences while SCM is opening, before the
   // remaining asynchronous startup work has finished.
   registerAutoCodexCommit(vscode, context);
