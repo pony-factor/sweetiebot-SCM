@@ -251,6 +251,15 @@ def main():
         assert page.evaluate('selectedModel') == '6'
         assert page.evaluate('power') == 2
         assert page.get_attribute('#mode','aria-label') == 'Switch mode, current mode: ChatGPT'
+        page.evaluate("""() => {
+            selectedModel = '6.2';
+            power = 1;
+            document.getElementById('model').textContent = '6.2 Medium';
+            document.getElementById('power').setAttribute('aria-valuenow', '1');
+        }""")
+        page.wait_for_function('sweetiebotEnsureMaximumThinking()', polling=100)
+        assert page.evaluate('selectedModel') == '6.2'
+        assert page.inner_text('#model') == '6.2 High'
         page.set_viewport_size({'width':380,'height':720})
 
         page.goto('about:blank')
