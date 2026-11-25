@@ -252,13 +252,12 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       resolutionInstructions(selection, bridge.url)
     ].join('\n\n');
     const prompt = fullSyncRepair
-      ? require('./resolution').syncRepairInstructions(snapshots[0], original.repository, previous)
+      ? require('./resolution').syncRepairInstructions(snapshots[0], original.repository, previous, bridge.url)
       : (makePrompt ? makePrompt(selection) + '\n\n' : '') + instructions;
     const url = new URL(destination);
     bridge.setPrompt(prompt);
     url.searchParams.set('sweetiebot_launch', new URL(bridge.url).pathname.split('/').pop());
-    url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: bridge.url,
-      ...(fullSyncRepair ? { sweetiebot_sync_preview: '1' } : {}) }).toString();
+    url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: bridge.url }).toString();
     await onState(state());
     return { url: url.href, callback: bridge.url, instructions };
   }

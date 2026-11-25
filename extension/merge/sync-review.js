@@ -26,10 +26,13 @@ async function findSyncPullRequest(details, api = githubApi) {
   const pulls = await api('repos/' + repo + '/pulls?' + query);
   const matching = pulls.filter(pr => pr.state === 'open' && !pr.draft && !pr.merged &&
     pr.head?.repo?.full_name === repo && pr.head.ref === branch && pr.head.sha === head &&
-    pr.base?.repo?.full_name === repo && pr.base.ref === defaultBranch && pr.base.sha === target &&
+    pr.base?.repo?.full_name === repo && pr.base.ref === defaultBranch &&
     Number.isSafeInteger(pr.number) && pr.number > 0 && pr.title &&
     pr.html_url === 'https://github.com/' + repo + '/pull/' + pr.number);
   if (matching.length !== 1) return undefined;
+  // GitHub's PR record can retain an older base SHA after the branch moves.
+  const currentBase = await api('repos/' + repo + '/branches/' + encodeURIComponent(defaultBranch));
+  if (currentBase?.commit?.sha !== target) return undefined;
   const pr = matching[0];
   return { repository: repo, pullRequests: [
     { number: pr.number, title: pr.title, url: pr.html_url, head: branch, headSha: head, base: defaultBranch }

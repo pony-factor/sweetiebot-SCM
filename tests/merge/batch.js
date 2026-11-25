@@ -140,7 +140,10 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.match(prompt, /supporting source or test files/);
     assert.match(prompt, /title and body you would use/);
     assert(!prompt.includes('resolutionHunks') && !prompt.includes('AUTOMATIC SEQUENTIAL BULK MERGE'));
-    assert.equal(new URLSearchParams(new URL(fullRepair.url).hash.slice(1)).get('sweetiebot_sync_preview'), '1');
+    const flags = new URLSearchParams(new URL(fullRepair.url).hash.slice(1));
+    assert(prompt.includes('[Apply with Lindsey](<' + flags.get('return_to') + '#result_gz='));
+    assert.match(prompt, /Never return a raw diff by itself/);
+    assert.equal(flags.has('sweetiebot_sync_preview'), false, 'Full PR repair can recover an incomplete result');
   } finally { fullRepair.dispose(); }
 
   // Choices travel through the local handoff rather than a personal connector.
