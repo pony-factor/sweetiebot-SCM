@@ -72,14 +72,14 @@ class ConfigurationTests(unittest.TestCase):
     def test_set_git_config_writes_global_toolkit_key(self, run):
         run.return_value = types.SimpleNamespace(returncode=0, stdout="", stderr="")
         model_picker.set_git_config(
-            "scm-toolkit.ai-commit-low-memory-model", "qwen2.5-coder:3b"
+            "sweetiebot.ai-commit-low-memory-model", "qwen2.5-coder:3b"
         )
         run.assert_called_once_with(
             [
                 model_picker.REAL_GIT,
                 "config",
                 "--global",
-                "scm-toolkit.ai-commit-low-memory-model",
+                "sweetiebot.ai-commit-low-memory-model",
                 "qwen2.5-coder:3b",
             ],
             check=False,

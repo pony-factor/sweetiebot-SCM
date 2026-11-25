@@ -19,6 +19,7 @@ async function run() {
   let commitError;
   let normalizationError, normalizations = 0;
   const gitSettings = {};
+  const repositoryGitSettings = new Map();
   let pushes = 0;
   let pendingCommit = false;
   const queued = [];
@@ -66,7 +67,16 @@ async function run() {
       }
       if (name === 'node:path') return path;
       if (name === '../codex/attribution') return require('../../../extension/codex/attribution');
+      if (name === '../ui/git-settings') return require('../../../extension/ui/git-settings');
       assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
+        if (exe === 'git') {
+          assert.equal(options.cwd, '/selected');
+          assert.deepEqual(Array.from(args.slice(0, -1)), ['config', '--show-scope', '--get']);
+          const value = repositoryGitSettings.get(args.at(-1));
+          if (value === undefined) callback(Object.assign(new Error('Missing key'), { code: 1 }), '');
+          else callback(null, value);
+          return;
+        }
         assert.equal(exe, '/resolved/python3');
         assert.deepEqual(Array.from(args), ['/extension/local-codex-commit.py', '--normalize-staged-whitespace']);
         assert.equal(options.cwd, '/selected');
@@ -81,6 +91,19 @@ async function run() {
     } }; }
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../../../extension/commits/codex-commit.js'), 'utf8'), sandbox);
+  const readSetting = sandbox.module.exports.readCommitGitSetting;
+  const key = 'sweetiebot.codex-coauthor-name';
+  const legacyKey = 'scm-toolkit.codex-coauthor-name';
+  assert.equal(await readSetting('/selected', key, 'Codex'), 'Codex');
+  repositoryGitSettings.set(legacyKey, 'local\tLegacy name\n');
+  assert.equal(await readSetting('/selected', key, 'Codex'), 'Legacy name');
+  repositoryGitSettings.set(key, 'global\tGlobal name\n');
+  assert.equal(await readSetting('/selected', key, 'Codex'), 'Legacy name',
+    'A legacy local override outranks a migrated global value');
+  repositoryGitSettings.set(key, 'local\tCanonical name\n');
+  assert.equal(await readSetting('/selected', key, 'Codex'), 'Canonical name',
+    'Canonical setting wins within the same scope');
+  repositoryGitSettings.clear();
   const vscode = {
     Uri: { from: uri => uri, joinPath: (uri, file) => ({ fsPath: `${uri.fsPath}/${file}` }) },
     extensions: { getExtension: id => id === 'vscode.git'

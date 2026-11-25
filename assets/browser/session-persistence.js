@@ -12,7 +12,7 @@ function sweetiebotPersistChatSession(session) {
         if (Date.now() - settingsAt > 30000) {
             settingsAt = Date.now();
             retention = import('node:child_process').then(({ execFile }) => new Promise(resolve => {
-                execFile('/usr/bin/git', ['config', '--global', '--get', 'scm-toolkit.browser-session-cookie-days'],
+                execFile('/usr/bin/git', ['config', '--global', '--get', 'sweetiebot.browser-session-cookie-days'],
                     { timeout: 2000 }, (error, stdout) => {
                         const value = Number(String(stdout || '').trim());
                         resolve(!error && Number.isInteger(value) && value >= 0 && value <= 4000 ? value : 180);

@@ -42,8 +42,8 @@ class MessageBarLayoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {
             "GIT_CONFIG_GLOBAL": root + "/preferences", "GIT_CONFIG_NOSYSTEM": "1",
         }):
-            subprocess.run(["git", "config", "--global", "scm-toolkit.message-bar-layout", saved], check=True)
-            subprocess.run(["git", "config", "--global", "scm-toolkit.codex-coauthor", "false"], check=True)
+            subprocess.run(["git", "config", "--global", "sweetiebot.message-bar-layout", saved], check=True)
+            subprocess.run(["git", "config", "--global", "sweetiebot.codex-coauthor", "false"], check=True)
             toolkit_settings.persist_message_bar_layout(toolkit_settings.DEFAULT_SETTINGS)
             current = toolkit_settings.load_settings()
             self.assertEqual(json.loads(current["messageBarLayout"]), {

@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 LABEL = "dev.ponyfactor.sweetiebot-cloud-repos"
-FLAG = "scm-toolkit.cloud-repository-sync"
+FLAG = "sweetiebot.cloud-repository-sync"
 STATE = Path.home() / "Library/Application Support/Sweetiebot/Repository Sync"
 REGISTRY = STATE / "repositories.json"
 ROOTS = (Path.home() / "GitHub",

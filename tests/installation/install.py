@@ -610,6 +610,23 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             rule = css.split(f".scm-view .scm-editor > .scm-toolkit-{control} {{", 1)[1].split("}", 1)[0]
             self.assertIn("background: transparent;", rule)
 
+    def test_scm_icons_use_user_theme_foregrounds(self):
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
+        for control in (
+            "home", "delete-branch", "autocomplete", "spellcheck", "post-spellcheck",
+            "codex-coauthor", "pull-request", "sync-branch", "pony-branch",
+            "stacked-branch", "auto-publish", "auto-commit",
+        ):
+            selector = f".scm-view .scm-editor > .scm-toolkit-{control}"
+            start = selector + " {" if selector + " {" in css else selector + ","
+            rule = css.split(start, 1)[1].split("}", 1)[0]
+            self.assertIn("color: var(--vscode-icon-foreground, var(--vscode-foreground));", rule)
+            self.assertIn(selector + ":disabled", css)
+        self.assertIn("color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));", css)
+        self.assertIn("border: 1px solid var(--vscode-checkbox-border,", css)
+        self.assertIn("border: solid var(--vscode-checkbox-foreground,", css)
+        self.assertIn("color: #FFFFFF !important;", css)
+
     def test_branch_selector_uses_the_vscode_button_colors(self):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
 
@@ -688,7 +705,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         )[0]
 
         self.assertIn("background: transparent;", sync_css)
-        self.assertIn("color: var(--vscode-descriptionForeground);", sync_css)
+        self.assertIn("color: var(--vscode-icon-foreground, var(--vscode-foreground));", sync_css)
         self.assertIn(
             ".scm-view .scm-editor > .scm-toolkit-sync-branch:hover:not(:disabled)",
             css,
@@ -704,7 +721,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             js,
         )
         self.assertIn("event.affectsConfiguration('sweetiebot.prWarningHighlights')", js)
-        self.assertIn("color: var(--vscode-descriptionForeground);", css)
+        self.assertIn("color: var(--vscode-icon-foreground, var(--vscode-foreground));", css)
         self.assertIn(".scm-toolkit-pr-needs-attention", css)
 
     def test_install_injects_valid_settings_line(self):
@@ -1575,33 +1592,75 @@ class AiWrapperTests(unittest.TestCase):
 
 
 class GitConfigTests(unittest.TestCase):
+    def test_legacy_global_git_namespace_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "gitconfig"
+            config.write_text(
+                '[scm-toolkit]\n'
+                '    ludicrous-mode = true\n'
+                '    remote = old\n'
+                '    message-placeholder = ""\n'
+                '    ai-commit\n'
+                '    custom-setting = preserved\n'
+                '    single-repository-per-window = false\n'
+                '[sweetiebot]\n'
+                '    remote = new\n'
+                '[user]\n'
+                '    name = Unrelated\n'
+            )
+            with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config),
+                                         "GIT_CONFIG_NOSYSTEM": "1"}):
+                def get(key):
+                    return subprocess.run(["git", "config", "--global", "--get", key],
+                                          capture_output=True, text=True)
+                self.assertTrue(toolkit_settings.read_git_bool("sweetiebot.ludicrous-mode", False))
+                self.assertEqual(toolkit_settings.read_git_string("sweetiebot.remote", ""), "new")
+                toolkit_settings.migrate_legacy_git_settings()
+                self.assertEqual(get("sweetiebot.ludicrous-mode").stdout, "true\n")
+                self.assertEqual(get("sweetiebot.remote").stdout, "new\n")
+                self.assertEqual(get("sweetiebot.message-placeholder").stdout, "\n")
+                self.assertEqual(get("sweetiebot.ai-commit").stdout, "true\n")
+                self.assertEqual(get("sweetiebot.custom-setting").stdout, "preserved\n")
+                self.assertEqual(get("sweetiebot.single-repository-per-window").stdout, "false\n")
+                self.assertFalse(toolkit_settings.read_git_bool("sweetiebot.single-repository-per-window", True))
+                self.assertEqual(get("user.name").stdout, "Unrelated\n")
+                self.assertEqual(get("scm-toolkit.remote").returncode, 1)
+                before = config.read_bytes()
+                toolkit_settings.migrate_legacy_git_settings()
+                self.assertEqual(config.read_bytes(), before)
+
     def test_every_default_has_a_git_config_key(self):
         self.assertEqual(
             set(toolkit_settings.DEFAULT_SETTINGS),
             set(toolkit_settings.SETTING_KEYS),
         )
 
+    def test_all_git_settings_use_sweetiebot_namespace(self):
+        for name, key in toolkit_settings.SETTING_KEYS.items():
+            with self.subTest(setting=name):
+                self.assertTrue(key.startswith("sweetiebot."), key)
+
     @patch("toolkit_settings.subprocess.run")
     def test_boolean_git_config_uses_parsed_value(self, run):
         run.return_value = types.SimpleNamespace(returncode=0, stdout="true\n", stderr="")
-        self.assertTrue(install.read_git_bool("scm-toolkit.branch-picker", False))
+        self.assertTrue(install.read_git_bool("sweetiebot.branch-picker", False))
 
     @patch("toolkit_settings.subprocess.run")
     def test_missing_boolean_git_config_uses_default(self, run):
         run.return_value = types.SimpleNamespace(returncode=1, stdout="", stderr="")
-        self.assertTrue(install.read_git_bool("scm-toolkit.branch-picker", True))
+        self.assertTrue(install.read_git_bool("sweetiebot.branch-picker", True))
 
     def test_manual_commit_spellcheck_is_preview_only(self):
         self.assertFalse(install.DEFAULT_SETTINGS["spellcheckManualCommit"])
         self.assertEqual(
             toolkit_settings.SETTING_KEYS["spellcheckManualCommit"],
-            "scm-toolkit.spellcheck-preview",
+            "sweetiebot.spellcheck-preview",
         )
 
     @patch("toolkit_settings.subprocess.run")
     def test_string_git_config_uses_value(self, run):
         run.return_value = types.SimpleNamespace(returncode=0, stdout="upstream\n", stderr="")
-        self.assertEqual(install.read_git_string("scm-toolkit.remote", "origin"), "upstream")
+        self.assertEqual(install.read_git_string("sweetiebot.remote", "origin"), "upstream")
 
 
 class CodexCountdownTests(unittest.TestCase):

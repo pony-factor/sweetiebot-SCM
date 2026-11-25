@@ -18,6 +18,23 @@ An explicit checkout handoff transfers the captured draft once and retires the m
 
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
+## Prepared branch worktrees
+
+Trusted local repositories prepare up to three detached checkouts at their local default-branch tip while VS Code is open. These checkouts share the Git object database; they are not remote clones, temporary named branches, or new GitHub refs. A clean standby advances incrementally as local main advances. When New Branch requests exactly that commit, Sweetiebot atomically reserves and moves the checkout into the normal branch-named directory. It still saves editor changes, backs up pending files, verifies their transfer, and preserves the existing Codex handoff. Pending-title forks, unavailable, stale or contaminated slots, and stacked adoption continue through their established paths.
+
+The existing background pull and a fetch-only topic-base refresh can establish a recent fetch receipt. New Branch skips a foreground synchronization only if the configured remote and both base refs still match that receipt, which expires after one minute. Missing, outdated, ahead, behind or divergent refs use the ordinary synchronization and offline handling. This intentionally permits a remote change during that freshness window; it is not a guarantee of the latest remote tip at click time.
+
+Settings (VS Code Settings, search for Sweetiebot):
+
+- `sweetiebot.prewarmBranchWorktrees`: on by default.
+- `sweetiebot.preparedWorktreesPerRepository`: 3 by default, 1–6.
+- `sweetiebot.replenishPreparedWorktrees`: on by default; refill and refresh on the background scan.
+- `sweetiebot.preparedWorktreeIdleMinutes`: 30 by default, 5–1440. Reclaim verified clean, reachable detached slots while an extension host is running.
+
+Standby directories are internal, not development workspaces. Do not edit or open them directly. Unexpected files, unreachable detached commits, failed or interrupted operations are conservatively preserved rather than forcibly removed; they may reduce the number of available slots until inspected. No dependency installation or checkout hooks run during standby preparation, although normal Git checkout filters still apply. Only the final branch adoption runs the normal checkout hook.
+
+Open **Output → Sweetiebot Branch Performance** for base synchronization, standby preparation/adoption, pending-edit transfer and workspace handoff timings. A workspace handoff request is not the same as completion of VS Code reload or Codex startup; actual perceived performance must be measured locally.
+
 ## Launch development environments
 
 Use the play icon in Source Control or **Sweetiebot: Launch Development Environment** to run the selected local checkout. The first launch asks you to choose a preset and configure it; subsequent launches can reuse or edit the preset. Saved configurations live in Sweetiebot's local extension state, keyed by the origin remote (or checkout path when there is no origin), not in repository files.

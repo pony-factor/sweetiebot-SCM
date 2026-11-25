@@ -362,6 +362,34 @@
           "scope": "application",
           "description": "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background, with restart recovery. Off uses the earlier direct commit workflow."
         },
+        "sweetiebot.prewarmBranchWorktrees": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Prepare clean detached worktrees for faster New Branch handoffs in trusted local repositories."
+        },
+        "sweetiebot.preparedWorktreesPerRepository": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 6,
+          "scope": "application",
+          "description": "Maximum number of prepared worktrees per shared Git database."
+        },
+        "sweetiebot.replenishPreparedWorktrees": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Automatically refill and refresh standby worktree slots while the repository is open."
+        },
+        "sweetiebot.preparedWorktreeIdleMinutes": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 1440,
+          "scope": "application",
+          "description": "Idle minutes before clean unused standby worktrees become eligible for reclamation."
+        },
         "sweetiebot.singleRepositoryPerWindow": {
           "type": "boolean",
           "default": true,

@@ -1,5 +1,7 @@
 'use strict';
 
+const { readRepositoryGitSetting } = require('../ui/git-settings');
+
 const { spawn, execFile } = require('child_process');
 const { resolvePythonExecutable, pythonLaunchError } = require('../ui/python-runtime');
 const { isCodex, withModel, collapse } = require('../codex/attribution');
@@ -92,11 +94,16 @@ async function resolveCommitRepository(vscode, uri) {
   return selection?.repository;
 }
 
-function readCommitGitSetting(rootPath, name, fallback) {
-  return new Promise(resolve => {
-    execFile('git', ['config', '--get', name], { cwd: rootPath, timeout: 5000 },
-      (error, stdout) => resolve(error ? fallback : stdout.trim() || fallback));
-  });
+async function readCommitGitSetting(rootPath, name, fallback) {
+  try {
+    const stdout = await readRepositoryGitSetting(args => new Promise((resolve, reject) => {
+      execFile('git', args, { cwd: rootPath, timeout: 5000 },
+        (error, output) => error ? reject(error) : resolve(output));
+    }), name);
+    return stdout.trim() || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function coauthorTrailer(name, email) {
@@ -135,10 +142,10 @@ async function commitWithCodex(vscode, uri, options = {}) {
   activeCodexCommits.add(lockKey);
   try {
     const configuredName = options.trailer === undefined
-      ? await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-name', 'Codex')
+      ? await readCommitGitSetting(root.fsPath, 'sweetiebot.codex-coauthor-name', 'Codex')
       : null;
     const configuredEmail = options.trailer === undefined
-      ? await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-email', 'noreply@openai.com')
+      ? await readCommitGitSetting(root.fsPath, 'sweetiebot.codex-coauthor-email', 'noreply@openai.com')
       : null;
     let trailer = options.trailer === undefined
       ? coauthorTrailer(configuredName, configuredEmail)
@@ -156,7 +163,7 @@ async function commitWithCodex(vscode, uri, options = {}) {
     const originalMessage = options.message === undefined ? (input?.value ?? '') : options.message;
     if (typeof originalMessage !== 'string') throw new Error('The commit message must be text.');
     const useCodexContext = options.codexCommitContext === undefined
-      ? (await readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-commit-context', 'false')) === 'true'
+      ? (await readCommitGitSetting(root.fsPath, 'sweetiebot.codex-commit-context', 'false')) === 'true'
       : options.codexCommitContext === true;
     if (!originalMessage.trim() && !useCodexContext) {
       throw new Error('Enter a commit message before committing with Codex attribution.');

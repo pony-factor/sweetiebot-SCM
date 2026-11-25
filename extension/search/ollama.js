@@ -106,7 +106,7 @@ async function resolveChatModel(settings) {
   } catch {
     // Fall through to the SCM toolkit's configured commit model.
   }
-  return (await readGitConfig('scm-toolkit.ai-commit-model')) || 'qwen2.5-coder:7b';
+  return (await readGitConfig('sweetiebot.ai-commit-model')) || 'qwen2.5-coder:7b';
 }
 
 async function ask(settings, model, query, results) {

@@ -42,7 +42,7 @@ import codex_button_icon
 import github_pr
 import browser_pr
 from pathlib import Path
-from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string
+from toolkit_settings import DEFAULT_SETTINGS, load_settings, persist_message_bar_layout, read_git_bool, read_git_string, migrate_legacy_git_settings
 from branch_names import resolve_runtime_settings
 
 HERE = Path(__file__).resolve().parent
@@ -2087,6 +2087,8 @@ def main():
 
     if args.ui_only and (args.uninstall or args.configure or args.repair or args.codex_only):
         parser.error("--ui-only cannot be combined with uninstall, configure, repair, or codex-only")
+    if not (args.check or args.uninstall or args.configure):
+        migrate_legacy_git_settings()
     settings = load_settings()
     if args.core_only:
         repair_core(args.app, settings, check=args.check)
@@ -2247,7 +2249,7 @@ def main():
             if settings["aiModelPicker"]:
                 print(f"AI model picker: {model_picker_path}")
             else:
-                print("AI model picker: disabled by scm-toolkit.ai-model-picker")
+                print("AI model picker: disabled by sweetiebot.ai-model-picker")
             print(f"Workspace Search extension: {workspace_search.extension_destination()}")
             print(
                 "Set VS Code git.path to that absolute path and "

@@ -9,7 +9,7 @@
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -152,7 +152,7 @@
     width: 13px;
     height: 13px;
     box-sizing: border-box;
-    border: 1px solid var(--vscode-descriptionForeground);
+    border: 1px solid var(--vscode-checkbox-border, var(--vscode-icon-foreground, var(--vscode-foreground)));
     border-radius: 3px;
     background: transparent;
 }
@@ -164,7 +164,7 @@
     top: 0;
     width: 4px;
     height: 8px;
-    border: solid var(--vscode-descriptionForeground);
+    border: solid var(--vscode-checkbox-foreground, var(--vscode-icon-foreground, var(--vscode-foreground)));
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
 }
@@ -195,7 +195,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -233,7 +233,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -273,7 +273,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -320,7 +320,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -411,7 +411,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -460,7 +460,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: transparent;
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -498,7 +498,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: transparent;
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -544,7 +544,7 @@
     border: 0;
     border-radius: 0 3px 3px 0;
     background: transparent;
-    color: var(--vscode-textLink-foreground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 .scm-view .scm-editor > .scm-toolkit-stacked-branch[hidden] { display: none; }
@@ -704,7 +704,7 @@
     border: 0;
     border-radius: 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -738,7 +738,7 @@
     border: 0;
     border-radius: 0;
     background: var(--vscode-input-background);
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
     cursor: pointer;
 }
 
@@ -771,6 +771,29 @@
     top: 4px;
     font-size: 12px;
     line-height: 13px;
+}
+
+/* Resolve disabled foreground after active and warning rules. */
+.scm-view .scm-editor > .scm-toolkit-home:disabled,
+.scm-view .scm-editor > .scm-toolkit-delete-branch:disabled,
+.scm-view .scm-editor > .scm-toolkit-autocomplete:disabled,
+.scm-view .scm-editor > .scm-toolkit-spellcheck:disabled,
+.scm-view .scm-editor > .scm-toolkit-post-spellcheck:disabled,
+.scm-view .scm-editor > .scm-toolkit-codex-coauthor:disabled,
+.scm-view .scm-editor > .scm-toolkit-pull-request:disabled,
+.scm-view .scm-editor > .scm-toolkit-sync-branch:disabled,
+.scm-view .scm-editor > .scm-toolkit-pony-branch:disabled,
+.scm-view .scm-editor > .scm-toolkit-stacked-branch:disabled,
+.scm-view .scm-editor > .scm-toolkit-auto-publish:disabled,
+.scm-view .scm-editor > .scm-toolkit-auto-commit:disabled {
+    color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+    opacity: 1;
+}
+
+.scm-toolkit-push-checkbox:disabled + .scm-toolkit-push-mark,
+.scm-toolkit-push-checkbox:disabled + .scm-toolkit-push-mark::after {
+    border-color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+    opacity: 1;
 }
 
 .scm-toolkit-auto-publish:hover > .scm-toolkit-tooltip,

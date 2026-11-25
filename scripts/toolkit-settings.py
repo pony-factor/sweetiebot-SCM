@@ -194,14 +194,69 @@ DEFAULT_SETTINGS = {
 }
 
 
+def _global_config(*args):
+    return subprocess.run(
+        ["git", "config", "--global", *args],
+        capture_output=True, text=True, cwd=Path.home(),
+    )
+
+
+def _read_global_setting(key, *options):
+    result = _global_config(*options, "--get", key)
+    # Read-only validation and the configurator preview must also work before
+    # the installer has migrated the user's preferences.
+    if result.returncode == 1 and key.startswith("sweetiebot."):
+        result = _global_config(*options, "--get", "scm-toolkit." + key[len("sweetiebot."):])
+    return result
+
+
+def migrate_legacy_git_settings():
+    """Move effective scalar preferences, retaining explicit canonical values.
+
+    Copy all missing preferences before deleting any old keys. Git reports the
+    origin of each value so cleanup works with both global config locations.
+    """
+    result = _global_config("--null", "--show-origin", "--get-regexp", r"^scm-toolkit\.")
+    if result.returncode == 1:
+        return
+    if result.returncode != 0:
+        raise RuntimeError("Unable to inspect legacy Git settings: " + result.stderr.strip())
+
+    fields = result.stdout.split("\0")
+    if fields[-1] != "" or (len(fields) - 1) % 2:
+        raise RuntimeError("Unexpected legacy Git configuration format.")
+    values = {}
+    origins = set()
+    for origin, entry in zip(fields[0:-1:2], fields[1:-1:2]):
+        key, separator, value = entry.partition("\n")
+        if not origin.startswith("file:") or not key.startswith("scm-toolkit."):
+            raise RuntimeError("Unexpected legacy Git configuration origin.")
+        values[key] = value if separator else "true"
+        origins.add((origin[len("file:"):], key))
+
+    for key, value in values.items():
+        canonical = "sweetiebot." + key[len("scm-toolkit."):]
+        existing = _global_config("--get", canonical)
+        if existing.returncode == 0:
+            continue
+        if existing.returncode != 1:
+            raise RuntimeError(f"Unable to inspect {canonical}: {existing.stderr.strip()}")
+        saved = _global_config("--replace-all", canonical, value)
+        if saved.returncode != 0:
+            raise RuntimeError(f"Unable to migrate {canonical}: {saved.stderr.strip()}")
+
+    for filename, key in sorted(origins):
+        removed = subprocess.run(
+            ["git", "config", "--file", filename, "--unset-all", key],
+            capture_output=True, text=True, cwd=Path.home(),
+        )
+        if removed.returncode not in (0, 5):
+            raise RuntimeError(f"Unable to remove migrated {key}: {removed.stderr.strip()}")
+
+
 def read_git_bool(key, default):
     try:
-        result = subprocess.run(
-            ["git", "config", "--global", "--type=bool", "--get", key],
-            capture_output=True,
-            text=True,
-            cwd=Path.home(),
-        )
+        result = _read_global_setting(key, "--type=bool")
     except FileNotFoundError:
         return default
 
@@ -214,12 +269,7 @@ def read_git_bool(key, default):
 
 def read_git_string(key, default, preserve_empty=False):
     try:
-        result = subprocess.run(
-            ["git", "config", "--global", "--get", key],
-            capture_output=True,
-            text=True,
-            cwd=Path.home(),
-        )
+        result = _read_global_setting(key)
     except FileNotFoundError:
         return default
 
@@ -238,7 +288,7 @@ def load_settings():
         if name == "messagePlaceholder":
             value = read_git_string(git_key, None, preserve_empty=True)
             if value is None:
-                value = "Message" if read_git_bool("scm-toolkit.short-placeholder", True) else ""
+                value = "Message" if read_git_bool("sweetiebot.short-placeholder", True) else ""
             settings[name] = value
         elif isinstance(default, bool):
             settings[name] = read_git_bool(git_key, default)
@@ -252,7 +302,7 @@ def load_settings():
     new_position = read_git_string(SETTING_KEYS["kefaniaCloseButtonPosition"], None)
     if new_position is None:
         settings["kefaniaCloseButtonPosition"] = (
-            "left" if read_git_bool("scm-toolkit.kefania-close-button-left", True) else "right"
+            "left" if read_git_bool("sweetiebot.kefania-close-button-left", True) else "right"
         )
     elif new_position not in {"left", "middle", "right"}:
         settings["kefaniaCloseButtonPosition"] = "left"
@@ -296,170 +346,170 @@ def persist_message_bar_layout(settings):
 
 
 SETTING_KEYS = {
-    "branchPicker": "scm-toolkit.branch-picker",
-    "horizontalBranchSelector": "scm-toolkit.horizontal-branch-selector",
-    "messageBarLayout": "scm-toolkit.message-bar-layout",
-    "ponyBranch": "scm-toolkit.pony-branch",
-    "branchNameDisabledPacks": "scm-toolkit.branch-name-disabled-packs",
-    "branchCustomNames": "scm-toolkit.branch-custom-names",
-    "branchNameImports": "scm-toolkit.branch-name-imports",
-    "messagePlaceholder": "scm-toolkit.message-placeholder",
-    "commitButtonLabel": "scm-toolkit.commit-button-label",
-    "commitAndSendButtonLabel": "scm-toolkit.commit-and-send-button-label",
-    "sourceControlLabel": "scm-toolkit.source-control-label",
-    "nativeAppUpdateMode": "scm-toolkit.native-app-update-mode",
-    "nativeExtensionAutoCheckUpdates": "scm-toolkit.native-extension-auto-check-updates",
-    "nativeExtensionAutoUpdate": "scm-toolkit.native-extension-auto-update",
-    "automaticAppRepair": "scm-toolkit.automatic-app-repair",
-    "openPanelOnStartup": "scm-toolkit.open-panel-on-startup",
-    "notificationPosition": "scm-toolkit.notification-position",
-    "workspaceSearchActivityBar": "scm-toolkit.workspace-search-activity-bar",
-    "workspaceSearchLabel": "scm-toolkit.workspace-search-label",
-    "workspaceSearchPlaceholder": "scm-toolkit.workspace-search-placeholder",
-    "workspaceSearchAskOllama": "scm-toolkit.workspace-search-ask-ollama",
-    "workspaceSearchChatModel": "scm-toolkit.workspace-search-chat-model",
-    "workspaceSearchEmbeddingModel": "scm-toolkit.workspace-search-embedding-model",
-    "filledButtons": "scm-toolkit.filled-buttons",
-    "commitAndPush": "scm-toolkit.commit-and-push",
-    "branchCleanup": "scm-toolkit.branch-cleanup",
-    "autocompleteToggle": "scm-toolkit.autocomplete-toggle",
-    "autoPublishToggle": "scm-toolkit.auto-publish-toggle",
-    "autoPublishNewBranches": "scm-toolkit.auto-publish-new-branches",
-    "automaticBranchCleanup": "scm-toolkit.automatic-branch-cleanup",
-    "automaticWorkspaceCleanup": "scm-toolkit.automatic-workspace-cleanup",
-    "pullRequestAutoRefresh": "scm-toolkit.pull-request-auto-refresh",
-    "pullRequestRefreshIntervalSeconds": "scm-toolkit.pull-request-refresh-interval-seconds",
-    "pullRequestQuickMerge": "scm-toolkit.pull-request-quick-merge",
-    "autoPublishPullRequests": "scm-toolkit.auto-publish-pull-requests",
-    "filterSyncCommitSummaries": "scm-toolkit.filter-sync-commit-summaries",
-    "squashOmitBulletsForEmojiTitles": "scm-toolkit.squash-omit-bullets-for-emoji-titles",
-    "squashTrailerSeparatorStyle": "scm-toolkit.squash-trailer-separator-style",
-    "mergeAutoRefresh": "scm-toolkit.merge-auto-refresh",
-    "mergeRefreshIntervalSeconds": "scm-toolkit.merge-refresh-interval-seconds",
-    "githubRateLimitCooldownSeconds": "scm-toolkit.github-rate-limit-cooldown-seconds",
-    "mergePostSummaries": "scm-toolkit.merge-post-summaries",
-    "mergeShowPrCommits": "scm-toolkit.merge-show-pr-commits",
-    "mergeTimelineTimestampMode": "scm-toolkit.merge-timeline-timestamp-mode",
-    "mergeSidebarWidthPercent": "scm-toolkit.merge-sidebar-width-percent",
-    "mergeTimelineHeightPercent": "scm-toolkit.merge-timeline-height-percent",
-    "kefaniaAutoShareCodexChat": "scm-toolkit.kefania-auto-share-codex-chat",
-    "kefaniaUseThemeColors": "scm-toolkit.kefania-use-theme-colors",
-    "kefaniaShowCloseButton": "scm-toolkit.kefania-show-close-button",
-    "kefaniaCloseAfterMerge": "scm-toolkit.kefania-close-after-merge",
-    "kefaniaCloseButtonPosition": "scm-toolkit.kefania-close-button-position",
-    "ludicrousMode": "scm-toolkit.ludicrous-mode",
-    "chatgptProjectUrl": "scm-toolkit.chatgpt-project-url",
-    "chatgptReviewProjectUrl": "scm-toolkit.chatgpt-review-project-url",
-    "workspaceSearchAutoReindex": "scm-toolkit.workspace-search-auto-reindex",
-    "hideSCMProgress": "scm-toolkit.hide-scm-progress",
-    "singleRepositoryPerWindow": "scm-toolkit.single-repository-per-window",
-    "inlineSuggestions": "scm-toolkit.inline-suggestions",
-    "postCommitAction": "scm-toolkit.post-commit-action",
-    "skipGitHooks": "scm-toolkit.skip-git-hooks",
-    "workspaceSearchOllamaUrl": "scm-toolkit.workspace-search-ollama-url",
-    "workspaceSearchMode": "scm-toolkit.workspace-search-mode",
-    "workspaceSearchResultLimit": "scm-toolkit.workspace-search-result-limit",
-    "workspaceSearchMaxFiles": "scm-toolkit.workspace-search-max-files",
-    "workspaceSearchMaxFileSizeMB": "scm-toolkit.workspace-search-max-file-size-mb",
-    "workspaceSearchExclude": "scm-toolkit.workspace-search-exclude",
-    "codexCoauthor": "scm-toolkit.codex-coauthor",
-    "codexCoauthorName": "scm-toolkit.codex-coauthor-name",
-    "codexCoauthorEmail": "scm-toolkit.codex-coauthor-email",
-    "codexCommitContext": "scm-toolkit.codex-commit-context",
-    "codexKeepAwake": "scm-toolkit.codex-keep-awake",
-    "codexWindowLabel": "scm-toolkit.codex-window-label",
-    "hideIncomingSyncCount": "scm-toolkit.hide-incoming-sync-count",
-    "hideOutgoingSyncCount": "scm-toolkit.hide-outgoing-sync-count",
-    "hideIncomingSyncArrow": "scm-toolkit.hide-incoming-sync-arrow",
-    "hideOutgoingSyncArrow": "scm-toolkit.hide-outgoing-sync-arrow",
-    "incomingSyncLabel": "scm-toolkit.incoming-sync-label",
-    "outgoingSyncLabel": "scm-toolkit.outgoing-sync-label",
-    "blankStateRefresh": "scm-toolkit.blank-state-refresh",
-    "autoPullClean": "scm-toolkit.auto-pull-clean",
-    "cloudRepositorySync": "scm-toolkit.cloud-repository-sync",
-    "cmdClickCloseOthers": "scm-toolkit.cmd-click-close-others",
-    "compactWindowButton": "scm-toolkit.compact-window-button",
-    "newWorkspaceWindowButton": "scm-toolkit.new-workspace-window-button",
-    "windowHeading": "scm-toolkit.window-heading",
-    "windowName": "scm-toolkit.window-name",
-    "windowShowModifiedStatus": "scm-toolkit.window-show-modified-status",
-    "windowShowPushingStatus": "scm-toolkit.window-show-pushing-status",
-    "browserGlobeNewTab": "scm-toolkit.browser-globe-new-tab",
-    "browserChatgptHome": "scm-toolkit.browser-chatgpt-home",
-    "browserHomeUrl": "scm-toolkit.browser-home-url",
-    "browserSessionCookieDays": "scm-toolkit.browser-session-cookie-days",
-    "graphOpenWorkingFile": "scm-toolkit.graph-open-working-file",
-    "graphPreferOpenCommit": "scm-toolkit.graph-prefer-open-commit",
-    "gitGraphRelativeDates": "scm-toolkit.git-graph-relative-dates",
-    "aiCommit": "scm-toolkit.ai-commit",
-    "aiBackend": "scm-toolkit.ai-backend",
-    "aiCoremlModel": "scm-toolkit.ai-coreml-model",
-    "aiCoremlLowMemoryModel": "scm-toolkit.ai-coreml-low-memory-model",
-    "aiCoremlCommand": "scm-toolkit.ai-coreml-command",
-    "durableBackgroundCommits": "scm-toolkit.durable-background-commits",
-    "placeholderPrefix": "scm-toolkit.placeholder-prefix",
-    "aiDetailedCommitStyle": "scm-toolkit.ai-detailed-commit-style",
-    "aiTitleExplanations": "scm-toolkit.ai-title-explanations",
-    "aiCommitFallback": "scm-toolkit.ai-commit-fallback",
-    "aiCommitRequestTimeoutSeconds": "scm-toolkit.ai-commit-request-timeout-seconds",
-    "aiCommitAttempts": "scm-toolkit.ai-commit-attempts",
-    "normalizeStagedWhitespace": "scm-toolkit.normalize-staged-whitespace",
-    "spellcheckManualCommit": "scm-toolkit.spellcheck-preview",
-    "draftSpellcheckAction": "scm-toolkit.draft-spellcheck-action",
-    "draftSpellcheckDelaySeconds": "scm-toolkit.draft-spellcheck-delay-seconds",
-    "draftSpellcheckStyle": "scm-toolkit.draft-spellcheck-style",
-    "draftSpellcheckVocabulary": "scm-toolkit.draft-spellcheck-vocabulary",
-    "draftSpellcheckGuidance": "scm-toolkit.draft-spellcheck-guidance",
-    "draftCommitEmoji": "scm-toolkit.draft-commit-emoji",
-    "postCommitSpellcheck": "scm-toolkit.post-commit-spellcheck",
-    "spellcheckChangesEmoji": "scm-toolkit.spellcheck-changes-emoji",
-    "spellcheckPreserveLineBreaks": "scm-toolkit.spellcheck-preserve-line-breaks",
-    "spellcheckDateFormat": "scm-toolkit.spellcheck-date-format",
-    "aiDefaultBranchDescription": "scm-toolkit.ai-default-branch-description",
-    "aiEmojiPriorityRules": "scm-toolkit.ai-emoji-priority-rules",
-    "aiCommitModel": "scm-toolkit.ai-commit-model",
-    "spellcheckModel": "scm-toolkit.spellcheck-model",
-    "spellcheckThinkingEffort": "scm-toolkit.spellcheck-thinking-effort",
-    "spellcheckInstructions": "scm-toolkit.spellcheck-instructions",
-    "aiCommitLowMemoryModel": "scm-toolkit.ai-commit-low-memory-model",
-    "aiLowMemoryGiB": "scm-toolkit.ai-low-memory-gib",
-    "aiModelPicker": "scm-toolkit.ai-model-picker",
-    "mcpPullRequest": "scm-toolkit.mcp-pull-request",
-    "prWarningHighlights": "scm-toolkit.pr-warning-highlights",
-    "mcpPrServer": "scm-toolkit.mcp-pr-server",
-    "mcpPrTool": "scm-toolkit.mcp-pr-tool",
-    "codexUsageResetCountdown": "scm-toolkit.codex-usage-reset-countdown",
-    "codexContinueAtReset": "scm-toolkit.codex-continue-at-reset",
-    "codexRateLimitSticker": "scm-toolkit.codex-rate-limit-sticker",
-    "codexHideUsageResetTimes": "scm-toolkit.codex-hide-usage-reset-times",
-    "codexUsagePieIndicator": "scm-toolkit.codex-usage-pie-indicator",
-    "codexCloudTasks": "scm-toolkit.codex-cloud-tasks",
-    "codexResetTimePieIndicator": "scm-toolkit.codex-reset-time-pie-indicator",
-    "codexHidePromotions": "scm-toolkit.codex-hide-promotions",
-    "codexHideDictation": "scm-toolkit.codex-hide-dictation",
-    "codexShortModelLabels": "scm-toolkit.codex-short-model-labels",
-    "codexHideChatTimestamps": "scm-toolkit.codex-hide-chat-timestamps",
-    "codexShowCannon": "scm-toolkit.codex-show-cannon",
-    "codexComposerLayout": "scm-toolkit.codex-composer-layout",
-    "codexFlatComposer": "scm-toolkit.codex-flat-composer",
-    "codexHideAccessLabel": "scm-toolkit.codex-hide-access-label",
-    "codexInlineLocation": "scm-toolkit.codex-inline-location",
-    "codexShowQueuedDelete": "scm-toolkit.codex-show-queued-delete",
-    "codexShowQueuePause": "scm-toolkit.codex-show-queue-pause",
-    "codexInlineQueuedEditing": "scm-toolkit.codex-inline-queued-editing",
-    "codexClipboardSubmit": "scm-toolkit.codex-clipboard-submit",
-    "codexInterruptOnSendClick": "scm-toolkit.codex-interrupt-on-send-click",
-    "codexSendWing": "scm-toolkit.codex-send-wing",
-    "codexSendBackground": "scm-toolkit.codex-send-background",
-    "codexNewChatDotColor": "scm-toolkit.codex-new-chat-dot-color",
-    "codexSendForeground": "scm-toolkit.codex-send-foreground",
-    "codexComposerLabelColor": "scm-toolkit.codex-composer-label-color",
-    "codexDropAccent": "scm-toolkit.codex-drop-accent",
-    "codexNewChatPlaceholder": "scm-toolkit.codex-new-chat-placeholder",
-    "codexFollowUpPlaceholder": "scm-toolkit.codex-follow-up-placeholder",
-    "defaultBranch": "scm-toolkit.default-branch",
-    "remote": "scm-toolkit.remote",
-    "pullRemote": "scm-toolkit.pull-remote",
+    "branchPicker": "sweetiebot.branch-picker",
+    "horizontalBranchSelector": "sweetiebot.horizontal-branch-selector",
+    "messageBarLayout": "sweetiebot.message-bar-layout",
+    "ponyBranch": "sweetiebot.pony-branch",
+    "branchNameDisabledPacks": "sweetiebot.branch-name-disabled-packs",
+    "branchCustomNames": "sweetiebot.branch-custom-names",
+    "branchNameImports": "sweetiebot.branch-name-imports",
+    "messagePlaceholder": "sweetiebot.message-placeholder",
+    "commitButtonLabel": "sweetiebot.commit-button-label",
+    "commitAndSendButtonLabel": "sweetiebot.commit-and-send-button-label",
+    "sourceControlLabel": "sweetiebot.source-control-label",
+    "nativeAppUpdateMode": "sweetiebot.native-app-update-mode",
+    "nativeExtensionAutoCheckUpdates": "sweetiebot.native-extension-auto-check-updates",
+    "nativeExtensionAutoUpdate": "sweetiebot.native-extension-auto-update",
+    "automaticAppRepair": "sweetiebot.automatic-app-repair",
+    "openPanelOnStartup": "sweetiebot.open-panel-on-startup",
+    "notificationPosition": "sweetiebot.notification-position",
+    "workspaceSearchActivityBar": "sweetiebot.workspace-search-activity-bar",
+    "workspaceSearchLabel": "sweetiebot.workspace-search-label",
+    "workspaceSearchPlaceholder": "sweetiebot.workspace-search-placeholder",
+    "workspaceSearchAskOllama": "sweetiebot.workspace-search-ask-ollama",
+    "workspaceSearchChatModel": "sweetiebot.workspace-search-chat-model",
+    "workspaceSearchEmbeddingModel": "sweetiebot.workspace-search-embedding-model",
+    "filledButtons": "sweetiebot.filled-buttons",
+    "commitAndPush": "sweetiebot.commit-and-push",
+    "branchCleanup": "sweetiebot.branch-cleanup",
+    "autocompleteToggle": "sweetiebot.autocomplete-toggle",
+    "autoPublishToggle": "sweetiebot.auto-publish-toggle",
+    "autoPublishNewBranches": "sweetiebot.auto-publish-new-branches",
+    "automaticBranchCleanup": "sweetiebot.automatic-branch-cleanup",
+    "automaticWorkspaceCleanup": "sweetiebot.automatic-workspace-cleanup",
+    "pullRequestAutoRefresh": "sweetiebot.pull-request-auto-refresh",
+    "pullRequestRefreshIntervalSeconds": "sweetiebot.pull-request-refresh-interval-seconds",
+    "pullRequestQuickMerge": "sweetiebot.pull-request-quick-merge",
+    "autoPublishPullRequests": "sweetiebot.auto-publish-pull-requests",
+    "filterSyncCommitSummaries": "sweetiebot.filter-sync-commit-summaries",
+    "squashOmitBulletsForEmojiTitles": "sweetiebot.squash-omit-bullets-for-emoji-titles",
+    "squashTrailerSeparatorStyle": "sweetiebot.squash-trailer-separator-style",
+    "mergeAutoRefresh": "sweetiebot.merge-auto-refresh",
+    "mergeRefreshIntervalSeconds": "sweetiebot.merge-refresh-interval-seconds",
+    "githubRateLimitCooldownSeconds": "sweetiebot.github-rate-limit-cooldown-seconds",
+    "mergePostSummaries": "sweetiebot.merge-post-summaries",
+    "mergeShowPrCommits": "sweetiebot.merge-show-pr-commits",
+    "mergeTimelineTimestampMode": "sweetiebot.merge-timeline-timestamp-mode",
+    "mergeSidebarWidthPercent": "sweetiebot.merge-sidebar-width-percent",
+    "mergeTimelineHeightPercent": "sweetiebot.merge-timeline-height-percent",
+    "kefaniaAutoShareCodexChat": "sweetiebot.kefania-auto-share-codex-chat",
+    "kefaniaUseThemeColors": "sweetiebot.kefania-use-theme-colors",
+    "kefaniaShowCloseButton": "sweetiebot.kefania-show-close-button",
+    "kefaniaCloseAfterMerge": "sweetiebot.kefania-close-after-merge",
+    "kefaniaCloseButtonPosition": "sweetiebot.kefania-close-button-position",
+    "ludicrousMode": "sweetiebot.ludicrous-mode",
+    "chatgptProjectUrl": "sweetiebot.chatgpt-project-url",
+    "chatgptReviewProjectUrl": "sweetiebot.chatgpt-review-project-url",
+    "workspaceSearchAutoReindex": "sweetiebot.workspace-search-auto-reindex",
+    "hideSCMProgress": "sweetiebot.hide-scm-progress",
+    "singleRepositoryPerWindow": "sweetiebot.single-repository-per-window",
+    "inlineSuggestions": "sweetiebot.inline-suggestions",
+    "postCommitAction": "sweetiebot.post-commit-action",
+    "skipGitHooks": "sweetiebot.skip-git-hooks",
+    "workspaceSearchOllamaUrl": "sweetiebot.workspace-search-ollama-url",
+    "workspaceSearchMode": "sweetiebot.workspace-search-mode",
+    "workspaceSearchResultLimit": "sweetiebot.workspace-search-result-limit",
+    "workspaceSearchMaxFiles": "sweetiebot.workspace-search-max-files",
+    "workspaceSearchMaxFileSizeMB": "sweetiebot.workspace-search-max-file-size-mb",
+    "workspaceSearchExclude": "sweetiebot.workspace-search-exclude",
+    "codexCoauthor": "sweetiebot.codex-coauthor",
+    "codexCoauthorName": "sweetiebot.codex-coauthor-name",
+    "codexCoauthorEmail": "sweetiebot.codex-coauthor-email",
+    "codexCommitContext": "sweetiebot.codex-commit-context",
+    "codexKeepAwake": "sweetiebot.codex-keep-awake",
+    "codexWindowLabel": "sweetiebot.codex-window-label",
+    "hideIncomingSyncCount": "sweetiebot.hide-incoming-sync-count",
+    "hideOutgoingSyncCount": "sweetiebot.hide-outgoing-sync-count",
+    "hideIncomingSyncArrow": "sweetiebot.hide-incoming-sync-arrow",
+    "hideOutgoingSyncArrow": "sweetiebot.hide-outgoing-sync-arrow",
+    "incomingSyncLabel": "sweetiebot.incoming-sync-label",
+    "outgoingSyncLabel": "sweetiebot.outgoing-sync-label",
+    "blankStateRefresh": "sweetiebot.blank-state-refresh",
+    "autoPullClean": "sweetiebot.auto-pull-clean",
+    "cloudRepositorySync": "sweetiebot.cloud-repository-sync",
+    "cmdClickCloseOthers": "sweetiebot.cmd-click-close-others",
+    "compactWindowButton": "sweetiebot.compact-window-button",
+    "newWorkspaceWindowButton": "sweetiebot.new-workspace-window-button",
+    "windowHeading": "sweetiebot.window-heading",
+    "windowName": "sweetiebot.window-name",
+    "windowShowModifiedStatus": "sweetiebot.window-show-modified-status",
+    "windowShowPushingStatus": "sweetiebot.window-show-pushing-status",
+    "browserGlobeNewTab": "sweetiebot.browser-globe-new-tab",
+    "browserChatgptHome": "sweetiebot.browser-chatgpt-home",
+    "browserHomeUrl": "sweetiebot.browser-home-url",
+    "browserSessionCookieDays": "sweetiebot.browser-session-cookie-days",
+    "graphOpenWorkingFile": "sweetiebot.graph-open-working-file",
+    "graphPreferOpenCommit": "sweetiebot.graph-prefer-open-commit",
+    "gitGraphRelativeDates": "sweetiebot.git-graph-relative-dates",
+    "aiCommit": "sweetiebot.ai-commit",
+    "aiBackend": "sweetiebot.ai-backend",
+    "aiCoremlModel": "sweetiebot.ai-coreml-model",
+    "aiCoremlLowMemoryModel": "sweetiebot.ai-coreml-low-memory-model",
+    "aiCoremlCommand": "sweetiebot.ai-coreml-command",
+    "durableBackgroundCommits": "sweetiebot.durable-background-commits",
+    "placeholderPrefix": "sweetiebot.placeholder-prefix",
+    "aiDetailedCommitStyle": "sweetiebot.ai-detailed-commit-style",
+    "aiTitleExplanations": "sweetiebot.ai-title-explanations",
+    "aiCommitFallback": "sweetiebot.ai-commit-fallback",
+    "aiCommitRequestTimeoutSeconds": "sweetiebot.ai-commit-request-timeout-seconds",
+    "aiCommitAttempts": "sweetiebot.ai-commit-attempts",
+    "normalizeStagedWhitespace": "sweetiebot.normalize-staged-whitespace",
+    "spellcheckManualCommit": "sweetiebot.spellcheck-preview",
+    "draftSpellcheckAction": "sweetiebot.draft-spellcheck-action",
+    "draftSpellcheckDelaySeconds": "sweetiebot.draft-spellcheck-delay-seconds",
+    "draftSpellcheckStyle": "sweetiebot.draft-spellcheck-style",
+    "draftSpellcheckVocabulary": "sweetiebot.draft-spellcheck-vocabulary",
+    "draftSpellcheckGuidance": "sweetiebot.draft-spellcheck-guidance",
+    "draftCommitEmoji": "sweetiebot.draft-commit-emoji",
+    "postCommitSpellcheck": "sweetiebot.post-commit-spellcheck",
+    "spellcheckChangesEmoji": "sweetiebot.spellcheck-changes-emoji",
+    "spellcheckPreserveLineBreaks": "sweetiebot.spellcheck-preserve-line-breaks",
+    "spellcheckDateFormat": "sweetiebot.spellcheck-date-format",
+    "aiDefaultBranchDescription": "sweetiebot.ai-default-branch-description",
+    "aiEmojiPriorityRules": "sweetiebot.ai-emoji-priority-rules",
+    "aiCommitModel": "sweetiebot.ai-commit-model",
+    "spellcheckModel": "sweetiebot.spellcheck-model",
+    "spellcheckThinkingEffort": "sweetiebot.spellcheck-thinking-effort",
+    "spellcheckInstructions": "sweetiebot.spellcheck-instructions",
+    "aiCommitLowMemoryModel": "sweetiebot.ai-commit-low-memory-model",
+    "aiLowMemoryGiB": "sweetiebot.ai-low-memory-gib",
+    "aiModelPicker": "sweetiebot.ai-model-picker",
+    "mcpPullRequest": "sweetiebot.mcp-pull-request",
+    "prWarningHighlights": "sweetiebot.pr-warning-highlights",
+    "mcpPrServer": "sweetiebot.mcp-pr-server",
+    "mcpPrTool": "sweetiebot.mcp-pr-tool",
+    "codexUsageResetCountdown": "sweetiebot.codex-usage-reset-countdown",
+    "codexContinueAtReset": "sweetiebot.codex-continue-at-reset",
+    "codexRateLimitSticker": "sweetiebot.codex-rate-limit-sticker",
+    "codexHideUsageResetTimes": "sweetiebot.codex-hide-usage-reset-times",
+    "codexUsagePieIndicator": "sweetiebot.codex-usage-pie-indicator",
+    "codexCloudTasks": "sweetiebot.codex-cloud-tasks",
+    "codexResetTimePieIndicator": "sweetiebot.codex-reset-time-pie-indicator",
+    "codexHidePromotions": "sweetiebot.codex-hide-promotions",
+    "codexHideDictation": "sweetiebot.codex-hide-dictation",
+    "codexShortModelLabels": "sweetiebot.codex-short-model-labels",
+    "codexHideChatTimestamps": "sweetiebot.codex-hide-chat-timestamps",
+    "codexShowCannon": "sweetiebot.codex-show-cannon",
+    "codexComposerLayout": "sweetiebot.codex-composer-layout",
+    "codexFlatComposer": "sweetiebot.codex-flat-composer",
+    "codexHideAccessLabel": "sweetiebot.codex-hide-access-label",
+    "codexInlineLocation": "sweetiebot.codex-inline-location",
+    "codexShowQueuedDelete": "sweetiebot.codex-show-queued-delete",
+    "codexShowQueuePause": "sweetiebot.codex-show-queue-pause",
+    "codexInlineQueuedEditing": "sweetiebot.codex-inline-queued-editing",
+    "codexClipboardSubmit": "sweetiebot.codex-clipboard-submit",
+    "codexInterruptOnSendClick": "sweetiebot.codex-interrupt-on-send-click",
+    "codexSendWing": "sweetiebot.codex-send-wing",
+    "codexSendBackground": "sweetiebot.codex-send-background",
+    "codexNewChatDotColor": "sweetiebot.codex-new-chat-dot-color",
+    "codexSendForeground": "sweetiebot.codex-send-foreground",
+    "codexComposerLabelColor": "sweetiebot.codex-composer-label-color",
+    "codexDropAccent": "sweetiebot.codex-drop-accent",
+    "codexNewChatPlaceholder": "sweetiebot.codex-new-chat-placeholder",
+    "codexFollowUpPlaceholder": "sweetiebot.codex-follow-up-placeholder",
+    "defaultBranch": "sweetiebot.default-branch",
+    "remote": "sweetiebot.remote",
+    "pullRemote": "sweetiebot.pull-remote",
 }
 
 

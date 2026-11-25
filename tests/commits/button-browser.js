@@ -341,6 +341,52 @@ const css = name => fs.readFileSync(path.join(__dirname, '../../assets/workbench
           'Message retains usable space beside the branch picker');
       }
     }
+    // Custom SCM icons resolve the user's icon color, not secondary text or link colors.
+    await page.goto('about:blank');
+    const iconControls = [
+      'home', 'delete-branch', 'autocomplete', 'spellcheck', 'post-spellcheck',
+      'codex-coauthor', 'pull-request', 'sync-branch', 'pony-branch',
+      'stacked-branch', 'auto-publish', 'auto-commit'
+    ];
+    await page.setContent(`<div class="scm-view"><div class="scm-editor">
+      ${iconControls.map(name => `<button class="scm-toolkit-${name}"></button>`).join('')}
+      <label class="scm-toolkit-push"><input type="checkbox" class="scm-toolkit-push-checkbox" checked><span class="scm-toolkit-push-mark"></span></label>
+      </div><div class="monaco-action-bar"><div class="action-item"><a class="action-label codicon" style="display:inline-block;width:24px;height:24px;color:var(--vscode-icon-foreground)">x</a></div></div></div>`);
+    await page.addStyleTag({content: `:root {
+      --vscode-icon-foreground: rgb(20, 180, 40);
+      --vscode-foreground: rgb(225, 225, 225);
+      --vscode-descriptionForeground: rgb(100, 100, 100);
+      --vscode-textLink-foreground: rgb(50, 100, 220);
+      --vscode-disabledForeground: rgb(90, 80, 70);
+      --vscode-editorWarning-foreground: rgb(220, 140, 40);
+      --vscode-checkbox-border: rgb(25, 50, 75);
+      --vscode-checkbox-foreground: rgb(75, 50, 25);
+    }` + css('picker.css')});
+    const controlColor = name => page.locator('.scm-toolkit-' + name).evaluate(node => getComputedStyle(node).color);
+    for (const name of iconControls) {
+      assert.equal(await controlColor(name), 'rgb(20, 180, 40)', name);
+    }
+    await page.locator('.scm-toolkit-auto-commit').evaluate(node => node.classList.add('scm-toolkit-auto-commit-active'));
+    assert.equal(await controlColor('auto-commit'), 'rgb(50, 100, 220)');
+    await page.locator('.scm-toolkit-post-spellcheck').evaluate(node => node.classList.add('scm-toolkit-post-spellcheck-active'));
+    assert.equal(await controlColor('post-spellcheck'), 'rgb(50, 100, 220)');
+    await page.locator('.scm-toolkit-pull-request').evaluate(node => node.classList.add('scm-toolkit-pr-needs-attention'));
+    assert.equal(await controlColor('pull-request'), 'rgb(220, 140, 40)');
+    await page.evaluate(() => document.documentElement.style.setProperty('--vscode-icon-foreground', 'rgb(170, 30, 80)'));
+    assert.equal(await controlColor('home'), 'rgb(170, 30, 80)', 'Live theme changes propagate');
+    for (const name of iconControls) {
+      await page.locator('.scm-toolkit-' + name).evaluate(node => { node.disabled = true; });
+      assert.equal(await controlColor(name), 'rgb(90, 80, 70)', name + ' disabled');
+    }
+    const mark = page.locator('.scm-toolkit-push-mark');
+    assert.equal(await mark.evaluate(node => getComputedStyle(node).borderTopColor), 'rgb(25, 50, 75)');
+    assert.equal(await mark.evaluate(node => getComputedStyle(node, '::after').borderRightColor), 'rgb(75, 50, 25)');
+    await page.locator('.scm-toolkit-push-checkbox').evaluate(node => { node.disabled = true; });
+    assert.equal(await mark.evaluate(node => getComputedStyle(node).borderTopColor), 'rgb(90, 80, 70)');
+    const nativeIcon = page.locator('.action-label.codicon');
+    await nativeIcon.hover();
+    assert.equal(await nativeIcon.evaluate(node => getComputedStyle(node).color), 'rgb(255, 255, 255)', 'Intentional white hover stays intact');
+
     assert.deepEqual(errors, []);
     console.log('Commit button browser tests passed');
   } finally {
