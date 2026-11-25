@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, registerDevelopmentLauncher } = require('../../extension/branches/development-launcher');
+const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, seedBraveProfile, registerDevelopmentLauncher } = require('../../extension/branches/development-launcher');
 
 (async () => {
   assert.deepEqual(parseArgs('["npm","run","dev","a b"]'), ['npm', 'run', 'dev', 'a b']);
@@ -26,6 +26,39 @@ const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady,
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { start: 'node app' } }));
     assert.deepEqual(await suggestedArgs(root), ['npm', 'start']);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+  const calls = [];
+  const browser = { commands: {
+    getCommands: async () => ['workbench.action.browser.open'],
+    executeCommand: async (...args) => calls.push(args)
+  }, workspace: { getConfiguration: () => ({ get: () => 'global' }) },
+    env: { openExternal: async url => calls.push(['external', url]) }, Uri: { parse: url => url } };
+  await openDevelopmentUrl(browser, 'http://localhost:5173/', 'integrated');
+  assert.deepEqual(calls.pop(), ['workbench.action.browser.open', { url: 'http://localhost:5173/', openToSide: false }]);
+  await openDevelopmentUrl(browser, 'http://localhost:5173/');
+  assert.deepEqual(calls.pop(), ['external', 'http://localhost:5173/']);
+  browser.workspace.getConfiguration = () => ({ get: () => 'ephemeral' });
+  await assert.rejects(openDevelopmentUrl(browser, 'http://localhost:5173/', 'integrated'), /persistent/);
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-brave-seed-'));
+  try {
+    const runner = async (...args) => calls.push(args);
+    let choice;
+    const host = { window: { showWarningMessage: async () => choice } };
+    assert.equal(await seedBraveProfile(host, profile, runner), false);
+    assert.equal(calls.length, 0);
+    choice = 'Launch without copying';
+    await seedBraveProfile(host, profile, runner);
+    assert.equal(calls.length, 0);
+    choice = 'Copy encrypted cookies';
+    await seedBraveProfile(host, profile, runner);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], 'python3');
+    assert.equal(calls[0][1][1], profile);
+    await fs.mkdir(path.join(profile, 'Default'));
+    await fs.writeFile(path.join(profile, 'Default/Cookies'), 'synthetic');
+    await seedBraveProfile(host, profile, runner);
+    assert.equal(calls.length, 1);
+  } finally { await fs.rm(profile, { recursive: true, force: true }); }
+
   let checks = 0;
   assert.equal(await waitForReady('http://localhost', () => true, { check: async () => ++checks === 2, pause: async () => {}, attempts: 3 }), true);
   assert.equal(checks, 2);

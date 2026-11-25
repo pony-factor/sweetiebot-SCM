@@ -25,6 +25,39 @@ function checkoutId(root) {
   return createHash('sha256').update(root).digest('hex');
 }
 
+async function openDevelopmentUrl(vscode, url, browser = 'external') {
+  if (browser === 'integrated') {
+    if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open'))
+      throw new Error('This VS Code build does not have the native Integrated Browser.');
+    const storage = vscode.workspace.getConfiguration('workbench.browser').get('dataStorage');
+    if (!['global', 'workspace'].includes(storage))
+      throw new Error('Choose persistent Global or Workspace Integrated Browser storage in VS Code settings first.');
+    await vscode.commands.executeCommand('workbench.action.browser.open', { url, openToSide: false });
+    return;
+  }
+  await vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+async function seedBraveProfile(vscode, profile, run = promisify(execFile)) {
+  // Never seed or overwrite a profile that already has its own cookie store.
+  for (const name of ['Default/Network/Cookies', 'Default/Cookies']) {
+    try { await fs.lstat(path.join(profile, name)); return; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  const consent = await vscode.window.showWarningMessage(
+    'Copy your normal Brave login cookies into this fresh test profile? The unpacked extension may be able to access authenticated sites and sessions according to its permissions. Only continue for code you trust.',
+    { modal: true }, 'Copy encrypted cookies', 'Launch without copying');
+  if (consent === 'Launch without copying') return;
+  if (consent !== 'Copy encrypted cookies') return false;
+  // The helper takes a read-only SQLite snapshot locally. Never return cookie
+  // contents or subprocess stderr to the extension host or log.
+  try {
+    await run('python3', [path.join(__dirname, 'seed-brave-profile.py'), profile], { timeout: 20000 });
+  } catch {
+    throw new Error('Could not seed Brave login cookies. Check that Python 3 and the normal Brave profile are available, or choose a separate sign-in.');
+  }
+}
+
 function braveArgs(root, profile, url) {
   return ['-na', 'Brave Browser', '--args', '--user-data-dir=' + profile,
     '--disable-extensions-except=' + root, '--load-extension=' + root,
@@ -100,7 +133,15 @@ function registerDevelopmentLauncher(vscode, context) {
       if (input === undefined) return;
       const url = new URL(input);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Enter an HTTP(S) URL without credentials.');
-      return { kind: 'brave', url: url.href };
+      const modes = [
+        { label: 'Separate sign-in (default)', description: 'Keep the checkout profile independent', copyBraveCookies: false },
+        { label: 'Copy normal Brave cookies', description: 'Opt in to seeding fresh checkout profiles only', copyBraveCookies: true }
+      ];
+      const mode = await vscode.window.showQuickPick(modes, {
+        placeHolder: existing?.copyBraveCookies ? 'Cookie copying was previously enabled; choose again' : 'Choose how to sign in to the test browser'
+      });
+      if (!mode) return;
+      return { kind: 'brave', url: url.href, copyBraveCookies: mode.copyBraveCookies };
     }
     const value = JSON.stringify(existing?.args ?? await suggestedArgs(root));
     const input = await vscode.window.showInputBox({ prompt: 'Executable and arguments as a JSON array (no shell)', value,
@@ -111,7 +152,15 @@ function registerDevelopmentLauncher(vscode, context) {
     const url = await vscode.window.showInputBox({ prompt: 'Local server URL', value: existing?.kind === 'server' ? existing.url : 'http://localhost:5173/',
       validateInput: value => { try { localUrl(value); } catch (error) { return error.message; } } });
     if (url === undefined) return;
-    return { kind: 'server', args, url: localUrl(url) };
+    const browsers = [
+      { label: 'Default external browser', kind: 'external' },
+      { label: 'VS Code Integrated Browser', description: 'Use its existing persistent global/workspace login', kind: 'integrated' }
+    ];
+    const browser = await vscode.window.showQuickPick(browsers, {
+      placeHolder: existing?.browser === 'integrated' ? 'Previously used the Integrated Browser; choose again' : 'Where to open the local server'
+    });
+    if (!browser) return;
+    return { kind: 'server', args, url: localUrl(url), browser: browser.kind };
   }
 
   async function launch(uri) {
@@ -153,6 +202,7 @@ function registerDevelopmentLauncher(vscode, context) {
           throw new Error('The Brave preset requires a macOS browser-extension checkout.');
         const profile = path.join(context.globalStorageUri.fsPath, 'brave-tests', checkoutId(root));
         await fs.mkdir(profile, { recursive: true, mode: 0o700 });
+        if (config.copyBraveCookies === true && await seedBraveProfile(vscode, profile) === false) return;
         await promisify(execFile)('/usr/bin/open', braveArgs(root, profile, config.url));
         return;
       }
@@ -172,7 +222,7 @@ function registerDevelopmentLauncher(vscode, context) {
       const ready = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification, title: 'Waiting for ' + url, cancellable: true
       }, (_, token) => waitForReady(url, () => !token.isCancellationRequested && running(root) === execution));
-      if (ready && running(root) === execution) await vscode.env.openExternal(vscode.Uri.parse(url));
+      if (ready && running(root) === execution) await openDevelopmentUrl(vscode, url, config.browser);
       else vscode.window.showInformationMessage('Server URL was not ready before the wait ended. Check the development task terminal.');
     } finally { if (locked) pending.delete(root); }
   }
@@ -181,4 +231,4 @@ function registerDevelopmentLauncher(vscode, context) {
     launch(uri).catch(error => vscode.window.showErrorMessage('Development launch: ' + error.message))));
 }
 
-module.exports = { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, registerDevelopmentLauncher };
+module.exports = { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, seedBraveProfile, registerDevelopmentLauncher };
