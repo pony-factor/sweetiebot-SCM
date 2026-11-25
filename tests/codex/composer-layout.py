@@ -85,7 +85,6 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertIn('id="codex-layout-control-picker"', page)
         self.assertIn('id="codex-layout-position-picker"', page)
         self.assertIn('class="codex-layout-icon"', page)
-        self.assertIn('aria-label="Message input (required)"', page)
 
     def test_hidden_access_is_preserved_and_right_alignment_is_allowed(self):
         old = {"left": ["input", "attachments"], "right": ["send"],
@@ -104,9 +103,13 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertNotIn('id !== "access"', runtime)
         self.assertIn('id !== "input"', runtime)
 
-    def test_input_always_remains_in_composer_preview(self):
-        page = layout.render_control(layout.DEFAULT_LAYOUT_JSON)
-        self.assertIn("Message input (required)", page)
+    def test_fixed_input_is_not_an_editable_control(self):
+        saved = {"left": ["attachments", "input", "access", "location", "clipboard"],
+                 "right": ["send"], "hidden": []}
+        page = layout.render_control(saved)
+        self.assertNotIn('data-codex-layout-id="input"', page)
+        self.assertNotIn('<option value="input">', page)
+        self.assertIn('&quot;attachments&quot;,&quot;input&quot;,&quot;access&quot;', page)
         self.assertIn("codex-layout-left", page)
         self.assertIn("codex-layout-right", page)
         self.assertIn('data-codex-layout-zone="hidden"', page)

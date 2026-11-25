@@ -18,7 +18,7 @@ import json
 IDS = ("input", "attachments", "access", "location", "clipboard", "send")
 LABELS = ("Message input", "Attachments", "Access permissions",
           "Computer / location / usage", "Clipboard Send / Queue", "Send / Stop (wing)")
-ICONS = {"input": "✎", "attachments": "⌁", "access": "♙",
+ICONS = {"attachments": "⌁", "access": "♙",
          "location": "◎", "clipboard": "▤", "send": "➤"}
 DEFAULT_LAYOUT = {"left": list(IDS[:-1]), "right": ["send"], "hidden": []}
 DEFAULT_LAYOUT_JSON = json.dumps(DEFAULT_LAYOUT, separators=(",", ":"))
@@ -71,16 +71,13 @@ def render_control(current):
 
     def item(key):
         label = html.escape(dict(zip(IDS, LABELS))[key], quote=True)
-        title = label + (" (required)" if key == "input" else "")
-        toggle = ("" if key == "input" else
-                  '<button type="button" data-codex-layout-toggle title="Change alignment of ' +
-                  label + '" aria-label="Change alignment of ' + label + '">↔</button>')
         return ('<div class="codex-layout-item" tabindex="0" role="listitem" '
-                'draggable="true" data-codex-layout-id="' + key + '" title="' + title +
-                '" aria-label="' + title + '">'
+                'draggable="true" data-codex-layout-id="' + key + '" title="' + label +
+                '" aria-label="' + label + '">'
                 '<span class="codex-layout-grip" title="Drag ' + label + '" aria-hidden="true">⋮⋮</span>'
                 '<span class="codex-layout-icon" aria-hidden="true">' + ICONS[key] + '</span>' +
-                toggle + '</div>')
+                '<button type="button" data-codex-layout-toggle title="Change alignment of ' +
+                label + '" aria-label="Change alignment of ' + label + '">↔</button></div>')
 
     return ('<section class="codex-layout-editor" aria-label="Codex composer layout">'
             '<input type="hidden" id="codex-composer-layout" name="codexComposerLayout" value="' +
@@ -92,7 +89,7 @@ def render_control(current):
             '<div class="codex-layout-pickers"><label for="codex-layout-control-picker">Control'
             '<select id="codex-layout-control-picker" aria-label="Choose a composer control">' +
             "".join('<option value="' + key + '">' + html.escape(label) + '</option>'
-                    for key, label in zip(IDS, LABELS)) + '</select></label>'
+                    for key, label in zip(IDS, LABELS) if key != "input") + '</select></label>'
             '<label for="codex-layout-position-picker">Position'
             '<select id="codex-layout-position-picker" aria-label="Choose control position">'
             '<option value="left">Left aligned</option>'
@@ -102,7 +99,8 @@ def render_control(current):
             '<div class="codex-layout-side codex-layout-side-left">'
             '<span class="codex-layout-caption">Left aligned</span>'
             '<div id="codex-layout-left" role="list" class="codex-layout-zone" '
-            'data-codex-layout-zone="left">' + "".join(map(item, layout["left"])) + '</div></div>'
+            'data-codex-layout-zone="left">' +
+            "".join(item(key) for key in layout["left"] if key != "input") + '</div></div>'
             '<div class="codex-layout-side codex-layout-side-right">'
             '<span class="codex-layout-caption">Right aligned</span>'
             '<div id="codex-layout-right" role="list" class="codex-layout-zone" '
@@ -162,11 +160,7 @@ CONFIG_SCRIPT = """
   function updatePicker() {
     const item = byId.get(controlPicker.value);
     if (!item) return;
-    const id = item.dataset.codexLayoutId;
     positionPicker.value = item.parentElement.dataset.codexLayoutZone;
-    for (const option of positionPicker.options) {
-      option.disabled = id === "input" && option.value !== "left";
-    }
     items.forEach(el => el.classList.toggle("is-selected", el === item));
   }
   function selectItem(item) {
@@ -176,7 +170,7 @@ CONFIG_SCRIPT = """
   function sync() {
     const read = name => [...zone(name).children]
       .filter(el => el.dataset.codexLayoutId).map(el => el.dataset.codexLayoutId);
-    input.value = JSON.stringify({left:read("left"),right:read("right"),hidden:read("hidden")});
+    input.value = JSON.stringify({left:["input", ...read("left")],right:read("right"),hidden:read("hidden")});
     input.dispatchEvent(new Event("input", {bubbles:true}));
     updatePicker();
   }
@@ -193,7 +187,7 @@ CONFIG_SCRIPT = """
     }
   }
   function move(item, target, before = null) {
-    if (!target || (item.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
+    if (!target) return;
     target.insertBefore(item, before);
     updateActions();
     sync();
@@ -263,7 +257,7 @@ CONFIG_SCRIPT = """
   }
   for (const target of zones) {
     target.addEventListener("dragover", event => {
-      if (!dragging || (dragging.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
+      if (!dragging) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       zones.forEach(el => el.classList.toggle("is-over", el === target));
@@ -280,8 +274,7 @@ CONFIG_SCRIPT = """
     });
   }
   document.getElementById("codex-layout-reset").addEventListener("click", () => {
-    const byId = new Map(items.map(item => [item.dataset.codexLayoutId, item]));
-    ["input","attachments","access","location","clipboard"].forEach(id =>
+    ["attachments","access","location","clipboard"].forEach(id =>
       zone("left").append(byId.get(id)));
     zone("right").append(byId.get("send"));
     clearDrop();
