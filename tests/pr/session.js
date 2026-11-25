@@ -156,12 +156,20 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       headSha: 'b'.repeat(40), url: 'https://github.com/pony-factor/example/pull/290' };
     const syncRepository = 'pony-factor/example';
     const syncCalls = [];
+    const syncReviews = [];
     const syncContext = { ...context, subscriptions: [] };
     const project = 'https://chatgpt.com/g/g-p-fixture/project';
     const syncHost = { ...source, ProgressLocation: { Notification: 15 },
-      window: { withProgress: (_options, task) => task({ report() {} }) },
+      window: {
+        withProgress: (_options, task) => task({ report() {} }),
+        async showTextDocument(document) { syncReviews.push(document); },
+        async showInformationMessage(_message, action) {
+          assert.equal(action, 'Apply and publish with Lindsey');
+          return undefined;
+        }
+      },
       workspace: { getConfiguration: () => ({ get: (key, fallback) =>
-        key === 'chatgptProjectUrl' ? project : fallback }) },
+        key === 'chatgptProjectUrl' ? project : fallback }), async openTextDocument(document) { return document; } },
       authentication: { async getSession() { return { accessToken: 'fixture', scopes: ['repo'] }; } },
       commands: { async executeCommand(...args) { syncCalls.push(args); } }
     };
@@ -180,7 +188,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
         { repository: syncRepository, pullRequests: [syncPR] }, { publishingRemote: 'origin' }), true);
       assert.deepEqual(await fs.readdir(sessions), beforeSync, 'Sync repair creates no workspace');
       assert.deepEqual(syncCalls.map(([command]) => command), ['workbench.action.browser.open']);
-      const [{}, { url: syncUrl, openToSide }] = syncCalls[0];
+      const [, { url: syncUrl, openToSide }] = syncCalls[0];
       assert.equal(openToSide, false);
       const destination = new URL(syncUrl);
       assert.equal(destination.origin + destination.pathname, project);
@@ -189,13 +197,20 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       assert.match(syncPrompt, /supporting source or test files/);
       assert.match(syncPrompt, /maintainer reviews the result locally before Lindsey publishes/);
       const callback = new URLSearchParams(destination.hash.slice(1)).get('return_to');
-      const rejected = await fetchBeforeSync(callback, { method: 'POST', headers: {
+      const submit = item => fetchBeforeSync(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json'
       }, body: JSON.stringify({ version: 1, repository: syncRepository, results: [{ number: syncPR.number,
-        headSha: syncPR.headSha, baseSha: 'a'.repeat(40), operation: 'merge', patch: null,
-        explanation: 'This operation must be rejected before execution.' }] }) });
+        headSha: syncPR.headSha, baseSha: 'a'.repeat(40), patch: null,
+        explanation: 'Retain the incoming change.', ...item }] }) });
+      const rejected = await submit({ operation: 'merge' });
       assert.equal(rejected.status, 400);
       assert.match((await rejected.json()).error, /merging is not authorized/);
+      const declined = await submit({ operation: 'sync', decisions: [{ path: 'fixture.js', keepBase: true,
+        title: '🛠️ Retain the incoming implementation', description: 'The incoming change handles this case.' }] });
+      assert.equal(declined.status, 200);
+      assert.match((await declined.json()).results[0].reason, /was not approved/);
+      assert.equal(syncReviews.length, 1);
+      assert.match(syncReviews[0].content, /Proposed branch sync for PR #290/);
     } finally {
       globalThis.fetch = fetchBeforeSync;
       for (const disposable of syncContext.subscriptions) disposable.dispose();
