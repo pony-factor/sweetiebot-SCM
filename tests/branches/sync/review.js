@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
-  githubRepository, findSyncPullRequest, reviewSyncConflicts, reportBody,
+  githubRepository, findSyncPullRequest, reviewSyncConflicts, reportBody, collectSyncEvidence,
   queueSyncReport, publishSyncReports
 } = require('../../../extension/merge/sync-review');
 
@@ -25,6 +25,7 @@ async function run() {
     git('remote', 'add', 'origin', 'https://github.com/pony-factor/test.git');
     fs.writeFileSync(path.join(root, 'original'), 'first\n');
     git('add', '.'); git('commit', '-m', 'Initial');
+    const ancestor = git('rev-parse', 'HEAD');
     git('branch', 'topic');
     fs.writeFileSync(path.join(root, 'upstream'), 'main content\n');
     git('add', '.'); git('commit', '-m', 'Human upstream commit');
@@ -33,6 +34,28 @@ async function run() {
     fs.writeFileSync(path.join(root, 'topic'), 'topic content\n');
     git('add', '.'); git('commit', '-m', 'Human topic commit');
     const before = git('rev-parse', 'HEAD');
+    const cleanEvidence = await collectSyncEvidence(root, { headSha: before, baseSha: target });
+    assert.equal(cleanEvidence.status, 'clean');
+    assert.equal(cleanEvidence.mergeBaseSha, ancestor);
+    assert.deepEqual(cleanEvidence.conflictPaths, []);
+    git('switch', '-c', 'evidence-incoming', ancestor);
+    fs.writeFileSync(path.join(root, 'original'), 'incoming change\n');
+    git('commit', '-am', 'Incoming conflict');
+    const incoming = git('rev-parse', 'HEAD');
+    git('switch', '-c', 'evidence-topic', ancestor);
+    fs.writeFileSync(path.join(root, 'original'), 'topic change\n');
+    git('commit', '-am', 'Topic conflict');
+    const evidenceHead = git('rev-parse', 'HEAD');
+    const evidence = await collectSyncEvidence(root, { headSha: evidenceHead, baseSha: incoming });
+    assert.equal(evidence.status, 'conflicts');
+    assert.equal(evidence.mergeBaseSha, ancestor);
+    assert.deepEqual(evidence.conflictPaths, ['original']);
+    assert.match(evidence.ancestorToHead.text, /\+topic change/);
+    assert.match(evidence.ancestorToIncoming.text, /\+incoming change/);
+    assert.equal(git('rev-parse', 'HEAD'), evidenceHead);
+    assert.equal(git('status', '--porcelain'), '');
+    assert.equal((await collectSyncEvidence(root, { headSha: '0'.repeat(40), baseSha: incoming })).status, 'unavailable');
+    git('switch', 'topic');
     git('update-ref', 'refs/remotes/origin/main', target);
     git('merge', '--no-ff', '--no-edit', 'main');
     const sha = git('rev-parse', 'HEAD');
