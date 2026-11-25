@@ -40,11 +40,13 @@ function humanAuthor(commits) {
   return { name, email };
 }
 
-function verifyCommit(commit, expected, author, { allowBot = false, committer } = {}) {
+function verifyCommit(commit, expected, author, { authorLogin, allowBot = false, committer } = {}) {
   const message = commit?.commit?.message?.replace(/\r\n/g, '\n').trimEnd();
   const gitAuthor = commit?.commit?.author;
   if (message !== expected.trimEnd() ||
-      gitAuthor?.name !== author.name || gitAuthor?.email !== author.email ||
+      !gitAuthor?.name || !gitAuthor.email ||
+      (author && (gitAuthor.name !== author.name || gitAuthor.email !== author.email)) ||
+      (authorLogin && commit?.author?.login?.toLowerCase() !== authorLogin.toLowerCase()) ||
       (!allowBot && /\[bot\]|codex-pony/i.test(gitAuthor.name)) ||
       (committer && (commit?.commit?.committer?.name !== committer.name || commit?.commit?.committer?.email !== committer.email))) {
     throw Error('Merged commit author or exact squash message differs; do not claim a verified merge.');

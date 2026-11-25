@@ -116,16 +116,21 @@ async function humanSquashMerge(repository, number, {
   // server-generated GitHub squash to use the local key. An explicitly chosen
   // local-signer operation still cannot be replaced with a native merge.
   const signLocally = requireSignedCommit;
-  // A human-opened PR retains its author in a native squash. Keep Lindsey as
-  // the merge actor when App mode is enabled; never switch to a human token.
+  // A native squash uses the PR opener as Git author. For Kefania PRs,
+  // preserve the verified human credit in the commit's author trailers.
+  const kefaniaOpener = original.user?.type === 'Bot' &&
+    original.user.login?.toLowerCase() === 'kefania-pony[bot]';
   // Installation-scoped repository reads can omit administrative merge settings.
   // Only an explicit false disables this route; GitHub's merge endpoint still
   // enforces the repository setting, checks and branch protection.
-  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge !== false && original.user?.type === 'User' &&
-    original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
+  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge !== false &&
+    (kefaniaOpener || (original.user?.type === 'User' &&
+      original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase()));
   decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
-  const prepared = require('./commit-proposal').validateCommitProposal(commitProposal, squashMessage(original.title, number, commits, { primaryAuthor: author }));
+  const prepared = require('./commit-proposal').validateCommitProposal(commitProposal,
+    squashMessage(original.title, number, commits,
+      kefaniaOpener && nativeSquash && operation === 'merge' ? { verifiedCoauthor: author } : { primaryAuthor: author }));
   progress('message-prepared', { title: prepared.title, description: prepared.message, proposed: prepared.proposed, adjusted: prepared.adjusted });
   const preparedMessage = prepared.title + '\n\n' + prepared.message;
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite
@@ -147,6 +152,7 @@ async function humanSquashMerge(repository, number, {
   }
   let additionalFiles = [];
   const finish = async (sha, expected, method = 'rebase') => {
+    const creditAsCoauthor = method === 'squash' && kefaniaOpener;
     progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
       ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
@@ -167,7 +173,7 @@ async function humanSquashMerge(repository, number, {
     progress('merging', { sha, title: operationCommitTitle });
     let outcome;
     try {
-      if (method === 'squash' && nativeAPI && !appActor) {
+      if (method === 'squash' && nativeAPI && !appActor && !creditAsCoauthor) {
         if (typeof original.node_id !== 'string' || !original.node_id) throw Error('Missing GitHub PR node ID; refusing an unbound merge.');
         const input = { pullRequestId: original.node_id, expectedHeadOid: sha,
           authorEmail: author.email, commitHeadline: prepared.title, commitBody: prepared.message };
@@ -200,7 +206,12 @@ async function humanSquashMerge(repository, number, {
       throw Error('GitHub did not confirm the merge; the PR branch remains available.');
     }
     const destination = await api(endpoint + '/commits/' + outcome.sha);
-    verifyCommit(destination, expected, author);
+    if (creditAsCoauthor) {
+      if (destination.parents?.length !== 1) throw Error('GitHub merged the PR, but the squash ancestry could not be verified.');
+      verifyCommit(destination, expected, undefined, { authorLogin: original.user.login, allowBot: true });
+    } else {
+      verifyCommit(destination, expected, author);
+    }
     const merged = await api(prPath);
     if (!merged.merged || merged.base?.ref !== base || merged.merge_commit_sha !== outcome.sha) {
       throw Error('PR merge bookkeeping or target was not verified; inspect GitHub.');
@@ -209,7 +220,7 @@ async function humanSquashMerge(repository, number, {
       author, base, baseSha, number,
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
-  // GitHub can squash a clean human-opened PR without a preliminary sync.
+  // GitHub can squash a clean PR without a preliminary sync.
   if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
