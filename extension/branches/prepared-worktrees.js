@@ -109,7 +109,11 @@ async function defaultName(repo, run) {
 async function localBase(repo, run) {
   const name = await defaultName(repo, run);
   const sha = await run(['-C', repo.original, 'rev-parse', '--verify', 'refs/heads/' + name + '^{commit}']).catch(() => '');
-  return SHA.test(sha) ? sha : null;
+  if (!SHA.test(sha)) return null;
+  // Do not create detached copies of provisional background-commit history.
+  const unfinished = await run(['-C', repo.original, 'log', '-1', '--format=%s', '--extended-regexp',
+    '--grep=^(placeholder_[0-9a-f]{16}|💭 Generate local commit message \\[[0-9a-f]{16}\\])$', sha]).catch(() => 'unknown');
+  return unfinished ? null : sha;
 }
 function fetchKey(repo, remote, name) { return JSON.stringify([repo.common, remote, name]); }
 async function noteFetch(root, remote, name, { run = git, now = Date.now() } = {}) {
