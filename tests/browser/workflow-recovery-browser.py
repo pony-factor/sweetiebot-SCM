@@ -230,7 +230,11 @@ def main():
             <button id="model" aria-label="Select ChatGPT model" aria-haspopup="menu" aria-controls="power-menu" aria-expanded="false">6 Sol 6 Medium</button>
             <div id="power-menu" role="menu" hidden><button role="menuitem" id="models">Select model</button>
               <div id="power" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1"></div></div>
-            <div id="models-menu" role="menu" hidden><button role="menuitemradio" id="six">6</button><button role="menuitemradio">GPT-5.6 Sol</button></div>
+            <div id="models-menu" role="menu" hidden><button role="menuitemradio" id="six">6</button>
+              <button role="menuitemradio" id="six-two">6.2</button>
+              <button role="menuitemradio" id="future" aria-disabled="true">6.10</button>
+              <button role="menuitemradio" disabled>7</button>
+              <button role="menuitemradio">GPT-5.6 Sol</button></div>
             <div><div id="prompt-textarea" contenteditable="true"></div></div>''')
         page.evaluate('''() => {
             window.selectedModel='6 Sol 6';window.power=1;
@@ -242,15 +246,31 @@ def main():
             const open=()=>{document.getElementById('power-menu').hidden=false;model.setAttribute('aria-expanded','true');};
             model.onclick=open;model.onkeydown=e=>{if(e.key==='ArrowDown')open();};
             document.getElementById('models').onclick=()=>document.getElementById('models-menu').hidden=false;
-            document.getElementById('six').onclick=()=>{selectedModel='6';render();document.getElementById('models-menu').hidden=true;};
+            for (const id of ['six', 'six-two', 'future']) {
+                document.getElementById(id).onclick=event=>{
+                    selectedModel=event.currentTarget.textContent;
+                    render();
+                    document.getElementById('models-menu').hidden=true;
+                };
+            }
             document.getElementById('power').onkeydown=e=>{if(e.key==='ArrowRight'){power=Math.min(2,power+1);render();}};
             document.getElementById('power-menu').onkeydown=e=>{if(e.key==='Escape'){document.getElementById('power-menu').hidden=true;model.setAttribute('aria-expanded','false');}};
         }''')
         page.add_script_tag(content=(ROOT / 'assets/browser/maximize-thinking.js').read_text())
         page.wait_for_function('sweetiebotEnsureMaximumThinking()', polling=100)
-        assert page.evaluate('selectedModel') == '6'
+        assert page.evaluate('selectedModel') == '6.2'
         assert page.evaluate('power') == 2
         assert page.get_attribute('#mode','aria-label') == 'Switch mode, current mode: ChatGPT'
+        page.evaluate("""() => {
+            sweetiebotEnsureMaximumThinking.cancel();
+            document.getElementById('future').removeAttribute('aria-disabled');
+            selectedModel = '6.2';
+            power = 2;
+            document.getElementById('model').textContent = '6.2 High';
+            document.getElementById('power').setAttribute('aria-valuenow', '2');
+        }""")
+        page.wait_for_function('sweetiebotEnsureMaximumThinking()', polling=100)
+        assert page.inner_text('#model') == '6.10 High'
         page.set_viewport_size({'width':380,'height':720})
 
         page.goto('about:blank')
