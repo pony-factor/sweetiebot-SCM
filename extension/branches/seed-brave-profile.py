@@ -71,7 +71,8 @@ def browser_running(root):
     # macOS pgrep uses POSIX ERE. Escape only ERE metacharacters.
     flag = "--user-data-dir=" + str(root)
     pattern = re.sub(r"([.\\^$*+?{}\[\]|()])", r"\\\1", flag) + r"([[:space:]]|$)"
-    result = subprocess.run(["/usr/bin/pgrep", "-f", pattern], capture_output=True)
+    # The pattern starts with "--user-data-dir"; end option parsing first.
+    result = subprocess.run(["/usr/bin/pgrep", "-f", "--", pattern], capture_output=True)
     if result.returncode not in (0, 1):
         raise RuntimeError("Could not verify the test browser is stopped.")
     return result.returncode == 0
