@@ -127,7 +127,7 @@ async function test() {
     assert.deepEqual(unchanged, { sha: base, commits: [], unchanged: true });
     assert.throws(() => require('../../extension/merge/resolution-commits').validateDecisions([
       { ...decisions[0], groupTitle: 'invalid\nheader' }
-    ]), /emoji decision title/);
+    ]), /Resolution decision 1 groupTitle must have a nonempty subject, no line breaks or NUL characters/);
 
     await git('config', '--local', 'commit.gpgsign', 'false');
     const unsigned = await commitIdentity(git, original);
