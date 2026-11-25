@@ -185,6 +185,9 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
             'Copied branch: ' + JSON.stringify(branch) + '\n\n' +
             'Run tests, builds, destructive resets, trial edits, and other experimental commands ONLY in the experimental checkout. ' +
             'Use that exact directory as the working directory and check pwd before running destructive commands. ' +
+            'When the task requires window-specific or interactive testing, use the already-open experimental VS Code window and its experimental checkout for live UI, webview, focus, reload, restart, and window-lifecycle checks as applicable; do not use the original window as the test target. ' +
+            'Exercise the actual behavior there when needed, not just shell tests or static inspection. Verify the test window and checkout identity first; if testing requires installing or patching shared application files, use an isolated test instance or profile with isolated application files as appropriate, not changes that would affect the original window. ' +
+            'If live window testing is unavailable, report the specific blocker and any remaining manual checks rather than claiming they passed. ' +
             'During experimentation, preserve the original checkout, its index, working files, and current Codex conversation. ' +
             'The experiment contains a snapshot of committed, staged, unstaged, and non-ignored untracked files. ' +
             'Do not run git reset/clean/checkout against the original repository. ' +
