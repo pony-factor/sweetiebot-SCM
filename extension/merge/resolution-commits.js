@@ -4,23 +4,38 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { safePatchPath } = require('./patch');
 const { commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
-const validTitle = value => typeof value === 'string' && value.length <= 160 &&
-  /^\p{Extended_Pictographic}\uFE0F?\s+\S/u.test(value) && !/[\r\n\x00]/.test(value);
+const titleEmoji = /^(\p{RGI_Emoji}|\p{Extended_Pictographic}\uFE0F?)/v;
+
+function decisionTitle(value, field) {
+  const title = typeof value === 'string' ? value.trim() : '';
+  const emoji = title.match(titleEmoji)?.[0];
+  const subject = emoji ? title.slice(emoji.length).trimStart() : title;
+  const normalized = `${emoji || '🛠️'} ${subject}`;
+  if (!subject || titleEmoji.test(subject) || normalized.length > 160 || /[\r\n\x00\u2028\u2029]/.test(value ?? '')) {
+    throw Error(`${field} must be a one-line emoji decision title with text and at most 160 characters.`);
+  }
+  return normalized;
+}
 
 function validateDecisions(value = []) {
   if (!Array.isArray(value) || value.length > 512) throw Error('Invalid per-file resolution decisions.');
   const seen = new Set();
-  return value.map(item => {
-    if (!safePatchPath(item?.path) || seen.has(item.path) ||
-        !validTitle(item.title) || (item.groupTitle !== undefined && !validTitle(item.groupTitle)) ||
-        typeof item.description !== 'string' || !item.description.trim() || item.description.length > 4000 ||
-        /\x00/.test(item.description) || /^Co-authored-by:/im.test(item.description) ||
-        (item.keepBase !== undefined && typeof item.keepBase !== 'boolean')) {
-      throw Error('Each conflicted file needs a unique safe path, emoji decision title and explanation.');
+  return value.map((item, index) => {
+    const decision = `Resolution decision ${index + 1}`;
+    if (!safePatchPath(item?.path)) throw Error(`${decision} needs a safe repository-relative path.`);
+    if (seen.has(item.path)) throw Error(`${decision} repeats a path. Use one decision per file.`);
+    const title = decisionTitle(item.title, `${decision} title`);
+    const groupTitle = item.groupTitle === undefined ? undefined : decisionTitle(item.groupTitle, `${decision} groupTitle`);
+    if (typeof item.description !== 'string' || !item.description.trim() || item.description.length > 4000 ||
+        /\x00/.test(item.description) || /^Co-authored-by:/im.test(item.description)) {
+      throw Error(`${decision} description needs an explanation of 1–4000 characters without a co-author trailer.`);
+    }
+    if (item.keepBase !== undefined && typeof item.keepBase !== 'boolean') {
+      throw Error(`${decision} keepBase must be true or false.`);
     }
     seen.add(item.path);
-    return { path: item.path, title: item.title.trim(), description: item.description.trim(),
-      ...(item.groupTitle !== undefined ? { groupTitle: item.groupTitle.trim() } : {}),
+    return { path: item.path, title, description: item.description.trim(),
+      ...(groupTitle !== undefined ? { groupTitle } : {}),
       ...(item.keepBase ? { keepBase: true } : {}) };
   });
 }
