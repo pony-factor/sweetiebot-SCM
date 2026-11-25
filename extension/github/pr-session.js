@@ -216,6 +216,65 @@ const mergeWorkerTabs = new Map();
 let activeRepairRuntime;
 const queueLocalExecution = require('../merge/runner-layout').createExecutionQueue();
 
+function mergeReadAPI(repository, token) {
+  const { githubGet } = require('../merge/dashboard');
+  const fetch = globalThis.fetch;
+  const prefix = 'repos/' + repository;
+  return endpoint => {
+    if (!endpoint.startsWith(prefix + '/')) throw Error('GitHub request is outside the selected repository.');
+    return githubGet(fetch, token, repository, endpoint.slice(prefix.length));
+  };
+}
+
+function notifyPublicationErrors(vscode, errors) {
+  if (errors.length) vscode.window.showWarningMessage(
+    'Lindsey could not publish GitHub updates: ' + errors.map(item => '#' + item.number + ': ' + item.error).join('; '));
+}
+
+function localResolutionRunner(vscode, root, token, { syncOnly, reviewSync, getDashboard, recordPublication }) {
+  const { invokeResolutionCLI, validateSyncResolution } = require('../merge/resolution');
+  const { withMergeProgress } = require('../merge/progress');
+  const { executionResources } = require('../merge/runner-layout');
+  return (result, snapshot) => queueLocalExecution(() => withMergeProgress(vscode, {
+    numbers: result.results.map(item => item.number),
+    branchOnly: syncOnly || result.results.every(item => item.operation === 'sync')
+  }, async report => {
+    const controller = await getDashboard?.();
+    if (reviewSync) {
+      for (const item of validateSyncResolution(result, snapshot)) {
+        if (item.headSha !== reviewSync.head || !await approveSyncPullRequestRepair(vscode, item)) {
+          return { repository: snapshot.repository, results: [{ number: item.number, status: 'blocked',
+            reason: item.headSha !== reviewSync.head ? 'The PR head changed. Start a fresh sync review.'
+              : 'The proposed PR repair was not approved.' }] };
+        }
+      }
+    }
+    const executed = await invokeResolutionCLI(result, snapshot, token, undefined,
+      event => { report(event); controller?.recordLocalProgress?.(event); });
+    if (reviewSync) {
+      const synced = executed.results.find(item => item.status === 'synced' && !item.unchanged);
+      if (synced && !await refreshSyncedCheckout(root.fsPath, reviewSync, synced.sha).catch(() => false)) {
+        void vscode.window.showInformationMessage('Lindsey published the PR repair. The original checkout still needs to pull the updated branch.');
+      }
+    }
+    const summaryErrors = await recordPublication(snapshot, result, executed);
+    return { ...executed, summaryErrors };
+  }), executionResources(result, snapshot, syncOnly));
+}
+
+function prepareBranchRepair(vscode, selection, url, { reviewSync, api, execute, onResult, onState }) {
+  const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
+  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
+    title: 'Preparing Lindsey PR fix ' + selection.pullRequests.map(pr => '#' + pr.number).join(', '), cancellable: false
+  }, progress => require('../merge/batch').createMergeBatch(selection, {
+    persistentHandoffs: true, branchOnly: true, fullSyncRepair: Boolean(reviewSync),
+    api, execute, onResult, onState, onProgress: update => progress.report(update),
+    destination: url.origin + url.pathname,
+    makePrompt: () => initialPrompt + '\n\n' + require('../merge/review-policy').statusUpdateInstructions(
+      vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true)
+  }));
+}
+
 async function openMergeWorker(vscode, launch) {
   const id=launch.id || 1;
   const previous=mergeWorkerTabs.get(id);
@@ -310,8 +369,7 @@ async function createMergeDashboard(vscode, directory, context) {
   catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
   mergePublications ||= require('../merge/publication-queue').createPublicationQueue(vscode, selection, {
     history: savedState?.history || [], publish: publishOptionalMergeSummaries,
-    onErrors: errors => { if (errors.length) vscode.window.showWarningMessage(
-      'Lindsey could not publish GitHub updates: ' + errors.map(item => '#' + item.number + ': ' + item.error).join('; ')); }
+    onErrors: errors => notifyPublicationErrors(vscode, errors)
   });
   context.subscriptions?.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (['mergePostSummaries', 'mergePostStatusUpdates'].some(key => event.affectsConfiguration('sweetiebot.' + key))) {
