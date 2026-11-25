@@ -595,6 +595,23 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             rule = css.split(f".scm-view .scm-editor > .scm-toolkit-{control} {{", 1)[1].split("}", 1)[0]
             self.assertIn("background: transparent;", rule)
 
+    def test_scm_icons_use_user_theme_foregrounds(self):
+        css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
+        for control in (
+            "home", "delete-branch", "autocomplete", "spellcheck", "post-spellcheck",
+            "codex-coauthor", "pull-request", "sync-branch", "pony-branch",
+            "stacked-branch", "auto-publish", "auto-commit",
+        ):
+            selector = f".scm-view .scm-editor > .scm-toolkit-{control}"
+            start = selector + " {" if selector + " {" in css else selector + ","
+            rule = css.split(start, 1)[1].split("}", 1)[0]
+            self.assertIn("color: var(--vscode-icon-foreground, var(--vscode-foreground));", rule)
+            self.assertIn(selector + ":disabled", css)
+        self.assertIn("color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));", css)
+        self.assertIn("border: 1px solid var(--vscode-checkbox-border,", css)
+        self.assertIn("border: solid var(--vscode-checkbox-foreground,", css)
+        self.assertIn("color: #FFFFFF !important;", css)
+
     def test_branch_selector_uses_the_vscode_button_colors(self):
         css = (install.WORKBENCH_ASSETS / "picker.css").read_text()
 
@@ -673,7 +690,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
         )[0]
 
         self.assertIn("background: transparent;", sync_css)
-        self.assertIn("color: var(--vscode-descriptionForeground);", sync_css)
+        self.assertIn("color: var(--vscode-icon-foreground, var(--vscode-foreground));", sync_css)
         self.assertIn(
             ".scm-view .scm-editor > .scm-toolkit-sync-branch:hover:not(:disabled)",
             css,
@@ -689,7 +706,7 @@ assert.equal(await repo.commit('special',{amend:true}),'native');assert.equal(re
             js,
         )
         self.assertIn("event.affectsConfiguration('sweetiebot.prWarningHighlights')", js)
-        self.assertIn("color: var(--vscode-descriptionForeground);", css)
+        self.assertIn("color: var(--vscode-icon-foreground, var(--vscode-foreground));", css)
         self.assertIn(".scm-toolkit-pr-needs-attention", css)
 
     def test_install_injects_valid_settings_line(self):
