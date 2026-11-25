@@ -118,6 +118,7 @@ function registerBackgroundCommit(vscode, context) {
   };
   let scanning = false;
   const seen = new Map();
+  const ollamaWarnings = new Map();
   let output;
   const generation = new Map();
   const generationRevision = new Map();
@@ -163,11 +164,22 @@ function registerBackgroundCommit(vscode, context) {
       for (const root of pendingPushes) {
         if (!roots.has(root)) await setPushPending(root, false);
       }
+      for (const root of ollamaWarnings.keys()) {
+        if (!roots.has(root)) ollamaWarnings.delete(root);
+      }
       for (const repository of repositories) {
         const root = repository.rootUri.fsPath;
         const revision = generationRevision.get(root);
         const status = await readStatus(script, root);
         if (!status) continue;
+        if (status.ollamaWarning) {
+          if (ollamaWarnings.get(root) !== status.ollamaWarning) {
+            ollamaWarnings.set(root, status.ollamaWarning);
+            void vscode.window.showWarningMessage(status.ollamaWarning);
+          }
+        } else {
+          ollamaWarnings.delete(root);
+        }
         if (revision === generationRevision.get(root)) {
           await setPushPending(root, status.pushPending === true);
           if (status.titleJobs?.length) showGeneration(root);

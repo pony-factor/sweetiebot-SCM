@@ -22,7 +22,7 @@ import sys
 
 ENTRYPOINTS = (
     "ai_commit", "background_commit", "cloud_repo_sync", "coreml_backend",
-    "merged_branch", "post_commit_spellcheck", "sweetiebot_async_commit",
+    "merged_branch", "ollama_concurrency", "post_commit_spellcheck", "sweetiebot_async_commit",
     "sweetiebot_diagnostics",
 )
 RESOURCE_FILES = {"branch_names": "branch-name-packs.json"}

@@ -69,6 +69,54 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         sleep.assert_called_once_with(.25)
 
+    def test_recovery_bootstraps_an_installed_but_unloaded_commit_agent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            agent = home / 'Library/LaunchAgents' / (worker.LABEL + '.plist')
+            agent.parent.mkdir(parents=True)
+            agent.touch()
+            with patch.object(worker.sys, 'platform', 'darwin'), patch.object(Path, 'home', return_value=home), \
+                    patch.object(worker, 'ready', side_effect=[False, True]), \
+                    patch.object(worker.subprocess, 'Popen') as spawn, \
+                    patch.object(worker.subprocess, 'run', side_effect=[
+                        SimpleNamespace(returncode=1), SimpleNamespace(returncode=0),
+                    ]) as run:
+                worker.recover(worker.URL, 2, home / 'jobs')
+            spawn.assert_not_called()
+            self.assertEqual(run.call_args.args[0],
+                             ['/bin/launchctl', 'bootstrap', f'gui/{worker.os.getuid()}', str(agent)])
+
+    def test_recovery_starts_the_cli_on_the_configured_port(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(worker.sys, 'platform', 'linux'), \
+                    patch.object(worker.shutil, 'which', return_value='/bin/echo'), \
+                    patch.object(worker, 'ready', side_effect=[False, True]), \
+                    patch.object(worker.subprocess, 'Popen') as spawn:
+                worker.recover('http://127.0.0.1:35434', 2, Path(folder))
+            self.assertEqual(spawn.call_args.args[0], ['/bin/echo', 'serve'])
+            self.assertEqual(spawn.call_args.kwargs['env']['OLLAMA_HOST'], '127.0.0.1:35434')
+
+    def test_recovery_reports_missing_ollama(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(worker.sys, 'platform', 'linux'), \
+                    patch.object(worker.shutil, 'which', return_value=None), \
+                    patch.object(worker, 'ready', return_value=False), \
+                    self.assertRaisesRegex(worker.OllamaUnavailable, 'Install Ollama'):
+                worker.recover(worker.URL, 2, Path(folder))
+
+    def test_recovery_reports_missing_ollama_with_a_leftover_launch_agent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            agent = home / 'Library/LaunchAgents' / (worker.LABEL + '.plist')
+            agent.parent.mkdir(parents=True)
+            agent.touch()
+            with patch.object(worker.sys, 'platform', 'darwin'), patch.object(Path, 'home', return_value=home), \
+                    patch.object(worker, 'installed_binary', return_value=None), \
+                    patch.object(worker, 'ready', return_value=False), \
+                    patch.object(worker.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                    self.assertRaisesRegex(worker.OllamaUnavailable, 'Install Ollama'):
+                worker.recover(worker.URL, 0.1, home / 'jobs')
+
 
 if __name__ == "__main__":
     unittest.main()

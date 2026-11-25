@@ -16,7 +16,7 @@ async function run() {
     diff: { totalBytes: 30, totalLines: 2, sections: [{ bytes: 30, lines: 2 }] },
     approvedWarnings: []
   });
-  const notices = [], progress = [], completed = [], errors = [];
+  const notices = [], progress = [], completed = [], errors = [], warnings = [];
   const titleContexts = [];
   const errorActions = [], details = [];
   let nextChoice;
@@ -106,6 +106,7 @@ async function run() {
     ProgressLocation: { Notification: 15 },
     window: {
       showInformationMessage(message) { notices.push(message); },
+      showWarningMessage(message) { warnings.push(message); },
       async showErrorMessage(message, ...actions) {
         errors.push(message); errorActions.push(actions);
         const choice = nextChoice; nextChoice = undefined; return choice;
@@ -145,6 +146,16 @@ async function run() {
     }
   };
   sandbox.module.exports.registerBackgroundCommit(vscode, { extensionUri: root, subscriptions: [] });
+  await new Promise(setImmediate);
+  status = { ollamaWarning: 'Ollama is not installed. Install Ollama to generate commit titles.' };
+  poll();
+  await new Promise(setImmediate);
+  poll();
+  await new Promise(setImmediate);
+  assert.deepEqual(warnings, [status.ollamaWarning], 'the same Ollama failure is shown once');
+  status = {};
+  poll();
+  await new Promise(setImmediate);
   const push = commands.get('sweetiebot.queuePush');
   assert.equal((await push(root)).queued, false);
   assert.deepEqual(notices, [], 'ordinary pushes do not create a waiting notice');
