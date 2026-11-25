@@ -2,6 +2,7 @@ import importlib.util
 from contextlib import closing
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import unittest
 
@@ -12,6 +13,11 @@ spec.loader.exec_module(helper)
 
 
 class DevelopmentBrowserTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "uses macOS pgrep")
+    def test_process_check_accepts_profile_flag_as_pattern(self):
+        with tempfile.TemporaryDirectory(prefix="sweetiebot profile ") as directory:
+            self.assertFalse(helper.browser_running(Path(directory)))
+
     def test_snapshot_includes_wal_preserves_source_and_never_overwrites(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
