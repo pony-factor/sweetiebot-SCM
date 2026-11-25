@@ -560,7 +560,10 @@ async function run() {
     assert(commands.has('sweetiebot.listBranchStrip'));
     assert.equal(await commands.get('sweetiebot.returnHome')({ rootUri: uri }), 'main');
     assert.equal(await commands.get('sweetiebot.resolveDefaultBranch')({ rootUri: uri }), 'main');
-    assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), 'fresh');
+    const firstCreation = commands.get('sweetiebot.createBranch')(uri, options);
+    assert.equal(await commands.get('sweetiebot.createBranch')(uri, options), undefined,
+      'An overlapping New Branch request must not create a second branch');
+    assert.equal(await firstCreation, 'fresh');
     assert.equal(await commands.get('sweetiebot.createBranch')({ ...uri }, options), 'fresh');
     assert.equal(await commands.get('sweetiebot.createBranch')({ rootUri: uri }, options), 'fresh');
     repository.state.HEAD = { name: 'pr/bobmahalo/12' };

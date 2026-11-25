@@ -1522,6 +1522,7 @@ function registerBranchCommands(vscode, context) {
     'sweetiebot.returnHome', 'sweetiebot.createBranch', 'sweetiebot.createStackedBranch',
     'sweetiebot.deleteBranch', 'sweetiebot.syncBranch', 'sweetiebot.pushCommittedBranch'
   ]);
+  let creatingBranch = false;
   for (const [command, action] of [
     ['sweetiebot.returnHome', returnHome],
     ['sweetiebot.autoPullClean', autoPullClean],
@@ -1536,6 +1537,9 @@ function registerBranchCommands(vscode, context) {
     ['sweetiebot.syncBranch', syncBranch]
   ]) {
     context.subscriptions.push(vscode.commands.registerCommand(command, async (uri, options = {}) => {
+      const createsBranch = command === 'sweetiebot.createBranch' || command === 'sweetiebot.createStackedBranch';
+      if (createsBranch && creatingBranch) return undefined;
+      if (createsBranch) creatingBranch = true;
       try {
         const repository = await resolveRepository(uri);
         if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
@@ -1655,6 +1659,8 @@ function registerBranchCommands(vscode, context) {
         }
       } catch (error) {
         throw explainGitError(error);
+      } finally {
+        if (createsBranch) creatingBranch = false;
       }
     }));
   }

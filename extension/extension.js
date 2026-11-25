@@ -24,6 +24,7 @@ const { registerEditorActions } = require('./ui/editor-actions');
 const { registerNewWorkspaceCommand } = require('./branches/new-workspace');
 const { registerExperimentWorkspaceCommand } = require('./branches/experiment-workspace');
 const { registerSharedMain } = require('./branches/shared-main');
+const { registerEditorWorkspaceHandoff } = require('./branches/editor-handoff');
 const { registerCodexWorkspaceHandoff } = require('./codex/workspace-handoff');
 const { registerTerminalActions } = require('./ui/terminal-actions');
 const { registerGitHubPullRequestActions } = require('./github/pr-actions');
@@ -429,6 +430,7 @@ async function activate(context) {
   registerGitGraphRelativeDates(vscode, context);
   void require('./branches/commit-drafts').registerCommitDrafts(vscode, context)
     .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
+  registerEditorWorkspaceHandoff(vscode, context);
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);
