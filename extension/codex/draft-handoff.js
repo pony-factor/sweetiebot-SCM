@@ -6,12 +6,46 @@ const { join } = require('node:path');
 const MAX_REQUEST_BYTES = 100000;
 const DRAFT_IDLE_MS = 60 * 60 * 1000;
 const DRAFT_MAX_AGE_MS = 12 * DRAFT_IDLE_MS;
+const CI_REFRESH_MS = 15000;
 
 function mergeFailure(error) {
   const message = String(error?.message || 'Merge failed. Check GitHub.');
   const kind = error?.code === 'SQUASH_AUTHOR_CHOICE_REQUIRED' ? 'method'
+    : error?.code === 'SWEETIEBOT_CI_PENDING' ? 'ci-pending'
+    : error?.code === 'SWEETIEBOT_CI_FAILED' ? 'ci-failed'
     : error?.code === 'SWEETIEBOT_MERGE_CONFLICT' || /resolve (?:the )?overlapping edits|merge conflicts? detected|conflicting files/i.test(message) ? 'conflict' : 'blocked';
   return { kind, message };
+}
+
+function refreshCI(state, now) {
+  if (!state.result || state.mergeResult || state.merging || typeof state.onReadCI !== 'function' ||
+      state.readingCI || now < state.nextCIRefresh) return;
+  state.readingCI = true;
+  state.ci ??= { state: 'loading', message: 'Checking CI status…' };
+  const issue = state.mergeIssue;
+  let retryAt = 0;
+  void Promise.resolve().then(() => state.onReadCI(state.result)).then(ci => {
+    if (state.mergeIssue !== issue) return;
+    state.ci = ci;
+    if (ci && ['pending', 'failed', 'passed'].includes(ci.state) && issue?.kind.startsWith('ci-')) {
+      if (issue.kind === 'ci-' + ci.state) {
+        issue.message = ci.message;
+        state.errors.merge = ci.message;
+      } else {
+        delete state.mergeIssue;
+        delete state.errors.merge;
+      }
+    }
+  }, error => {
+    if (error?.rateLimited && Number.isFinite(error.retryAt)) retryAt = error.retryAt;
+    if (state.mergeIssue !== issue) return;
+    state.ci = { state: 'unavailable', message: error?.rateLimited
+      ? 'GitHub rate limited CI status updates. Retrying when the limit resets.'
+      : 'Could not load CI status from GitHub. Retrying…' };
+  }).finally(() => {
+    state.nextCIRefresh = Math.max(retryAt, state.mergeIssue === issue || !state.mergeIssue ? Date.now() + CI_REFRESH_MS : 0);
+    state.readingCI = false;
+  });
 }
 
 // Each independent workflow returns through a same-origin local intake page.
@@ -56,7 +90,8 @@ async function createDraftHandoff(publish) {
       state.expires = Math.min(now + DRAFT_IDLE_MS, state.registeredAt + DRAFT_MAX_AGE_MS);
     }
     if (request.method === 'GET') {
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), mergeProgress: state.mergeProgress, ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'state') refreshCI(state, now);
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), mergeProgress: state.mergeProgress, ci: state.ci, ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
       if (kind === 'close' || kind === 'merge' || kind === 'merge-history' || kind === 'merge-local-signed' || kind === 'merge-help') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
@@ -74,7 +109,7 @@ async function createDraftHandoff(publish) {
         const result = await merge(state.result, detail => {
           if (!state.merging || typeof detail?.stage !== 'string') return;
           const stage = /^[a-z-]{1,48}$/.test(detail.stage) ? detail.stage : 'working';
-          state.mergeProgress = { stage, startedAt: state.mergeProgress.startedAt, updatedAt: Date.now() };
+          state.mergeProgress = { stage, checksState: stage === 'checks-polled' ? detail.state : undefined, startedAt: state.mergeProgress.startedAt, updatedAt: Date.now() };
         });
         if (!result?.merged && !result?.published) throw new Error('GitHub did not confirm the merge. Check the pull request.');
         state.mergeResult = result;
@@ -163,7 +198,7 @@ async function createDraftHandoff(publish) {
   // Draft writes expire, but the close control lives until this host is disposed.
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
+    register(id, {pony, profile, onResult, onClose, onMerge, onReadCI, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, onResult, onClose, onMerge, onReadCI, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
     reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
     dispose() { drafts.clear(); server.close(); }
   };

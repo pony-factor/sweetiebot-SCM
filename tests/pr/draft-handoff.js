@@ -237,6 +237,38 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal(helped,1,'A deliberate click opens the shared Lindsey recovery dashboard');
     assert.equal((await (await fetch(blockerUrl+'/state')).json()).mergeHelpOpened,true);
     assert.equal((await fetch(blockerUrl+'/merge-help',{method:'POST',headers:{Origin:'https://malicious.example','Content-Type':'application/json'},body:'{}'})).status,403);
+    const ciId = '77177177-2222-4333-8444-555555555555';
+    const ciUrl = handoff.origin + '/kefania-draft/' + ciId;
+    const readCIState = async () => (await fetch(ciUrl + '/state')).json();
+    let ciReads = 0;
+    let ci = { state: 'pending', message: 'CI checks are still running or queued — Build.' };
+    handoff.register(ciId, {
+      onReadCI: async () => {
+        ciReads++;
+        return ci;
+      },
+      onMergeLocalSigned: async () => {
+        throw Object.assign(Error('CI checks are still running or queued — Build.'), { code: 'SWEETIEBOT_CI_PENDING' });
+      }
+    });
+    assert.equal((await readCIState()).ci, undefined);
+    const ciPost = (suffix, input) => fetch(ciUrl + suffix, { method: 'POST',
+      headers: { Origin: handoff.origin, 'Content-Type': 'application/json' }, body: input });
+    assert.equal((await ciPost('', body)).status, 200);
+    await readCIState();
+    assert.equal((await readCIState()).ci.state, 'pending');
+    assert.equal(ciReads, 1, 'Confirmation polling reuses the latest CI reading');
+    assert.equal((await ciPost('/merge-local-signed', '{}')).status, 409);
+    assert.equal((await readCIState()).mergeIssue.kind, 'ci-pending');
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 16000;
+      ci = { state: 'passed', message: 'CI checks passed.' };
+      await readCIState();
+      const updatedCI = await readCIState();
+      assert.equal(updatedCI.ci.state, 'passed');
+      assert.equal(updatedCI.mergeIssue, undefined, 'A fresh passing result clears the stale CI blocker');
+    } finally { Date.now = realNow; }
     const failureId='88888888-2222-4333-8444-555555555555';
     handoff.register(failureId,{onMerge:async()=>{throw Object.assign(Error('Human authorship requires another method.'),{code:'SQUASH_AUTHOR_CHOICE_REQUIRED'});}});
     const failureUrl=handoff.origin+'/kefania-draft/'+failureId;

@@ -88,4 +88,19 @@ async function waitForMergeChecks(api, repository, sha, { expectChecks = false,
   }
 }
 
-module.exports = { readMergeChecks, waitForMergeChecks };
+function describeMergeChecks(checks) {
+  const label = {
+    failed: 'CI checks failed',
+    pending: 'CI checks are still running or queued',
+    passed: checks.hasChecks ? 'CI checks passed' : 'GitHub has reported no CI checks'
+  }[checks.state];
+  const names = checks.state === 'failed' ? checks.names : checks.state === 'pending'
+    ? (checks.evidence || []).filter(check =>
+      ['queued', 'in_progress', 'pending', 'waiting', 'requested'].includes(check.result)).map(check => check.name)
+    : [];
+  const unique = [...new Set(names)];
+  return unique.length ? `${label} — ${unique.slice(0, 4).join(', ')}${unique.length > 4 ? ` and ${unique.length - 4} more` : ''}.`
+    : label + '.';
+}
+
+module.exports = { readMergeChecks, waitForMergeChecks, describeMergeChecks };

@@ -11,7 +11,7 @@ const { runKefania, runKefaniaPonyCache } = require('../codex/kefania-runner');
 const { resolveKefaniaFile } = require('../codex/kefania-paths');
 const { createDraftHandoff } = require('../codex/draft-handoff');
 const { openKefaniaMergeHelp } = require('../codex/kefania-merge-help');
-const { squashMergePullRequest } = require('../merge/pull-request');
+const { squashMergePullRequest, readPullRequestCI } = require('../merge/pull-request');
 const { displayName } = require('../codex/pony-profile');
 const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr-workflows');
 const { launchPRSession, closePRSession } = require('./pr-session');
@@ -833,6 +833,14 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       showKefaniaCloseButton: () => vscode.workspace.getConfiguration('sweetiebot').get('kefaniaShowCloseButton', true),
       kefaniaCloseButtonPosition: () => kefaniaClosePosition(vscode.workspace.getConfiguration('sweetiebot')),
       decorateDraft: draft => ({ ...draft, body: appendSourceDetails(draft.body, source) }),
+      onReadCI: async result => {
+        const session = await require('./session').githubSession(vscode, { interactive: false });
+        if (!session) return { state: 'unavailable', message: 'Sign in to GitHub in VS Code to see CI status.' };
+        const signal = AbortSignal.timeout(15000);
+        const request = require('./user-api').githubUserAPI(session.accessToken,
+          (url, options) => fetch(url, { ...options, signal }));
+        return readPullRequestCI(input.repository, result, request);
+      },
       onMerge: async (result, onProgress) => {
         onProgress({ stage: 'authenticating' });
         const session = await require('./session').githubSession(vscode);

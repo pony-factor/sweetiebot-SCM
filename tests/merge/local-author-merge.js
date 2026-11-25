@@ -7,7 +7,7 @@ const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
 const {squashMessage}=require('../../extension/merge/squash-attribution');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true,directLocal=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,pending=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true,directLocal=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -66,7 +66,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       const merged=nativeMerged || !directLocal && tip!==baseSha && !race &&
         (humanOpener&&!appMode&&!requireSignedCommit&&!conflict || tip===await branch('feature'));
       return {node_id:'PR_fixture',state:merged||manuallyClosed?'closed':'open',merged,merged_at:merged?'2026-10-28':null,
-        merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:!conflict,mergeable_state:conflict?'dirty':'clean',
+        merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:!conflict,mergeable_state:conflict?'dirty':pending?'blocked':'clean',
         user:humanOpener?{type:'User',login:'human'}:{type:'Bot',login:kefaniaOpener?kefania.name:'automation[bot]'},head:{ref:'feature',sha:await branch('feature'),repo:{full_name:'owner/repo'}},
         base:{ref:'main',sha:tip,repo:{full_name:'owner/repo'}}};
     };
@@ -111,7 +111,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         return rules;
       }
       if(endpoint.includes('/branches/')){const name=decodeURIComponent(endpoint.split('/').at(-1));return {protected:name==='main'?protectedBase:protectedHead,commit:{sha:await branch(name)}};}
-      if(endpoint.includes('/check-runs?'))return {check_runs:failed||failedOriginalOnly?[{name:'regression',status:'completed',conclusion:failed||endpoint.includes(headSha)?'failure':'success'}]:[]};
+      if(endpoint.includes('/check-runs?'))return {check_runs:pending?[{name:'regression',status:'queued'}]:failed||failedOriginalOnly?[{name:'regression',status:'completed',conclusion:failed||endpoint.includes(headSha)?'failure':'success'}]:[]};
       if(endpoint.includes('/check-suites?'))return {check_suites:[]};
       if(endpoint.includes('/status?'))return {statuses:[]};
       if(endpoint.includes('/commits/')){
@@ -157,7 +157,11 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(await branch('main'),baseSha);
       } else {
         const result=await action();
-        if(failed) {assert.equal(result.status,'checks_failed');assert.equal(pushes.length,0);}
+        if(failed||pending) {
+          assert.equal(result.status,pending?'waiting':'checks_failed');
+          assert.match(result.reason,pending?/running or queued.*regression/:/CI checks failed.*regression/);
+          assert.equal(pushes.length,0);
+        }
         else {
           assert.equal(result.status,'published');assert.equal(result.githubMerged,false);
           assert.equal(result.sha,await branch('main'));assert.equal(pushes.length,1);
@@ -247,7 +251,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await fs.rm(root,{recursive:true,force:true});
   }
 }
-(async()=>{for(const options of [{kefaniaOpener:true,requireSignedCommit:true,appMode:true},{humanOpener:true,localSigningEnabled:true},{kefaniaOpener:true},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{requireSignedCommit:true,missingSigningKey:true},{requireSignedCommit:true,githubCannotVerifySignature:true}])await fixture({...options,directLocal:true});
+(async()=>{for(const options of [{kefaniaOpener:true,requireSignedCommit:true,appMode:true},{humanOpener:true,localSigningEnabled:true},{kefaniaOpener:true},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{pending:true,requireSignedCommit:true},{requireSignedCommit:true,missingSigningKey:true},{requireSignedCommit:true,githubCannotVerifySignature:true}])await fixture({...options,directLocal:true});
  for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true},{githubCannotVerifySignature:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
