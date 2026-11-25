@@ -262,15 +262,30 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   } });
   assert.equal(calls, 1); assert.equal(result.results[0].status, 'merged');
   for (const decisions of [[{ path: '../../outside', title: '🛠️ Preserve behavior', description: 'why' }],
-    [{ path: 'file.txt', title: 'Resolve conflicts', description: 'why' }],
+    [{ path: 'file.txt', title: '🛠️', description: 'why' }],
     [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: '' }]]) {
     assert.throws(() => validateResolution({ ...input, results: [{ ...input.results[0], decisions }] }, selection));
   }
-  const branchOnly = { ...input, results: [{ ...input.results[0], operation: 'sync' }] };
+  const decisions = [
+    { path: 'file.txt', title: 'Resolve conflicts', groupTitle: 'Preserve checkout behavior', description: 'Keep the feature.' },
+    { path: 'test.txt', title: '  🧑🏽‍🔧Keep test coverage ', groupTitle: '🛠️ Preserve checkout behavior', description: 'Exercise the feature.' }
+  ];
+  const branchOnly = { ...input, results: [{ ...input.results[0], operation: 'sync', decisions }] };
   assert.equal(validateSyncResolution(branchOnly, selection)[0].operation, 'sync');
+  for (const title of ['🛠️', '🛠️ 🐛 Fix', 'a\nb', 'a\x00b', 'a\u2028b', 'x'.repeat(160)]) {
+    for (const field of ['title', 'groupTitle']) {
+      const invalid = [decisions[0], { ...decisions[1], [field]: title }];
+      assert.throws(() => validateSyncResolution({ ...branchOnly, results: [{ ...branchOnly.results[0], decisions: invalid }] }, selection),
+        new RegExp('Resolution decision 2 ' + field + ' must have a nonempty subject, no line breaks or NUL characters, and at most one leading emoji; the normalized title must not exceed 160 characters\\.'));
+    }
+  }
   assert.throws(() => validateSyncResolution(input, selection), /merging is not authorized/);
   const synced = await executeResolution(branchOnly, selection, { merge: async (repo, number, options) => {
     assert.equal(options.operation, 'sync');
+    assert.deepEqual(options.decisions, [
+      { ...decisions[0], title: '🛠️ Resolve conflicts', groupTitle: '🛠️ Preserve checkout behavior' },
+      { ...decisions[1], title: '🧑🏽‍🔧 Keep test coverage' }
+    ]);
     return { merged: false, status: 'synced', sha: 'c'.repeat(40) };
   } });
   assert.equal(synced.results[0].status, 'synced', 'Branch preparation is never reported as merged');
@@ -375,6 +390,11 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     assert.equal((await post(input, { Origin: 'https://evil.invalid' })).status, 403);
     assert.equal((await post(input, { Host: 'evil.invalid' })).status, 404);
     assert.equal((await post({ ...input, results: [{ ...input.results[0], number: 99 }] })).status, 400);
+    const badDecision = { ...decisions[1], description: '' };
+    const badDecisions = await post({ ...branchOnly, results: [{ ...branchOnly.results[0], decisions: [decisions[0], badDecision] }] });
+    assert.equal(badDecisions.status, 400);
+    assert.match((await badDecisions.json()).error, /Resolution decision 2 description/);
+    assert.equal((await (await fetch(bridge.url + '/status')).json()).phase, 'ready');
     assert.equal(executions, 0);
     const compressed = gzipSync(JSON.stringify(input));
     const data = compressed.toString('base64url');

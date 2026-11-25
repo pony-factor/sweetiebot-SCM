@@ -199,12 +199,16 @@ jobs:
           node --check tests/branches/window.js
           node --check tests/branches/strip/core.js
           node --check tests/branches/shared-main.js
+          node --check extension/branches/prepared-worktrees.js
+          node --check tests/branches/prepared-worktrees.js
       - name: Test live-window focus, refusal, and stale session handling
         run: node tests/branches/window.js
       - name: Test Git's occupied-branch checkout guard
         run: node tests/branches/strip/core.js
       - name: Test real Git worktrees, session publication, and branch handoff
-        run: node tests/branches/shared-main.js
+        run: |
+          node tests/branches/shared-main.js
+          node --test tests/branches/prepared-worktrees.js
 
   worktree-shutdown-safety:
     name: Closed worktree safety (ubuntu-latest)
@@ -341,6 +345,8 @@ jobs:
           node --check tests/branches/window.js
           node --check tests/branches/strip/core.js
           node --check tests/branches/shared-main.js
+          node --check extension/branches/prepared-worktrees.js
+          node --check tests/branches/prepared-worktrees.js
       - name: Test live-window focus, refusal, and stale session handling
         if: ${{ !cancelled() }}
         run: node tests/branches/window.js
@@ -349,7 +355,9 @@ jobs:
         run: node tests/branches/strip/core.js
       - name: Test real Git worktrees, session publication, and branch handoff
         if: ${{ !cancelled() }}
-        run: node tests/branches/shared-main.js
+        run: |
+          node tests/branches/shared-main.js
+          node --test tests/branches/prepared-worktrees.js
       - name: Check shutdown and pruning source and test syntax
         if: ${{ !cancelled() }}
         run: |

@@ -95,6 +95,7 @@
         "branches/prune-merged-branches.py",
         "branches/routine-sync.js",
         "branches/shared-main.js",
+        "branches/prepared-worktrees.js",
         "branches/editor-handoff.js",
         "branches/development-launcher.js",
         "branches/development-browser.py",
@@ -106,7 +107,8 @@
         "extension/merge/sync-review.js",
         "extension/branches/window.js",
         "extension/branches/graph-refresh.js",
-        "extension/branches/auto-publish.js"
+        "extension/branches/auto-publish.js",
+        "extension/branches/prepared-worktrees.js"
       ]
     },
     "branch-names": {
