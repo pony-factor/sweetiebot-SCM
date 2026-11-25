@@ -117,7 +117,14 @@ async function noteFetch(root, remote, name, { run = git, now = Date.now() } = {
     const repo = await identity(root, run);
     if (!repo) return;
     const sha = await run(['-C', root, 'rev-parse', '--verify', 'refs/remotes/' + remote + '/' + name + '^{commit}']);
-    if (SHA.test(sha)) fetched.set(fetchKey(repo, remote, name), { sha, now });
+    const actual = await run(['-C', root, 'rev-parse', '--verify', 'FETCH_HEAD^{commit}']);
+    // Some custom fetch refspecs leave the tracking ref untouched. Do not
+    // certify an old tracking tip simply because a network request succeeded.
+    if (SHA.test(sha) && actual === sha) {
+      const url = await run(['-C', root, 'remote', 'get-url', remote]);
+      const remoteIdentity = createHash('sha256').update(url).digest('hex');
+      fetched.set(fetchKey(repo, remote, name), { sha, now, remoteIdentity });
+    }
   } catch { /* Never turn a successful fetch into a failure for caching. */ }
 }
 async function freshBase(root, defaultBranch, remote, { run = git, now = Date.now() } = {}) {
@@ -129,6 +136,8 @@ async function freshBase(root, defaultBranch, remote, { run = git, now = Date.no
     if (!upstream.startsWith(prefix)) return null;
     const receipt = fetched.get(fetchKey(repo, remote, upstream.slice(prefix.length)));
     if (!receipt || now - receipt.now >= FRESH_MS || now < receipt.now) return null;
+    const url = await run(['-C', root, 'remote', 'get-url', remote]);
+    if (createHash('sha256').update(url).digest('hex') !== receipt.remoteIdentity) return null;
     const refs = await run(['-C', root, 'rev-parse', 'refs/heads/' + defaultBranch + '^{commit}', upstream + '^{commit}']);
     const [local, tracking] = refs.split(/\\s+/);
     // Cache only an equal, recently fetched base. Behind/ahead/diverged,
