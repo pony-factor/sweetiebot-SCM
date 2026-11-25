@@ -132,9 +132,19 @@ async function openFolders(vscode, folders, { forceNewWindow = false,
       workspace: workspace.fsPath, plan: handoff
     });
     try {
-      const accepted = vscode.workspace.updateWorkspaceFolders(0,
-        vscode.workspace.workspaceFolders.length,
-        ...folders.map(folder => ({ uri: vscode.Uri.file(folder.path), name: folder.name })));
+      // Preserve unchanged leading/trailing roots. In a multi-root window,
+      // replacing an unrelated first folder would unnecessarily restart the
+      // extension host even when only a later repository is changing.
+      const current = vscode.workspace.workspaceFolders;
+      const same = (before, after) => before?.uri.scheme === 'file' &&
+        before.uri.fsPath === after.path && before.name === after.name;
+      let first = 0, last = 0;
+      while (first < current.length && first < folders.length && same(current[first], folders[first])) first++;
+      while (last < current.length - first && last < folders.length - first &&
+          same(current[current.length - last - 1], folders[folders.length - last - 1])) last++;
+      const accepted = vscode.workspace.updateWorkspaceFolders(first,
+        current.length - first - last,
+        ...folders.slice(first, folders.length - last).map(folder => ({ uri: vscode.Uri.file(folder.path), name: folder.name })));
       if (!accepted) throw new Error('VS Code could not update this workspace’s folders.');
       return { directory: path.dirname(workspace.fsPath), target: workspace.fsPath, folders };
     } catch (error) {
@@ -183,15 +193,15 @@ async function openSharedMainWorkspace(vscode, options = {}) {
 async function replaceRepository(vscode, root, destination, options) {
   await require('./commit-drafts').preserveCommitDraft(vscode, root, destination, options.commitDraftValue);
   const run = options.run || git;
-  const folders = [];
-  for (const folder of vscode.workspace.workspaceFolders || []) {
+  const folders = await Promise.all((vscode.workspace.workspaceFolders || []).map(async folder => {
     const folderRoot = folder.uri.scheme === 'file'
       ? await run(['-C', folder.uri.fsPath, 'rev-parse', '--show-toplevel']).catch(() => '') : '';
-    const location = folderRoot ? await fs.realpath(folder.uri.fsPath) : folder.uri.fsPath;
-    const sameRoot = folderRoot && await fs.realpath(folderRoot) === root;
-    folders.push({ path: sameRoot
-      ? path.join(destination, path.relative(root, location)) : folder.uri.fsPath, name: folder.name });
-  }
+    const [location, canonicalRoot] = folderRoot ? await Promise.all([
+      fs.realpath(folder.uri.fsPath), fs.realpath(folderRoot)
+    ]) : [folder.uri.fsPath, ''];
+    return { path: canonicalRoot === root
+      ? path.join(destination, path.relative(root, location)) : folder.uri.fsPath, name: folder.name };
+  }));
   const editors = await moveRepositoryEditors(vscode, root, destination);
   return openFolders(vscode, folders, { ...options, editors });
 }
