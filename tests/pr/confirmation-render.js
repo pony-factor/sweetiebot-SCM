@@ -448,6 +448,20 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   assert.equal(getElementById('merge-buttons').hidden,false,'Published PR shows merge methods');
   assert.equal(getElementById('pr-number').href,layoutState.result.url);
   assert.equal(getElementById('draft-status').hidden,true,'No duplicate publication status below the controls');
+  assert.equal(getElementById('merge-local-signed').hidden,true,'No local handler means no signer action');
+  layoutState={...layoutState,localSignedMergeAvailable:true};
+  await context.refresh();
+  assert.equal(getElementById('merge-local-signed').hidden,false,'Published PR exposes the available signer immediately');
+  assert.equal(getElementById('merge-local-signed-help').hidden,false,'Direct signer action includes its explanation');
+  assert.equal(getElementById('merge-history').hidden,true,'History-preserving merge still requires an attribution choice');
+  layoutState={...layoutState,mergeChoice:'SQUASH_AUTHOR_CHOICE_REQUIRED'};
+  await context.refresh();
+  assert.equal(getElementById('merge-history').hidden,false,'Attribution choice exposes history-preserving merge');
+  assert.equal(getElementById('merge-local-signed').hidden,false,'Signer remains available with an attribution choice');
+  layoutState={...layoutState,mergeChoice:undefined,mergeResult:{merged:false}};
+  await context.refresh();
+  assert.equal(getElementById('merge-local-signed').hidden,true,'An already-published squash cannot be repeated');
+  layoutState={...layoutState,mergeResult:undefined};
   layoutState={...layoutState,result:null,errors:{publish:'GitHub rejected publication: branch has no new commits.'}};
   await context.refresh();
   assert.equal(getElementById('title').textContent,'Publication failed');
@@ -482,19 +496,47 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await getElementById('merge').onclick();
   assert.equal(prompts,2,'Turning the setting off restores confirmation');
   assert.equal(merges,2);
-  let signerPrompts=0,signerCalls=0;
+  let signerPrompts=0,signerCalls=0,approveSigner=false;
   state={result:{number:2},mergeChoice:'SQUASH_AUTHOR_CHOICE_REQUIRED',localSignedMergeAvailable:true,ludicrousMode:true};
-  context.confirm=()=>{signerPrompts++;return false;};
+  context.confirm=message=>{
+    signerPrompts++;
+    assert.match(message,/original PR branch will remain unchanged/);
+    assert.match(message,/GitHub may not mark the PR merged/);
+    return approveSigner;
+  };
   context.fetch=async (url,options)=>{
-    if(options?.method==='POST')signerCalls++;
+    if(options?.method==='POST'){
+      assert.match(url,/\/merge-local-signed$/);
+      signerCalls++;
+      return {ok:true,json:async()=>({merged:true})};
+    }
     return {ok:true,json:async()=>state};
   };
   await getElementById('merge-local-signed').onclick();
-  assert.equal(signerPrompts,1,'Even ludicrous mode needs explicit local rewrite approval');
-  assert.equal(signerCalls,0,'Cancelling cannot rewrite a branch');
+  assert.equal(signerPrompts,1,'Even Ludicrous mode requires explicit signed squash approval');
+  assert.equal(signerCalls,0,'Cancelling cannot publish a signed squash');
   state.mergeChoice=undefined;
   await getElementById('merge-local-signed').onclick();
-  assert.equal(signerPrompts,1,'No signer action without attribution choice');
+  assert.equal(signerPrompts,2,'Signed squash is available without an attribution choice');
+  assert.equal(signerCalls,0,'Cancelling the direct action cannot publish either');
+  approveSigner=true;
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,3,'Direct signed squash still requires confirmation');
+  assert.equal(signerCalls,1,'Explicit approval posts exactly one signed squash request');
+  for(const blocked of [
+    {result:null},
+    {localSignedMergeAvailable:false},
+    {merging:true},
+    {mergeResult:{merged:true}},
+    {mergeResult:{merged:false}}
+  ]){
+    const available=state;
+    state={...available,...blocked};
+    await getElementById('merge-local-signed').onclick();
+    state=available;
+  }
+  assert.equal(signerPrompts,3,'Unavailable signed squash actions cannot prompt');
+  assert.equal(signerCalls,1,'Unavailable signed squash actions cannot publish');
   // Restore the normal successful merge mock for close-after-merge assertions.
   state={result:{number:2},ludicrousMode:false};
   context.confirm=()=>{prompts++;return true;};
