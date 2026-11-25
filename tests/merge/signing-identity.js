@@ -69,6 +69,46 @@ async function test() {
       signer.name + ' <' + signer.email + '>');
     await git('verify-commit', resolution.sha);
 
+    // A category can span source, tests, and unchanged rename aliases. Verify
+    // that only changed categories create signed commits, and that the final
+    // merge retains the exact intended tree and incoming ancestry.
+    await git('read-tree', base);
+    await fs.writeFile(path.join(repo, 'file.txt'), 'Combined implementation\n');
+    await fs.writeFile(path.join(repo, 'test.txt'), 'Related regression\n');
+    await fs.writeFile(path.join(repo, 'docs.txt'), 'Independent documentation\n');
+    await fs.writeFile(path.join(repo, 'upstream.txt'), 'Remaining incoming change\n');
+    await git('add', '.');
+    const groupedTree = await git('write-tree');
+    const groupTitle = '🐝 Integrate implementation and regression';
+    const decisions = [
+      { path: 'file.txt', groupTitle, title: '🐝 Reconcile implementation', description: 'Preserve both features.' },
+      { path: 'docs.txt', title: '🖋️ Explain independent documentation', description: 'Describe the separate change.' },
+      { path: 'test.txt', groupTitle, title: '🧪 Cover the behavior', description: 'Test the combined implementation.' },
+      { path: 'absent.txt', groupTitle, title: '🗑️ Keep retired alias absent', description: 'Neither tree needs this path.' },
+      { path: 'unused.txt', title: '🗑️ Keep unused path absent', description: 'No change is required.' }
+    ];
+    const progress = [];
+    const grouped = await createResolutionCommits({ git, directory: repo, headSha: base,
+      baseSha: sha, finalTree: groupedTree, conflicts: decisions.map(item => item.path),
+      decisions, author: original, base: 'main', onCommit: item => progress.push(item) });
+    assert.equal(grouped.commits.length, 2);
+    assert.equal(progress.length, 2);
+    assert.deepEqual(grouped.commits[0].paths, ['file.txt', 'test.txt']);
+    assert.equal(grouped.commits[0].title, groupTitle);
+    assert.equal(grouped.commits[0].decisions.length, 3);
+    assert.match(await git('show', '-s', '--format=%B', grouped.commits[0].sha), /Test the combined implementation/);
+    assert.match(await git('show', '-s', '--format=%B', grouped.commits[0].sha), /Neither tree needs this path/);
+    assert.equal(await git('rev-list', '--first-parent', '--count', base + '..' + grouped.sha), '3');
+    for (const item of grouped.commits) {
+      assert.notEqual(await git('rev-parse', item.sha + '^{tree}'), await git('rev-parse', item.sha + '^1^{tree}'));
+      await git('verify-commit', item.sha);
+    }
+    assert.equal(await git('rev-parse', grouped.sha + '^{tree}'), groupedTree);
+    assert.equal(await git('rev-parse', grouped.sha + '^2'), sha);
+    assert.throws(() => require('../../extension/merge/resolution-commits').validateDecisions([
+      { ...decisions[0], groupTitle: 'invalid\nheader' }
+    ]), /emoji decision title/);
+
     await git('config', '--local', 'commit.gpgsign', 'false');
     const unsigned = await commitIdentity(git, original);
     assert.equal(unsigned.signed, false);

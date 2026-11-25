@@ -645,7 +645,7 @@ async function humanSquashMerge(repository, number, {
       return { merged: false, additionalFiles, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
         reason: prepared.commits.length
-          ? 'Appended per-file conflict decisions followed by the remaining base synchronization; existing PR history was retained.'
+          ? 'Appended related conflict-repair categories followed by the remaining base synchronization; existing PR history was retained.'
           : 'Appended a base synchronization commit with a normal fast-forward push; existing PR history was retained.' };
     }
   } catch (error) {

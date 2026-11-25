@@ -76,9 +76,11 @@ requires a compatible local `lindsey-sync` checkout and server deployment. If
 the server and Sweetiebot use different keys for the App, the server must also
 trust the public key corresponding to the saved Sweetiebot key.
 
-If the resolver is unavailable, selecting **Resolve and sync with Lindsey** opens ChatGPT in the integrated browser with the textual conflict hunks, their common-ancestor versions, and nearby code. Review the proposed diffs and per-file explanations before approving. Lindsey commits each file-level change with its explanation, then commits the rest of the upstream sync separately.
-per-file explanations before approving. Lindsey commits each file-level change
-with its explanation, then commits the rest of the upstream sync separately.
+For a matching open PR, **Resolve and sync with Lindsey** opens a full-context
+ChatGPT repair. Other branches can use the contextual conflict-hunk fallback.
+Lindsey retains per-file explanations but commits related source, test, rename
+and supporting changes together by repair category, skipping unchanged groups.
+The remaining upstream synchronization is recorded separately.
 The connection is still the **Lindsey GitHub App**: its installation token is the
 author of automated review and merge comments, not the GitHub user signed in to
 Sweetiebot. The shortcut does not introduce a second credential store or a

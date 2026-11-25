@@ -938,7 +938,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       'applying-resolution': 'Applying the complete conflict-resolution patch',
       'rewrite-approved': 'Using an explicitly approved history rewrite as a last resort',
       prepared: 'Full PR squash prepared locally · not pushed yet',
-      'decision-commit': 'Conflict decision recorded as a separate local commit',
+      'decision-commit': 'Related conflict decisions recorded as a local commit',
       'sync-prepared': 'Branch synchronization prepared locally',
       pushed: 'Prepared commit pushed to the PR branch · not merged',
       'verifying-push': 'Verifying GitHub sees the pushed PR head',
@@ -969,10 +969,13 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         pr.localExplanation = event.description.trim().slice(0, 4000);
       }
     }
-    if (event.stage === 'decision-commit' && file) {
+    if (event.stage === 'decision-commit') {
       pr.localDecisions ||= {};
-      pr.localDecisions[file] = { path: file, title: String(event.title || '').slice(0, 160),
-        description: String(event.description || '').slice(0, 4000) };
+      for (const item of Array.isArray(event.decisions) ? event.decisions : file ? [event] : []) {
+        if (!require('./patch').safePatchPath(item?.path)) continue;
+        pr.localDecisions[item.path] = { path: item.path, title: String(item.title || '').slice(0, 160),
+          description: String(item.description || '').slice(0, 4000) };
+      }
     }
     if (event.stage === 'pushed') pr.lastPushedHead = sha;
     const decision = ['decision-commit', 'preparing', 'rewrite-approved', 'message-prepared'].includes(event.stage)

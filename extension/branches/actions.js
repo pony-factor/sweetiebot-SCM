@@ -1403,7 +1403,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
           git: isolatedGit, directory: root, messageDirectory: temporary, headSha: headBefore,
           baseSha: resolution.targetSha, finalTree, conflicts: resolution.paths, decisions: resolution.decisions,
           author: publish.author, automationCommitter: publish.author, base: defaultBranch,
-          preserveMergeAncestry: strategy === 'merge', skipUnchanged: true
+          preserveMergeAncestry: strategy === 'merge'
         });
         await checkBranch();
         if (await git(['rev-parse', 'HEAD']) !== headBefore || await git(['rev-parse', target]) !== resolution.targetSha

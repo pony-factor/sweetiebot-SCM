@@ -67,6 +67,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     await fs.mkdir(path.join(directory, '.git'));
     for (const enabled of [true, false]) {
       const created = [], messages = [];
+      let writes = 0;
       const git = async (...args) => {
         if (args[0] === 'config') {
           if (args.at(-1) === 'gpg.format') return 'openpgp';
@@ -74,6 +75,8 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
           if (args.at(-1) === 'user.email') return 'human@example.test';
           return String(enabled);
         }
+        if (args[0] === 'read-tree') { writes = 0; return ''; }
+        if (args[0] === 'write-tree') return writes++ ? base : head;
         if (args[0] === 'ls-tree') return '100644 blob ' + head + '\tfile.txt\0';
         if (args[0] === 'show') return ['Human', 'human@example.test', 'Human', 'human@example.test'].join('\0');
         if (args[0] === 'cat-file') return 'tree ' + base + '\ngpgsig signature\n';

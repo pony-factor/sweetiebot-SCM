@@ -11,7 +11,7 @@ const stages = {
   integrating: 'Integrating with the current base',
   'applying-resolution': 'Applying the conflict resolution',
   'additional-files': 'Preparing additional repair files',
-  'decision-commit': 'Recording the file resolution',
+  'decision-commit': 'Recording a related repair category',
   'sync-prepared': 'Branch update prepared',
   prepared: 'Integration prepared',
   pushing: 'Pushing the prepared branch update to GitHub',

@@ -141,7 +141,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   const conflictPrompt = blockerPrompt('pony-factor/example', selection.pullRequests[0],
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
   assert(conflictPrompt.includes('Never create a per-file inline comment'));
-  assert(conflictPrompt.includes('one explanatory commit per actual conflicted file'));
+  assert(conflictPrompt.includes('one explanatory commit per cohesive repair category'));
   assert(conflictPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
   assert(conflictPrompt.includes('Do not bury conflict decisions'));
   assert(blockerPrompt('pony-factor/example', selection.pullRequests[0], manual[0], 'codex').includes('REPAIR COMMIT HISTORY'));

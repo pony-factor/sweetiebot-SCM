@@ -140,6 +140,9 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   try {
     const prompt = await readPrompt(fullRepair.url);
     assert.match(prompt, /Choose the design yourself/);
+    assert.match(prompt, /one commit per related repair category/);
+    assert.match(prompt, /groupTitle/);
+    assert.match(prompt, /skipping unchanged decision groups/);
     assert.match(prompt, /supporting source or test files/);
     assert.match(prompt, /title and body you would use/);
     assert(!prompt.includes('resolutionHunks') && !prompt.includes('AUTOMATIC SEQUENTIAL BULK MERGE'));

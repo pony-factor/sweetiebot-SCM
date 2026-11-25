@@ -201,7 +201,7 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
       const syncPrompt = await localPrompt(syncUrl);
       assert(syncPrompt.includes(syncPR.url));
       assert.match(syncPrompt, /supporting source or test files/);
-      assert.match(syncPrompt, /one commit for each file decision/);
+      assert.match(syncPrompt, /one commit per related repair category/);
       const callback = new URLSearchParams(destination.hash.slice(1)).get('return_to');
       const submit = item => fetchBeforeSync(callback, { method: 'POST', headers: {
         Origin: new URL(callback).origin, 'Content-Type': 'application/json'
