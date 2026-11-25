@@ -11,7 +11,7 @@ const runFile = promisify(execFile);
 const PR_QUERY = `query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(first: 100, after: $endCursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes { headRefName isCrossRepository number url state updatedAt }
+      nodes { headRefName headRefOid baseRefName isCrossRepository number url state updatedAt }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -120,23 +120,52 @@ async function pullRequestNames(root, remoteUrl, execute = runFile, commonDirect
     });
     const pages = JSON.parse(stdout);
     // Require a complete scan before inferring that any branch has no PR.
-    if (Array.isArray(pages) && pages.length && pages.every((page, index) =>
-      !page.errors?.length && Array.isArray(page.data?.repository?.pullRequests?.nodes)
-      && page.data.repository.pullRequests.pageInfo?.hasNextPage === (index < pages.length - 1))) {
-      const prs = pages.flatMap(page => page.data.repository.pullRequests.nodes);
-      value = new Map();
-      // Prefer the most recently updated PR when a branch has several.
-      prs.filter(pr => pr && pr.isCrossRepository === false && pr.headRefName)
-        .sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0))
-        .forEach(pr => {
-          if (!value.has(pr.headRefName)) value.set(pr.headRefName, {
-            number: pr.number, url: pr.url, state: pr.state
-          });
-        });
-    }
+      if (Array.isArray(pages) && pages.length && pages.every((page, index) =>
+        !page.errors?.length && Array.isArray(page.data?.repository?.pullRequests?.nodes)
+        && page.data.repository.pullRequests.pageInfo?.hasNextPage === (index < pages.length - 1))) {
+        const prs = pages.flatMap(page => page.data.repository.pullRequests.nodes)
+          .filter(pr => pr && pr.isCrossRepository === false && pr.headRefName)
+          .sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0));
+        value = new Map();
+        for (const pr of prs) {
+          const details = value.get(pr.headRefName) || {
+            number: pr.number, url: pr.url, state: pr.state, mergedHeads: []
+          };
+          if (pr.state === 'OPEN') details.hasOpenPr = true;
+          if (pr.state === 'MERGED' && /^[0-9a-f]{40,64}$/.test(pr.headRefOid || '')) {
+            details.mergedHeads.push({ base: pr.baseRefName, oid: pr.headRefOid });
+          }
+          value.set(pr.headRefName, details);
+        }
+      }
     } catch { /* Offline or unauthenticated: group conservatively. */ }
     return value;
   });
+}
+
+async function omitMergedBranches(root, branches, refText, mergedText, current, base, remote) {
+  const mergedRefs = new Set(mergedText.split('\n'));
+  const oids = new Map(refText.split('\n').map(line => {
+    const [ref, , oid] = line.split('\t');
+    return [ref, oid];
+  }));
+  const visible = await Promise.all(branches.map(async item => {
+    const { name, local, origin, pr } = item;
+    if (name === current || name === base || !pr || pr.hasOpenPr) return true;
+    const mergedHeads = pr.mergedHeads.filter(head => head.base === base);
+    if (!mergedHeads.length) return true;
+    const refs = [local && `refs/heads/${name}`, origin && `refs/remotes/${remote}/${name}`].filter(Boolean);
+    const tips = new Set(refs.filter(ref => !mergedRefs.has(ref)).map(ref => oids.get(ref)));
+    for (const tip of tips) {
+      if (!tip) return true;
+      if (mergedHeads.some(head => head.oid === tip)) continue;
+      const included = await Promise.all(mergedHeads.map(head =>
+        git(root, ['merge-base', '--is-ancestor', tip, head.oid]).then(() => true, () => false)));
+      if (!included.some(Boolean)) return true;
+    }
+    return false;
+  }));
+  return branches.filter((_, index) => visible[index]);
 }
 
 async function listBranchStrip(repository, { defaultBranch, remote = 'origin', localOnly = false } = {}) {
@@ -149,7 +178,7 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
   const refPrefixes = ['refs/heads', ...(remoteAvailable ? [`refs/remotes/${remote}`] : [])];
   const [refText, remoteUrl, gitCommonDir] = await Promise.all([
     git(root, ['for-each-ref', '--sort=-committerdate',
-      '--format=%(refname)%09%(committerdate:unix)', ...refPrefixes]),
+      '--format=%(refname)%09%(committerdate:unix)%09%(objectname)', ...refPrefixes]),
     localOnly ? Promise.resolve('') : git(root, ['remote', 'get-url', remote]).catch(() => ''),
     git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).catch(() => root)
   ]);
@@ -172,6 +201,10 @@ async function listBranchStrip(repository, { defaultBranch, remote = 'origin', l
   const prKnown = !localOnly && Boolean(prNames && baseRef);
   const classified = groupBranchRefs(refText, mergedText, prNames || new Set(),
     prKnown, defaultBranch, remote);
+  if (prKnown && remoteAvailable) {
+    classified.branches = await omitMergedBranches(root, classified.branches, refText, mergedText,
+      repository.state.HEAD?.name, defaultBranch, remote);
+  }
   return { ...classified, repositoryId, prStatus: localOnly ? 'loading' : prKnown ? 'available' : 'unavailable',
     remoteStatus: localOnly ? 'loading' : remoteAvailable ? 'available' : 'unavailable' };
 }
@@ -212,4 +245,4 @@ async function checkoutBranchStrip(repository, { branch, remote = 'origin', onOc
 }
 
 module.exports = { groupBranchRefs, parseGitHubRemote, pullRequestCacheKey,
-  cachedPullRequestLookup, listBranchStrip, checkoutBranchStrip, pullRequestNames };
+  cachedPullRequestLookup, listBranchStrip, checkoutBranchStrip, pullRequestNames, omitMergedBranches };
