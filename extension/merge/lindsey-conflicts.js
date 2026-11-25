@@ -62,7 +62,7 @@ function inside(root, relative) {
 async function inspectPreview(repository, temporary, manifest) {
   const root = repository.rootUri?.fsPath;
   if (!root || manifest?.version !== 1 || !Array.isArray(manifest.files)
-      || !manifest.files.length || manifest.files.length > 8
+      || !manifest.files.length || manifest.files.length > 512
       || !/^[a-f0-9]{40,64}$/i.test(manifest.head || '')) {
     throw new Error('Lindsey returned an invalid conflict preview.');
   }
