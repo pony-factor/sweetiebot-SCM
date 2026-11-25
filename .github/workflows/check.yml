@@ -39,16 +39,16 @@ jobs:
         continue-on-error: true
         run: |
           python -m unittest -v \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
-            tests.commits.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
-            tests.commits.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
-            tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_external_commit_blocks_placeholder_replacement \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_web_commit_published_during_generation_cannot_replace_history \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_followup_after_title_is_ready_blocks_replacement \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_provisional_without_followup_keeps_existing_sha \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_ancestor_allows_unpublished_local_title_finalization \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_previously_blocked_published_job_can_resume_without_rewrite \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_title_does_not_fast_forward_dirty_checkout \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_linear_external_commit_survives_pending_title_and_push
       - name: Set up Python 3.14
         id: setup314
         if: ${{ !cancelled() }}
@@ -66,16 +66,16 @@ jobs:
         continue-on-error: true
         run: |
           python -m unittest -v \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_external_commit_blocks_placeholder_replacement \
-            tests.commits.background_commit.BackgroundCommitTests.test_web_commit_published_during_generation_cannot_replace_history \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_followup_after_title_is_ready_blocks_replacement \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_web_followup_blocks_multiple_pending_local_titles \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_provisional_without_followup_keeps_existing_sha \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_ancestor_allows_unpublished_local_title_finalization \
-            tests.commits.background_commit.BackgroundCommitTests.test_previously_blocked_published_job_can_resume_without_rewrite \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
-            tests.commits.background_commit.BackgroundCommitTests.test_published_title_does_not_fast_forward_dirty_checkout \
-            tests.commits.background_commit.BackgroundCommitTests.test_linear_external_commit_survives_pending_title_and_push
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_external_commit_blocks_placeholder_replacement \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_web_commit_published_during_generation_cannot_replace_history \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_followup_after_title_is_ready_blocks_replacement \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_web_followup_blocks_multiple_pending_local_titles \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_provisional_without_followup_keeps_existing_sha \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_ancestor_allows_unpublished_local_title_finalization \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_previously_blocked_published_job_can_resume_without_rewrite \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_title_fast_forwards_clean_branch_to_web_commits \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_published_title_does_not_fast_forward_dirty_checkout \
+            tests.commits.background_history.BackgroundCommitHistoryTests.test_linear_external_commit_survives_pending_title_and_push
       - name: Require all four Python compatibility checks to pass
         if: ${{ !cancelled() }}
         env:

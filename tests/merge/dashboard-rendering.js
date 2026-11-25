@@ -73,8 +73,6 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(renderMergeActivitySummary(plainCommentRoot, 513, commentActivity), null,
     'A timeline event without a GitHub URL remains plain text');
   assert.equal(plainCommentRoot.children[1].textContent, 'PR conversation comment posted');
-  assert(panel.webview.html.includes("const target = commentLink || content;"),
-    'Only the dedicated comment anchor receives the external navigation handler');
   const root = document.createElement('div');
   const clicked = [];
   const tick = String.fromCharCode(96);

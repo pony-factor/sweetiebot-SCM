@@ -189,6 +189,8 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   panel.visible = true;
   assert.equal(dashboard.selection.pullRequests.length, 1);
   assert(panel.webview.html.includes('<h1>Lindsey</h1>'), 'Keep the Lindsey identity visible in the header');
+  assert(panel.webview.html.includes("const target = commentLink || content;"),
+    'Only the dedicated comment anchor receives the external navigation handler');
   assert(!panel.webview.html.includes('<h1>Lindsey · Bulk merge</h1>'), 'Do not restore the bulk merge subtitle');
   assert(!panel.webview.html.includes('id="repository"'), 'Omit the repository logo from the stripped-down header');
   assert(panel.webview.html.includes('<h2 id="completion-title">Win</h2>'), 'Show the concise completion heading');
