@@ -459,6 +459,16 @@ def run():
             assert attachments.is_visible()
             assert page.evaluate('document.getElementById("meter-control").parentElement === originalUsageParent')
         page.evaluate('''() => {
+            usageLayout.left = ['attachments','location','input'];
+            document.getElementById('meter-control').classList.add('attachments-first');
+        }''')
+        page.wait_for_function('''() => {
+            const add = document.getElementById('add-files').getBoundingClientRect();
+            const pie = document.querySelector('#meter-control scm-toolkit-usage-pie').getBoundingClientRect();
+            return add.width > 0 && pie.width > 0 && add.right <= pie.left
+                && add.top < pie.bottom && pie.top < add.bottom;
+        }''')
+        page.evaluate('''() => {
             usageLayout.left = ['input','attachments'];
             usageLayout.right = ['location','clipboard','send'];
             document.getElementById('meter-control').classList.add('rescan-layout');
