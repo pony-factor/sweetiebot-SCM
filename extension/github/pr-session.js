@@ -49,15 +49,33 @@ async function launchSyncPullRequestRepair(vscode, context, root, selection, syn
   const [pr] = selection.pullRequests;
   const { chatgptMergeUrl } = require('../codex/chatgpt-project');
   const project = vscode.workspace.getConfiguration('sweetiebot').get('chatgptProjectUrl', '');
-  const url = chatgptMergeUrl([
-    'Investigate the full pull request ' + pr.url + ' and current upstream using read-only repository tools.',
-    'First return patch:null so Lindsey can identify the exact conflict paths with local Git. In the next round, compare both branches with their common ancestor. Inspect related callers and tests to understand each change. Use a complete patch if the integration needs supporting source or tests outside the conflicts.',
-    'Use the local branch-only handoff. Do not write to GitHub, merge or close the PR. The maintainer reviews your proposal before Lindsey publishes it.'
-  ].join('\n\n'), project);
-  return launchSession(vscode, context, root, {
-    sessionTitle: `Sync #${pr.number} [${path.basename(root.fsPath)}]`,
-    syncOnly: true, reviewSync: { remote: sync.publishingRemote, head: pr.headSha, branch: pr.head }
-  }, url, selection);
+  const url = new URL(chatgptMergeUrl('', project));
+  const reviewSync = { remote: sync.publishingRemote, head: pr.headSha, branch: pr.head };
+  const publications = require('../merge/publication-queue').createPublicationQueue(vscode, selection, {
+    publish: publishOptionalMergeSummaries,
+    onErrors: errors => notifyPublicationErrors(vscode, errors)
+  });
+  const token = (await require('./session').githubSession(vscode)).accessToken;
+  const handoff = await prepareBranchRepair(vscode, selection, url, {
+    api: mergeReadAPI(selection.repository, token), reviewSync,
+    execute: localResolutionRunner(vscode, root, token, {
+      syncOnly: true, reviewSync, recordPublication: publications.record
+    })
+  });
+  try {
+    if (!handoff.url) {
+      const state = handoff.state();
+      throw Error(state.rateLimit?.message || state.deferred[0]?.reason || 'Lindsey could not prepare the PR repair.');
+    }
+    const opened = await require('./pr-workflows').openWorkflow(vscode, handoff.url);
+    let listener;
+    const dispose = () => { listener?.dispose(); handoff.dispose(); };
+    if (opened.tab) listener = vscode.window.tabGroups.onDidChangeTabs?.(({ closed }) => {
+      if (closed.includes(opened.tab)) dispose();
+    });
+    context.subscriptions?.push({ dispose });
+    return true;
+  } catch (error) { handoff.dispose(); throw error; }
 }
 
 async function approveSyncPullRequestRepair(vscode, item) {
