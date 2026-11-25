@@ -122,12 +122,8 @@ async function run() {
     assert.equal(await reviewSyncConflicts(vscode, repository, review), true);
     const lindsey = { ...review, publishingRepository: 'owner/publishing-fork' };
     choices = ['lindsey'];
-    let openChatGPT = false;
-    vscode.window.showWarningMessage = async (_message, options, open) => {
-      assert.equal(options.modal, true);
-      assert.match(options.detail, /Resolver unavailable/);
-      assert.match(options.detail, /sends the conflicting sections/);
-      return openChatGPT ? open : undefined;
+    vscode.window.showWarningMessage = async () => {
+      assert.fail('Selecting Lindsey already starts the ChatGPT fallback');
     };
     const fallback = {
       connect: async () => { throw Error('Resolver unavailable'); },
@@ -139,10 +135,8 @@ async function run() {
         return output;
       }
     };
-    assert.equal(await reviewSyncConflicts(vscode, repository, lindsey, fallback), false);
-    assert.equal(git('status', '--porcelain'), '', 'Setup errors leave the topic checkout clean');
-    choices = ['lindsey']; openChatGPT = true;
     const browser = await reviewSyncConflicts(vscode, repository, lindsey, fallback);
+    assert.equal(git('status', '--porcelain'), '', 'Choosing the fallback leaves the topic checkout clean');
     assert.equal(browser.browser, true);
     assert.equal(await browser.lindsey(root, 'preview'), 'preview');
     const repoName = lindsey.publishingRepository;

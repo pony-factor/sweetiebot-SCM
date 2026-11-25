@@ -58,7 +58,7 @@ async function reviewSyncConflicts(vscode, repository, details, {
   await unchanged();
   for (;;) {
     const choice = await vscode.window.showQuickPick([
-      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Review conflict proposals, then commit and publish with the configured App' }] : []),
+      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Lindsey or ChatGPT prepares conflict proposals for review before the App publishes' }] : []),
       { id: 'inspect', label: '$(diff) Inspect conflict preview', description: 'Read Git conflict details; no files are changed' },
       { id: 'resolve', label: '$(tools) Start conflict resolution', description: 'Proceed to Git merge editor without auto-committing' },
       { id: 'own', label: '$(git-commit) Make my own commit first', description: 'Prefill an editable commit title and cancel this sync' },
@@ -85,14 +85,7 @@ async function reviewSyncConflicts(vscode, repository, details, {
       }
       try {
         return { lindsey: await connect(vscode, root, details.publishingRepository) };
-      } catch (error) {
-        const open = 'Open ChatGPT';
-        const fallback = await vscode.window.showWarningMessage(
-          'The Lindsey resolver is unavailable. Ask ChatGPT for conflict proposals?', {
-            modal: true,
-            detail: error.message + '\n\nThis sends the conflicting sections, their common-ancestor versions, and nearby code to ChatGPT in VS Code. You can review the proposed changes in local diffs before approving the sync.'
-          }, open);
-        if (fallback !== open) continue;
+      } catch {
         await unchanged();
         return { browser: true, lindsey: (checkout, output) =>
           prepareInChatGPT(vscode, details.publishingRepository, details, checkout, output) };
