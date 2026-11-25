@@ -44,6 +44,37 @@ def mode_edits(js):
     return edits
 
 
+def direct_usage_edits(js):
+    """Keep the native menu trigger and render its usage rows at the root."""
+    trigger = re.search(
+        rf'"aria-label":{IDENTIFIER},"data-composer-navigation-target":`run-location`,'
+        rf'categoryLabel:null,collapse:`xs`,icon:{IDENTIFIER},indicator:`chevron`,'
+        rf'value:{IDENTIFIER},valueClassName:`max-w-40`', js)
+    heading = js.find('id:`composer.mode.rateLimit.heading`')
+    if trigger is None and heading == -1:
+        return []
+    if trigger is None or heading == -1:
+        raise ValueError('Unsupported Codex build: native usage menu trigger could not be identified.')
+    summary = re.search(
+        rf'({IDENTIFIER})=\(0,{IDENTIFIER}\.jsx\)\({IDENTIFIER},\{{trigger:{IDENTIFIER},children:({IDENTIFIER})\}}\)',
+        js[heading:heading + 6000])
+    menu = re.search(
+        rf'(?P<usage>{IDENTIFIER})={IDENTIFIER}&&\(0,{IDENTIFIER}\.jsx\)\({IDENTIFIER},\{{'
+        rf'rateLimits:{IDENTIFIER},activeLimitName:{IDENTIFIER},planType:{IDENTIFIER},[^{{}}]+\}}\)'
+        r'.{0,1800}?'
+        rf'(?P<root>className:`flex max-w-78 min-w-\[175px\] flex-col`,)'
+        rf'(?P<children>children:\[{IDENTIFIER}(?:,{IDENTIFIER}){{6}}\])', js, re.DOTALL)
+    if summary is None or menu is None:
+        raise ValueError('Unsupported Codex build: native usage menu contents could not be identified.')
+    return [
+        (trigger[0], re.sub(r'^"aria-label":' + IDENTIFIER, '"aria-label":`Usage remaining`', trigger[0])
+         .replace('indicator:`chevron`', 'indicator:`none`')
+         .replace('categoryLabel:null', '"data-scm-toolkit-direct-usage":true,categoryLabel:null')),
+        (summary[0], f'{summary[1]}=({summary[2]})'),
+        (menu['root'] + menu['children'], menu['root'] + 'children:' + menu['usage']),
+    ]
+
+
 def hide_reset_runtime():
     # The installer may also add reset hiding to this same ES module.
     # Keep this copy's helper declarations out of the shared module scope.
@@ -70,9 +101,11 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
     if not enabled:
         return js
 
+    usage_menu_edits = [] if cloud_tasks else direct_usage_edits(js)
+
     # Hiding times alone must not replace the native usage percentage/label.
     if hide_reset_times and not reset_countdown and not pie_indicator:
-        edits = mode_edits(js)
+        edits = mode_edits(js) + usage_menu_edits
         for original, replacement in edits:
             if js.count(original) != 1:
                 raise ValueError('Unsupported Codex build: execution mode anchor is ambiguous.')
@@ -106,7 +139,7 @@ def transform(js, enabled=True, hide_reset_times=False, pie_indicator=False, res
         'scmToolkitKeepUsageFresh(refetch);'
         f'return e.isRemoteHost?`Remote`:percent==null?`…`:{usage_label};}}'
     )
-    edits = [(label[1], replacement)] + mode_edits(js)
+    edits = [(label[1], replacement)] + mode_edits(js) + usage_menu_edits
     home = re.search(
         rf'className:`hidden in-data-\[composer-placement=home\]:inline`,'
         rf'children:\(0,({IDENTIFIER})\.jsx\)\(({IDENTIFIER}),\{{\.\.\.({IDENTIFIER})\.localShort\}}\)', js)

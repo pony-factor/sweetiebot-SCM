@@ -133,7 +133,10 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   } finally {repair.dispose();}
 
   const fullRepair = await createMergeBatch(repairSelection, { api, destination: 'https://chatgpt.com/',
-    branchOnly: true, fullSyncRepair: true, execute: async () => { assert.fail('Unexpected execution'); } });
+    branchOnly: true, fullSyncRepair: true, execute: async () => ({ repository: selection.repository,
+      results: [{ number: 1, status: 'needs_resolution', conflictPaths: ['options.html'],
+        reason: 'Resolve every conflicted file in the patch or explicitly keep the incoming file unchanged.' }]
+    }) });
   try {
     const prompt = await readPrompt(fullRepair.url);
     assert.match(prompt, /Choose the design yourself/);
@@ -144,6 +147,12 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert(prompt.includes('[Apply with Lindsey](<' + flags.get('return_to') + '#result_gz='));
     assert.match(prompt, /Never return a raw diff by itself/);
     assert.equal(flags.has('sweetiebot_sync_preview'), false, 'Full PR repair can recover an incomplete result');
+    const incomplete = await submit(fullRepair.url, [{ ...item(1, base, 'partial patch'), operation: 'sync' }]);
+    assert.equal(incomplete.status, 200);
+    assert.equal(incomplete.value.batch.deferred.length, 0);
+    const retryPrompt = await readPrompt(incomplete.value.continueUrl);
+    assert.match(retryPrompt, /options\.html/);
+    assert.match(retryPrompt, /Resolve every conflicted file/);
   } finally { fullRepair.dispose(); }
 
   // Choices travel through the local handoff rather than a personal connector.

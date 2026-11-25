@@ -295,6 +295,7 @@ def run():
         # right to left, and shares the pie's normal and final-ten-percent colors.
         page.evaluate("""() => {
             document.body.insertAdjacentHTML('beforeend', `
+              <style>._ComposerDropdownLabelIcon_fixture { display:inline-flex; width:16px; }</style>
               <section id="meter-surface" data-composer-surface-variant="default"
                        style="width:320px;height:100px;color:#43af49">
                 <div data-composer-body><textarea>Untouched draft</textarea></div>
@@ -302,14 +303,32 @@ def run():
                   <button id="access-control" data-composer-navigation-target="permissions">Full access</button>
                 </div>
                 <button id="meter-control" data-composer-navigation-target="run-location">
-                  <svg width="12" height="12"></svg><scm-toolkit-usage-meter percent="100"></scm-toolkit-usage-meter>
+                  <span class="_ComposerDropdownLabelIcon_fixture"><svg width="12" height="12"></svg></span>
+                  <scm-toolkit-usage-meter percent="100"></scm-toolkit-usage-meter>
                 </button>
               </section>`);
         }""")
+        assert page.locator('#meter-control span[class*="ComposerDropdownLabelIcon_"]').bounding_box() is None
         meter = page.locator('scm-toolkit-usage-meter')
         bar = page.get_by_role('progressbar', name='Five-hour Codex usage remaining')
         surface = page.locator('#meter-surface')
         page.wait_for_function('document.getElementById("meter-control").disabled')
+        # The transformed native trigger remains keyboard- and pointer-operable
+        # while non-usage location controls are hidden in the local-only view.
+        page.evaluate("""() => {
+            const trigger = document.createElement('button');
+            trigger.id = 'direct-usage';
+            trigger.setAttribute('data-composer-navigation-target', 'run-location');
+            trigger.setAttribute('data-scm-toolkit-direct-usage', 'true');
+            trigger.setAttribute('aria-label', 'Usage remaining');
+            trigger.textContent = '70%';
+            trigger.onclick = () => { trigger.dataset.opened = 'true'; };
+            document.body.append(trigger);
+        }""")
+        direct_usage = page.get_by_role('button', name='Usage remaining', exact=True)
+        direct_usage.press('Enter')
+        assert direct_usage.get_attribute('data-opened') == 'true'
+        direct_usage.evaluate('el => el.remove()')
         # Native footer label line boxes must not lift the pie above the
         # vertical center of its neighboring toolbar buttons.
         page.locator('#meter-control').evaluate('''button => {

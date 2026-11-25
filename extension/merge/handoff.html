@@ -49,6 +49,7 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
 .flag.waiting,.flag.deferred{color:var(--merge-warning);border-color:currentColor}
 .pr-detail{margin:8px 0 0;color:var(--merge-muted);white-space:pre-wrap;overflow-wrap:anywhere}
 .pr-link{display:inline-block;margin-top:9px;color:var(--vscode-textLink-foreground,#758cf7);font-weight:600;overflow-wrap:anywhere}
+.commit-links{margin:4px 0 0;padding-inline-start:20px}
 .pr-link:focus-visible{outline:2px solid currentColor;outline-offset:3px}
 .batch-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--merge-border);margin-top:20px;padding-top:15px;font-size:13px;font-weight:650}
 .batch-summary .muted{color:var(--merge-muted)}
@@ -172,6 +173,28 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
           link.textContent = 'View on GitHub';
           card.append(link);
         }
+      }
+      if (state === 'synced' && pr.unchanged !== true &&
+          typeof result.repository === 'string' && /^[\w.-]+\/[\w.-]+$/.test(result.repository)) {
+        const commits = Array.isArray(pr.resolutionCommits) ? pr.resolutionCommits : [];
+        const links = document.createElement('ul');
+        links.className = 'commit-links';
+        const seen = new Set();
+        for (const commit of [...commits, { sha: pr.sha,
+          title: pr.base ? 'Sync branch to ' + pr.base : 'Sync commit' }]) {
+          const sha = commit?.sha;
+          if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/i.test(sha) || seen.has(sha)) continue;
+          seen.add(sha);
+          const entry = document.createElement('li');
+          const link = document.createElement('a');
+          link.className = 'pr-link';
+          link.href = 'https://github.com/' + result.repository + '/commit/' + sha;
+          link.rel = 'noopener noreferrer';
+          link.textContent = [commit.title || sha.slice(0, 12), commit.path].filter(Boolean).join(' · ');
+          entry.append(link);
+          links.append(entry);
+        }
+        if (seen.size) card.append(links);
       }
       return card;
     });

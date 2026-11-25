@@ -199,7 +199,11 @@ const run = promisify(execFile);
     const extraProgress = [];
     const configPatch = 'diff --git a/support-config.json b/support-config.json\n--- a/support-config.json\n+++ b/support-config.json\n@@ -1 +1 @@\n-{"enabled":false}\n+{"enabled":true}\n';
     if (resolving) {
-      await assert.rejects(attempt({ resolutionPatch: additionalPatch }), /Resolve every conflicted file/);
+      const incomplete = await attempt({ resolutionPatch: additionalPatch });
+      assert.equal(incomplete.status, 'needs_resolution');
+      assert.deepEqual(incomplete.conflictPaths, ['file.txt']);
+      assert.match(incomplete.reason, /Resolve every conflicted file/);
+      assert.equal(pushed, false, 'An incomplete proposal cannot update the PR branch');
       const keep = await attempt({ resolutionPatch: null, decisions: [{
         path: 'file.txt', title: '🛠️ Keep the complete incoming behavior',
         description: 'The incoming implementation already includes this PR behavior.', keepBase: true

@@ -104,7 +104,8 @@
             if (!margins.has(access)) margins.set(access, {
                 start:access.style.marginInlineStart, end:access.style.marginInlineEnd,
             });
-            const usageOnly = location.disabled && location.querySelector('scm-toolkit-usage-meter');
+            const usageOnly = location.hasAttribute('data-scm-toolkit-direct-usage')
+                || location.disabled && location.querySelector('scm-toolkit-usage-meter');
             const layoutSlot = location.scmToolkitLayoutSlot;
             const margin = margins.get(access);
             set(access, 'marginInlineStart', layoutSlot ? margin.start : usageOnly ? `${location.getBoundingClientRect().width + 8}px` : margin.start);

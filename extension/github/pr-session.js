@@ -49,44 +49,28 @@ async function launchSyncPullRequestRepair(vscode, context, root, selection, syn
   const [pr] = selection.pullRequests;
   const { chatgptMergeUrl } = require('../codex/chatgpt-project');
   const project = vscode.workspace.getConfiguration('sweetiebot').get('chatgptProjectUrl', '');
-  const url = chatgptMergeUrl([
-    'Investigate the full pull request ' + pr.url + ' and current upstream using read-only repository tools.',
-    'First return patch:null so Lindsey can identify the exact conflict paths with local Git. In the next round, compare both branches with their common ancestor. Inspect related callers and tests to understand each change. Use a complete patch if the integration needs supporting source or tests outside the conflicts.',
-    'Use the local branch-only handoff. Do not write to GitHub, merge or close the PR. The maintainer reviews your proposal before Lindsey publishes it.'
-  ].join('\n\n'), project);
-  return launchSession(vscode, context, root, {
-    sessionTitle: `Sync #${pr.number} [${path.basename(root.fsPath)}]`,
-    syncOnly: true, reviewSync: { remote: sync.publishingRemote, head: pr.headSha, branch: pr.head }
-  }, url, selection);
-}
-
-async function approveSyncPullRequestRepair(vscode, item) {
-  if (!item.patch && !item.resolutionHunks?.length && !item.repairChecks && !item.decisions?.length) return true;
-  if (item.patch) {
-    const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-review-patch-'));
-    try {
-      const patch = path.join(temporary, 'proposal.patch');
-      await fs.writeFile(patch, item.patch, { mode: 0o600 });
-      await require('../merge/patch').inspectResolutionPatch(item.patch, patch, async (...args) =>
-        (await run('git', args, { cwd: temporary, timeout: 15000, maxBuffer: 1024 * 1024 })).stdout);
-    } finally { await fs.rm(temporary, { recursive: true, force: true }); }
-  }
-  const review = await vscode.workspace.openTextDocument({ language: 'plaintext', content: [
-    'Proposed branch sync for PR #' + item.number, 'Head: ' + item.headSha, 'Incoming: ' + item.baseSha,
-    item.explanation, ...item.decisions.map(file => [
-      file.path + (file.keepBase ? ' (keep incoming version)' : ''), file.title, file.description
-    ].join('\n'))
-  ].filter(Boolean).join('\n\n') });
-  await vscode.window.showTextDocument(review, { preview: false });
-  if (item.patch || item.resolutionHunks.length) {
-    const changes = await vscode.workspace.openTextDocument(item.patch
-      ? { language: 'diff', content: item.patch }
-      : { language: 'json', content: JSON.stringify(item.resolutionHunks, null, 2) });
-    await vscode.window.showTextDocument(changes, { preview: false, viewColumn: vscode.ViewColumn.Beside });
-  }
-  const apply = 'Apply and publish with Lindsey';
-  return await vscode.window.showInformationMessage(
-    'Review the PR repair and any supporting changes before Lindsey updates the PR branch.', apply) === apply;
+  const url = new URL(chatgptMergeUrl('', project));
+  const reviewSync = { remote: sync.publishingRemote, head: pr.headSha, branch: pr.head };
+  const publications = require('../merge/publication-queue').createPublicationQueue(vscode, selection, {
+    publish: publishOptionalMergeSummaries,
+    onErrors: errors => notifyPublicationErrors(vscode, errors)
+  });
+  const token = (await require('./session').githubSession(vscode)).accessToken;
+  const handoff = await prepareBranchRepair(vscode, selection, url, {
+    api: mergeReadAPI(selection.repository, token), reviewSync,
+    execute: localResolutionRunner(vscode, root, token, {
+      syncOnly: true, reviewSync, recordPublication: publications.record
+    })
+  });
+  try {
+    if (!handoff.url) {
+      const state = handoff.state();
+      throw Error(state.rateLimit?.message || state.deferred[0]?.reason || 'Lindsey could not prepare the PR repair.');
+    }
+    await require('./pr-workflows').openWorkflow(vscode, handoff.url);
+    context.subscriptions?.push(handoff);
+    return true;
+  } catch (error) { handoff.dispose(); throw error; }
 }
 
 async function refreshSyncedCheckout(root, { remote, head, branch }, sha) {
@@ -198,6 +182,64 @@ const mergeWorkerTabs = new Map();
 let activeRepairRuntime;
 const queueLocalExecution = require('../merge/runner-layout').createExecutionQueue();
 
+function mergeReadAPI(repository, token) {
+  const { githubGet } = require('../merge/dashboard');
+  const fetch = globalThis.fetch;
+  const prefix = 'repos/' + repository;
+  return endpoint => {
+    if (!endpoint.startsWith(prefix + '/')) throw Error('GitHub request is outside the selected repository.');
+    return githubGet(fetch, token, repository, endpoint.slice(prefix.length));
+  };
+}
+
+function notifyPublicationErrors(vscode, errors) {
+  if (errors.length) vscode.window.showWarningMessage(
+    'Lindsey could not publish GitHub updates: ' + errors.map(item => '#' + item.number + ': ' + item.error).join('; '));
+}
+
+function localResolutionRunner(vscode, root, token, { syncOnly, reviewSync, getDashboard, recordPublication }) {
+  const { invokeResolutionCLI, validateSyncResolution } = require('../merge/resolution');
+  const { withMergeProgress } = require('../merge/progress');
+  const { executionResources } = require('../merge/runner-layout');
+  return (result, snapshot) => queueLocalExecution(() => withMergeProgress(vscode, {
+    numbers: result.results.map(item => item.number),
+    branchOnly: syncOnly || result.results.every(item => item.operation === 'sync')
+  }, async report => {
+    const controller = await getDashboard?.();
+    if (reviewSync) {
+      for (const item of validateSyncResolution(result, snapshot)) {
+        if (item.headSha !== reviewSync.head) {
+          return { repository: snapshot.repository, results: [{ number: item.number, status: 'blocked',
+            reason: 'The PR head changed. Start a fresh sync.' }] };
+        }
+      }
+    }
+    const executed = await invokeResolutionCLI(result, snapshot, token, undefined,
+      event => { report(event); controller?.recordLocalProgress?.(event); });
+    if (reviewSync) {
+      const synced = executed.results.find(item => item.status === 'synced' && !item.unchanged);
+      if (synced && !await refreshSyncedCheckout(root.fsPath, reviewSync, synced.sha).catch(() => false)) {
+        void vscode.window.showInformationMessage('Lindsey published the PR repair. The original checkout still needs to pull the updated branch.');
+      }
+    }
+    const summaryErrors = await recordPublication(snapshot, result, executed);
+    return { ...executed, summaryErrors };
+  }), executionResources(result, snapshot, syncOnly));
+}
+
+function prepareBranchRepair(vscode, selection, url, { reviewSync, api, execute, onResult, onState }) {
+  const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
+  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
+    title: 'Preparing Lindsey PR fix ' + selection.pullRequests.map(pr => '#' + pr.number).join(', '), cancellable: false
+  }, progress => require('../merge/batch').createMergeBatch(selection, {
+    persistentHandoffs: true, branchOnly: true, fullSyncRepair: Boolean(reviewSync),
+    api, execute, onResult, onState, onProgress: update => progress.report(update),
+    destination: url.origin + url.pathname,
+    makePrompt: () => initialPrompt + '\n\n' + require('../merge/review-policy').statusUpdateInstructions(
+      vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true)
+  }));
+}
+
 async function openMergeWorker(vscode, launch) {
   const id=launch.id || 1;
   const previous=mergeWorkerTabs.get(id);
@@ -292,8 +334,7 @@ async function createMergeDashboard(vscode, directory, context) {
   catch (error) { if (error.code !== 'ENOENT') console.warn('Could not restore local merge explanations.'); }
   mergePublications ||= require('../merge/publication-queue').createPublicationQueue(vscode, selection, {
     history: savedState?.history || [], publish: publishOptionalMergeSummaries,
-    onErrors: errors => { if (errors.length) vscode.window.showWarningMessage(
-      'Lindsey could not publish GitHub updates: ' + errors.map(item => '#' + item.number + ': ' + item.error).join('; ')); }
+    onErrors: errors => notifyPublicationErrors(vscode, errors)
   });
   context.subscriptions?.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (['mergePostSummaries', 'mergePostStatusUpdates'].some(key => event.affectsConfiguration('sweetiebot.' + key))) {
@@ -425,60 +466,21 @@ async function resumePRSession(vscode, context) {
     }
     if (selection) {
       const auth = await require('./session').githubSession(vscode);
-      const { invokeResolutionCLI } = require('../merge/resolution');
-      const { githubGet } = require('../merge/dashboard');
-      // Local handoff verification uses the same human GitHub session as Git.
-      const readFetch = globalThis.fetch;
-      const prefix = 'repos/' + selection.repository;
+      const syncOnly = input.options?.syncOnly === true;
+      const reviewSync = input.options?.reviewSync;
       const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
-      const runLocal = (result, snapshot) => queueLocalExecution(() => require('../merge/progress').withMergeProgress(vscode,
-        { numbers: result.results.map(item => item.number), branchOnly: input.options?.syncOnly === true ||
-          result.results.every(item=>item.operation==='sync') }, async report => {
-        const controller = await resumeMergeDashboard(vscode, directory, context);
-        if (input.options?.reviewSync) {
-          const items = require('../merge/resolution').validateSyncResolution(result, snapshot);
-          for (const item of items) {
-            if (item.headSha !== input.options.reviewSync.head || !await approveSyncPullRequestRepair(vscode, item)) {
-              return { repository: snapshot.repository, results: [{ number: item.number, status: 'blocked',
-                reason: item.headSha !== input.options.reviewSync.head ? 'The PR head changed. Start a fresh sync review.'
-                  : 'The proposed PR repair was not approved.' }] };
-            }
-          }
-        }
-        const executed = await invokeResolutionCLI(result, snapshot, auth.accessToken, undefined,
-          event => { report(event); controller?.recordLocalProgress?.(event); });
-        if (input.options?.reviewSync) {
-          const synced = executed.results.find(item => item.status === 'synced' && !item.unchanged);
-          if (synced && !await refreshSyncedCheckout(root.fsPath, input.options.reviewSync, synced.sha).catch(() => false)) {
-            void vscode.window.showInformationMessage('Lindsey published the PR repair. The original checkout still needs to pull the updated branch.');
-          }
-        }
-        const summaryErrors = await mergePublications.record(snapshot, result, executed);
-        return { ...executed, summaryErrors };
-      }), require('../merge/runner-layout').executionResources(result, snapshot, input.options?.syncOnly === true));
-      if (!input.options?.syncOnly) {
+      const api = mergeReadAPI(selection.repository, auth.accessToken);
+      const runLocal = localResolutionRunner(vscode, root, auth.accessToken, {
+        syncOnly, reviewSync, getDashboard: () => resumeMergeDashboard(vscode, directory, context),
+        recordPublication: (...args) => mergePublications.record(...args)
+      });
+      if (!syncOnly) {
         activeRepairRuntime?.dispose();
-        activeRepairRuntime=createBulkRepairRuntime(vscode,context,root,selection,endpoint=>{
-          if (!endpoint.startsWith(prefix+'/')) throw Error('Repair API request is outside the selected repository.');
-          return githubGet(readFetch,auth.accessToken,selection.repository,endpoint.slice(prefix.length));
-        },runLocal);
+        activeRepairRuntime = createBulkRepairRuntime(vscode, context, root, selection, api, runLocal);
       }
-      if (input.options?.syncOnly) {
-        handoff = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
-          title: 'Preparing Lindsey PR fix ' + selection.pullRequests.map(pr => '#' + pr.number).join(', '), cancellable: false
-        }, progress => require('../merge/batch').createMergeBatch(selection, {
-          persistentHandoffs:true,
-          onProgress: update => progress.report(update),
-          branchOnly: true,
-          fullSyncRepair: Boolean(input.options.reviewSync),
-          api: endpoint => {
-            if (!endpoint.startsWith(prefix + '/')) throw Error('Repair API request is outside the selected repository.');
-            return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
-          },
-          destination: url.origin + url.pathname,
-          makePrompt: () => initialPrompt + '\n\n' + require('../merge/review-policy').statusUpdateInstructions(
-            vscode.workspace?.getConfiguration?.('sweetiebot')?.get('mergePostStatusUpdates', false) === true),
-          execute: runLocal,
+      if (syncOnly) {
+        handoff = await prepareBranchRepair(vscode, selection, url, {
+          reviewSync, api, execute: runLocal,
           onResult: async result => {
             const controller = await resumeMergeDashboard(vscode, directory, context);
             controller?.recordLocalResult?.(result);
@@ -488,7 +490,7 @@ async function resumePRSession(vscode, context) {
             mergeDashboardController?.recordBatchState?.(state);
             require('../merge/session-completion').updateMergeSessionCompletion(vscode, selection, state);
           }
-        }));
+        });
       } else {
       const blockerReports = {};
       const keepAwake = require('../merge/keep-awake').createMergeKeepAwake();
@@ -503,10 +505,7 @@ async function resumePRSession(vscode, context) {
       const startBatch = progress => require('../merge/parallel-merge-batch').createParallelMergeBatch(selection, {
         persistentHandoffs:true,
         onProgress: update => progress?.report(update),
-        api: endpoint => {
-          if (!endpoint.startsWith(prefix + '/')) throw Error('Batch API request is outside the selected repository.');
-          return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));
-        },
+        api,
         destination: url.origin + url.pathname,
         makePrompt: snapshot => require('./pull-request-batch').batchMergePrompt({
           repositoryUrl: 'https://github.com/' + snapshot.repository,

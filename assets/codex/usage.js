@@ -417,13 +417,14 @@ function scmToolkitKeepUsageFresh(refetch) {
         position:absolute; left:0; bottom:0; height:2px; pointer-events:none;
         border-radius:0 1px 1px 0; z-index:1;
       }
-      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) svg {
+      button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter)
+      :is(svg, [class*="ComposerDropdownLabelIcon_"]) {
         display:none;
       }
     ` + (localOnly ? `
-      button[data-composer-navigation-target="run-location"]:not(:has(:is(scm-toolkit-usage-meter, scm-toolkit-usage-pie))) { display:none !important; }
+      button[data-composer-navigation-target="run-location"]:not([data-scm-toolkit-direct-usage], :has(scm-toolkit-usage-meter, scm-toolkit-usage-pie)) { display:none !important; }
       button[data-composer-navigation-target="run-location"]:has(scm-toolkit-usage-meter) {
-        cursor:default; opacity:1 !important; color:inherit !important; order:-1;
+        opacity:1 !important; color:inherit !important; order:-1;
       }
     ` : '');
     document.head.append(style);
@@ -435,6 +436,7 @@ function scmToolkitKeepUsageFresh(refetch) {
             if (meter.ensureBar?.()) meter.update();
         }
         if (localOnly) for (const button of document.querySelectorAll('button[data-composer-navigation-target="run-location"]')) {
+            if (button.hasAttribute('data-scm-toolkit-direct-usage')) continue;
             if (!button.disabled) button.disabled = true;
             const exhausted = button.querySelector(
                 'scm-toolkit-usage-meter[percent="0"], scm-toolkit-usage-meter[weekly-percent="0"]');

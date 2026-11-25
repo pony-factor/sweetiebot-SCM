@@ -58,7 +58,7 @@ async function reviewSyncConflicts(vscode, repository, details, {
   await unchanged();
   for (;;) {
     const choice = await vscode.window.showQuickPick([
-      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Lindsey or ChatGPT prepares conflict proposals for review before the App publishes' }] : []),
+      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Resolve conflicts and sync the PR branch with the incoming base' }] : []),
       { id: 'inspect', label: '$(diff) Inspect conflict preview', description: 'Read Git conflict details; no files are changed' },
       { id: 'resolve', label: '$(tools) Start conflict resolution', description: 'Proceed to Git merge editor without auto-committing' },
       { id: 'own', label: '$(git-commit) Make my own commit first', description: 'Prefill an editable commit title and cancel this sync' },
@@ -71,14 +71,6 @@ async function reviewSyncConflicts(vscode, repository, details, {
       const selection = launchPullRequestRepair
         ? await findPullRequest(details).catch(() => undefined) : undefined;
       if (selection) {
-        const pr = selection.pullRequests[0];
-        const repair = 'Open PR repair in ChatGPT';
-        const approved = await vscode.window.showWarningMessage(
-          'Review the full pull request with ChatGPT?', { modal: true,
-            detail: 'ChatGPT can inspect PR #' + pr.number + ', the current base, and related source and tests. '
-              + 'Review the proposed edits before Lindsey publishes the file decisions and syncs ' + branch
-              + ' with upstream merge ancestry.' }, repair);
-        if (approved !== repair) continue;
         await unchanged();
         await launchPullRequestRepair(repository.rootUri, selection, details);
         return false;
