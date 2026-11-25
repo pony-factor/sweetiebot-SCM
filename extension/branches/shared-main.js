@@ -10,6 +10,7 @@ const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-lay
 const { worktreeLocations } = require('./worktree-registry');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
+const prepared = require('./prepared-worktrees');
 const { saveRepositoryDocuments, assertSavedRepositoryDocuments, moveRepositoryEditors } = require('./editor-handoff');
 
 const exec = promisify(execFile);
@@ -378,6 +379,7 @@ async function routeExistingBranchWorktree(vscode, repository, destination, opti
 
 async function routeBranch(vscode, repository, { branch, create = false, adoptExisting = false, start,
   forkScript, source, expectedHead, ...options } = {}) {
+  const started = performance.now();
   const run = options.run || git;
   if (!repository.rootUri?.fsPath || !branch || !vscode.workspace?.workspaceFolders?.length) return false;
   const root = await fs.realpath(repository.rootUri.fsPath);
@@ -429,11 +431,16 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   let handoff;
   let recovery;
   try {
+    let phase = performance.now();
     handoff = await prepareCodexHandoff(vscode, root);
+    prepared.timing('Codex handoff preparation', phase);
+    phase = performance.now();
     // File ownership follows New Branch even when no Codex chat is open.
     await saveRepositoryDocuments(vscode, root);
     const pendingFiles = create ? await capturePendingFiles(root, run) : null;
     if (pendingFiles) recovery = await backupPendingFiles(root, directory, pendingFiles);
+    prepared.timing('Save and back up pending edits', phase);
+    phase = performance.now();
     const args = ['-C', original, 'worktree', 'add'];
     if (create && !adoptExisting) args.push('-b', branch);
     args.push('--', destination, create && !adoptExisting ? (start || 'main') : branch);
@@ -448,9 +455,19 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
       await exec(resolvePythonExecutable(), [forkScript, '--fork-worktree',
         source, branch, ownerHead, destination], { cwd: original, timeout: 120000 });
     } else {
-      await run(args);
+      // Only ordinary new branches use standby slots. Pending-title forks,
+      // stacked adoption and existing worktrees retain their original paths.
+      const settings = prepared.config(vscode);
+      const reused = create && !adoptExisting && settings.enabled &&
+        vscode.workspace.isTrusted !== false && !options.run &&
+        await prepared.consume(original, destination, branch, start, {
+          base: baseDirectory, count: settings.count, run
+        });
+      if (!reused) await run(args);
+      prepared.timing(reused ? 'Warm worktree adoption' : 'Cold worktree creation', phase);
     }
     added = true;
+    phase = performance.now();
     if (pendingFiles) await copyPendingFiles(root, destination, directory, pendingFiles);
     // The old independent-clone pruner intentionally ignores linked worktrees.
     await fs.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
@@ -461,18 +478,22 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
       await removeTransferredFiles(root, destination, directory, pendingFiles, run);
       transferred = true;
     }
+    prepared.timing('Transfer and verify pending edits', phase);
+    phase = performance.now();
     // The user wants this same chat and window to follow the selected branch.
     // Its turn was stopped before creating the checkout; the destination host
     // resumes the same thread only after verifying its execution directory.
     await replaceRepository(vscode, root, destination,
       { ...options, branch, forceNewWindow: false, handoff: handoff && { ...handoff, destination } });
+    prepared.timing('Workspace handoff request', phase);
+    prepared.timing('Branch routing total', started);
     return true;
   } catch (error) {
     if (handoff) {
       await vscode.commands.executeCommand('sweetiebot.codex.resumeWorkspaceHandoff',
         { ...handoff, destination: transferred ? destination : root }).catch(() => {});
     }
-    if (!added && !recovery) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+    if (!added && !recovery && !error.preservePrepared) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
     // Once added, retain the checkout and any edits even if opening fails.
     if (transferred) error.message += ' Transferred edits remain in ' + destination + '; the source checkout was cleaned.';
     if (recovery) error.message += ' A recovery copy is saved in ' + recovery + '.';
@@ -564,6 +585,7 @@ async function reconnectDeletedBranch(vscode, options = {}) {
 }
 
 function registerSharedMain(vscode, context) {
+  prepared.registerPreparedWorktrees(vscode, context);
   let running = false, again = false;
   const watchers = new Map();
   const observe = async () => {
