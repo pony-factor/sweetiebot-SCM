@@ -53,7 +53,7 @@ async function reviewSyncConflicts(vscode, repository, details, {
         const fallback = await vscode.window.showWarningMessage(
           'The Lindsey resolver is unavailable. Ask ChatGPT for conflict proposals?', {
             modal: true,
-            detail: error.message + '\n\nThis sends the conflicting sections of the files to ChatGPT in VS Code. You can review the proposed changes in local diffs before approving the sync.'
+            detail: error.message + '\n\nThis sends the conflicting sections, their common-ancestor versions, and nearby code to ChatGPT in VS Code. You can review the proposed changes in local diffs before approving the sync.'
           }, open);
         if (fallback !== open) continue;
         await unchanged();

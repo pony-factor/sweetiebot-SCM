@@ -73,7 +73,8 @@ If the server and Sweetiebot use different keys for the App, the server must
 also trust the public key corresponding to the saved Sweetiebot key.
 
 If the resolver is unavailable, Sweetiebot offers to send the textual conflict
-hunks to ChatGPT in the integrated browser. Review the proposed diffs and
+hunks, their common-ancestor versions, and nearby code to ChatGPT in the
+integrated browser. Review the proposed diffs and
 per-file explanations before approving. Lindsey commits each file-level change
 with its explanation, then commits the rest of the upstream sync separately.
 The connection is still the **Lindsey GitHub App**: its installation token is the

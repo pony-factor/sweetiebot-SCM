@@ -106,7 +106,8 @@ async function run() {
     }), { files: [{ path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex') }] });
 
     const untouched = 'unchanged local context\n';
-    fs.writeFileSync(path.join(root, 'file.txt'), untouched + original);
+    const diff3 = Buffer.from('<<<<<<< HEAD\nours\n||||||| ancestor\ncommon behavior\n=======\ntheirs\n>>>>>>> main\n');
+    fs.writeFileSync(path.join(root, 'file.txt'), untouched + diff3);
     const repository = 'pony-factor/example';
     const details = { branch: 'topic', head: base, target: 'a'.repeat(40), defaultBranch: 'main' };
     let cancel;
@@ -125,7 +126,7 @@ async function run() {
       } },
       commands: { async executeCommand(command, value, candidatePath) {
         if (command === 'vscode.diff') {
-          assert.equal(fs.readFileSync(candidatePath, 'utf8'), untouched + 'ours\ntheirs\n');
+          assert.equal(fs.readFileSync(candidatePath, 'utf8'), untouched + 'combined implementation\n');
           return;
         }
         assert.equal(command, 'workbench.action.browser.open');
@@ -135,18 +136,24 @@ async function run() {
         const callback = new URLSearchParams(launch.hash.slice(1)).get('return_to');
         const { prompt } = await (await fetch(callback + '/prompt')).json();
         assert.match(prompt, /file\.txt/);
-        assert(!prompt.includes(untouched.trim()), 'Only the conflicting hunks go to ChatGPT');
+        assert(prompt.includes(untouched.trim()), 'The local context accompanies the conflict');
+        assert.match(prompt, /"base":"common behavior/);
         const post = result => fetch(callback, {
           method: 'POST', headers: { Origin: new URL(callback).origin, 'Content-Type': 'application/json' },
           body: JSON.stringify({ version: 1, repository, results: [result] })
         });
         const proposal = { headSha: base, baseSha: details.target, resolutionHunks: [
-          { path: 'file.txt', hunks: [{ index: 0, choice: 'both-ours-first' }] }
+          { path: 'file.txt', hunks: [{ index: 0, choice: 'custom', resolved: 'combined implementation\n' }] }
         ], decisions: [{ path: 'file.txt', title: '🛠️ Keep both changes',
           description: 'Both sides add an independent line.' }] };
         assert.equal((await post({ ...proposal, baseSha: base })).status, 400);
         assert.equal((await post({ ...proposal, resolutionHunks: [] })).status, 400);
         assert.equal((await post({ ...proposal, decisions: [] })).status, 400);
+        for (const hunk of [{ index: 0, choice: 'ours' }, { index: 0, choice: 'custom', resolved: 'ours\n' }]) {
+          const oneSide = await post({ ...proposal, resolutionHunks: [{ path: 'file.txt', hunks: [hunk] }] });
+          assert.equal(oneSide.status, 400);
+          assert.match((await oneSide.json()).error, /before choosing one side/);
+        }
         assert.deepEqual(await (await post(proposal)).json(), { syncPreview: true });
       } }
     };
@@ -154,7 +161,7 @@ async function run() {
     const webPreview = () => generatePreview(webUI, mockRepo, { sync: true, lindsey: (checkout, output) =>
       prepareChatGPTSyncPreview(webUI, repository, details, checkout, output) });
     assert.equal(await webPreview(), undefined);
-    assert.deepEqual(fs.readFileSync(path.join(root, 'file.txt')), Buffer.concat([Buffer.from(untouched), original]));
+    assert.deepEqual(fs.readFileSync(path.join(root, 'file.txt')), Buffer.concat([Buffer.from(untouched), diff3]));
     webUI.commands.executeCommand = async command => {
       assert.equal(command, 'workbench.action.browser.open');
       cancel();
