@@ -12,6 +12,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
         break
 
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -171,10 +172,39 @@ class BranchCleanupTests(unittest.TestCase):
         self.assertEqual(prune.prune_repo(self.repo), [])
         self.assertTrue(self.exists())
 
+    def test_missing_worktree_registration_does_not_hold_merged_branch(self):
+        other = Path(self.temp.name) / 'other'
+        self.git('worktree', 'add', str(other), 'topic')
+        shutil.rmtree(other)
+        self.assertEqual(len(prune.prune_repo(self.repo, dry_run=True)), 1)
+        self.assertTrue(self.exists())
+        self.assertIn('prunable', self.git('worktree', 'list', '--porcelain'))
+        self.assertEqual(len(prune.prune_repo(self.repo)), 1)
+        self.assertFalse(self.exists())
+        self.assertNotIn('prunable', self.git('worktree', 'list', '--porcelain'))
+
+    def test_locked_missing_worktree_is_preserved(self):
+        other = Path(self.temp.name) / 'other'
+        self.git('worktree', 'add', '--lock', str(other), 'topic')
+        shutil.rmtree(other)
+        self.assertEqual(prune.prune_repo(self.repo), [])
+        self.assertTrue(self.exists())
+        self.assertIn('locked', self.git('worktree', 'list', '--porcelain'))
+
     def test_current_merged_branch_returns_to_main(self):
         self.git('switch', 'topic')
         self.assertEqual(len(prune.prune_repo(self.repo)), 1)
         self.assertEqual(self.git('branch', '--show-current'), 'main')
+        self.assertFalse(self.exists())
+
+    def test_current_merged_branch_can_return_to_occupied_main(self):
+        other = Path(self.temp.name) / 'other'
+        main = self.git('rev-parse', 'main')
+        self.git('worktree', 'add', str(other), 'topic')
+        self.assertEqual(len(prune.prune_repo(other)), 1)
+        self.assertEqual(self.git('branch', '--show-current'), 'main')
+        self.assertEqual(self.git('-C', str(other), 'branch', '--show-current'), '')
+        self.assertEqual(self.git('-C', str(other), 'rev-parse', 'HEAD'), main)
         self.assertFalse(self.exists())
 
     def test_dirty_current_branch_is_preserved(self):

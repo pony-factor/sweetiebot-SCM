@@ -254,7 +254,7 @@ async function cleanClone(group, name, io, run) {
 
 // A linked worktree shares its Git objects with the original repository. Never
 // recursively remove the checkout: Git must detach it from the shared database.
-async function cleanWorktree(group, name, kind, io, run, dryRun, {
+async function cleanWorktree(group, name, io, run, dryRun, {
   baseDirectory = path.dirname(path.dirname(group)), alive = isAlive
 } = {}) {
   const cwd = path.join(group, name);
@@ -264,68 +264,58 @@ async function cleanWorktree(group, name, kind, io, run, dryRun, {
   const original = path.dirname(common);
   if (path.resolve(original) === path.resolve(cwd) ||
       !await isPlainDirectory(io, original)) return false;
+  // A managed window can change branches in place, including when a return
+  // to shared main leaves the linked checkout detached.
   const branch = await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd);
-  if (!branch || (kind === 'main-worktree' ? branch !== 'main' : branch === 'main')) return false;
   const recorded = await jsonFile(io, path.join(group, MANIFEST));
-  if (recorded.branch && recorded.branch !== branch) return false;
-  const worktrees = await run('git', ['worktree', 'list', '--porcelain'], original);
-  if (!worktrees || !worktrees.split('\n\n').some(block => {
-    const lines = block.split('\n');
-    return lines.includes('worktree ' + cwd) && lines.includes('branch refs/heads/' + branch);
-  })) return false;
+  if (!recorded || (branch && recorded.branch && recorded.branch !== branch)) return false;
+  const head = await run('git', ['rev-parse', 'HEAD'], cwd);
+  if (!head || (branch &&
+      await run('git', ['rev-parse', 'refs/heads/' + branch], original) !== head)) return false;
+  const registered = async () => {
+    const worktrees = await run('git', ['worktree', 'list', '--porcelain'], original);
+    return worktrees?.split('\n\n').some(block => {
+      const lines = block.split('\n');
+      return lines.includes('worktree ' + cwd) && lines.includes('HEAD ' + head)
+        && lines.includes(branch ? 'branch refs/heads/' + branch : 'detached');
+    });
+  };
+  if (!await registered()) return false;
   if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '') return false;
   // Stashes live in the common Git database. Do not erase associated worktree
   // state while there is anything left to recover.
   if (await run('git', ['rev-parse', '--verify', '--quiet', 'refs/stash'], cwd) !== null) return false;
-  const head = await run('git', ['rev-parse', 'HEAD'], cwd);
-  if (!head || await run('git', ['rev-parse', 'refs/heads/' + branch], original) !== head) return false;
   const origin = await run('git', ['remote', 'get-url', 'origin'], original);
   const match = origin?.match(/^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
   if (!match || await run('git', ['fetch', '--prune', '--no-tags', 'origin'], original) === null) return false;
 
-  if (kind === 'main-worktree') {
+  const onMain = await run('git', ['merge-base', '--is-ancestor', head,
+    'refs/remotes/origin/main'], cwd) !== null;
+  const topic = branch && branch !== 'main';
+  if (!topic) {
     // In particular, do not discard local main commits that were never pushed.
-    if (await run('git', ['merge-base', '--is-ancestor', 'HEAD',
-      'refs/remotes/origin/main'], cwd) === null) return false;
+    if (!onMain) return false;
   } else {
     const repository = match[1] + '/' + match[2];
     const open = await run('gh', ['pr', 'list', '--repo', repository, '--head',
       branch, '--state', 'open', '--limit', '1', '--json', 'number'], cwd);
     if (open === null) return false;
     try { if (JSON.parse(open).length) return false; } catch { return false; }
-    const merged = await run('gh', ['pr', 'list', '--repo', repository, '--head',
-      branch, '--state', 'merged', '--limit', '100', '--json', 'number'], cwd);
-    if (merged === null) return false;
-    let candidates;
-    try { candidates = JSON.parse(merged); } catch { return false; }
-    if (!Array.isArray(candidates) || candidates.length > 100) return false;
-    let verified = false;
-    for (const { number } of candidates) {
-      if (!Number.isSafeInteger(number) || number < 1) return false;
-      const value = await run('gh', ['pr', 'view', String(number), '--repo',
-        repository, '--json', 'state,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository,commits'], cwd);
-      if (value === null) return false;
-      let pr;
-      try { pr = JSON.parse(value); } catch { return false; }
-      const mergedHead = pr.headRefOid ?? pr.commits?.at(-1)?.oid;
-      if (pr.state === 'MERGED' && pr.mergedAt && !pr.isCrossRepository &&
-          pr.baseRefName === 'main' && pr.headRefName === branch &&
-          /^[0-9a-f]{40,64}$/.test(mergedHead || '') &&
-          (mergedHead === head || await run('git',
-            ['merge-base', '--is-ancestor', head, mergedHead], cwd) !== null)) {
-        verified = true;
-        break;
-      }
+    // A local-only branch already reachable from fetched main has no work
+    // unique to the workspace, even if GitHub never assigned it a PR.
+    const published = await run('git', ['for-each-ref', '--format=%(refname)',
+      `refs/remotes/origin/${branch}`], original);
+    if (published === null) return false;
+    if (!onMain || published.split('\n').includes(`refs/remotes/origin/${branch}`)) {
+      if (!await hasMergedWorktreePullRequest(run, repository, cwd, branch, head)) return false;
     }
-    if (!verified) return false;
   }
 
-  // Repeat checks immediately before invoking Git's non-forced worktree
-  // removal. A concurrent writer makes Git refuse the removal as well.
-  if (!await eligibleGroup(io, group, baseDirectory, Date.now(), alive)) return false;
-  if (await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== '' ||
-      await run('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd) !== branch ||
-      await run('git', ['rev-parse', 'HEAD'], cwd) !== head) return false;
+  // Recheck close, Git state and registration before non-forced removal.
+  if (!await eligibleGroup(io, group, baseDirectory, Date.now(), alive)
+      || await run('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], cwd) !== ''
+      || !await idleGitWorktree(io, run, cwd)
+      || !await registered()) return false;
   if (dryRun) return true;
   if (await run('git', ['worktree', 'remove', '--', cwd], original) === null) return false;
   // Handoff backups contain recovery data, not pending checkout edits. Move
@@ -334,16 +324,57 @@ async function cleanWorktree(group, name, kind, io, run, dryRun, {
   if (await isPlainDirectory(io, backup)) {
     await archiveRecovery(io, backup, baseDirectory, path.basename(group));
   }
-  if (kind === 'topic-worktree') {
+  if (topic) {
     // Compare-and-delete preserves any commit created during removal. Squash
     // merges do not satisfy Git's ordinary branch-deletion ancestry check.
-    if (await run('git', ['rev-parse', 'refs/heads/' + branch], original) === head) {
+    const worktrees = await run('git', ['worktree', 'list', '--porcelain'], original);
+    if (worktrees && !worktrees.split('\n').includes('branch refs/heads/' + branch)) {
       await run('git', ['update-ref', '-d', 'refs/heads/' + branch, head], original);
     }
   }
-  // Git removed the checkout; only Sweetiebot's small metadata remains.
   await io.rm(group, { recursive: true, force: false });
   return true;
+}
+
+async function idleGitWorktree(io, run, cwd) {
+  const gitDir = await run('git', ['rev-parse', '--absolute-git-dir'], cwd);
+  if (!gitDir || !path.isAbsolute(gitDir)) return false;
+  for (const marker of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_START',
+    'rebase-merge', 'rebase-apply', 'sequencer']) {
+    try {
+      await io.lstat(path.join(gitDir, marker));
+      return false;
+    } catch (error) {
+      if (error.code !== 'ENOENT') return false;
+    }
+  }
+  return true;
+}
+
+async function hasMergedWorktreePullRequest(run, repository, cwd, branch, head) {
+  const merged = await run('gh', ['pr', 'list', '--repo', repository, '--head',
+    branch, '--state', 'merged', '--limit', '100', '--json', 'number'], cwd);
+  if (merged === null) return false;
+  let candidates;
+  try { candidates = JSON.parse(merged); } catch { return false; }
+  if (!Array.isArray(candidates) || candidates.length > 100) return false;
+  for (const { number } of candidates) {
+    if (!Number.isSafeInteger(number) || number < 1) return false;
+    const value = await run('gh', ['pr', 'view', String(number), '--repo',
+      repository, '--json', 'state,mergedAt,baseRefName,headRefName,headRefOid,isCrossRepository,commits'], cwd);
+    if (value === null) return false;
+    let pr;
+    try { pr = JSON.parse(value); } catch { return false; }
+    const mergedHead = pr.headRefOid ?? pr.commits?.at(-1)?.oid;
+    if (pr.state === 'MERGED' && pr.mergedAt && !pr.isCrossRepository &&
+        pr.baseRefName === 'main' && pr.headRefName === branch &&
+        /^[0-9a-f]{40,64}$/.test(mergedHead || '') &&
+        (mergedHead === head || await run('git',
+          ['merge-base', '--is-ancestor', head, mergedHead], cwd) !== null)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // A saved workspace (including an edited one) may still refer to the checkout.
@@ -448,7 +479,7 @@ async function pruneManagedWorkspaces({
           if (await hasSavedWorkspaceReference(io, candidates.filter(candidate =>
             candidate !== group && !pruned.includes(candidate)),
           path.join(group, names[0]))) continue;
-          if (!await cleanWorktree(group, names[0], kind, io, run, dryRun,
+          if (!await cleanWorktree(group, names[0], io, run, dryRun,
             { baseDirectory, alive })) continue;
         } else continue;
         pruned.push(group);
