@@ -5,6 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { openIndependentWorkspace } = require('../../extension/branches/new-workspace');
+const { maintain } = require('../../extension/branches/prepared-worktrees');
 const { routeBranch, mainRoot, originalRepository, reconnectManagedMain, recordDeletedBranchReturn, reconnectDeletedBranch } = require('../../extension/branches/shared-main');
 const { registerManagedWindowActivity, stopManagedWindowActivity } =
   require('../../extension/branches/workspace-activity');
@@ -190,7 +191,14 @@ async function openedRoot(result) {
       if (id === 'sweetiebot.codex.prepareWorkspaceHandoff') return { threadId: 'fixture', relative: '', wasActive: true };
       return ordinaryExecute.call(this, id, ...args);
     };
+    // Exercise the warm fast path with staged and untracked edits and an
+    // active Codex thread, not merely an empty worktree.
+    await maintain(root, { base: baseDirectory, count: 1 });
+    const warmSlots = async () => (await fs.readdir(path.join(baseDirectory, 'repo')))
+      .filter(name => name.startsWith('.prepared-'));
+    assert.equal((await warmSlots()).length, 1);
     await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'moving-task', create: true });
+    assert.equal((await warmSlots()).length, 0, 'New Branch adopts the prepared checkout');
     const moved = await openedRoot({ target: moving.commands.calls.at(-1)[1].fsPath });
     assert.equal(await fs.readFile(path.join(moved, 'file.txt'), 'utf8'), 'pending shared main\n');
     assert.equal(await fs.readFile(path.join(moved, 'draft.txt'), 'utf8'), 'untracked task work\n');
@@ -218,6 +226,20 @@ async function openedRoot(result) {
     await routeBranch(moving, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' });
     assert.deepEqual(folderUpdate, [0, 1, { uri: { fsPath: topic }, name: 'Repo' }],
       'Reuse this saved workspace even while another VS Code window owns the target');
+    // A later root can switch without removing the first root or restarting
+    // the host solely because unrelated roots were included in the splice.
+    const multi = editor(root);
+    const other = path.join(temporary, 'other');
+    const trailing = path.join(temporary, 'trailing');
+    await fs.mkdir(other);
+    await fs.mkdir(trailing);
+    multi.workspace.workspaceFile = { scheme: 'file', fsPath: first.target };
+    multi.workspace.workspaceFolders.unshift({ uri: { scheme: 'file', fsPath: other }, name: 'Other' });
+    multi.workspace.workspaceFolders.push({ uri: { scheme: 'file', fsPath: trailing }, name: 'Trailing' });
+    let multiUpdate;
+    multi.workspace.updateWorkspaceFolders = (...args) => { multiUpdate = args; return true; };
+    assert.equal(await routeBranch(multi, { rootUri: { fsPath: root } }, { ...options, branch: 'topic' }), true);
+    assert.deepEqual(multiUpdate, [1, 1, { uri: { fsPath: topic }, name: 'Repo' }]);
     assert(moving.commands.calls.some(call => call[0] === 'sweetiebot.codexHandoff.save'),
       'Preserve the Codex handoff in the initiating window');
     assert(!moving.commands.calls.some(call => ['vscode.openFolder', 'workbench.action.closeWindow'].includes(call[0])),

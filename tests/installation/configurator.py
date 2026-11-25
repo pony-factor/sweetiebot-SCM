@@ -830,6 +830,11 @@ class SubmissionTests(unittest.TestCase):
             "sweetiebot.mergeAutoFixCi",
             "sweetiebot.mergeAutoFixConflicts",
             "sweetiebot.mergeAutoFixCiMethod",
+            # The standby pool is configured directly through VS Code Settings.
+            "sweetiebot.prewarmBranchWorktrees",
+            "sweetiebot.preparedWorktreesPerRepository",
+            "sweetiebot.replenishPreparedWorktrees",
+            "sweetiebot.preparedWorktreeIdleMinutes",
         })
         self.assertFalse(exposed - properties)
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")

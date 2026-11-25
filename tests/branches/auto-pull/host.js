@@ -6,6 +6,7 @@ const vm = require('node:vm');
 let tick, mainChange, topicChange, enabled = true, fetches = 0, merges = 0, cleared = false, clock = 0, mergeError = false;
 let topicFetches = 0, topicMerges = 0;
 const fetchCalls = [];
+const fetchReceipts = [];
 const main = { rootUri: { scheme: 'file', fsPath: '/repo' }, state: {
   HEAD: { name: 'main', commit: 'base', upstream: { remote: 'origin', name: 'main' }, ahead: 0, behind: 0 },
   indexChanges: [{}], workingTreeChanges: [{}], mergeChanges: []
@@ -52,6 +53,9 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
       }
     } };
     if (name === '../../merge/lindsey-conflicts') return require('../../../extension/merge/lindsey-conflicts');
+    if (name === './prepared-worktrees') return {
+      async noteFetch(root, remote, ref, { now }) { fetchReceipts.push({ root, remote, ref, now }); }
+    };
     if (name === './name-selection') return require('../../../extension/branches/name-selection');
     if (name.startsWith('.')) return require(path.resolve(__dirname, '../../../extension/branches', name));
     return require(name);
@@ -102,6 +106,9 @@ const vscode = {
   assert.equal(merges, 1, 'Nonconflicting local edits do not suppress pulling');
   assert.equal(topicFetches, 1, 'Tracked non-default branches are fetched without a renderer');
   assert.equal(topicMerges, 1, 'Incoming commits on kefania fast-forward automatically');
+  assert.deepEqual(fetchReceipts.map(receipt => [receipt.root, receipt.remote, receipt.ref, receipt.now]).sort(), [
+    ['/repo', 'upstream', 'main', 0], ['/topic', 'origin', 'kefania', 0]
+  ], 'Successful automatic fetches record receipts without real Git calls in the host fixture');
   assert.equal(typeof mainChange, 'function', 'Subscribe to SCM state changes');
   assert.equal(typeof topicChange, 'function', 'Subscribe to topic-branch changes');
 
