@@ -88,7 +88,7 @@ function formatCommitBody(body, width = 88) {
    lines.push(current); return lines.join('\n');
  }).join('\n');
 }
-function squashMessage(title,num,commits,{primaryAuthor,verifiedCoauthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled(),trailerSeparatorStyle=squashTrailerSeparatorStyle()}={}){
+function squashMessage(title,num,commits,{primaryAuthor,filterSyncCommitSummaries=filterSyncCommitSummariesEnabled(),omitBulletsForEmojiTitles=omitBulletsForEmojiTitlesEnabled(),trailerSeparatorStyle=squashTrailerSeparatorStyle()}={}){
  const finalTitle = exactSquashTitle(title, num);
  if(!Array.isArray(commits)||!commits.length) throw Error('Original PR commit history unavailable');
  const names=new Map();
@@ -102,8 +102,6 @@ function squashMessage(title,num,commits,{primaryAuthor,verifiedCoauthor,filterS
    if (!old) names.set(key,{...p,name:isCodex(p.name,p.email)?mergeNames(p.name):p.name,appearance:appearance++});
    else if (isCodex(p.name,p.email)) names.set(key,{...old,name:mergeNames(old.name,p.name)});
  };
- // Use the account-linked identity before collecting alternate names or emails.
- if (verifiedCoauthor) add(who(verifiedCoauthor.name, verifiedCoauthor.email, true));
  for(const entry of commits){
    const original=who(entry?.commit?.author?.name,entry?.commit?.author?.email,true);
    if(!original) throw Error('Original human or bot Git author could not be verified');

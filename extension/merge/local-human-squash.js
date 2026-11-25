@@ -128,9 +128,9 @@ async function humanSquashMerge(repository, number, {
       original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase()));
   decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
+  const primaryAuthor = kefaniaOpener && nativeSquash && operation === 'merge' ? undefined : author;
   const prepared = require('./commit-proposal').validateCommitProposal(commitProposal,
-    squashMessage(original.title, number, commits,
-      kefaniaOpener && nativeSquash && operation === 'merge' ? { verifiedCoauthor: author } : { primaryAuthor: author }));
+    squashMessage(original.title, number, commits, { primaryAuthor }));
   progress('message-prepared', { title: prepared.title, description: prepared.message, proposed: prepared.proposed, adjusted: prepared.adjusted });
   const preparedMessage = prepared.title + '\n\n' + prepared.message;
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite

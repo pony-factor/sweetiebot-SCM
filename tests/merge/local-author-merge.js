@@ -6,6 +6,7 @@ const os=require('node:os');
 const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
+const {squashMessage}=require('../../extension/merge/squash-attribution');
 async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
@@ -199,6 +200,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         assert.equal(await inRemote('show','-s','--format=%an',result.sha),kefaniaOpener?kefania.name:author.name);
         if(kefaniaOpener) {
           const message=await inRemote('show','-s','--format=%B',result.sha);
+          const formatted=squashMessage('✨ Complete feature',1,commits);
+          assert.equal(message,`${formatted.title}\n\n${formatted.message}`.trimEnd());
           assert.equal(message.split('\n').filter(line=>line===`Co-authored-by: ${author.name} <${author.email}>`).length,1);
           assert.equal(await branch('feature'),headSha);
         } else if(appMode) {
