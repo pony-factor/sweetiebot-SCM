@@ -142,7 +142,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
     manualBlockerActions({ state: 'conflict' }).find(option => option.id === 'resolve-conflicts'));
   assert(conflictPrompt.includes('Never create a per-file inline comment'));
   assert(conflictPrompt.includes('one explanatory commit per cohesive repair category'));
-  assert(conflictPrompt.includes('separate sync commit containing only the remaining nonconflicting incoming changes'));
+  assert(conflictPrompt.includes('separate sync commit containing only those changes'));
   assert(conflictPrompt.includes('Do not bury conflict decisions'));
   assert(blockerPrompt('pony-factor/example', selection.pullRequests[0], manual[0], 'codex').includes('REPAIR COMMIT HISTORY'));
   const localOption = manual.find(option => option.id === 'resolve-conflicts-local');

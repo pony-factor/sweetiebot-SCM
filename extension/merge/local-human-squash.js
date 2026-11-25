@@ -625,7 +625,13 @@ async function humanSquashMerge(repository, number, {
         author: automationAuthor || author, automationCommitter: automationAuthor, base,
         onCommit: decision => progress('decision-commit', decision)
       });
-      operationCommitTitle = '🔄 Sync branch to ' + base;
+      if (prepared.unchanged) {
+        return { merged: false, status: 'synced', unchanged: true, number,
+          sha: originalSha, previousHeadSha: originalSha, base, baseSha,
+          reason: 'The integrated tree already matches the PR head. No empty sync commit or push was created.' };
+      }
+      const lastCategory = prepared.commits.at(-1);
+      operationCommitTitle = lastCategory?.sha === prepared.sha ? lastCategory.title : '🔄 Sync branch to ' + base;
       progress('sync-prepared', { sha: prepared.sha, title: operationCommitTitle });
       // The PR history is append-only. No reference on main is updated here.
       await inRepo('merge-base', '--is-ancestor', originalSha, prepared.sha);
@@ -645,7 +651,7 @@ async function humanSquashMerge(repository, number, {
       return { merged: false, additionalFiles, status: 'synced', number, sha: prepared.sha, previousHeadSha: originalSha,
         base, baseSha, resolutionCommits: prepared.commits,
         reason: prepared.commits.length
-          ? 'Appended related conflict-repair categories followed by the remaining base synchronization; existing PR history was retained.'
+          ? 'Appended related conflict-repair categories and recorded incoming ancestry without empty commits; existing PR history was retained.'
           : 'Appended a base synchronization commit with a normal fast-forward push; existing PR history was retained.' };
     }
   } catch (error) {

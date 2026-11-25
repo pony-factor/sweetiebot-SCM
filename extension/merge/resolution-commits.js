@@ -39,14 +39,23 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
   const messageFile = path.join(messageDirectory, 'sweetiebot-resolution-message');
   const identity = await commitIdentity(git, author, false, false, automationCommitter);
   const commit = async (tree, parent, message, incoming) => {
+    const parentTree = await git('rev-parse', parent + '^{tree}');
+    if (tree === parentTree) throw Error('Refusing an empty Lindsey commit.');
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
     const sha = await createCommitTree({ directory, tree, parents: incoming ? [parent, incoming] : [parent],
       messageFile, identity });
+    if (await git('rev-parse', sha + '^{tree}') !== tree ||
+        await git('show', '-s', '--format=%P', sha) !== [parent, ...(incoming ? [incoming] : [])].join(' ')) {
+      throw Error('Lindsey commit does not contain the intended changed tree and parents.');
+    }
     await verifyLocalCommitIdentity(git, sha, identity);
     return sha;
   };
   await git('read-tree', headSha);
   let currentTree = await git('write-tree');
+  // No substantive change relative to the selected PR head means no commit,
+  // even if a merge marker could record additional ancestry.
+  if (finalTree === currentTree) return { sha: headSha, commits: [], unchanged: true };
   let tip = headSha;
   const commits = [];
   // Group by semantic repair title, not file type or directory. Legacy decisions
@@ -75,16 +84,18 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     if (stagedTree === currentTree) continue;
     const description = group.length === 1 ? group[0].description :
       group.map(decision => decision.path + ' — ' + decision.title + '\n' + decision.description).join('\n\n');
-    tip = await commit(stagedTree, tip, title + '\n\n' + description);
+    // If this category completes the final tree, it is the last substantive
+    // commit. Record incoming ancestry here rather than adding an empty marker.
+    tip = await commit(stagedTree, tip, title + '\n\n' + description,
+      preserveMergeAncestry && stagedTree === finalTree ? baseSha : undefined);
     currentTree = stagedTree;
     const entry = { ...(group.length === 1 ? group[0] : {}), title, description,
       paths: changed, decisions: group, sha: tip };
     commits.push(entry);
     try { onCommit(entry); } catch { /* Reporting cannot alter the prepared tree. */ }
   }
-  // Keep the actual merge ancestry even when the categories already account
-  // for the entire tree. A squash without remaining changes needs no marker.
-  if (finalTree !== currentTree || preserveMergeAncestry) {
+  // A separate sync is warranted only by remaining substantive changes.
+  if (finalTree !== currentTree) {
     tip = await commit(finalTree, tip, '🔄 Sync branch to ' + base, preserveMergeAncestry ? baseSha : undefined);
   }
   return { sha: tip, commits };

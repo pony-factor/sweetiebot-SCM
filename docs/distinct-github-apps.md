@@ -80,7 +80,9 @@ For a matching open PR, **Resolve and sync with Lindsey** opens a full-context
 ChatGPT repair. Other branches can use the contextual conflict-hunk fallback.
 Lindsey retains per-file explanations but commits related source, test, rename
 and supporting changes together by repair category, skipping unchanged groups.
-The remaining upstream synchronization is recorded separately.
+Remaining upstream changes are committed separately only when substantive. If the
+last repair category completes the tree, it records incoming ancestry itself.
+An entirely unchanged integrated tree leaves the branch untouched.
 The connection is still the **Lindsey GitHub App**: its installation token is the
 author of automated review and merge comments, not the GitHub user signed in to
 Sweetiebot. The shortcut does not introduce a second credential store or a

@@ -68,6 +68,7 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
     for (const enabled of [true, false]) {
       const created = [], messages = [];
       let writes = 0;
+      const newSha = 'c'.repeat(40);
       const git = async (...args) => {
         if (args[0] === 'config') {
           if (args.at(-1) === 'gpg.format') return 'openpgp';
@@ -78,28 +79,32 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
         if (args[0] === 'read-tree') { writes = 0; return ''; }
         if (args[0] === 'write-tree') return writes++ ? base : head;
         if (args[0] === 'ls-tree') return '100644 blob ' + head + '\tfile.txt\0';
+        if (args[0] === 'rev-parse') return args[1] === head + '^{tree}' ? head : base;
+        if (args[0] === 'show' && args.includes('--format=%P')) return head + ' ' + base;
         if (args[0] === 'show') return ['Human', 'human@example.test', 'Human', 'human@example.test'].join('\0');
         if (args[0] === 'cat-file') return 'tree ' + base + '\ngpgsig signature\n';
         if (args[0] === 'verify-commit') return '';
         return base;
       };
-      const createCommitTree = async ({ identity, messageFile }) => {
+      const createCommitTree = async ({ identity, messageFile, parents, tree }) => {
+        assert.deepEqual(parents, [head, base]);
+        assert.equal(tree, base);
         messages.push(await fs.readFile(messageFile, 'utf8'));
         const args = ['commit-tree', ...(identity.signed ? ['-S'] : [])];
         created.push(args);
-        return head;
+        return newSha;
       };
       const options = { git, directory, headSha: head, baseSha: base, finalTree: base,
         createCommitTree, conflicts: ['file.txt'], decisions: [{ path: 'file.txt', title: '🛠️ Preserve behavior', description: 'Keep both changes.' }],
         author: { name: 'Human', email: 'human@example.test' }, base: 'main' };
       await require('../../extension/merge/resolution-commits').createResolutionCommits(options);
-      assert.equal(created.length, 2, 'Sign both file decisions and the final synchronization');
+      assert.equal(created.length, 1, 'The substantive decision records merge ancestry without an empty sync marker');
       assert(created.every(args => args.includes('-S') === enabled));
       assert(created.every(args => !args.includes('commit.gpgsign=false')));
       const syncMessage = await fs.readFile(path.join(directory, '.git', 'sweetiebot-resolution-message'), 'utf8');
       assert.equal(messages[0], '🛠️ Preserve behavior\n\nKeep both changes.\n',
         'Each resolution commit describes the decision without attribution or procedural metadata');
-      assert.equal(syncMessage, '🔄 Sync branch to main\n', 'Sync messages have no source or file annotations');
+      assert.equal(syncMessage, messages[0], 'No unchanged sync marker is created');
 
       if (enabled) {
         await assert.rejects(require('../../extension/merge/resolution-commits').createResolutionCommits({ ...options,
@@ -162,7 +167,8 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
           return String(configured);
         }
         if (args[0] === 'rev-parse') {
-          return { [head + '^{tree}']: tree, [sha + '^1']: base, [sha + '^2']: head }[args[1]];
+          return { [head + '^{tree}']: tree, [base + '^{tree}']: base,
+            [sha + '^{tree}']: tree, [sha + '^1']: base, [sha + '^2']: head }[args[1]];
         }
         if (args[0] === 'show') {
           if (args.includes('--format=%an%x00%ae%x00%cn%x00%ce%x00%B'))

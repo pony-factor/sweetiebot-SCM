@@ -105,6 +105,26 @@ async function test() {
     }
     assert.equal(await git('rev-parse', grouped.sha + '^{tree}'), groupedTree);
     assert.equal(await git('rev-parse', grouped.sha + '^2'), sha);
+    assert.notEqual(await git('rev-parse', grouped.sha + '^{tree}'), await git('rev-parse', grouped.sha + '^1^{tree}'));
+    const completeDecisions = [...decisions, { path: 'upstream.txt',
+      title: '🔩 Preserve incoming work', description: 'Include the remaining upstream change.' }];
+    const complete = await createResolutionCommits({ git, directory: repo, headSha: base,
+      baseSha: sha, finalTree: groupedTree, conflicts: completeDecisions.map(item => item.path),
+      decisions: completeDecisions, author: original, base: 'main' });
+    assert.equal(complete.commits.length, 3);
+    assert.equal(complete.sha, complete.commits.at(-1).sha, 'Last substantive category records merge ancestry');
+    assert.equal(await git('rev-parse', complete.sha + '^2'), sha);
+    assert.equal(await git('rev-parse', complete.sha + '^{tree}'), groupedTree);
+    assert.equal(await git('rev-list', '--first-parent', '--count', base + '..' + complete.sha), '3');
+    for (const item of complete.commits) {
+      assert.notEqual(await git('rev-parse', item.sha + '^{tree}'), await git('rev-parse', item.sha + '^1^{tree}'));
+      await git('verify-commit', item.sha);
+    }
+    const unchanged = await createResolutionCommits({ git, directory: repo, headSha: base,
+      baseSha: sha, finalTree: await git('rev-parse', base + '^{tree}'),
+      conflicts: [], decisions: [], author: original, base: 'main',
+      createCommitTree: async () => { throw Error('An unchanged tree must not reach commit-tree'); } });
+    assert.deepEqual(unchanged, { sha: base, commits: [], unchanged: true });
     assert.throws(() => require('../../extension/merge/resolution-commits').validateDecisions([
       { ...decisions[0], groupTitle: 'invalid\nheader' }
     ]), /emoji decision title/);
