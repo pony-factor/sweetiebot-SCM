@@ -152,6 +152,12 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert(requests.at(-1).params.input[0].text.includes('Run tests'));
     const experimentDirection = requests.at(-1).params.input[0].text;
     assert(experimentDirection.includes('Original branch: "original-topic"'));
+    assert(experimentDirection.includes('use the already-open experimental VS Code window and its experimental checkout'));
+    assert(experimentDirection.includes('live UI, webview, focus, reload, restart, and window-lifecycle checks'));
+    assert(experimentDirection.includes('do not use the original window as the test target'));
+    assert(experimentDirection.includes('not just shell tests or static inspection'));
+    assert(experimentDirection.includes('isolated test instance or profile with isolated application files'));
+    assert(experimentDirection.includes('report the specific blocker and any remaining manual checks'));
     assert(experimentDirection.includes('apply the final intended code changes to the original checkout and original branch'));
     assert(experimentDirection.includes('relative to the initial experiment snapshot'));
     assert(experimentDirection.includes('Preserve existing user edits and staging'));
@@ -162,6 +168,7 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic', expectedThreadId: threadId }), true);
     assert.equal(requests.at(-1).method, 'turn/steer', 'In-flight chats receive a steer, not an interruption');
     assert.equal(requests.at(-1).params.expectedTurnId, 'running-turn');
+    assert(requests.at(-1).params.input[0].text.includes('use the already-open experimental VS Code window'));
     assert.deepEqual(requests.slice(beforeNotice).map(request => request.method),
       ['thread/read', 'thread/turns/list', 'turn/steer'],
       'A notice does not resume, interrupt or drain the native follow-up queue');
