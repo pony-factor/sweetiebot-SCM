@@ -32,6 +32,7 @@
     "onCommand:sweetiebot.mergeAllPullRequests",
     "onCommand:sweetiebot.openIndependentWorkspace",
     "onCommand:sweetiebot.openExperimentWorkspace",
+    "onCommand:sweetiebot.isTrialWorkspace",
     "onCommand:sweetiebot.configureIndependentWorkspaceTrust",
     "onCommand:sweetiebot.closeAllEditors",
     "onCommand:sweetiebot.copyTerminalContents",

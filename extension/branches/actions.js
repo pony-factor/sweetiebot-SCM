@@ -19,6 +19,7 @@ const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./
 const { routeBranch, routeExistingBranchWorktree, recordDeletedBranchReturn } = require('./shared-main');
 const { createStackedBranch } = require('./stacked-branch');
 const { isPullRequestReviewBranch } = require('./publish-policy');
+const { findExperimentWorkspace, trashExperimentWorkspace } = require('./experiment-workspace');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -1542,6 +1543,15 @@ function registerBranchCommands(vscode, context) {
       if (createsBranch) creatingBranch = true;
       try {
         const repository = await resolveRepository(uri);
+        if (command === 'sweetiebot.deleteBranch') {
+          const trial = await findExperimentWorkspace(vscode, repository.rootUri?.fsPath);
+          if (trial) {
+            return await queueRepositoryOperation(repository, async () => {
+              await requireFinalizedCommit(repository);
+              return trashExperimentWorkspace(vscode, trial);
+            });
+          }
+        }
         if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
             && isPullRequestReviewBranch(options.branch)) return false;
         if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
@@ -1696,6 +1706,9 @@ function registerBranchCommands(vscode, context) {
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.deleteEmptyBranch', async (uri, options = {}) => {
     try {
       const repository = await resolveRepository(uri);
+      if (await findExperimentWorkspace(vscode, repository.rootUri?.fsPath)) {
+        throw new Error('Use the Trash button to close this trial workspace.');
+      }
       const defaultBranch = await resolveDefaultBranch(repository, options.remote || 'origin');
       const branch = options.branch;
       if (!branch || branch === defaultBranch) throw new Error('Select a non-default branch to delete.');
@@ -1714,6 +1727,10 @@ function registerBranchCommands(vscode, context) {
   }));
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('sweetiebot.isTrialWorkspace', async uri => {
+      const repository = await resolveRepository(uri);
+      return Boolean(await findExperimentWorkspace(vscode, repository.rootUri?.fsPath));
+    }),
     vscode.commands.registerCommand('sweetiebot.resolveDefaultBranch', async (uri, options) => {
       try {
         const repository = await resolveRepository(uri);

@@ -1755,6 +1755,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
     let currentCommand;
     let currentBranch;
+    let currentTrialWorkspace = false;
     let currentRepositoryArgument;
     let currentRepositoryUri;
     let currentDefaultBranch;
@@ -2429,20 +2430,23 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         const unavailable =
             !settings.branchCleanup
-            || !currentBranch
+            || (!currentTrialWorkspace && !currentBranch)
             || !currentRepositoryUri;
 
-        deleteButton.hidden = !settings.branchCleanup || !currentBranch;
+        deleteButton.hidden = !settings.branchCleanup || (!currentTrialWorkspace && !currentBranch);
         deleteButton.disabled =
             pending
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
             || unavailable
-            || !currentDefaultBranch
-            || currentBranch === currentDefaultBranch;
+            || (!currentTrialWorkspace && (!currentDefaultBranch || currentBranch === currentDefaultBranch));
 
-        if (!currentBranch) {
+        if (currentTrialWorkspace) {
+            const description = 'Move trial workspace to Trash and close window';
+            deleteButton.setAttribute('aria-label', description);
+            deleteTooltip.textContent = description;
+        } else if (!currentBranch) {
             deleteButton.removeAttribute('aria-label');
             deleteTooltip.textContent = '';
         } else if (currentBranch === currentDefaultBranch) {
@@ -2512,9 +2516,8 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         if (
             !settings.branchCleanup
-            || !branch
             || !repositoryArgument
-            || !currentDefaultBranch
+            || (!currentTrialWorkspace && (!branch || !currentDefaultBranch))
             || deletingBranch
             || creatingPullRequest
             || creatingPonyBranch
@@ -2523,7 +2526,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             return;
         }
 
-        if (branch === currentDefaultBranch) {
+        if (!currentTrialWorkspace && branch === currentDefaultBranch) {
             notifications.error(`Cannot delete ${currentDefaultBranch}.`);
             return;
         }
@@ -2574,7 +2577,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
     };
     const showBranchContextMenu = event => {
         if (
-            !settings.branchCleanup || !currentBranch || !currentRepositoryUri
+            !settings.branchCleanup || currentTrialWorkspace || !currentBranch || !currentRepositoryUri
             || !currentDefaultBranch || currentBranch === currentDefaultBranch
             || pending || deletingBranch || creatingPullRequest || creatingPonyBranch
         ) return;
@@ -2740,6 +2743,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
         bind(input) {
             currentCommand = undefined;
             currentBranch = undefined;
+            currentTrialWorkspace = false;
             currentRepositoryArgument = undefined;
             currentRepositoryUri = undefined;
             refreshAutoCommit();
@@ -2789,6 +2793,12 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
             const provider = input.repository.provider;
             refreshSettings();
             currentRepositoryUri = provider.rootUri;
+            void commands.executeCommand('sweetiebot.isTrialWorkspace', provider.rootUri).then(isTrial => {
+                if (repositoryResolveToken !== resolutionToken || isTrial !== true) return;
+                currentTrialWorkspace = true;
+                refreshBranchControls();
+                widget.layout();
+            }, () => {});
             const resolveBase = async () => {
                 try {
                     const branch = await commands.executeCommand('sweetiebot.resolveDefaultBranch', provider.rootUri, {

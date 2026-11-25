@@ -5,7 +5,7 @@ const path = require('node:path');
 const { constants } = require('node:fs');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { createWorkspaceDirectory, isWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
 const { randomBytes } = require('node:crypto');
 const { copyRemotes } = require('./new-workspace');
 
@@ -26,8 +26,7 @@ function inside(root, target) {
     !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
 }
 
-async function privateParent(baseDirectory, io = fs) {
-  await io.mkdir(baseDirectory, { recursive: true, mode: 0o700 });
+async function verifyPrivateParent(baseDirectory, io) {
   const stat = await io.lstat(baseDirectory);
   if (!stat.isDirectory() || stat.isSymbolicLink() ||
       (stat.mode & 0o077) !== 0 ||
@@ -35,6 +34,83 @@ async function privateParent(baseDirectory, io = fs) {
     throw new Error('The experimental workspace parent must be a private directory owned by you (mode 0700): ' + baseDirectory);
   }
   return io.realpath(baseDirectory);
+}
+
+async function privateParent(baseDirectory, io = fs) {
+  await io.mkdir(baseDirectory, { recursive: true, mode: 0o700 });
+  return verifyPrivateParent(baseDirectory, io);
+}
+
+async function realpathIfPresent(io, target) {
+  try {
+    return await io.realpath(target);
+  } catch (error) {
+    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
+  }
+}
+
+async function findExperimentWorkspace(vscode, root, { io = fs, baseDirectory = EXPERIMENT_PARENT } = {}) {
+  if (!root) return;
+  const parent = await realpathIfPresent(io, baseDirectory);
+  const repository = await realpathIfPresent(io, root);
+  if (!parent || !repository || repository === parent || !inside(parent, repository)) return;
+  const directory = path.dirname(repository);
+  const name = path.basename(directory);
+  const marker = path.join(directory, '.sweetiebot-experiment.json');
+  const stat = await io.lstat(marker).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+  if (!stat && !/^trial-[a-f0-9]{8}-/.test(name)) return;
+
+  const invalid = () => new Error('Could not verify this trial workspace. Its files are still in place.');
+  if (!stat?.isFile() || !await isWorkspaceDirectory(io, directory, parent)) throw invalid();
+  await verifyPrivateParent(baseDirectory, io);
+  let snapshot;
+  try {
+    snapshot = JSON.parse(await io.readFile(marker, 'utf8'));
+  } catch {
+    throw invalid();
+  }
+  if (snapshot?.version !== 1 || snapshot.kind !== 'experiment' || snapshot.repository !== repository ||
+      !/^trial-[a-f0-9]{8}$/.test(snapshot.branch) || !name.startsWith(snapshot.branch + '-') ||
+      !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(snapshot.head) ||
+      typeof snapshot.source !== 'string' || !path.isAbsolute(snapshot.source) || inside(directory, snapshot.source)) {
+    throw invalid();
+  }
+
+  const { workspaceFile, workspaceFolders = [] } = vscode.workspace || {};
+  if (workspaceFile?.scheme !== 'file' || workspaceFolders.length !== 1 ||
+      workspaceFolders[0].uri.scheme !== 'file') throw invalid();
+  const folder = await realpathIfPresent(io, workspaceFolders[0].uri.fsPath);
+  if (!folder || !inside(repository, folder) ||
+      await realpathIfPresent(io, workspaceFile.fsPath) !== path.join(directory, workspaceFileName(directory))) {
+    throw invalid();
+  }
+  return { directory, repository, head: snapshot.head };
+}
+
+async function trashExperimentWorkspace(vscode, trial, { git = runGit } = {}) {
+  const ensureSaved = () => {
+    if (vscode.window.tabGroups?.all.some(group => group.tabs.some(tab => tab.isDirty))) {
+      throw new Error('Save or discard unsaved editor changes before moving the trial to Trash.');
+    }
+  };
+  ensureSaved();
+  const [head, status] = await Promise.all([
+    git(['-C', trial.repository, 'rev-parse', 'HEAD']),
+    git(['-C', trial.repository, 'status', '--porcelain', '--untracked-files=normal'])
+  ]);
+  if (head.trim() !== trial.head || status.trim()) {
+    const choice = await vscode.window.showWarningMessage('Move this trial workspace to Trash?', {
+      modal: true,
+      detail: 'This trial has local changes or a different commit from its starting point. You can recover the checkout from Trash.'
+    }, 'Move to Trash');
+    if (choice !== 'Move to Trash') return false;
+    ensureSaved();
+  }
+  await vscode.workspace.fs.delete(vscode.Uri.file(trial.directory), { recursive: true, useTrash: true });
+  await vscode.commands.executeCommand('workbench.action.closeWindow');
+  return { trialTrashed: true };
 }
 
 async function captureSnapshot(root, git = runGit, io = fs) {
@@ -192,5 +268,5 @@ function registerExperimentWorkspaceCommand(vscode, context) {
 
 module.exports = {
   OPEN_EXPERIMENT_COMMAND, EXPERIMENT_PARENT, openExperimentWorkspace,
-  captureSnapshot, privateParent, registerExperimentWorkspaceCommand
+  captureSnapshot, privateParent, findExperimentWorkspace, trashExperimentWorkspace, registerExperimentWorkspaceCommand
 };

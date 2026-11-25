@@ -5,7 +5,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { openExperimentWorkspace, privateParent } = require('../../extension/branches/experiment-workspace');
+const { openExperimentWorkspace, privateParent, findExperimentWorkspace, trashExperimentWorkspace } =
+  require('../../extension/branches/experiment-workspace');
 const { isExperimentWorkspace, deferExperimentPublish } = require('../../extension/branches/experiment-policy');
 
 function git(...args) {
@@ -142,6 +143,44 @@ function editor(root) {
     git('-C', original, 'remote', 'add', 'origin', bare);
     const hosted = await openExperimentWorkspace(editor(original), { baseDirectory: copies });
     assert.equal(git('-C', hosted.destination, 'remote', 'get-url', 'origin'), bare);
+
+    const trialEditor = editor(second.destination);
+    trialEditor.workspace.workspaceFile = trialEditor.Uri.file(second.target);
+    const trialOptions = { baseDirectory: copies };
+    const trial = await findExperimentWorkspace(trialEditor, second.destination, trialOptions);
+    assert.equal(trial.directory, second.directory);
+    assert.equal(await findExperimentWorkspace(trialEditor, original, trialOptions), undefined);
+    await assert.rejects(findExperimentWorkspace(editor(second.destination), second.destination, trialOptions),
+      /Could not verify this trial workspace/);
+    const marker = path.join(second.directory, '.sweetiebot-experiment.json');
+    await fs.rename(marker, marker + '.bak');
+    await fs.symlink(marker + '.bak', marker);
+    await assert.rejects(findExperimentWorkspace(trialEditor, second.destination, trialOptions),
+      /Could not verify this trial workspace/);
+    await fs.unlink(marker);
+    await assert.rejects(findExperimentWorkspace(trialEditor, second.destination, trialOptions),
+      /Could not verify this trial workspace/);
+    await fs.rename(marker + '.bak', marker);
+
+    trialEditor.commands.executeCommand = async id => trialEditor.calls.push(id);
+    trialEditor.workspace.fs = { async delete() { throw new Error('Trash unavailable'); } };
+    assert.equal(await trashExperimentWorkspace(trialEditor, trial), false, 'Dirty trials require confirmation');
+    assert.deepEqual(trialEditor.calls, []);
+    trialEditor.window.showWarningMessage = async () => 'Move to Trash';
+    await assert.rejects(trashExperimentWorkspace(trialEditor, trial), /Trash unavailable/);
+    assert.deepEqual(trialEditor.calls, [], 'A failed Trash move leaves the window open');
+    trialEditor.window.tabGroups = { all: [{ tabs: [{ isDirty: true }] }] };
+    await assert.rejects(trashExperimentWorkspace(trialEditor, trial), /unsaved editor changes/);
+    trialEditor.window.tabGroups.all = [];
+    trialEditor.workspace.fs.delete = async (uri, options) => {
+      assert.equal(uri.fsPath, second.directory);
+      assert.deepEqual(options, { recursive: true, useTrash: true });
+      await fs.rename(uri.fsPath, path.join(tmp, 'Trash'));
+      trialEditor.calls.push('trashed');
+    };
+    assert.deepEqual(await trashExperimentWorkspace(trialEditor, trial), { trialTrashed: true });
+    assert.deepEqual(trialEditor.calls, ['trashed', 'workbench.action.closeWindow']);
+    assert.equal(git('-C', original, 'status', '--short'), before.status);
 
     await fs.symlink(path.join(original, 'tracked.txt'), path.join(original, 'unsafe-link'));
     await assert.rejects(openExperimentWorkspace(editor(original), { baseDirectory: copies }), /Untracked symbolic links/);
