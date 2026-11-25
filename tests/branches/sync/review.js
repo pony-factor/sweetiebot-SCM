@@ -120,20 +120,22 @@ async function run() {
     assert.equal(await reviewSyncConflicts(vscode, repository, review), false);
     choices = ['resolve'];
     assert.equal(await reviewSyncConflicts(vscode, repository, review), true);
-    const lindsey = { ...review, appIdentity: true };
-    const scripts = path.join(root, '.git', 'lindsey-fixture', 'scripts');
-    fs.mkdirSync(scripts, { recursive: true });
-    fs.writeFileSync(path.join(scripts, 'resolve-conflicts.js'), '');
-    const env = { LINDSEY_SYNC_REPO: path.dirname(scripts) };
+    const lindsey = { ...review, publishingRepository: 'owner/publishing-fork' };
     choices = ['lindsey'];
-    await assert.rejects(reviewSyncConflicts(vscode, repository, lindsey, { env }), /LINDSEY_RESOLVE_SECRET/);
-    choices = ['lindsey'];
-    env.LINDSEY_RESOLVE_SECRET = 'fixture';
-    await assert.rejects(reviewSyncConflicts(vscode, repository, lindsey, { env }), /LINDSEY_RESOLVE_URL/);
+    await assert.rejects(reviewSyncConflicts(vscode, repository, lindsey, {
+      connect: async () => { throw Error('Resolver unavailable'); }
+    }), /Resolver unavailable/);
     assert.equal(git('status', '--porcelain'), '', 'Setup errors leave the topic checkout clean');
     choices = ['lindsey'];
-    env.LINDSEY_RESOLVE_URL = 'https://lindsey.example.invalid/resolve-conflicts';
-    assert.equal(await reviewSyncConflicts(vscode, repository, lindsey, { env }), 'lindsey');
+    const prepare = () => {};
+    assert.deepEqual(await reviewSyncConflicts(vscode, repository, lindsey, {
+      connect: async (host, checkout, targetRepo) => {
+        assert.equal(host, vscode);
+        assert.equal(checkout, root);
+        assert.equal(targetRepo, 'owner/publishing-fork');
+        return prepare;
+      }
+    }), { lindsey: prepare });
     await assert.rejects(reviewSyncConflicts(vscode, repository, { ...review, head: before }),
       /revisions or working files changed/);
   } finally {
