@@ -7,7 +7,7 @@ const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
 const {squashMessage}=require('../../extension/merge/squash-attribution');
-async function fixture({protectedBase=false,rules=[],failed=false,pending=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true,directLocal=false}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,pending=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,remainingIncoming=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true,directLocal=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -53,7 +53,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,pending=false,
     if(advanceBase){
       await inWork('checkout','--quiet','main');await fs.writeFile(path.join(work,'base-only.txt'),'Retain the new base behavior\n');
       if(conflict)await fs.writeFile(path.join(work,'file.txt'),'main behavior\n');
-      await inWork('add',conflict?'file.txt':'base-only.txt');await inWork('commit','--quiet','-m','Advance base');baseSha=await inWork('rev-parse','HEAD');
+      await inWork('add',...(conflict?(remainingIncoming?['file.txt','base-only.txt']:['file.txt']):['base-only.txt']));await inWork('commit','--quiet','-m','Advance base');baseSha=await inWork('rev-parse','HEAD');
       await inWork('checkout','--quiet','feature');
     }
     await inWork('push','--quiet','origin','main','feature');
@@ -205,10 +205,30 @@ async function fixture({protectedBase=false,rules=[],failed=false,pending=false,
         assert.equal(result.status,'synced');
         assert.equal(await branch('main'),baseSha);
         assert.equal(await branch('feature'),result.sha);
-        assert.equal(await inRemote('rev-parse',result.sha+'^^'),headSha);
-        for(const sha of [result.sha,result.sha+'^']) {
+        const history=(await inRemote('rev-list','--first-parent',headSha+'..'+result.sha)).split('\n');
+        assert.equal(history.length,remainingIncoming?2:1,
+          'Only substantive repair and incoming changes create commits');
+        assert.equal(await inRemote('rev-parse',history.at(-1)+'^1'),headSha);
+        assert.equal(await inRemote('rev-parse',result.sha+'^2'),baseSha,'Retain incoming ancestry');
+        assert.equal(result.resolutionCommits.length,1);
+        const repairSha=result.resolutionCommits[0].sha;
+        assert.equal(repairSha,history.at(-1));
+        assert.equal(await inRemote('show',repairSha+':file.txt'),'combined feature and main');
+        assert.equal(await inRemote('show',result.sha+':file.txt'),'combined feature and main');
+        if(remainingIncoming) {
+          assert.notEqual(result.sha,repairSha);
+          assert.equal(await inRemote('show','-s','--format=%P',repairSha),headSha);
+          assert.equal(await inRemote('show','-s','--format=%s',result.sha),'🔄 Sync branch to main');
+          assert.equal(await inRemote('show',result.sha+':base-only.txt'),'Retain the new base behavior');
+        } else {
+          assert.equal(result.sha,repairSha,'The final category records ancestry without an empty sync marker');
+          assert.equal(await inRemote('show','-s','--format=%s',result.sha),'🛠️ Preserve both behaviors');
+        }
+        for(const sha of history) {
+          assert.notEqual(await inRemote('rev-parse',sha+'^{tree}'),await inRemote('rev-parse',sha+'^1^{tree}'),
+            'Every appended commit must change its first-parent tree');
           assert.equal(await inRemote('show','-s','--format=%an <%ae>|%cn <%ce>',sha),
-            `${bot.name} <${bot.email}>|${bot.name} <${bot.email}>`,'Both fix and sync commits belong to the App');
+            `${bot.name} <${bot.email}>|${bot.name} <${bot.email}>`,'All appended commits belong to the App');
         }
         assert.equal(await inRemote('show','-s','--format=%an',headSha),author.name);
         assert.equal(pushes.length,1);
@@ -270,6 +290,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,pending=false,
  await fixture({appMode:true,missingSigningKey:true});
  await fixture({appMode:true,advanceBase:true,conflict:true});
  await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true});
+ await fixture({appMode:true,advanceBase:true,conflict:true,syncOnly:true,remainingIncoming:true});
  await fixture({appMode:true,advanceBase:true,humanOpener:true,requireSignedCommit:true});
  console.log('Local fallback squashes retain one base parent, human authorship, signing, credits and publication guards; explicit sync stays append-only.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
