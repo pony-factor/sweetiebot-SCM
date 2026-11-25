@@ -47,6 +47,28 @@ async function page({raw, compressedRaw, stagedId, state, result, statusFailsDur
     url:'https://github.com/pony-factor/sweetiebot-SCM/pull/3'}]}}});
   assert.equal(linked.cards[0].children[1].href,'https://github.com/pony-factor/sweetiebot-SCM/pull/3');
   assert.equal(linked.cards[0].children[1].rel,'noopener noreferrer');
+  const firstFix = 'a'.repeat(40), secondFix = 'b'.repeat(40), syncCommit = 'c'.repeat(40);
+  const syncResult = {number:298,status:'synced',base:'main',sha:syncCommit,resolutionCommits:[
+    {sha:firstFix,path:'options.html',title:'Preserve feature controls'},
+    {sha:secondFix,path:'tests/options.js',title:'Keep both test cases'},
+    {sha:'../pull/298',title:'Do not link malformed SHAs'}
+  ]};
+  const receipt = await page({state:{phase:'finished',result:{
+    repository:'pony-factor/flawless-GPT',results:[syncResult]}}});
+  const links = receipt.cards[0].children[1].children.map(entry => entry.children[0]);
+  assert.deepEqual(links.map(link => link.href), [firstFix, secondFix, syncCommit]
+    .map(sha => 'https://github.com/pony-factor/flawless-GPT/commit/' + sha));
+  assert.deepEqual(links.map(link => link.textContent), [
+    'Preserve feature controls · options.html', 'Keep both test cases · tests/options.js', 'Sync branch to main'
+  ]);
+  for (const [repository, item] of [
+    ['pony-factor/flawless-GPT', {...syncResult,status:'blocked'}],
+    ['pony-factor/flawless-GPT', {...syncResult,unchanged:true}],
+    ['https://example.invalid/repo', syncResult]
+  ]) {
+    const outcome = await page({state:{phase:'finished',result:{repository,results:[item]}}});
+    assert.equal(outcome.cards[0].children.length,1,'Only published commits in a valid GitHub repository are linked');
+  }
   const stylesheet = fs.readFileSync(require.resolve('../../extension/merge/header.css'),'utf8');
   const pageMarkup = fs.readFileSync(require.resolve('../../extension/merge/handoff.html'),'utf8');
   assert(pageMarkup.includes('__MERGE_HEADER_CSS__'));
