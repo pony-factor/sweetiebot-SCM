@@ -428,9 +428,9 @@ AFTER:
 def request_correction(core: ModuleType, model: str, path: str, target: str, before: str, after: str) -> str | None:
     try:
         read_config = getattr(core, "git_config_string", lambda key, default: default)
-        instructions = read_config("scm-toolkit.spellcheck-instructions", DEFAULT_INSTRUCTIONS)
+        instructions = read_config("sweetiebot.spellcheck-instructions", DEFAULT_INSTRUCTIONS)
         preserve_line_breaks = getattr(core, "git_config_bool", lambda key, default: default)(
-            "scm-toolkit.spellcheck-preserve-line-breaks", False
+            "sweetiebot.spellcheck-preserve-line-breaks", False
         )
         thinking = getattr(core, "spellcheck_thinking_options", lambda _model: {})(model)
         response = core.ollama_json(
@@ -551,7 +551,7 @@ def apply_spellcheck(core: ModuleType, global_args: list[str], paths: list[str],
         or not review_head(global_args, expected_head, expected_branch)
         or has_unstaged_changes(global_args)
         or not index_is_clean(global_args)
-        or not core.git_config_bool("scm-toolkit.post-commit-spellcheck", False)
+        or not core.git_config_bool("sweetiebot.post-commit-spellcheck", False)
         or repository_spellcheck_disabled(global_args)
     ):
         return {}
@@ -721,7 +721,7 @@ def run_post_commit_job() -> int:
     try:
         core = load_core()
         core.GIT_GLOBAL_ARGS = global_args
-        if not core.git_config_bool("scm-toolkit.post-commit-spellcheck", False):
+        if not core.git_config_bool("sweetiebot.post-commit-spellcheck", False):
             return 0
         model, _ = core.selected_model(core.installed_local_model_names())
         if model is None:

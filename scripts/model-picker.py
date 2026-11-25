@@ -180,9 +180,9 @@ def show_message(title: str, message: str) -> None:
 
 
 def main() -> None:
-    if not git_config_bool("scm-toolkit.ai-model-picker", True):
+    if not git_config_bool("sweetiebot.ai-model-picker", True):
         print(
-            "Sweetiebot: model picker is disabled by scm-toolkit.ai-model-picker",
+            "Sweetiebot: model picker is disabled by sweetiebot.ai-model-picker",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -190,9 +190,9 @@ def main() -> None:
     total_gib = system_memory_gib()
     recommended = recommend_models(total_gib)
     installed = installed_local_models()
-    primary = git_config_string("scm-toolkit.ai-commit-model", recommended[0])
+    primary = git_config_string("sweetiebot.ai-commit-model", recommended[0])
     low_memory = git_config_string(
-        "scm-toolkit.ai-commit-low-memory-model", recommended[1]
+        "sweetiebot.ai-commit-low-memory-model", recommended[1]
     )
     choices = model_choices(installed, primary, low_memory, recommended)
 
@@ -224,8 +224,8 @@ def main() -> None:
     if not low_choice:
         return
 
-    set_git_config("scm-toolkit.ai-commit-model", primary_choice)
-    set_git_config("scm-toolkit.ai-commit-low-memory-model", low_choice)
+    set_git_config("sweetiebot.ai-commit-model", primary_choice)
+    set_git_config("sweetiebot.ai-commit-low-memory-model", low_choice)
 
     missing = [
         model for model in (primary_choice, low_choice) if model not in installed

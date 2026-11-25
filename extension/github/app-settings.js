@@ -7,7 +7,7 @@ const SERVICE = 'com.sweetiebot.github-apps';
 
 function setting(name) {
   try {
-    return execFileSync('git', ['config', '--global', '--get', 'scm-toolkit.' + name],
+    return execFileSync('git', ['config', '--global', '--get', 'sweetiebot.' + name],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim();
   } catch { return ''; }
 }

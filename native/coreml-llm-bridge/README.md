@@ -33,13 +33,13 @@ Core ML only, or Core ML → Ollama to try Ollama when Core ML fails.
 Ollama → Core ML reverses that order. The default remains Ollama only.
 For example, configure the Core ML → Ollama order globally:
 
-    git config --global scm-toolkit.ai-backend coreml,ollama
-    git config --global scm-toolkit.ai-coreml-model qwen3.5-2b
-    git config --global scm-toolkit.ai-coreml-low-memory-model qwen3.5-0.8b
+    git config --global sweetiebot.ai-backend coreml,ollama
+    git config --global sweetiebot.ai-coreml-model qwen3.5-2b
+    git config --global sweetiebot.ai-coreml-low-memory-model qwen3.5-0.8b
 
 The configured bridge executable defaults to
 ~/Library/Application Support/Sweetiebot/ANE/sweetiebot-ane and can be changed
-with scm-toolkit.ai-coreml-command. Each backend uses its own configured models
+with sweetiebot.ai-coreml-command. Each backend uses its own configured models
 and generation budget. Missing models, inference errors, timeouts, or invalid
 messages advance to the next backend. Only after all selected backends fail
 does the existing strict/simple-message fallback apply. Change ai-backend to

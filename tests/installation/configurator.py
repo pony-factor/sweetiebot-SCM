@@ -359,7 +359,7 @@ class SubmissionTests(unittest.TestCase):
 
     def test_placeholder_prefix_is_user_configurable_and_validated(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["placeholderPrefix"], "hoof_")
-        self.assertEqual(toolkit_settings.SETTING_KEYS["placeholderPrefix"], "scm-toolkit.placeholder-prefix")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["placeholderPrefix"], "sweetiebot.placeholder-prefix")
         setting = next(item for item in configurator.SETTINGS if item.name == "placeholderPrefix")
         self.assertEqual(setting.kind, "placeholder_prefix")
 
@@ -411,7 +411,7 @@ class SubmissionTests(unittest.TestCase):
 
     def test_bulk_merge_commit_history_toggle_defaults_on_and_persists(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["mergeShowPrCommits"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["mergeShowPrCommits"], "scm-toolkit.merge-show-pr-commits")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["mergeShowPrCommits"], "sweetiebot.merge-show-pr-commits")
         values = form_values()
         parsed = configurator.parse_submission(values)
         self.assertTrue(parsed["mergeShowPrCommits"])
@@ -436,7 +436,7 @@ class SubmissionTests(unittest.TestCase):
     def test_sync_commit_filter_defaults_on_and_persists(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],
-                         "scm-toolkit.filter-sync-commit-summaries")
+                         "sweetiebot.filter-sync-commit-summaries")
         values = form_values()
         parsed = configurator.parse_submission(values)
         self.assertTrue(parsed["filterSyncCommitSummaries"])
@@ -452,7 +452,7 @@ class SubmissionTests(unittest.TestCase):
     def test_emoji_only_squash_summary_format_toggle(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["squashOmitBulletsForEmojiTitles"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["squashOmitBulletsForEmojiTitles"],
-                         "scm-toolkit.squash-omit-bullets-for-emoji-titles")
+                         "sweetiebot.squash-omit-bullets-for-emoji-titles")
         values = form_values()
         self.assertFalse(configurator.parse_submission(values)["squashOmitBulletsForEmojiTitles"])
         values["squashOmitBulletsForEmojiTitles"] = ["true"]
@@ -466,7 +466,7 @@ class SubmissionTests(unittest.TestCase):
     def test_squash_separator_style_round_trip(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["squashTrailerSeparatorStyle"], "underscores")
         self.assertEqual(toolkit_settings.SETTING_KEYS["squashTrailerSeparatorStyle"],
-                         "scm-toolkit.squash-trailer-separator-style")
+                         "sweetiebot.squash-trailer-separator-style")
         for style in ("underscores", "hyphens", "none"):
             values = form_values()
             values["squashTrailerSeparatorStyle"] = [style]
@@ -483,7 +483,7 @@ class SubmissionTests(unittest.TestCase):
     def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],
-                         "scm-toolkit.ai-title-explanations")
+                         "sweetiebot.ai-title-explanations")
         values = form_values()
         self.assertFalse(configurator.parse_submission(values)["aiTitleExplanations"])
         values["aiTitleExplanations"] = ["true"]
@@ -506,7 +506,7 @@ class SubmissionTests(unittest.TestCase):
     def test_spellcheck_only_date_format_persists_and_has_a_separate_panel(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckDateFormat"], "preserve")
         self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckDateFormat"],
-                         "scm-toolkit.spellcheck-date-format")
+                         "sweetiebot.spellcheck-date-format")
         values = form_values()
         values["spellcheckDateFormat"] = ["day-first"]
         parsed = configurator.parse_submission(values)
@@ -752,7 +752,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(setting.label, "Relative Codex reset times")
         self.assertIn("absolute reset dates and times", setting.description)
         self.assertIn("live relative countdowns", setting.description)
-        self.assertEqual(setting.git_key, "scm-toolkit.codex-usage-reset-countdown")
+        self.assertEqual(setting.git_key, "sweetiebot.codex-usage-reset-countdown")
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "token", "Save")
         self.assertIn("Relative Codex reset times", page)
         self.assertIn("live relative countdowns", page)
@@ -761,7 +761,7 @@ class SubmissionTests(unittest.TestCase):
     def test_rate_limit_continuation_checkbox(self):
         key = 'codexContinueAtReset'
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS[key])
-        self.assertEqual(toolkit_settings.SETTING_KEYS[key], 'scm-toolkit.codex-continue-at-reset')
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], 'sweetiebot.codex-continue-at-reset')
         values = form_values()
         # This preference is off by default; the browser submits the key only
         # after the user explicitly checks its box.
@@ -798,7 +798,7 @@ class SubmissionTests(unittest.TestCase):
     def test_codex_send_interrupt_option_is_persisted(self):
         key = "codexInterruptOnSendClick"
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
-        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.codex-interrupt-on-send-click")
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "sweetiebot.codex-interrupt-on-send-click")
         values = form_values()
         values.pop(key)
         disabled = configurator.parse_submission(values)
@@ -919,10 +919,10 @@ class SubmissionTests(unittest.TestCase):
         page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
         self.assertIn('name="ludicrousMode" value="true" checked', page)
         self.assertIn('Ludicrous mode', page)
-        self.assertEqual(toolkit_settings.SETTING_KEYS["ludicrousMode"], "scm-toolkit.ludicrous-mode")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["ludicrousMode"], "sweetiebot.ludicrous-mode")
         with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
             configurator.save_settings(parsed)
-        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.ludicrous-mode", "true"] for call in run.call_args_list))
+        self.assertTrue(any(call.args[0][-2:] == ["sweetiebot.ludicrous-mode", "true"] for call in run.call_args_list))
         values.pop("ludicrousMode")
         self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
 
@@ -956,7 +956,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertNotIn('name="kefaniaShowCloseButton"', page)
         with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
             configurator.save_settings(parsed)
-        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.kefania-show-close-button", "false"] for call in run.call_args_list))
+        self.assertTrue(any(call.args[0][-2:] == ["sweetiebot.kefania-show-close-button", "false"] for call in run.call_args_list))
         for invalid in ("", "center", "top", "left\\nright"):
             values["kefaniaCloseButtonPosition"] = [invalid]
             with self.assertRaises(ValueError):
@@ -964,10 +964,10 @@ class SubmissionTests(unittest.TestCase):
 
     def test_legacy_kefania_close_position_is_preserved_until_saved(self):
         def read_string(key, default, preserve_empty=False):
-            if key == "scm-toolkit.kefania-close-button-position":
+            if key == "sweetiebot.kefania-close-button-position":
                 return None
             return default
-        with patch.object(toolkit_settings, "read_git_string", side_effect=read_string), patch.object(toolkit_settings, "read_git_bool", side_effect=lambda key, default: False if key == "scm-toolkit.kefania-close-button-left" else default):
+        with patch.object(toolkit_settings, "read_git_string", side_effect=read_string), patch.object(toolkit_settings, "read_git_bool", side_effect=lambda key, default: False if key == "sweetiebot.kefania-close-button-left" else default):
             settings = toolkit_settings.load_settings()
         self.assertEqual(settings["kefaniaCloseButtonPosition"], "right")
 
@@ -1030,7 +1030,7 @@ class SubmissionTests(unittest.TestCase):
     def test_manual_draft_emoji_toggle_is_independent_of_spellcheck(self):
         values = form_values()
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "scm-toolkit.draft-commit-emoji")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "sweetiebot.draft-commit-emoji")
         self.assertFalse(configurator.parse_submission(values)["draftCommitEmoji"])
         values["draftCommitEmoji"] = ["true"]
         configured = configurator.parse_submission(values)
@@ -1043,7 +1043,7 @@ class SubmissionTests(unittest.TestCase):
         values = form_values()
         key = "spellcheckChangesEmoji"
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
-        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.spellcheck-changes-emoji")
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "sweetiebot.spellcheck-changes-emoji")
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
         self.assertTrue(configurator.parse_submission(values)[key])
         unchecked = dict(values)
@@ -1086,7 +1086,7 @@ class SubmissionTests(unittest.TestCase):
     def test_spellcheck_thinking_effort_uses_supported_persisted_levels(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckThinkingEffort"], "default")
         self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckThinkingEffort"],
-                         "scm-toolkit.spellcheck-thinking-effort")
+                         "sweetiebot.spellcheck-thinking-effort")
         values = form_values()
         self.assertEqual(configurator.parse_submission(values)["spellcheckThinkingEffort"], "default")
         for effort in ("low", "medium", "high"):
@@ -1121,7 +1121,7 @@ class SubmissionTests(unittest.TestCase):
 
     def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "sweetiebot.ai-emoji-priority-rules")
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["aiEmojiPriorityRules"])
         values.pop("aiEmojiPriorityRules")
@@ -1138,7 +1138,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["normalizeStagedWhitespace"])
         self.assertEqual(
             toolkit_settings.SETTING_KEYS["normalizeStagedWhitespace"],
-            "scm-toolkit.normalize-staged-whitespace",
+            "sweetiebot.normalize-staged-whitespace",
         )
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["normalizeStagedWhitespace"])
@@ -1157,7 +1157,7 @@ class SubmissionTests(unittest.TestCase):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
         self.assertEqual(setting.section, "AI")
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "sweetiebot.ai-commit-fallback")
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["aiCommitFallback"])
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
@@ -1167,8 +1167,8 @@ class SubmissionTests(unittest.TestCase):
 
     def test_commit_time_budget_setting_renders_and_validates(self):
         for name, default, maximum, key in (
-                ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
-                ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
+                ('aiCommitRequestTimeoutSeconds', '45', '900', 'sweetiebot.ai-commit-request-timeout-seconds'),
+                ('aiCommitAttempts', '3', '10', 'sweetiebot.ai-commit-attempts')):
             setting = next(s for s in configurator.SETTINGS if s.name == name)
             self.assertEqual(setting.section, 'AI')
             self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)
@@ -1277,7 +1277,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(parsed['codexComposerLabelColor'], '#43AF49')
         self.assertEqual(parsed['codexNewChatDotColor'], '#AABBCC')
         self.assertEqual(toolkit_settings.SETTING_KEYS['codexNewChatDotColor'],
-                         'scm-toolkit.codex-new-chat-dot-color')
+                         'sweetiebot.codex-new-chat-dot-color')
         page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
         self.assertIn('name="codexNewChatDotColor" value="#AABBCC"', page)
         self.assertEqual(parsed['codexSendForeground'], '')
@@ -1480,7 +1480,7 @@ class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_bool")
     @patch("toolkit_settings.read_git_string")
     def test_access_visibility_uses_composer_layout(self, read_string, read_bool):
-        legacy_key = "scm-toolkit.codex-hide-permissions-icon"
+        legacy_key = "sweetiebot.codex-hide-permissions-icon"
         read_bool.side_effect = lambda key, default: key == legacy_key or default
         read_string.side_effect = lambda key, default, preserve_empty=False: default
 
@@ -1491,7 +1491,7 @@ class GitConfigTests(unittest.TestCase):
         default_layout["hidden"].append("access")
         saved_layout = json.dumps(default_layout)
         read_string.side_effect = lambda key, default, preserve_empty=False: (
-            saved_layout if key == "scm-toolkit.codex-composer-layout" else default
+            saved_layout if key == "sweetiebot.codex-composer-layout" else default
         )
 
         settings = toolkit_settings.load_settings()
@@ -1503,7 +1503,7 @@ class GitConfigTests(unittest.TestCase):
     def test_disabled_staged_whitespace_setting_loads(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: default
         read_bool.side_effect = lambda key, default: (
-            False if key == "scm-toolkit.normalize-staged-whitespace" else default
+            False if key == "sweetiebot.normalize-staged-whitespace" else default
         )
         settings = toolkit_settings.load_settings()
         self.assertFalse(settings["normalizeStagedWhitespace"])
@@ -1515,10 +1515,10 @@ class GitConfigTests(unittest.TestCase):
             returncode=1 if "--get" in args else 0, stdout="", stderr=""
         )
 
-        self.assertTrue(toolkit_settings.read_git_bool("scm-toolkit.branch-picker", True))
-        self.assertEqual(toolkit_settings.read_git_string("scm-toolkit.remote", "origin"), "origin")
+        self.assertTrue(toolkit_settings.read_git_bool("sweetiebot.branch-picker", True))
+        self.assertEqual(toolkit_settings.read_git_string("sweetiebot.remote", "origin"), "origin")
         toolkit_settings.persist_message_bar_layout({"messageBarLayout": '{"before":[],"after":[]}'})
-        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_count, 7)
         self.assertTrue(all(call.kwargs.get("cwd") == Path.home() for call in run.call_args_list))
 
     @patch("toolkit_settings.read_git_bool")
@@ -1527,7 +1527,7 @@ class GitConfigTests(unittest.TestCase):
         read_bool.side_effect = lambda _key, default: default
 
         def read_value(key, default, preserve_empty=False):
-            if key == "scm-toolkit.branch-name-disabled-packs":
+            if key == "sweetiebot.branch-name-disabled-packs":
                 self.assertTrue(preserve_empty)
                 return ""
             return default
@@ -1542,10 +1542,10 @@ class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_string")
     def test_legacy_short_placeholder_false_restores_native_placeholder(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: (
-            None if key == "scm-toolkit.message-placeholder" else default
+            None if key == "sweetiebot.message-placeholder" else default
         )
         read_bool.side_effect = lambda key, default: (
-            False if key == "scm-toolkit.short-placeholder" else default
+            False if key == "sweetiebot.short-placeholder" else default
         )
 
         settings = toolkit_settings.load_settings()
@@ -1556,7 +1556,7 @@ class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_string")
     def test_new_message_placeholder_overrides_legacy_toggle(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: (
-            "Commit here" if key == "scm-toolkit.message-placeholder" else default
+            "Commit here" if key == "sweetiebot.message-placeholder" else default
         )
         read_bool.return_value = False
 
@@ -1564,7 +1564,7 @@ class GitConfigTests(unittest.TestCase):
 
         self.assertEqual(settings["messagePlaceholder"], "Commit here")
         self.assertFalse(any(
-            call.args[0] == "scm-toolkit.short-placeholder"
+            call.args[0] == "sweetiebot.short-placeholder"
             for call in read_bool.call_args_list
         ))
 
@@ -1588,7 +1588,7 @@ class GitConfigTests(unittest.TestCase):
                 "config",
                 "--global",
                 "--replace-all",
-                "scm-toolkit.ai-commit-model",
+                "sweetiebot.ai-commit-model",
                 "qwen2.5-coder:7b",
             ],
             writes,

@@ -23,7 +23,7 @@ const {
 
 async function run() {
   assert.equal(await readLudicrousMode(async (_git, args) => {
-    assert.deepEqual(args, ['config', '--global', '--type=bool', '--get', 'scm-toolkit.ludicrous-mode']);
+    assert.deepEqual(args, ['config', '--global', '--type=bool', '--get', 'sweetiebot.ludicrous-mode']);
     return {stdout:'true\n'};
   }), true);
   assert.equal(await readLudicrousMode(async () => ({stdout:'false\n'})), false);

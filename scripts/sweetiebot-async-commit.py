@@ -52,7 +52,7 @@ def get_placeholder_prefix():
     prefix = read_git_string(SETTING_KEYS["placeholderPrefix"], DEFAULT_PLACEHOLDER_PREFIX)
     if not re.fullmatch(PLACEHOLDER_PREFIX_PATTERN, prefix):
         raise RuntimeError(
-            "Invalid provisional commit prefix in scm-toolkit.placeholder-prefix; "
+            "Invalid provisional commit prefix in sweetiebot.placeholder-prefix; "
             "use 2–16 ASCII letters, digits, hyphens, or underscores, starting with a "
             "letter and ending with an underscore."
         )
