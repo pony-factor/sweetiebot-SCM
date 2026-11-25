@@ -67,13 +67,8 @@ async function launchSyncPullRequestRepair(vscode, context, root, selection, syn
       const state = handoff.state();
       throw Error(state.rateLimit?.message || state.deferred[0]?.reason || 'Lindsey could not prepare the PR repair.');
     }
-    const opened = await require('./pr-workflows').openWorkflow(vscode, handoff.url);
-    let listener;
-    const dispose = () => { listener?.dispose(); handoff.dispose(); };
-    if (opened.tab) listener = vscode.window.tabGroups.onDidChangeTabs?.(({ closed }) => {
-      if (closed.includes(opened.tab)) dispose();
-    });
-    context.subscriptions?.push({ dispose });
+    await require('./pr-workflows').openWorkflow(vscode, handoff.url);
+    context.subscriptions?.push(handoff);
     return true;
   } catch (error) { handoff.dispose(); throw error; }
 }

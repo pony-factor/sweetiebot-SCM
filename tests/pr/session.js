@@ -154,15 +154,52 @@ const { openCodexBranch, launchBlockerAction, blockerOptions, manualBlockerActio
     assert.notEqual(calls.at(-1)[1].fsPath, mergeWorkspace.fsPath, 'Each merge request owns an independent workspace');
     const syncPR = { number: 290, title: 'Branch repair fixture', head: 'topic', base: 'main',
       headSha: 'b'.repeat(40), url: 'https://github.com/pony-factor/example/pull/290' };
-    assert.equal(await launchSyncPullRequestRepair(source, context, root,
-      { repository: 'pony-factor/example', pullRequests: [syncPR] }, { publishingRemote: 'origin' }), true);
-    const syncDirectory = path.dirname(calls.at(-1)[1].fsPath);
-    const syncRequest = JSON.parse(await fs.readFile(path.join(syncDirectory, 'request.json'), 'utf8'));
-    assert.equal(syncRequest.options.syncOnly, true);
-    assert.deepEqual(syncRequest.options.reviewSync, { remote: 'origin', head: syncPR.headSha, branch: syncPR.head });
-    const syncPrompt = new URLSearchParams(new URL(syncRequest.mergeUrl).hash.slice(1)).get('q');
-    assert(syncPrompt.includes(syncPR.url));
-    assert.match(syncPrompt, /supporting source or tests/);
+    const syncRepository = 'pony-factor/example';
+    const syncCalls = [];
+    const syncContext = { ...context, subscriptions: [] };
+    const project = 'https://chatgpt.com/g/g-p-fixture/project';
+    const syncHost = { ...source, ProgressLocation: { Notification: 15 },
+      window: { withProgress: (_options, task) => task({ report() {} }) },
+      workspace: { getConfiguration: () => ({ get: (key, fallback) =>
+        key === 'chatgptProjectUrl' ? project : fallback }) },
+      authentication: { async getSession() { return { accessToken: 'fixture', scopes: ['repo'] }; } },
+      commands: { async executeCommand(...args) { syncCalls.push(args); } }
+    };
+    const fetchBeforeSync = globalThis.fetch;
+    globalThis.fetch = async address => {
+      const endpoint = new URL(address).pathname;
+      const base = { ref: syncPR.base, commit: { sha: 'a'.repeat(40) } };
+      const head = { ref: syncPR.head, sha: syncPR.headSha, repo: { full_name: syncRepository } };
+      if (endpoint.endsWith('/branches/main')) return { ok: true, json: async () => base };
+      assert.equal(endpoint, '/repos/' + syncRepository + '/pulls/290');
+      return { ok: true, json: async () => ({ ...syncPR, state: 'open', mergeable: false, head, base }) };
+    };
+    try {
+      const beforeSync = await fs.readdir(sessions);
+      assert.equal(await launchSyncPullRequestRepair(syncHost, syncContext, root,
+        { repository: syncRepository, pullRequests: [syncPR] }, { publishingRemote: 'origin' }), true);
+      assert.deepEqual(await fs.readdir(sessions), beforeSync, 'Sync repair creates no workspace');
+      assert.deepEqual(syncCalls.map(([command]) => command), ['workbench.action.browser.open']);
+      const [{}, { url: syncUrl, openToSide }] = syncCalls[0];
+      assert.equal(openToSide, false);
+      const destination = new URL(syncUrl);
+      assert.equal(destination.origin + destination.pathname, project);
+      const syncPrompt = await localPrompt(syncUrl);
+      assert(syncPrompt.includes(syncPR.url));
+      assert.match(syncPrompt, /supporting source or test files/);
+      assert.match(syncPrompt, /maintainer reviews the result locally before Lindsey publishes/);
+      const callback = new URLSearchParams(destination.hash.slice(1)).get('return_to');
+      const rejected = await fetchBeforeSync(callback, { method: 'POST', headers: {
+        Origin: new URL(callback).origin, 'Content-Type': 'application/json'
+      }, body: JSON.stringify({ version: 1, repository: syncRepository, results: [{ number: syncPR.number,
+        headSha: syncPR.headSha, baseSha: 'a'.repeat(40), operation: 'merge', patch: null,
+        explanation: 'This operation must be rejected before execution.' }] }) });
+      assert.equal(rejected.status, 400);
+      assert.match((await rejected.json()).error, /merging is not authorized/);
+    } finally {
+      globalThis.fetch = fetchBeforeSync;
+      for (const disposable of syncContext.subscriptions) disposable.dispose();
+    }
 
     // A selected batch persists only its public PR snapshot in the dedicated
     // workspace and restores a live dashboard without resubmitting ChatGPT.
