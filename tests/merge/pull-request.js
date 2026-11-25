@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const run = require('node:util').promisify(execFile);
-const { githubApi, gitCommitSigningEnabled } = require('../../extension/merge/pull-request');
+const { githubApi } = require('../../extension/merge/pull-request');
 const { squashMergePullRequest } = require('../../extension/merge/pull-request');
 
 (async () => {
@@ -203,21 +203,18 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
   const signingRepo=await fs.mkdtemp(path.join(os.tmpdir(),'sweetiebot-signing-config-'));
   try {
     await run('git',['init','--quiet',signingRepo]);
-    assert.equal(await gitCommitSigningEnabled(signingRepo),false);
     await run('git',['-C',signingRepo,'config','commit.gpgsign','true']);
-    assert.equal(await gitCommitSigningEnabled(signingRepo),true);
-    let autoSignedOptions;
-    const autoSignedResult=await squashMergePullRequest(input,async(endpoint,options)=>{
+    let workspaceOptions;
+    const workspaceResult=await squashMergePullRequest(input,async(endpoint,options)=>{
       if(endpoint==='repos/owner/repo/pulls/12'&&!options)return {...pr,mergeable:true};
       return api(endpoint,options);
     },{repositoryPath:signingRepo,humanMerge:async(repository,number,options)=>{
-      autoSignedOptions=options;
-      return {merged:true,sha:'b'.repeat(40)};
+      workspaceOptions=options;
+      return {merged:true,githubMerged:true,sha:'b'.repeat(40)};
     }});
-    assert.equal(autoSignedResult.merged,true);
-    assert.equal(autoSignedOptions.requireSignedCommit,true);
-    assert.equal(autoSignedOptions.directLocal,true);
-    assert.equal(autoSignedOptions.repositoryPath,signingRepo);
+    assert.equal(workspaceResult.merged,true);
+    assert.equal(workspaceOptions.requireSignedCommit,false);
+    assert.equal(workspaceOptions.directLocal,false,'A workspace signing preference must still use a GitHub PR merge');
   } finally { await fs.rm(signingRepo,{recursive:true,force:true}); }
   // A human opener differing from the original author uses the same local path.
   let differentAuthorPrepared = false;

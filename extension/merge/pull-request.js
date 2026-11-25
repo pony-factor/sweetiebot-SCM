@@ -1,9 +1,7 @@
 'use strict';
 
-const { spawn, execFile } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
-const { promisify } = require('node:util');
-const exec = promisify(execFile);
 const { verifiedHumanAuthor } = require('./human-squash-merge');
 const { humanSquashMerge } = require('./local-human-squash');
 const { squashMessage, readCommits } = require('./squash-attribution');
@@ -32,14 +30,6 @@ function ciError(status, message) {
   return Object.assign(new Error(message), {
     code: status === 'waiting' ? 'SWEETIEBOT_CI_PENDING' : 'SWEETIEBOT_CI_FAILED'
   });
-}
-
-async function gitCommitSigningEnabled(directory) {
-  if (typeof directory !== 'string' || !directory.trim()) return false;
-  const { stdout } = await exec('git', [
-    '-C', directory, 'config', '--type=bool', '--default', 'false', '--get', 'commit.gpgsign'
-  ], { timeout: 5000, maxBuffer: 4096 });
-  return stdout.trim() === 'true';
 }
 
 // Legacy transport when distinct App mode is disabled. Configured Lindsey
@@ -117,7 +107,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     throw new Error('Invalid published pull-request identity; refusing to merge.');
   }
   const originalRequest = request;
-  const directLocal = method === 'local-signed-squash' || (method === 'squash' && Boolean(repositoryPath));
+  const directLocal = method === 'local-signed-squash';
   const appActor = directLocal ? null : await getAppActor(repository);
   if (appActor) { request = appActor.request; gitToken = appActor.gitToken; }
   const endpoint = `repos/${repository}/pulls/${result.number}`;
@@ -235,8 +225,9 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   if (method === 'local-signed-squash') {
     return mergeWithHumanAuthor(true);
   }
-  if (directLocal) return mergeWithHumanAuthor(await gitCommitSigningEnabled(repositoryPath));
-  if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
+  // Workspace-backed requests may have a receipt from the former direct-push
+  // path. The guarded merge checks for it before sending a GitHub merge request.
+  if (repositoryPath || pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
     return mergeWithHumanAuthor();
   }
   onProgress({ stage: 'reading-history' });
@@ -268,4 +259,4 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }
 
-module.exports = { squashMergePullRequest, readPullRequestCI, githubApi, gitCommitSigningEnabled, retryBaseAdvance };
+module.exports = { squashMergePullRequest, readPullRequestCI, githubApi, retryBaseAdvance };
