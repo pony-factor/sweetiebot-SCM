@@ -71,14 +71,6 @@ async function reviewSyncConflicts(vscode, repository, details, {
       const selection = launchPullRequestRepair
         ? await findPullRequest(details).catch(() => undefined) : undefined;
       if (selection) {
-        const pr = selection.pullRequests[0];
-        const repair = 'Open PR repair in ChatGPT';
-        const approved = await vscode.window.showWarningMessage(
-          'Review the full pull request with ChatGPT?', { modal: true,
-            detail: 'ChatGPT can inspect PR #' + pr.number + ', the current base, and related source and tests. '
-              + 'Review the proposed edits before Lindsey publishes the file decisions and syncs ' + branch
-              + ' with upstream merge ancestry.' }, repair);
-        if (approved !== repair) continue;
         await unchanged();
         await launchPullRequestRepair(repository.rootUri, selection, details);
         return false;
