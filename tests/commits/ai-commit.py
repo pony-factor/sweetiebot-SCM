@@ -1020,6 +1020,44 @@ class TitleTests(unittest.TestCase):
                     ai_commit.ollama_json("/api/tags")
                 request.assert_not_called()
 
+    def test_refused_model_discovery_starts_ollama_and_retries(self):
+        refused = ai_commit.urllib.error.URLError(ConnectionRefusedError())
+        with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": "http://127.0.0.1:11435"}), \
+                patch.object(ai_commit.OLLAMA_OPENER, 'open') as request, \
+                patch.object(ai_commit.ollama_concurrency, 'recover') as recover:
+            response = request.return_value
+            response.__enter__.return_value.read.return_value = b'{"models":[{"name":"local"}]}'
+            request.side_effect = [refused, response]
+            self.assertEqual(ai_commit.installed_local_model_names(require_service=True), {'local'})
+            recover.assert_called_once_with("http://127.0.0.1:11435", 15,
+                                            ai_commit.commit_jobs_directory())
+            self.assertEqual(request.call_count, 2)
+
+    def test_busy_ollama_does_not_restart(self):
+        unavailable = ai_commit.urllib.error.HTTPError(
+            'http://localhost/api/tags', 503, 'busy', None, None)
+        with patch.object(ai_commit.OLLAMA_OPENER, 'open', side_effect=unavailable), \
+                patch.object(ai_commit.ollama_concurrency, 'recover') as recover:
+            with self.assertRaisesRegex(ai_commit.OllamaConnectionError, 'model list'):
+                ai_commit.ollama_json('/api/tags')
+            recover.assert_not_called()
+
+    def test_missing_ollama_reports_service_problem_and_preserves_fallback(self):
+        unavailable = ai_commit.OllamaConnectionError("Install Ollama.", "ollama_missing")
+        warnings = []
+        token = ai_commit.OLLAMA_WARNING.set(warnings.append)
+        try:
+            with patch.object(ai_commit, 'installed_local_model_names', side_effect=unavailable), \
+                    patch.object(ai_commit, 'configured_backends', return_value=('ollama',)), \
+                    patch.object(ai_commit, 'commit_fallback_enabled', return_value=True):
+                self.assertEqual(ai_commit.generate_message('', '+Fix handler', ['app.py']),
+                                 ('🔧 Update `app.py`', ''))
+                with self.assertRaisesRegex(ai_commit.OllamaConnectionError, 'Install Ollama'):
+                    ai_commit.generate_message('', '+Fix handler', ['app.py'], require_model=True)
+        finally:
+            ai_commit.OLLAMA_WARNING.reset(token)
+        self.assertEqual(warnings, ['Install Ollama.', 'Install Ollama.'])
+
     def test_commit_endpoint_uses_git_setting_without_environment_override(self):
         with patch.dict(ai_commit.os.environ, {"SCM_TOOLKIT_AI_OLLAMA_URL": ""}), patch.object(ai_commit, "git_config_string", return_value="http://127.0.0.1:11435"), patch.object(ai_commit.OLLAMA_OPENER, "open") as request:
             request.return_value.__enter__.return_value.read.return_value = b'{}'

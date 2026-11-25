@@ -36,6 +36,7 @@ from sweetiebot_diagnostics import log_event
 from wrapper_dependencies import runtime_sources
 
 MARKER = 'sweetiebot-background-commit.json'
+OLLAMA_WARNING = 'sweetiebot-ollama-warning.json'
 LABEL = 'dev.ponyfactor.sweetiebot-commits'
 TRANSACTION = 'sweetiebot-background-finalization.json'
 FORKS = 'sweetiebot-background-forks.json'
@@ -1300,9 +1301,19 @@ def work(directory, commit_only=False):
                         job['phase'] = 'generating'
                         write_journal(file, job)
                     stat, diff, files = captured_diff(job)
-                    title, description = core.generate_message(stat, diff, files,
-                        include_description=job.get('include_description', False),
-                        conversation_context=job['context'])
+                    def warn_ollama(message):
+                        try:
+                            write_journal(marker.with_name(OLLAMA_WARNING),
+                                          {'message': message, 'time': time.time()})
+                        except OSError:
+                            pass  # Warning delivery must not hold a local commit.
+                    token = core.OLLAMA_WARNING.set(warn_ollama)
+                    try:
+                        title, description = core.generate_message(stat, diff, files,
+                            include_description=job.get('include_description', False),
+                            conversation_context=job['context'])
+                    finally:
+                        core.OLLAMA_WARNING.reset(token)
                     with repository_lock(job['gitdir']):
                         recover_finalization(job['gitdir'])
                         # Earlier titles can reparent this commit while Ollama
@@ -1830,6 +1841,9 @@ if __name__ == '__main__':
                 status['phase'] = 'recovering'
                 status['recoverable'] = True
             status['titleJobs'] = []
+            warning = read_journal(marker.with_name(OLLAMA_WARNING))
+            if warning and time.time() - warning.get('time', 0) < 60:
+                status['ollamaWarning'] = warning.get('message')
             status['ponyJobs'] = []
             for file in jobs_home().glob('pony-*/job.json'):
                 item = read_journal(file)

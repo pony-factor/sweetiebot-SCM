@@ -46,6 +46,11 @@ try:
 except ImportError as exc:
     BOOTSTRAP_IMPORT_ERRORS.append(str(exc))
     coreml_backend = None
+try:
+    import ollama_concurrency
+except ImportError as exc:
+    BOOTSTRAP_IMPORT_ERRORS.append(str(exc))
+    ollama_concurrency = None
 
 REAL_GIT = os.environ.get("SCM_TOOLKIT_REAL_GIT", "/usr/bin/git")
 GIT_GLOBAL_ARGS: list[str] = []
@@ -66,6 +71,7 @@ GENERATION_REQUEST_SECONDS = 45
 GENERATION_DEADLINE = ContextVar('commit_generation_deadline', default=None)
 GENERATION_OPTIONS = ContextVar('commit_generation_options', default=None)
 COMMIT_BACKEND = ContextVar('commit_inference_backend', default=None)
+OLLAMA_WARNING = ContextVar('commit_ollama_warning', default=None)
 # Ollama can multiply its KV cache for each parallel request. Limit simultaneous
 # title requests across all Sweetiebot worktrees/repositories, not per queue.
 MAX_TITLE_GENERATORS = 6
@@ -74,6 +80,19 @@ TITLE_MEMORY_PER_SLOT = 8 * 1024**3
 
 class GenerationDeadlineExceeded(TimeoutError):
     pass
+
+
+class OllamaConnectionError(RuntimeError):
+    def __init__(self, message, reason="ollama_unreachable"):
+        super().__init__(message)
+        self.reason = reason
+
+
+def commit_jobs_directory():
+    return Path(os.environ.get(
+        "SWEETIEBOT_COMMIT_JOBS",
+        "~/Library/Application Support/Sweetiebot/commit-jobs",
+    )).expanduser()
 
 
 def remaining_generation_time():
@@ -416,10 +435,7 @@ def title_generation_slot():
     The reservation is released on errors and on process exit. Recheck memory
     while waiting: many queued jobs must not overwhelm Ollama after a spike.
     """
-    directory = Path(os.environ.get(
-        "SWEETIEBOT_COMMIT_JOBS",
-        "~/Library/Application Support/Sweetiebot/commit-jobs",
-    )).expanduser()
+    directory = commit_jobs_directory()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     started = time.monotonic()
     next_memory_check = 0.0
@@ -1547,17 +1563,46 @@ def ollama_json(path: str, payload: dict | None = None, timeout: int | None = No
         method = "POST"
 
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with OLLAMA_OPENER.open(request, timeout=timeout) as response:
+    try:
+        response = OLLAMA_OPENER.open(request, timeout=timeout)
+    except urllib.error.URLError as exc:
+        # A refused discovery request is safe to retry. Slow or busy servers
+        # and failed inference requests must never cause a service restart.
+        if path != "/api/tags" or payload is not None:
+            raise
+        if not isinstance(exc.reason, ConnectionRefusedError):
+            raise OllamaConnectionError(
+                "Sweetiebot could not read the model list from Ollama. Check the local Ollama service."
+            ) from None
+        try:
+            if ollama_concurrency is None:
+                raise OSError("Ollama recovery helper is unavailable.")
+            remaining = remaining_generation_time()
+            ollama_concurrency.recover(base.rstrip("/"), min(15, remaining or 15),
+                                       commit_jobs_directory())
+            remaining = remaining_generation_time()
+            response = OLLAMA_OPENER.open(request, timeout=min(timeout, remaining or timeout))
+        except RuntimeError as error:
+            raise OllamaConnectionError(str(error), getattr(error, "reason", "ollama_unreachable")) from None
+        except (OSError, subprocess.SubprocessError):
+            raise OllamaConnectionError(
+                "Sweetiebot could not reach Ollama at the configured local endpoint. Check the Ollama service and endpoint settings."
+            ) from None
+    with response as response:
         result = json.loads(response.read().decode("utf-8"))
     remaining_generation_time()
     return result
 
 
-def installed_local_model_names() -> set[str]:
+def installed_local_model_names(*, require_service=False) -> set[str]:
     try:
         response = ollama_json("/api/tags", timeout=3)
     except Exception as exc:
         log_event("commit_title", "model_discovery_failed", error_type=type(exc).__name__)
+        if isinstance(exc, OllamaConnectionError):
+            if require_service:
+                raise
+            print(f"Sweetiebot: {exc}", file=sys.stderr)
         return set()
 
     names = set()
@@ -2118,7 +2163,18 @@ def generate_message(
     include_explanation = title_explanations_enabled()
     priority_rules = emoji_priority_rules(commit_custom_instructions()) if emoji_priority_enabled() else []
     require_model = require_model or not commit_fallback_enabled()
-    installed = installed_local_model_names()
+    try:
+        installed = installed_local_model_names(require_service=True)
+    except OllamaConnectionError as error:
+        log_event("commit_title", "ollama_unavailable", reason=error.reason,
+                  outcome="blocked" if require_model else "fallback")
+        warning = OLLAMA_WARNING.get()
+        if warning is not None:
+            warning(str(error))
+        print(f"Sweetiebot: {error}", file=sys.stderr)
+        if require_model:
+            raise
+        return fallback_message(files, include_description, file_context_override or "", diff)
     model, low_memory_mode = selected_model(installed)
     primary, low_memory = configured_models()
 

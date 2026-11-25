@@ -16,6 +16,7 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 
 
 import argparse
+import fcntl
 import os
 from pathlib import Path
 import plistlib
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from urllib.parse import urlsplit
 
 LABEL = "dev.ponyfactor.sweetiebot-ollama"
 URL = "http://127.0.0.1:11435"
@@ -54,12 +56,98 @@ def service_definition(binary: str, home: Path) -> dict:
     }
 
 
-def ready() -> bool:
+class OllamaUnavailable(RuntimeError):
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
+def ready(url=URL, timeout=2) -> bool:
     try:
-        with OPENER.open(URL + "/api/version", timeout=2) as response:
+        with OPENER.open(url + "/api/version", timeout=timeout) as response:
             return response.status == 200
     except OSError:
         return False
+
+
+def installed_binary(home):
+    paths = [shutil.which("ollama")]
+    if sys.platform == "darwin":
+        paths.extend(("/opt/homebrew/bin/ollama", "/usr/local/bin/ollama",
+                      "/Applications/Ollama.app/Contents/Resources/ollama",
+                      str(home / "Applications/Ollama.app/Contents/Resources/ollama")))
+    return next((path for path in paths if path and os.path.isfile(path)
+                 and os.access(path, os.X_OK)), None)
+
+
+def recover(url, timeout, state_directory):
+    """Start the configured loopback server after a refused connection."""
+    deadline = time.monotonic() + timeout
+    endpoint = urlsplit(url)
+    port = endpoint.port or 80
+    home = Path.home()
+    agent = home / "Library/LaunchAgents" / (LABEL + ".plist")
+    mac = sys.platform == "darwin"
+    dedicated = mac and port == 11435 and endpoint.hostname in {"127.0.0.1", "localhost"}
+    state_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock = state_directory / f".ollama-start-{port}.lock"
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "r+b") as handle:
+        while (remaining := deadline - time.monotonic()) > 0:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(min(0.1, remaining))
+        else:
+            raise OllamaUnavailable("ollama_unreachable", "Ollama is still starting. Check the local Ollama service.")
+        if ready(url, min(0.5, remaining)):
+            return
+
+        process = None
+        domain = f"gui/{os.getuid()}"
+        service = f"{domain}/{LABEL}"
+        binary = installed_binary(home)
+        if dedicated and agent.is_file():
+            # After bootout, launchd can still report the old registration.
+            # Recheck it until the service answers, even after a successful kickstart.
+            next_start = time.monotonic()
+        else:
+            next_start = None
+            if not binary:
+                raise OllamaUnavailable(
+                    "ollama_missing", "Ollama is not installed or its executable is missing. Install Ollama to generate commit titles."
+                )
+            environment = os.environ.copy()
+            if dedicated:
+                environment.update(service_definition(binary, home)["EnvironmentVariables"])
+            environment["OLLAMA_HOST"] = endpoint.netloc if endpoint.port else f"{endpoint.netloc}:{port}"
+            process = subprocess.Popen([binary, "serve"], cwd=home, env=environment,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+
+        while (remaining := deadline - time.monotonic()) > 0:
+            if next_start is not None and time.monotonic() >= next_start:
+                result = subprocess.run(["/bin/launchctl", "print", service],
+                                        capture_output=True, timeout=min(1, remaining))
+                command = ["kickstart", service] if result.returncode == 0 else ["bootstrap", domain, str(agent)]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                subprocess.run(["/bin/launchctl", *command],
+                               capture_output=True, timeout=min(1, remaining))
+                next_start = time.monotonic() + 0.5
+            if ready(url, min(0.5, remaining)):
+                return
+            if process is not None and process.poll() is not None:
+                break
+            time.sleep(min(0.1, remaining))
+        if not binary:
+            raise OllamaUnavailable(
+                "ollama_missing",
+                "Ollama's configured service did not start and no Ollama executable was found. Install Ollama or repair the service.",
+            )
+    raise OllamaUnavailable("ollama_unreachable", "Sweetiebot could not start Ollama at the configured local endpoint. Check the Ollama service and endpoint settings.")
 
 
 def bootstrap(agent: Path) -> None:

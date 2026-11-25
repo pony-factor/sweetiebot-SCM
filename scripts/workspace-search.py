@@ -199,6 +199,7 @@ def source_files(root: Path | None = None) -> dict[Path, Path]:
     files[Path("codex-colors.py")] = here / "codex-colors.py"
     files[Path("ai-commit.py")] = here / "ai-commit.py"
     files[Path("coreml-backend.py")] = here / "coreml-backend.py"
+    files[Path("ollama-concurrency.py")] = here / "ollama-concurrency.py"
     files[Path("background-commit.py")] = here / "background-commit.py"
     files[Path("wrapper-dependencies.py")] = here / "wrapper-dependencies.py"
     files[Path("cloud-repo-sync.py")] = here / "cloud-repo-sync.py"
