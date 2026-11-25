@@ -91,6 +91,29 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
     });
     const canonical = value => typeof value === 'string' && path.isAbsolute(value)
         ? fs.realpath(value) : Promise.reject(new Error('Codex did not report an absolute checkout path.'));
+    const existingPath = value => {
+        if (typeof value !== 'string' || !path.isAbsolute(value)) return undefined;
+        try { return realpathSync.native(value); } catch { return undefined; }
+    };
+    const inside = (root, location) => location && (location === root || location.startsWith(root + path.sep));
+    const selectedCheckout = () => {
+        if (!vscode.workspace.getConfiguration?.('sweetiebot').get('singleRepositoryPerWindow', true)) return undefined;
+        const folders = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file');
+        const git = vscode.extensions?.getExtension('vscode.git');
+        const repo = git?.exports?.getAPI(1).repositories[0]?.rootUri?.fsPath;
+        const selected = existingPath(repo);
+        for (const folder of folders) {
+            let location = existingPath(folder.uri.fsPath);
+            if (!location) continue;
+            if (selected && (inside(selected, location) || inside(location, selected))) return selected;
+            // The first request can precede Git extension activation.
+            while (location !== path.dirname(location)) {
+                if (existsSync(path.join(location, '.git'))) return location;
+                location = path.dirname(location);
+            }
+        }
+        return undefined;
+    };
     const read = async threadId => {
         const result = await send('thread/read', { threadId, includeTurns: false });
         if (result?.thread?.id !== threadId) throw new Error('Codex returned a different chat during checkout handoff.');
@@ -108,44 +131,25 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
         const paths = await Promise.all(roots.map(folder => canonical(folder.uri.fsPath).catch(() => null)));
         return paths.includes(cwd);
     };
-    const activeCheckout = () => {
-        if (!vscode.workspace.getConfiguration?.('sweetiebot').get('singleRepositoryPerWindow', true)) return undefined;
-        const folders = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file');
-        const active = vscode.extensions?.getExtension('vscode.git')?.exports?.getAPI(1).repositories[0]?.rootUri.fsPath;
-        const contains = (root, file) => file === root || file.startsWith(root + path.sep);
-        for (const { uri } of folders) {
-            let folder = uri.fsPath;
-            if (active && (contains(active, folder) || contains(folder, active))) return active;
-            // Thread startup can precede the Git extension's initial scan.
-            while (folder !== path.dirname(folder)) {
-                if (existsSync(path.join(folder, '.git'))) return folder;
-                folder = path.dirname(folder);
-            }
-        }
-        return undefined;
-    };
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.chatCheckoutVisibility', async threadId => {
         const cwd = await chatCheckoutPath(threadId);
         return { threadId, needsNewWindow: !(await checkoutAlreadyOpen(cwd)) };
     }));
-    // Native turns follow the window checkout. Explicit handoff requests still
-    // verify the chosen destination before resuming the same chat.
+    // Native and queued turns use the window checkout even when the frontend
+    // cached an old cwd. Explicit handoffs still verify their destination.
     const guardedSend = typeof originalSend === 'function' ? function (name, id, method, params, ...rest) {
         const handoff = handoffs.get(params?.threadId);
         if (handoff && name !== providerName && method === 'turn/interrupt'
             && (!handoff.turnId || handoff.turnId === params.turnId)) handoff.userStopped = true;
         const bound = bindings.get(params?.threadId);
-        const continuing = ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method);
-        if (continuing || method === 'thread/start') {
-            const root = name !== providerName && activeCheckout();
-            let cwd = continuing ? bound : undefined;
-            if (root) {
-                try {
-                    const relative = path.relative(realpathSync.native(root), realpathSync.native(cwd ?? params?.cwd));
-                    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) cwd = root;
-                } catch { cwd = root; }
-            }
-            if (cwd) params = { ...params, cwd };
+        const threadRequest = ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method);
+        if (threadRequest || method === 'thread/start' ||
+            (method === 'thread/settings/update' && params?.cwd != null)) {
+            const root = name === providerName ? undefined : selectedCheckout();
+            const requested = threadRequest ? bound ?? params?.cwd : params?.cwd;
+            const cwd = root ? (inside(root, existingPath(requested)) ? requested : root)
+                : threadRequest ? bound : undefined;
+            if (cwd && cwd !== params?.cwd) params = { ...params, cwd };
         }
         return originalSend.call(this, name, id, method, params, ...rest);
     } : undefined;

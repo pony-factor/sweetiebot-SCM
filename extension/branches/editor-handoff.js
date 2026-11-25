@@ -2,10 +2,19 @@
 
 const path = require('node:path');
 const { realpathSync } = require('node:fs');
+const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+
 const exec = promisify(execFile);
+const switchingEditors = new WeakSet();
 const openingHandoffEditors = new WeakMap();
+
+async function duringEditorCheckoutSwitch(vscode, work) {
+  switchingEditors.add(vscode);
+  try { return await work(); }
+  finally { switchingEditors.delete(vscode); }
+}
 
 // VS Code keeps the path it opened, while Git routing uses a real path.
 // Resolve the nearest existing parent for deleted and as-yet unsaved files.
@@ -48,12 +57,12 @@ function localFile(uri) {
 
 async function allowCheckoutEditor(vscode, resources, run = async (root, args) =>
   (await exec('git', ['-C', root, ...args], { timeout: 5000 })).stdout) {
-  if (!vscode.workspace.getConfiguration('sweetiebot').get('singleRepositoryPerWindow', true)) return true;
+  if (switchingEditors.has(vscode) || !vscode.workspace.getConfiguration('sweetiebot').get('singleRepositoryPerWindow', true)) return true;
   const transition = openingHandoffEditors.get(vscode);
   const files = resources.map(localFile).filter(uri => uri && !transition?.has(uri.fsPath));
   if (!files.length) return true;
   const folders = vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file') || [];
-  const repository = vscode.extensions.getExtension('vscode.git')?.exports?.getAPI(1).repositories[0];
+  const repository = vscode.extensions?.getExtension('vscode.git')?.exports?.getAPI(1)?.repositories?.[0];
   let root = repository?.rootUri?.fsPath;
   if (root && !folders.some(({ uri }) => root === uri.fsPath || relativeFile(root, uri) ||
       relativeFile(uri.fsPath, { scheme: 'file', fsPath: root }))) root = undefined;
@@ -105,10 +114,10 @@ function assertSavedRepositoryDocuments(vscode, root) {
   }
 }
 
-async function moveRepositoryEditors(vscode, root, destination) {
+async function moveRepositoryEditors(vscode, root, destination, { existingOnly = false, isCurrent = () => true } = {}) {
   const groups = vscode.window?.tabGroups;
   if (!groups?.all || typeof groups.close !== 'function') return [];
-  assertSavedRepositoryDocuments(vscode, root);
+  if (!existingOnly) assertSavedRepositoryDocuments(vscode, root);
   const move = uri => {
     const relative = relativeFile(root, uri);
     if (relative !== null) return vscode.Uri.file(path.join(destination, relative));
@@ -129,19 +138,20 @@ async function moveRepositoryEditors(vscode, root, destination) {
   for (const group of groups.all) {
     for (const tab of group.tabs) {
       const input = tab.input;
-      if (!input) continue;
+      if (!input || (existingOnly && tab.isDirty)) continue;
       const options = { viewColumn: group.viewColumn, preview: tab.isPreview,
         preserveFocus: true };
       if (input.original && input.modified) {
         const original = move(input.original), modified = move(input.modified);
         if (original !== input.original || modified !== input.modified)
-          plans.push({ tab, original, modified, options });
+          plans.push({ tab, original, modified, options,
+            targets: [original !== input.original && original, modified !== input.modified && modified].filter(Boolean) });
       } else if (relativeFile(root, input.uri) !== null) {
         const uri = move(input.uri);
         const editor = (vscode.window.visibleTextEditors || []).find(editor =>
           editor.viewColumn === group.viewColumn && editor.document.uri.fsPath === input.uri.fsPath);
         if (editor) options.selection = editor.selection;
-        plans.push({ tab, uri, viewType: input.viewType, options });
+        plans.push({ tab, uri, viewType: input.viewType, options, targets: [uri] });
       }
     }
   }
@@ -153,8 +163,25 @@ async function moveRepositoryEditors(vscode, root, destination) {
     if (plans.some(plan => plan.tab.isDirty))
       throw new Error('Save the repository’s open file editors before switching worktrees; their tabs were preserved.');
   };
+  if (existingOnly) {
+    for (const { tab, targets, ...editor } of plans) {
+      const exists = await Promise.all(targets.map(async uri => {
+        try {
+          const location = uri.scheme === 'git' ? JSON.parse(uri.query).path : uri.fsPath;
+          return relativeFile(destination, { scheme: 'file', fsPath: await fs.realpath(location) }) !== null
+            && (await fs.stat(location)).isFile();
+        } catch { return false; }
+      }));
+      if (!isCurrent()) return [];
+      const stillOpen = () => groups.all.some(group => group.tabs.includes(tab));
+      if (!exists.every(Boolean) || tab.isDirty || !stillOpen()) continue;
+      await openEditor(vscode, editor);
+      if (isCurrent() && !tab.isDirty && stillOpen()) await groups.close([tab], true);
+    }
+    return [];
+  }
   assertSavedTabs();
-  const editors = plans.map(({ tab, ...editor }) => editor);
+  const editors = plans.map(({ tab, targets, ...editor }) => editor);
   try {
     for (const editor of editors) {
       const resources = [editor.uri, editor.original, editor.modified].map(localFile).filter(Boolean);
@@ -211,4 +238,4 @@ function registerEditorWorkspaceHandoff(vscode, context) {
 }
 
 module.exports = { saveRepositoryDocuments, assertSavedRepositoryDocuments, moveRepositoryEditors,
-  registerEditorWorkspaceHandoff, allowCheckoutEditor };
+  registerEditorWorkspaceHandoff, allowCheckoutEditor, duringEditorCheckoutSwitch };

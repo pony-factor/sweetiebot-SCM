@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { saveRepositoryDocuments, moveRepositoryEditors, allowCheckoutEditor } = require('../../extension/branches/editor-handoff');
+const { saveRepositoryDocuments, moveRepositoryEditors, allowCheckoutEditor, duringEditorCheckoutSwitch } = require('../../extension/branches/editor-handoff');
 const file = fsPath => ({ scheme: 'file', fsPath, path: fsPath });
 const root = '/source/repo', destination = '/topic/repo';
 function fixture() {
@@ -109,6 +109,21 @@ function fixture() {
     assert.deepEqual(aliased.closed, [aliased.text]);
     assert.equal(aliased.calls[0][1].fsPath, path.join(destination, 'new', 'draft.md'));
 
+    const active = path.join(temporary, 'active');
+    await fs.mkdir(active);
+    await fs.writeFile(path.join(active, 'file.md'), '');
+    await fs.writeFile(path.join(active, 'dirty.md'), '');
+    const rerouted = fixture();
+    rerouted.text.input.uri = file(path.join(actual, 'file.md'));
+    const unsaved = { isDirty: true, input: { uri: file(path.join(actual, 'dirty.md')) } };
+    const missing = { input: { uri: file(path.join(actual, 'missing.md')) } };
+    rerouted.group.tabs.push(unsaved, missing);
+    await moveRepositoryEditors(rerouted.vscode, actual, active, { existingOnly: true });
+    assert.deepEqual(rerouted.closed, [rerouted.text]);
+    assert.equal(rerouted.calls[0][1].fsPath, path.join(active, 'file.md'));
+    assert(rerouted.group.tabs.includes(unsaved));
+    assert(rerouted.group.tabs.includes(missing));
+
     const main = path.join(temporary, 'main'), topic = path.join(temporary, 'cool gray');
     await Promise.all([fs.mkdir(main), fs.mkdir(topic)]);
     const listing = 'worktree ' + main + '\0branch refs/heads/main\0\0worktree ' + topic + '\0branch refs/heads/cool-gray\0\0';
@@ -132,6 +147,12 @@ function fixture() {
     enabled = false;
     assert.equal(await allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run), true);
     assert.equal(warnings.length, 2);
+    enabled = true;
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(temporary, 'unrelated.md'))], run), true);
+    assert.equal(await allowCheckoutEditor(vscode, [{ scheme: 'git', query: JSON.stringify({ path: path.join(main, 'file.md') }) }], run), false);
+    assert.equal(await duringEditorCheckoutSwitch(vscode, () =>
+      allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run)), true);
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run), false);
   } finally {
     await fs.rm(temporary, { recursive: true, force: true });
   }

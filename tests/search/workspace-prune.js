@@ -217,7 +217,7 @@ function fixture({
     await fs.writeFile(path.join(group, '.sweetiebot-activated'), 'Activated');
     await fs.utimes(path.join(group, '.sweetiebot-activated'), older, older);
     const sha = 'a'.repeat(40), operations = [];
-    let approved = true, dirty = false, mergedHead = sha, ancestor = false;
+    let approved = true, dirty = false, mergedHead = sha, ancestor = false, removed = false;
     const run = async (binary, args, cwd) => {
       operations.push([binary, ...args]);
       if (binary === 'gh') {
@@ -234,20 +234,24 @@ function fixture({
         case 'rev-parse':
           if (args[1] === '--show-toplevel') return checkout;
           if (args[1] === '--path-format=absolute') return path.join(original, '.git');
+          if (args[1] === '--absolute-git-dir') return path.join(original, '.git');
           if (args[1] === '--verify') return null; // No stashes.
           return sha;
         case 'symbolic-ref': return 'topic';
         case 'worktree':
+          if (args[1] === 'list' && removed) return 'worktree ' + original + '\nbranch refs/heads/main';
           if (args[1] === 'list') return 'worktree ' + checkout +
             '\nHEAD ' + sha + '\nbranch refs/heads/topic\n\n';
           if (args[1] === 'remove') {
             await fs.rm(checkout, { recursive: true });
+            removed = true;
             return '';
           }
           break;
         case 'status': return dirty ? '?? user-file' : '';
         case 'remote': return 'https://github.com/org/repo.git';
         case 'fetch': return '';
+        case 'for-each-ref': return 'refs/remotes/origin/topic';
         case 'update-ref': return '';
         case 'merge-base': return ancestor ? '' : null;
       }
@@ -321,6 +325,9 @@ function fixture({
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
     }), [], 'A divergent tip cannot be retired merely because its PR merged');
+    await fs.writeFile(path.join(group, '.sweetiebot-workspace.json'), JSON.stringify({
+      version: 1, kind: 'main-worktree', repositories: ['repo']
+    }));
     ancestor = true;
     const backup = path.join(group, '.sweetiebot-handoff-backup');
     await fs.mkdir(backup);
@@ -331,7 +338,7 @@ function fixture({
     assert.equal(await fs.readFile(path.join(backup, 'fixture.patch'), 'utf8'), 'preserve recovery data');
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
-    }), [group], 'Merged ancestor tips in clean, idle worktrees are safely detached');
+    }), [group], 'A former main worktree is removed after its current topic merges');
     const recoveryRoot = path.join(base, '.sweetiebot-recovery');
     const archives = (await fs.readdir(recoveryRoot)).filter(name => name.startsWith('topic-id-'));
     assert.equal(archives.length, 1);
@@ -354,7 +361,7 @@ function fixture({
     }));
     await fs.writeFile(path.join(mainGroup, '.sweetiebot-activated'), 'Activated');
     await fs.utimes(path.join(mainGroup, '.sweetiebot-activated'), older, older);
-    let published = false;
+    let published = false, detached = false;
     const mainOperations = [];
     const mainRun = async (binary, args) => {
       mainOperations.push([binary, ...args]);
@@ -363,12 +370,13 @@ function fixture({
         case 'rev-parse':
           if (args[1] === '--show-toplevel') return mainCheckout;
           if (args[1] === '--path-format=absolute') return path.join(original, '.git');
+          if (args[1] === '--absolute-git-dir') return path.join(original, '.git');
           if (args[1] === '--verify') return null;
           return sha;
-        case 'symbolic-ref': return 'main';
+        case 'symbolic-ref': return detached ? null : 'main';
         case 'worktree':
           if (args[1] === 'list') return 'worktree ' + mainCheckout +
-            '\nHEAD ' + sha + '\nbranch refs/heads/main\n\n';
+            '\nHEAD ' + sha + '\n' + (detached ? 'detached' : 'branch refs/heads/main');
           if (args[1] === 'remove') {
             await fs.rm(mainCheckout, { recursive: true });
             return '';
@@ -384,11 +392,16 @@ function fixture({
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run: mainRun, alive: () => false
     }), [], 'Unpublished main commits protect the worktree');
+    detached = true;
+    assert.deepEqual(await pruneManagedWorkspaces({
+      baseDirectory: base, run: mainRun, alive: () => false
+    }), [], 'A detached checkout with unpublished commits is preserved');
     published = true;
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run: mainRun, alive: () => false
-    }), [mainGroup], 'Clean, published, closed main worktrees are detached');
+    }), [mainGroup], 'A closed detached worktree contained in origin/main is removed');
     assert(mainOperations.some(args => args[1] === 'worktree' && args[2] === 'remove'));
+    assert(!mainOperations.some(args => args[1] === 'update-ref'));
 
   } finally {
     await fs.rm(temp, { recursive: true, force: true });

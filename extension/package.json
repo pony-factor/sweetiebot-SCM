@@ -366,7 +366,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Keep Source Control in the primary Git checkout and block files from its other linked worktrees."
+          "description": "Keep Source Control and Codex in the primary Git checkout and block editor opens from other linked worktrees."
         },
         "sweetiebot.automaticWorkspaceCleanup": {
           "type": "boolean",

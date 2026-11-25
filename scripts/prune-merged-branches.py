@@ -74,16 +74,24 @@ def mark_run():
     STAMP.touch()
 
 
-def checked_out_branches(repo):
-    result = run([GIT, "worktree", "list", "--porcelain"], cwd=repo, timeout=10)
+def branch_worktrees(repo):
+    result = run([GIT, "worktree", "list", "--porcelain", "-z"], cwd=repo, timeout=10)
     if result.returncode:
         raise RuntimeError("Cannot verify checked-out branches")
     prefix = "branch refs/heads/"
-    return {
-        line[len(prefix):]
-        for line in result.stdout.splitlines()
-        if line.startswith(prefix)
-    }
+    branches = {}
+    for block in result.stdout.split("\0\0"):
+        directory, *fields = block.split("\0")
+        if not directory.startswith("worktree "):
+            continue
+        branch = next((line[len(prefix):] for line in fields if line.startswith(prefix)), None)
+        if branch:
+            path = Path(directory[len("worktree "):])
+            stale = (any(line.startswith("prunable ") for line in fields)
+                     and not any(line == "locked" or line.startswith("locked ") for line in fields)
+                     and path.parent.is_dir() and not os.path.lexists(path))
+            branches.setdefault(branch, []).append((path, stale))
+    return branches
 
 
 def local_branches(repo):
@@ -202,10 +210,12 @@ def return_to_default(repo, branch, default_branch, expected_oid, dry_run=False)
             return False
     if default_branch not in local_branches(repo):
         return False
+    occupied = default_branch in branch_worktrees(repo)
     if dry_run:
         return True
-    result = run([GIT, "switch", "--no-guess", default_branch], cwd=repo, timeout=10)
-    return result.returncode == 0 and current_branch(repo) == default_branch
+    target = ["--detach", f"refs/heads/{default_branch}"] if occupied else [default_branch]
+    result = run([GIT, "switch", "--no-guess", "--no-overwrite-ignore", *target], cwd=repo, timeout=10)
+    return result.returncode == 0 and current_branch(repo) == (None if occupied else default_branch)
 
 
 def prune_repo(repo, dry_run=False, branch_filter=None):
@@ -214,12 +224,13 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
         return []
     name_with_owner, default_branch = metadata
     branches = local_branches(repo)
-    protected = checked_out_branches(repo)
+    worktrees = branch_worktrees(repo)
+    current = current_branch(repo)
     candidates = {}
     for branch, local_oid in branches.items():
         if branch == default_branch or (branch_filter is not None and branch != branch_filter):
             continue
-        if branch in protected and current_branch(repo) != branch:
+        if current != branch and any(not stale for _, stale in worktrees.get(branch, [])):
             continue
         # Query each outstanding local head, rather than only recent repository PRs.
         for pr in pull_requests(repo, name_with_owner, branch) or []:
@@ -227,39 +238,42 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
                     and not pr.get("isCrossRepository")
                     and pr.get("baseRefName") == default_branch
                     and pr.get("headRefName") == branch):
-                candidates[(branch, local_oid)] = pr.get("number")
+                candidates.setdefault((branch, local_oid), []).append(pr.get("number"))
 
     pruned = []
-    for (branch, expected_oid), number in candidates.items():
+    for (branch, expected_oid), numbers in candidates.items():
         if branch_filter is not None and branch != branch_filter:
             continue
         if branch == default_branch:
             continue
         if branches.get(branch) != expected_oid:
             continue
-        current = run([GH, "pr", "view", str(number), "--repo", name_with_owner, "--json",
-                       "state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt,commits"], cwd=repo)
         opened = run([GH, "pr", "list", "--repo", name_with_owner, "--state", "open", "--head", branch,
                       "--limit", "1", "--json", "number"], cwd=repo)
         try:
-            verified = json.loads(current.stdout)
             open_prs = json.loads(opened.stdout)
         except (ValueError, TypeError):
             continue
-        if (current.returncode or opened.returncode or open_prs != []
-                or not isinstance(verified, dict) or verified.get("state") != "MERGED"
-                or not verified.get("mergedAt") or verified.get("isCrossRepository")
-                or verified.get("baseRefName") != default_branch
-                or verified.get("headRefName") != branch
-                or not merged_pr_head_matches(verified, expected_oid, repo)):
+        if opened.returncode or open_prs != []:
             continue
-        if branch in checked_out_branches(repo):
-            if not return_to_default(repo, branch, default_branch, expected_oid, dry_run):
-                continue
-        if not dry_run and branch in checked_out_branches(repo):
+        number = verified_merge(repo, name_with_owner, default_branch, branch, expected_oid, numbers)
+        if number is None:
+            continue
+        locations = branch_worktrees(repo).get(branch, [])
+        if any(not stale and path.resolve() != repo.resolve() for path, stale in locations):
+            continue
+        if any(not stale for _, stale in locations) and not return_to_default(
+                repo, branch, default_branch, expected_oid, dry_run):
             continue
         if dry_run:
             pruned.append((name_with_owner, branch, number))
+            continue
+        for path, stale in locations:
+            if stale and not os.path.lexists(path):
+                # Remove only this branch's missing worktree registration.
+                # Git refuses locked or dirty worktrees without --force.
+                run([GIT, "worktree", "remove", "--", str(path)], cwd=repo, timeout=10)
+        if branch in branch_worktrees(repo):
             continue
         result = run(
             [GIT, "update-ref", "-d", f"refs/heads/{branch}", expected_oid],
@@ -271,6 +285,24 @@ def prune_repo(repo, dry_run=False, branch_filter=None):
             record_managed_workspace_merge(repo, name_with_owner, branch,
                                            expected_oid, number, default_branch)
     return pruned
+
+
+def verified_merge(repo, repository, base, branch, expected_oid, numbers):
+    for number in numbers:
+        if type(number) is not int or number < 1:
+            continue
+        result = run([GH, "pr", "view", str(number), "--repo", repository, "--json",
+                      "state,headRefName,headRefOid,baseRefName,isCrossRepository,mergedAt,commits"], cwd=repo)
+        try:
+            pr = json.loads(result.stdout)
+        except (ValueError, TypeError):
+            continue
+        if (not result.returncode and isinstance(pr, dict) and pr.get("state") == "MERGED"
+                and pr.get("mergedAt") and pr.get("isCrossRepository") is False
+                and pr.get("baseRefName") == base and pr.get("headRefName") == branch
+                and merged_pr_head_matches(pr, expected_oid, repo)):
+            return number
+    return None
 
 
 def record_managed_workspace_merge(repo, repository, branch, oid, number, default_branch):

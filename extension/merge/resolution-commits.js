@@ -16,7 +16,7 @@ function validateDecisions(value = []) {
         typeof item.description !== 'string' || !item.description.trim() || item.description.length > 4000 ||
         /\x00/.test(item.description) || /^Co-authored-by:/im.test(item.description) ||
         (item.keepBase !== undefined && typeof item.keepBase !== 'boolean')) {
-      throw Error('Each conflicted file needs a unique safe path, emoji decision title and explanation.');
+      throw Error('Each conflicted file needs a unique safe path, emoji decision title, and explanation.');
     }
     seen.add(item.path);
     return { path: item.path, title: item.title.trim(), description: item.description.trim(),
