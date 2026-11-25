@@ -1279,14 +1279,26 @@ def render_form(
     submit_hidden = "" if finish_on_save else " hidden"
     revision = read_build_revision() if build_revision is None else build_revision
     committed_at = read_build_committed_at() if build_revision is None else build_committed_at
-    age_pill = ""
+    age_text = ""
+    age_label = ""
     if type(committed_at) is int and committed_at > 0:
-        days = max(0, int((time.time() - committed_at) // 86400))
-        age_pill = f'<span class="settings-build-revision">{days} {"day" if days == 1 else "days"} ago</span>'
+        minutes = max(0, int((time.time() - committed_at) // 60))
+        if minutes == 0:
+            age_label = "just now"
+        else:
+            if minutes < 2 * 60:
+                count, unit = minutes, "minute"
+            elif minutes < 48 * 60:
+                count, unit = minutes // 60, "hour"
+            else:
+                count, unit = minutes // (24 * 60), "day"
+            age_label = f'{count} {unit}{"s" if count != 1 else ""} ago'
+        age_text = f'<small class="settings-build-age">{age_label}</small>'
+        age_label = f", {age_label}"
     revision_pill = (
         f'<span class="settings-build-revision" '
         f'title="Built from commit {revision}" '
-        f'aria-label="Built from commit {revision}">{revision[:8]}</span>{age_pill}'
+        f'aria-label="Built from commit {revision}{age_label}">{revision[:8]}{age_text}</span>'
         if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision)
         else ""
     )
@@ -1298,7 +1310,8 @@ def render_form(
 *{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 main{{width:min(1120px,calc(100% - 32px));margin:40px auto 96px}}header{{margin-bottom:24px}}.settings-header{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}}.settings-header>div:first-child{{min-width:0}}.rebuild-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:7px;min-width:160px}}.rebuild-actions output{{font-size:12px;max-width:290px;text-align:right;color:var(--muted)}}.rebuild-actions output.error-state{{color:#ffb3ad}}h1{{margin:0 0 8px;font-size:30px}}header p,.status{{color:var(--muted)}}
 .settings-brand{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}.settings-brand img{{width:48px;height:48px;object-fit:contain;flex:none}}
-.settings-build-revision{{display:inline-flex;align-items:center;flex:none;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font:600 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em}}
+.settings-build-revision{{display:inline-flex;flex-direction:column;align-items:center;flex:none;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font:600 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em}}
+.settings-build-revision .settings-build-age{{margin:0;font:400 10px/1.2 system-ui,sans-serif;letter-spacing:normal}}
 .settings-panel{{margin:0;padding:8px 20px;background:var(--panel);border:1px solid var(--line);border-radius:12px}}.settings-panel[hidden]{{display:none}}h2{{font-size:16px;margin:10px 0}}
 .settings-group h3{{font-size:14px;margin:14px 0 4px;color:var(--muted)}}.settings-group+.settings-group{{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}}
 .sticker-actions{{display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:55%}}.sticker-actions input{{max-width:100%;font:inherit}}.sticker-actions output{{font-size:12px;color:var(--muted)}}.sticker-setting{{align-items:flex-start}}
