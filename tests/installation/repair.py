@@ -22,7 +22,7 @@ import install
 import repair
 import toolkit_settings
 import workspace_search
-from tests.installation.install import workbench_fixture
+from tests.installation.install import GIT_MODEL_FIXTURE, workbench_fixture
 
 
 class RepairTests(unittest.TestCase):
@@ -82,6 +82,7 @@ class RepairTests(unittest.TestCase):
                 'await this.status(),await pause(5e3)}}'
                 'decorate([debounce(1e3)],Repository.prototype,'
                 '"eventuallyUpdateWhenIdleAndWait",1)'
+                + GIT_MODEL_FIXTURE
             )
             stack.enter_context(patch('sys.argv', ['install.py', '--repair', '--app', str(app)]))
             stack.enter_context(patch.object(install, 'application_paths', side_effect=lambda _app: ('test', [js, css])))
@@ -110,6 +111,7 @@ class RepairTests(unittest.TestCase):
             self.assertIn(install.START, js.read_text())
             self.assertIn(install.START, css.read_text())
             self.assertIn(install.BACKGROUND_GIT_START, git_extension.read_text())
+            self.assertIn('/* sweetiebot-repository-limit:start */', git_extension.read_text())
             destination = workspace_search.extension_destination(extensions)
             helper = wrapper_path.with_name(wrapper_path.name + '-spellcheck.py')
             notice = destination / 'commits' / 'post-commit-spellcheck-notice.js'
