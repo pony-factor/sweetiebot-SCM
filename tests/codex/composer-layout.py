@@ -27,7 +27,7 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertEqual(actual["hidden"], [])
 
     def test_reordering_and_hiding_survive_serialization(self):
-        value = {"left": ["input", "clipboard", "access", "attachments"], "right": ["send"],
+        value = {"left": ["input", "clipboard", "access", "attachments"], "right": ["model", "send"],
                  "hidden": ["location"]}
         self.assertEqual(layout.parse_layout(layout.serialize_layout(value)), value)
         page = layout.render_control(layout.serialize_layout(value))
@@ -74,12 +74,13 @@ class ComposerLayoutTests(unittest.TestCase):
         old = {"visible": ["clipboard", "input", "attachments", "send"],
                "hidden": ["location", "access"]}
         self.assertEqual(layout.parse_layout(old), {
-            "left": ["input", "clipboard", "attachments"],
+            "left": ["input", "model", "clipboard", "attachments"],
             "right": ["send"], "hidden": ["location", "access"]})
 
     def test_compact_icons_have_tooltips_and_no_text_labels(self):
         page = layout.render_control(layout.DEFAULT_LAYOUT_JSON)
         self.assertIn('title="Attachments"', page)
+        self.assertIn('draggable="true" data-codex-layout-id="model" title="Model / thinking"', page)
         self.assertIn('title="Send / Stop (wing)"', page)
         self.assertIn('data-codex-layout-toggle', page)
         self.assertIn('id="codex-layout-control-picker"', page)
@@ -89,10 +90,12 @@ class ComposerLayoutTests(unittest.TestCase):
     def test_hidden_access_is_preserved_and_right_alignment_is_allowed(self):
         old = {"left": ["input", "attachments"], "right": ["send"],
                "hidden": ["access", "location", "clipboard"]}
-        self.assertEqual(layout.parse_layout(layout.serialize_layout(old)), old)
+        self.assertEqual(layout.parse_layout(layout.serialize_layout(old)), {
+            **old, "left": ["input", "model", "attachments"]})
         right = {"left": ["input", "attachments"], "right": ["access", "send"],
                  "hidden": ["location", "clipboard"]}
-        self.assertEqual(layout.parse_layout(right), right)
+        self.assertEqual(layout.parse_layout(right), {
+            **right, "left": ["input", "model", "attachments"]})
 
     def test_extra_composer_more_menu_is_removed(self):
         from pathlib import Path
@@ -104,7 +107,7 @@ class ComposerLayoutTests(unittest.TestCase):
         self.assertIn('id !== "input"', runtime)
 
     def test_fixed_input_is_not_an_editable_control(self):
-        saved = {"left": ["attachments", "input", "access", "location", "clipboard"],
+        saved = {"left": ["attachments", "input", "access", "location", "clipboard", "model"],
                  "right": ["send"], "hidden": []}
         page = layout.render_control(saved)
         self.assertNotIn('data-codex-layout-id="input"', page)
