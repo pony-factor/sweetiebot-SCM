@@ -6,7 +6,7 @@
   globalThis.scmToolkitCodexComposerLayout = true;
   const layout = __SCM_TOOLKIT_COMPOSER_LAYOUT__;
   const names = {
-    input: "Message input", attachments: "Attachments",
+    input: "Message input", model: "Model / thinking", attachments: "Attachments",
     access: "Access permissions", location: "Computer / location / usage",
     clipboard: "Clipboard Send / Queue", send: "Send / Stop"
   };
@@ -54,6 +54,7 @@
       footer,
       controls: {
         input,
+        model: footer.querySelector('button:is([data-composer-navigation-target="model"], [data-composer-navigation-target="reasoning"])'),
         attachments: find(b => b.getAttribute("data-composer-navigation-target") === "attachments"
           || /^(add (context|files?|attachment)|attach files?)/i.test(label(b))),
         access: footer.querySelector(accessSelector) || find(b => b.matches(accessSelector)),
@@ -74,14 +75,18 @@
     while (candidate.parentElement && candidate.parentElement !== footer
       && footer.contains(candidate.parentElement)) candidate = candidate.parentElement;
     // Native action groups can contain both alignment groups. Expose their
-    // children to the footer flex layout without moving React-owned nodes.
+    // slots to the footer while retaining each control's own wrapper.
     if (candidate !== node && candidate.querySelectorAll("button").length > 1) {
-      for (let parent = node.parentElement; parent && parent !== footer;
+      let control = node;
+      while (control.parentElement !== footer && control.parentElement.querySelectorAll("button").length === 1) {
+        control = control.parentElement;
+      }
+      for (let parent = control.parentElement; parent && parent !== footer;
         parent = parent.parentElement) {
         if (!parent.classList.contains("scm-toolkit-layout-group"))
           parent.classList.add("scm-toolkit-layout-group");
       }
-      return node;
+      return control;
     }
     return candidate;
   }

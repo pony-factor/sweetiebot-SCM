@@ -459,6 +459,16 @@ def run():
             assert attachments.is_visible()
             assert page.evaluate('document.getElementById("meter-control").parentElement === originalUsageParent')
         page.evaluate('''() => {
+            usageLayout.left = ['attachments','location','input'];
+            document.getElementById('meter-control').classList.add('attachments-first');
+        }''')
+        page.wait_for_function('''() => {
+            const add = document.getElementById('add-files').getBoundingClientRect();
+            const pie = document.querySelector('#meter-control scm-toolkit-usage-pie').getBoundingClientRect();
+            return add.width > 0 && pie.width > 0 && add.right <= pie.left
+                && add.top < pie.bottom && pie.top < add.bottom;
+        }''')
+        page.evaluate('''() => {
             usageLayout.left = ['input','attachments'];
             usageLayout.right = ['location','clipboard','send'];
             document.getElementById('meter-control').classList.add('rescan-layout');
@@ -720,9 +730,12 @@ def run():
             <button class="bg-composer-primary" aria-label="Stop">S</button>
             <button data-composer-navigation-target="run-location">U</button>
             </div></div></div></body></html>''')
+        alignment_page.evaluate('''() => {
+            window.composerLayout = {left:["input","model","location","attachments"],
+                right:["clipboard","send"],hidden:["access"]};
+        }''')
         alignment_page.add_script_tag(content=(ASSETS / 'composer/layout.js').read_text().replace(
-            '__SCM_TOOLKIT_COMPOSER_LAYOUT__',
-            '{left:["location","input","attachments"],right:["clipboard","send"],hidden:["access"]}'))
+            '__SCM_TOOLKIT_COMPOSER_LAYOUT__', 'window.composerLayout'))
         alignment_page.wait_for_function('document.querySelector(".scm-toolkit-layout-right-start")')
         for width in (560, 240):
             alignment_page.eval_on_selector('.ComposerLayoutFooter_fixture', '(el,w)=>el.style.width=w+"px"', width)
@@ -740,13 +753,14 @@ def run():
             assert geometry['ordered'] and geometry['below'], (width, geometry)
             assert alignment_page.locator('textarea').input_value() == 'Retained draft'
             assert alignment_page.locator('.actions > button').count() == 5
-        # The unconfigured native model wrapper expands and right-aligns its
+        # The native model wrapper can expand and right-align its
         # contents. It must not consume the free space ahead of the left icons.
         alignment_page.evaluate('''() => {
             const model=document.createElement('div');
             model.id='native-model';
             model.style.cssText='flex:1;min-width:0;margin-inline-start:auto;display:flex;justify-content:flex-end';
-            model.innerHTML='<button aria-label="Select model" style="width:100px">6.1 Sol Med</button>';
+            model.innerHTML='<button data-composer-navigation-target="reasoning" style="width:100px">6.1 Sol Med</button>';
+            model.firstElementChild.onclick = () => { window.modelMenuOpened = true; };
             document.querySelector('.actions').prepend(model);
         }''')
         for width in (560, 360):
@@ -778,6 +792,19 @@ def run():
                 return button.classList.contains('scm-toolkit-layout-right-start')
                     && Math.abs(footer.getBoundingClientRect().right-button.getBoundingClientRect().right)<1;
             }''')
+        alignment_page.evaluate('''() => {
+            composerLayout.left.splice(composerLayout.left.indexOf('model'), 1);
+            composerLayout.right.unshift('model');
+            document.getElementById('native-model').classList.add('model-moved');
+        }''')
+        alignment_page.wait_for_function('''() => {
+            const model = document.getElementById('native-model');
+            const attachments = document.querySelector('[data-composer-navigation-target="attachments"]');
+            return model.classList.contains('scm-toolkit-layout-right-start')
+                && attachments.getBoundingClientRect().right < model.getBoundingClientRect().left;
+        }''')
+        alignment_page.locator('#native-model button').click()
+        assert alignment_page.evaluate('window.modelMenuOpened')
         alignment_page.close()
         # Codex renders complementary home/chat labels in one location button.
         # Usage alignment must preserve their native display rules.

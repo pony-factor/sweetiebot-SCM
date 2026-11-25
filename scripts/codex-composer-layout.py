@@ -15,10 +15,10 @@ for _sb_parent in _sb_path(__file__).resolve().parents:
 import html
 import json
 
-IDS = ("input", "attachments", "access", "location", "clipboard", "send")
-LABELS = ("Message input", "Attachments", "Access permissions",
+IDS = ("input", "model", "attachments", "access", "location", "clipboard", "send")
+LABELS = ("Message input", "Model / thinking", "Attachments", "Access permissions",
           "Computer / location / usage", "Clipboard Send / Queue", "Send / Stop (wing)")
-ICONS = {"input": "✎", "attachments": "⌁", "access": "♙",
+ICONS = {"model": "🧠", "attachments": "⌁", "access": "♙",
          "location": "◎", "clipboard": "▤", "send": "➤"}
 DEFAULT_LAYOUT = {"left": list(IDS[:-1]), "right": ["send"], "hidden": []}
 DEFAULT_LAYOUT_JSON = json.dumps(DEFAULT_LAYOUT, separators=(",", ":"))
@@ -50,12 +50,19 @@ def parse_layout(value):
     if any(not isinstance(zone, list) for zone in zones):
         raise ValueError("Codex composer zones must be lists.")
     combined = sum(zones, [])
-    if (len(combined) != len(IDS) or any(not isinstance(item, str) for item in combined)
-            or set(combined) != set(IDS)):
+    if any(not isinstance(item, str) for item in combined):
+        raise ValueError("Codex composer layout contains missing, duplicate or unknown controls.")
+    controls = set(combined)
+    legacy = controls == set(IDS) - {"model"}
+    if len(combined) != len(controls) or (not legacy and controls != set(IDS)):
         raise ValueError("Codex composer layout contains missing, duplicate or unknown controls.")
     if "input" not in obj["left"]:
         raise ValueError("The Codex input must remain left aligned and available.")
     result = {name: obj[name][:] for name in ("left", "right", "hidden")}
+    if legacy:
+        # The native model picker occupied the leading toolbar position.
+        index = 1 if result["left"][0] == "input" else 0
+        result["left"].insert(index, "model")
     return result
 
 
@@ -71,16 +78,13 @@ def render_control(current):
 
     def item(key):
         label = html.escape(dict(zip(IDS, LABELS))[key], quote=True)
-        title = label + (" (required)" if key == "input" else "")
-        toggle = ("" if key == "input" else
-                  '<button type="button" data-codex-layout-toggle title="Change alignment of ' +
-                  label + '" aria-label="Change alignment of ' + label + '">↔</button>')
         return ('<div class="codex-layout-item" tabindex="0" role="listitem" '
-                'draggable="true" data-codex-layout-id="' + key + '" title="' + title +
-                '" aria-label="' + title + '">'
+                'draggable="true" data-codex-layout-id="' + key + '" title="' + label +
+                '" aria-label="' + label + '">'
                 '<span class="codex-layout-grip" title="Drag ' + label + '" aria-hidden="true">⋮⋮</span>'
                 '<span class="codex-layout-icon" aria-hidden="true">' + ICONS[key] + '</span>' +
-                toggle + '</div>')
+                '<button type="button" data-codex-layout-toggle title="Change alignment of ' +
+                label + '" aria-label="Change alignment of ' + label + '">↔</button></div>')
 
     return ('<section class="codex-layout-editor" aria-label="Codex composer layout">'
             '<input type="hidden" id="codex-composer-layout" name="codexComposerLayout" value="' +
@@ -88,11 +92,11 @@ def render_control(current):
             '<div class="codex-layout-head"><strong>Codex composer layout</strong>'
             '<button type="button" id="codex-layout-reset">Reset</button></div>'
             '<small>Drag icons to reorder or choose a control and placement below. '
-            'Drop controls below to hide them; the message input stays left.</small>'
+            'Drop controls below to hide them.</small>'
             '<div class="codex-layout-pickers"><label for="codex-layout-control-picker">Control'
             '<select id="codex-layout-control-picker" aria-label="Choose a composer control">' +
             "".join('<option value="' + key + '">' + html.escape(label) + '</option>'
-                    for key, label in zip(IDS, LABELS)) + '</select></label>'
+                    for key, label in zip(IDS, LABELS) if key != "input") + '</select></label>'
             '<label for="codex-layout-position-picker">Position'
             '<select id="codex-layout-position-picker" aria-label="Choose control position">'
             '<option value="left">Left aligned</option>'
@@ -102,7 +106,8 @@ def render_control(current):
             '<div class="codex-layout-side codex-layout-side-left">'
             '<span class="codex-layout-caption">Left aligned</span>'
             '<div id="codex-layout-left" role="list" class="codex-layout-zone" '
-            'data-codex-layout-zone="left">' + "".join(map(item, layout["left"])) + '</div></div>'
+            'data-codex-layout-zone="left">' +
+            "".join(item(key) for key in layout["left"] if key != "input") + '</div></div>'
             '<div class="codex-layout-side codex-layout-side-right">'
             '<span class="codex-layout-caption">Right aligned</span>'
             '<div id="codex-layout-right" role="list" class="codex-layout-zone" '
@@ -112,12 +117,14 @@ def render_control(current):
             'data-codex-layout-zone="hidden">' + "".join(map(item, layout["hidden"])) + '</div>'
             '<small>Use ↔ to cycle alignment or Alt+arrow keys to reorder; '
             'Send and Stop share the Pegasus wing position.</small>'
+            '<small class="codex-layout-apply">Use <strong>Rebuild app</strong> to apply the saved layout to Codex.</small>'
             '</section>')
 
 
 CONFIG_STYLE = """
 .codex-layout-editor{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .codex-layout-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.codex-layout-apply{display:block;margin-top:6px}
 .codex-layout-pickers{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
 .codex-layout-editor .codex-layout-pickers label{display:flex;flex:1 1 160px;flex-direction:column;gap:5px;margin:0;font-size:12px;font-weight:600;color:var(--muted)}
 .codex-layout-pickers select{width:100%;min-height:34px;padding:5px 24px 5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:inherit;cursor:pointer}
@@ -162,11 +169,7 @@ CONFIG_SCRIPT = """
   function updatePicker() {
     const item = byId.get(controlPicker.value);
     if (!item) return;
-    const id = item.dataset.codexLayoutId;
     positionPicker.value = item.parentElement.dataset.codexLayoutZone;
-    for (const option of positionPicker.options) {
-      option.disabled = id === "input" && option.value !== "left";
-    }
     items.forEach(el => el.classList.toggle("is-selected", el === item));
   }
   function selectItem(item) {
@@ -176,7 +179,7 @@ CONFIG_SCRIPT = """
   function sync() {
     const read = name => [...zone(name).children]
       .filter(el => el.dataset.codexLayoutId).map(el => el.dataset.codexLayoutId);
-    input.value = JSON.stringify({left:read("left"),right:read("right"),hidden:read("hidden")});
+    input.value = JSON.stringify({left:["input", ...read("left")],right:read("right"),hidden:read("hidden")});
     input.dispatchEvent(new Event("input", {bubbles:true}));
     updatePicker();
   }
@@ -193,7 +196,7 @@ CONFIG_SCRIPT = """
     }
   }
   function move(item, target, before = null) {
-    if (!target || (item.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
+    if (!target) return;
     target.insertBefore(item, before);
     updateActions();
     sync();
@@ -263,7 +266,7 @@ CONFIG_SCRIPT = """
   }
   for (const target of zones) {
     target.addEventListener("dragover", event => {
-      if (!dragging || (dragging.dataset.codexLayoutId === "input" && target !== zone("left"))) return;
+      if (!dragging) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       zones.forEach(el => el.classList.toggle("is-over", el === target));
@@ -280,10 +283,12 @@ CONFIG_SCRIPT = """
     });
   }
   document.getElementById("codex-layout-reset").addEventListener("click", () => {
-    const byId = new Map(items.map(item => [item.dataset.codexLayoutId, item]));
-    ["input","attachments","access","location","clipboard"].forEach(id =>
-      zone("left").append(byId.get(id)));
-    zone("right").append(byId.get("send"));
+    const defaults = __SCM_TOOLKIT_DEFAULT_LAYOUT__;
+    for (const name of names) {
+      for (const id of defaults[name]) {
+        if (id !== "input") zone(name).append(byId.get(id));
+      }
+    }
     clearDrop();
     updateActions();
     sync();
@@ -291,4 +296,4 @@ CONFIG_SCRIPT = """
   updateActions();
   updatePicker();
 })();
-"""
+""".replace("__SCM_TOOLKIT_DEFAULT_LAYOUT__", DEFAULT_LAYOUT_JSON)
