@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { existsSync } = require('node:fs');
 const { splitSquashTrailers, squashMessage, readCommits } = require('./squash-attribution');
-const { patchPaths, safePatchPath } = require('./patch');
+const { inspectResolutionPatch, safePatchPath } = require('./patch');
 const { validateResolutionHunks, applyResolutionHunks } = require('./conflict-hunks');
 const { readMergeChecks, waitForMergeChecks } = require('./checks');
 const { readPushedPR } = require('../github/pushed-pr');
@@ -425,7 +425,7 @@ async function humanSquashMerge(repository, number, {
     progress('inspecting-files');
     const mergeBase = await inRepo('merge-base', liveBase, liveHead);
     if (!SHA.test(mergeBase)) throw Error('No verified common ancestor.');
-    const originalFiles = (await inRepo('diff', '--name-only', '-z', mergeBase, liveHead)).split('\0').filter(Boolean).sort();
+    const originalFiles = (await inRepo('diff', '--no-renames', '--name-only', '-z', mergeBase, liveHead)).split('\0').filter(Boolean).sort();
     // Check names before checking out or reading changed file contents.
     if (!originalFiles.length || originalFiles.some(name => !safePatchPath(name))) {
       throw Error('PR contains unsafe or secret-bearing paths; local execution is blocked.');
@@ -493,7 +493,7 @@ async function humanSquashMerge(repository, number, {
         }
         const unresolved = await inRepo('diff', '--name-only', '--diff-filter=U', '-z');
         if (unresolved) throw Error('Unresolved Git conflicts remain after compact application.');
-        resolvedFiles = (await inRepo('diff', '--cached', '--name-only', '-z'))
+        resolvedFiles = (await inRepo('diff', '--cached', '--no-renames', '--name-only', '-z'))
           .split('\0').filter(Boolean).sort();
         if (resolvedFiles.some(file => !originalFiles.includes(file))) {
           throw Error('Compact resolution modified a path outside the selected pull request.');
@@ -504,8 +504,7 @@ async function humanSquashMerge(repository, number, {
       resolvedFiles = [];
       if (!baseOnlyResolution) {
         await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
-        const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
-        resolvedFiles = patchPaths(resolutionPatch, numstat);
+        resolvedFiles = await inspectResolutionPatch(resolutionPatch, patchFile, inRepo);
       }
       const keptBase = new Set(decisions.filter(item => item.keepBase).map(item => item.path));
       if ([...keptBase].some(name => !conflicts.includes(name) || resolvedFiles.includes(name)) ||
@@ -522,7 +521,7 @@ async function humanSquashMerge(repository, number, {
       // the old PR tree, which could discard newer base changes.
       const cleanEntries = [];
       if (missing.length) {
-        const changed = (await inRepo('diff', '--cached', '--name-only', '-z', liveBase, '--', ...missing))
+        const changed = (await inRepo('diff', '--cached', '--no-renames', '--name-only', '-z', liveBase, '--', ...missing))
           .split('\0').filter(Boolean);
         for (const name of changed) {
           if (!missing.includes(name) || !safePatchPath(name)) throw Error('Unexpected clean integration path.');
@@ -569,7 +568,7 @@ async function humanSquashMerge(repository, number, {
         sha: originalSha, previousHeadSha: originalSha, base, baseSha,
         reason: 'No merge conflicts or explicit resolution changes; left the PR branch unchanged.' };
     }
-    const staged = await inRepo('diff', '--cached', '--name-only', '-z');
+    const staged = await inRepo('diff', '--cached', '--no-renames', '--name-only', '-z');
     if (!staged.trim() && !baseOnlyResolution) throw Error('Squash would make no changes; refusing empty commit.');
     // Additional supporting files are allowed when explicitly supplied by the
     // resolution patch. Keep the staged tree bound to that validated patch.

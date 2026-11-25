@@ -329,6 +329,12 @@ assert(handoffPolicy.includes('Do not create or request a synchronization commit
   assert.deepEqual(patchPaths('', '1\t1\ttests/test_regression.js\0', ['file.txt']), ['tests/test_regression.js']);
   assert.deepEqual(patchPaths('', '1\t1\tproduction.js\0', ['file.txt'], { allowCheckRepairTests: true }), ['production.js']);
   assert.throws(() => patchPaths('GIT binary patch\n', '', ['file.txt']), /regular text/);
+  const rename = 'rename from old.webp\nrename to moved.webp\n';
+  assert.deepEqual(patchPaths(rename, '0\t0\tmoved.webp\0', '0\t0\told.webp\0'), ['moved.webp', 'old.webp']);
+  assert.throws(() => patchPaths(rename, '0\t0\tmoved.webp\0'), /Both paths/);
+  assert.throws(() => patchPaths(rename, '0\t0\tmoved.webp\0', '0\t0\t.env\0'), /unsafe/);
+  assert.throws(() => patchPaths(rename, '0\t0\t.git/config\0', '0\t0\told.webp\0'), /unsafe/);
+  assert.throws(() => patchPaths('copy from old.webp\ncopy to moved.webp\n', '0\t0\tmoved.webp\0'), /copies/);
 
   let executions = 0, finish;
   const bridge = await createMergeHandoff(selection, { execute: async received => {

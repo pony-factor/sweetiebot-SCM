@@ -25,7 +25,8 @@ const run = promisify(execFile);
     await fs.writeFile(path.join(working, 'clean.txt'), 'original clean\n');
     await fs.writeFile(path.join(working, 'remove.txt'), 'obsolete\n');
     await fs.writeFile(path.join(working, 'support-config.json'), '{"enabled":false}\n');
-    await repo('add', 'support-config.json');
+    await fs.writeFile(path.join(working, 'asset-old.webp'), Buffer.from([0, 255, 42]));
+    await repo('add', 'support-config.json', 'asset-old.webp');
     await repo('add', 'file.txt', 'clean.txt', 'remove.txt'); await repo('commit', '--quiet', '-m', 'Initial fixture');
     await repo('remote', 'add', 'origin', remote);
     await repo('checkout', '--quiet', '-b', 'feature');
@@ -210,14 +211,20 @@ const run = promisify(execFile);
       pushed = false;
       stalePushReads = 2;
     }
+    const renamePatch = 'diff --git a/asset-old.webp b/asset-new.webp\n' +
+      'similarity index 100%\nrename from asset-old.webp\nrename to asset-new.webp\n';
     const incremental = await attempt({ api: dependentApi,
-      ...(resolving ? { resolutionPatch: completePatch + additionalPatch + configPatch,
+      ...(resolving ? { resolutionPatch: completePatch + additionalPatch + configPatch + renamePatch,
         decisions: [...decisions, { path: 'tests/supporting.test.mjs', title: '🧪 Cover the repaired integration',
           description: 'Add regression coverage for the combined behavior.' }] } : {}),
       onProgress: event => extraProgress.push(event) });
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     if (resolving) {
-      assert.deepEqual(incremental.additionalFiles, ['support-config.json', 'tests/supporting.test.mjs']);
+      assert.deepEqual(incremental.additionalFiles, ['asset-new.webp', 'asset-old.webp', 'support-config.json', 'tests/supporting.test.mjs']);
+      assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':asset-new.webp'),
+        await git('--git-dir=' + remote, 'rev-parse', baseSha + ':asset-old.webp'),
+        'A metadata-only rename retains the exact existing image blob');
+      await assert.rejects(git('--git-dir=' + remote, 'cat-file', '-e', incremental.sha + ':asset-old.webp'));
       assert.deepEqual(extraProgress.find(event => event.stage === 'additional-files').additionalFiles, incremental.additionalFiles);
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':tests/supporting.test.mjs'), '// Supporting regression coverage');
       const supportingCommit = incremental.resolutionCommits.find(item => item.path === 'tests/supporting.test.mjs');
