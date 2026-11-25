@@ -78,9 +78,15 @@ async function run() {
             return exec(command, args, opts);
           }
         });
+        const preparePreview = () => { throw Error('Preview generation is mocked by resolveConflicts'); };
         const result = syncBranch(repository, { ...options, strategy, createPublisher,
-          reviewConflicts: async (_, details) => { assert.equal(details.appIdentity, true); return 'lindsey'; },
-          resolveConflicts: async () => {
+          reviewConflicts: async (_, details) => {
+            assert.equal(details.publishingRepository, 'owner/repo');
+            return { lindsey: preparePreview };
+          },
+          resolveConflicts: async (checkout, preview) => {
+            assert.equal(checkout, repository);
+            assert.equal(preview, preparePreview, 'The approved resolver is forwarded to conflict resolution');
             proposed++;
             assert(git('ls-files', '-u'), 'Resolver receives the actual conflicting index');
             if (scenario === 'cancel') return undefined;

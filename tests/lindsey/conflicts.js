@@ -93,6 +93,16 @@ async function run() {
       path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex')
     }] });
     assert(git('ls-files', '-u'), 'Preview returns reviewed bytes to the sync coordinator before staging');
+    fs.writeFileSync(path.join(root, 'file.txt'), original);
+    assert.deepEqual(await generatePreview(syncUI, mockRepo, {
+      sync: true,
+      lindsey: async (checkout, output) => {
+        assert.equal(checkout, root);
+        fs.writeFileSync(path.join(output, candidate), 'merged\n');
+        return manifest;
+      },
+      run: async () => { assert.fail('App-authenticated sync should not invoke the shared-secret CLI'); }
+    }), { files: [{ path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex') }] });
     const failedPreview = stderr => generatePreview(syncUI, mockRepo, {
       ...previewOptions, run: async () => { throw Object.assign(new Error('Command failed'), { stderr }); }
     });

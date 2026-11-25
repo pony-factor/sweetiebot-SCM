@@ -4,6 +4,7 @@ const { promisify } = require('node:util');
 const { existsSync } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { checkLindseyResolver } = require('./lindsey-conflicts');
 const exec = promisify(execFile);
 const SHA = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/i;
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
@@ -16,7 +17,7 @@ function githubRepository(url) {
   const found = String(url || '').match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
   return found ? found[1] + '/' + found[2] : null;
 }
-async function reviewSyncConflicts(vscode, repository, details) {
+async function reviewSyncConflicts(vscode, repository, details, { connect = checkLindseyResolver } = {}) {
   const { branch, defaultBranch, remote, head, target, strategy } = details;
   const root = repository.rootUri?.fsPath;
   if (!root || !SHA.test(head) || !SHA.test(target)) throw Error('Missing verified sync revisions.');
@@ -32,7 +33,7 @@ async function reviewSyncConflicts(vscode, repository, details) {
   await unchanged();
   for (;;) {
     const choice = await vscode.window.showQuickPick([
-      ...(details.appIdentity ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Review conflict proposals, then commit and publish with the configured App' }] : []),
+      ...(details.publishingRepository ? [{ id: 'lindsey', label: '$(sparkle) Resolve and sync with Lindsey', description: 'Review conflict proposals, then commit and publish with the configured App' }] : []),
       { id: 'inspect', label: '$(diff) Inspect conflict preview', description: 'Read Git conflict details; no files are changed' },
       { id: 'resolve', label: '$(tools) Start conflict resolution', description: 'Proceed to Git merge editor without auto-committing' },
       { id: 'own', label: '$(git-commit) Make my own commit first', description: 'Prefill an editable commit title and cancel this sync' },
@@ -41,7 +42,9 @@ async function reviewSyncConflicts(vscode, repository, details) {
       placeHolder: 'Git cannot automatically reconcile this ' + strategy + ' sync', ignoreFocusOut: true });
     if (!choice || choice.id === 'cancel') return false;
     await unchanged();
-    if (choice.id === 'lindsey') return 'lindsey';
+    if (choice.id === 'lindsey') {
+      return { lindsey: await connect(vscode, root, details.publishingRepository) };
+    }
     if (choice.id === 'own') {
       const suggested = '🛠️ Prepare ' + branch + ' for synchronization with ' + defaultBranch;
       const input = await vscode.window.showInputBox({

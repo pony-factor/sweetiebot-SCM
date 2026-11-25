@@ -79,6 +79,7 @@ async function syncPublisher(root, remote, { enabled = separateAppsEnabled, tran
           GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GIT_ASKPASS: '', SSH_ASKPASS: '' } });
     } catch (error) { throw gitFailure(error, ['push']); }
   };
+  publish.repository = repo;
   publish.commit = async message => {
     try {
       await run('git', ['commit', '-m', message], { cwd: root, timeout: 120000,

@@ -245,6 +245,7 @@
         "lindsey/bulk-merge.js",
         "lindsey/transport.js",
         "lindsey/conflicts.js",
+        "lindsey/resolver-auth.js",
         "merge/keep-awake.js",
         "merge/order.js",
         "merge/handoff-page.js",
@@ -274,6 +275,7 @@
       "syntax": [
         "extension/merge/lindsey-bulk-merge.js",
         "extension/merge/lindsey-transport.js",
+        "extension/merge/lindsey-resolver-auth.js",
         "extension/github/app-commit-identity.js",
         "extension/commits/git-failure.js",
         "extension/merge/parallel-merge-batch.js",

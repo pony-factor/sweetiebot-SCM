@@ -74,8 +74,7 @@ async function getRoleInstallationToken(role, repository, {
   if (!separateAppsEnabled(env)) throw new Error('Distinct GitHub App mode is not enabled.');
   if (!REPOSITORY.test(repository || '')) throw new Error('Invalid GitHub repository for GitHub App authorization.');
   const config = roleSettings(role, env);
-  const key = config.keychain ? await keychainKey(role) : config.keyFile
-    ? await readKey(config.keyFile, 'utf8') : config.inlineKey.replace(/\\n/g, '\n');
+  const key = await appPrivateKey(role, config, readKey, keychainKey);
   const jwt = signAppJwt(config.id, key, now());
   const request = async (endpoint, authorization, method = 'GET', body) => {
     let response;
@@ -144,5 +143,33 @@ async function getRoleInstallationToken(role, repository, {
   return { token: authorized.token, login: config.slug + '[bot]', expiresAt: authorized.expires_at };
 }
 
+function appPrivateKey(role, config, readKey, keychainKey) {
+  return config.keychain ? keychainKey(role) : config.keyFile
+    ? readKey(config.keyFile, 'utf8') : config.inlineKey.replace(/\\n/g, '\n');
+}
+
+async function createLindseyResolverIdentity({ env = process.env, fetchImpl = globalThis.fetch,
+  readKey = readFile, keychainKey = readKeychainKey, now = Date.now } = {}) {
+  const role = 'lindsey';
+  const config = roleSettings(role, env);
+  const key = await appPrivateKey(role, config, readKey, keychainKey);
+  let webhook;
+  if (!env.LINDSEY_RESOLVE_URL) {
+    try {
+      const response = await fetchImpl(API + '/app/hook/config', {
+        headers: { Authorization: 'Bearer ' + signAppJwt(config.id, key, now()),
+          Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+        redirect: 'error', signal: AbortSignal.timeout(15000)
+      });
+      if (response.ok) webhook = (await response.json()).url;
+    } catch { /* Report a setup error without printing the App configuration. */ }
+    if (!webhook) throw Error('Could not discover the Lindsey resolver from the GitHub App webhook. Check the App webhook configuration.');
+  }
+  return {
+    appId: config.id, webhook,
+    sign: payload => createSign('RSA-SHA256').update(payload).sign(key, 'base64url')
+  };
+}
+
 module.exports = { separateAppsEnabled, roleSettings, workflowBotLogin,
-  stripAppSecrets, getRoleInstallationToken };
+  stripAppSecrets, getRoleInstallationToken, createLindseyResolverIdentity };
