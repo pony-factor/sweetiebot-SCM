@@ -55,7 +55,7 @@ function verifyCommit(commit, expected, author, { authorLogin, allowBot = false,
 
 
 async function humanSquashMerge(repository, number, { api, nativeAPI, gitToken, allowHistoryRewrite = false, localGitMerge = false, expected: selected, localMerge, trailerSeparatorStyle,
-  directLocal = false, repositoryPath, requireSignedCommit = false,
+  directLocal = false, repositoryPath, requireSignedCommit = false, onProgress,
   getAppActor = require('../github/app-commit-identity').configuredMergeActor } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
@@ -70,6 +70,10 @@ async function humanSquashMerge(repository, number, { api, nativeAPI, gitToken, 
   const base = original?.base?.ref;
   const head = original?.head?.ref;
   const headSha = original?.head?.sha;
+  if (directLocal && (original?.mergeable === false || original?.mergeable_state === 'dirty')) {
+    throw Object.assign(Error('Resolve overlapping edits on this pull request before squashing.'),
+      { code: 'SWEETIEBOT_MERGE_CONFLICT' });
+  }
   if (original?.state !== 'open' || original.draft || original.merged_at ||
       original?.stack || original.mergeable !== true ||
       original?.head?.repo?.full_name?.toLowerCase() !== repository.toLowerCase() ||
@@ -98,7 +102,7 @@ async function humanSquashMerge(repository, number, { api, nativeAPI, gitToken, 
     localMerge ||= require('./local-human-squash').humanSquashMerge;
     return localMerge(repository, number, {
       api, nativeAPI, gitToken, localGitMerge: true, allowHistoryRewrite: false, getAppActor: async () => appActor,
-      directLocal, repositoryPath, requireSignedCommit,
+      directLocal, repositoryPath, requireSignedCommit, onProgress,
       expected: { headSha, baseSha, head, base, title: original.title }
     });
   }

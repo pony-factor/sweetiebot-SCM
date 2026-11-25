@@ -10,7 +10,7 @@ const DRAFT_MAX_AGE_MS = 12 * DRAFT_IDLE_MS;
 function mergeFailure(error) {
   const message = String(error?.message || 'Merge failed. Check GitHub.');
   const kind = error?.code === 'SQUASH_AUTHOR_CHOICE_REQUIRED' ? 'method'
-    : /resolve the overlapping edits|merge conflicts? detected|conflicting files/i.test(message) ? 'conflict' : 'blocked';
+    : error?.code === 'SWEETIEBOT_MERGE_CONFLICT' || /resolve (?:the )?overlapping edits|merge conflicts? detected|conflicting files/i.test(message) ? 'conflict' : 'blocked';
   return { kind, message };
 }
 
@@ -66,7 +66,7 @@ async function createDraftHandoff(publish) {
       if (state.mergeResult) return json(200, state.mergeResult);
       if (state.merging) return fail(409, 'Merge already in progress.');
       const merge = kind === 'merge-history' ? state.onMergePreservingCommits : kind === 'merge-local-signed' ? state.onMergeLocalSigned : state.onMerge;
-      if ((kind === 'merge-history' || kind === 'merge-local-signed') && state.mergeChoice !== 'SQUASH_AUTHOR_CHOICE_REQUIRED') return fail(409, 'Review the squash attribution choice first.');
+      if (kind === 'merge-history' && state.mergeChoice !== 'SQUASH_AUTHOR_CHOICE_REQUIRED') return fail(409, 'Review the squash attribution choice first.');
       if (typeof merge !== 'function') return fail(503, 'Merging is unavailable in this confirmation window.');
       state.merging = true;
       state.mergeProgress = { stage: 'starting', startedAt: Date.now(), updatedAt: Date.now() };
@@ -83,7 +83,7 @@ async function createDraftHandoff(publish) {
         delete state.mergeIssue;
         return json(200, result);
       } catch (error) {
-        if (error.code) state.mergeChoice = error.code;
+        if (error.code === 'SQUASH_AUTHOR_CHOICE_REQUIRED') state.mergeChoice = error.code;
         state.mergeIssue = mergeFailure(error);
         state.errors.merge = state.mergeIssue.message;
         return fail(409, state.errors.merge);
