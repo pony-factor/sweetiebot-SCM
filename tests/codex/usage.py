@@ -39,6 +39,25 @@ class CodexUsageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'native execution mode controls'):
             codex_usage.transform(original.replace('React.useState', 'React.futureState'), pie_indicator=True)
 
+    def test_local_usage_menu_renders_its_native_contents_directly(self):
+        original = FIXTURE + """
+function summary(){let heading={id:`composer.mode.rateLimit.heading`},panel;panel=(0,R.jsx)(Submenu,{trigger:row,children:body});return panel}
+const trigger={"aria-label":label,"data-composer-navigation-target":`run-location`,categoryLabel:null,collapse:`xs`,icon:glyph,indicator:`chevron`,value:label,valueClassName:`max-w-40`};
+let usage=available&&(0,R.jsx)(summary,{rateLimits:limits,activeLimitName:active,planType:plan,selectedModel:model});
+const menu={className:`flex max-w-78 min-w-[175px] flex-col`,children:[heading,local,remote,worktree,start,divider,footer]};
+"""
+        local = codex_usage.transform(original, pie_indicator=True)
+        self.assertIn('"aria-label":`Usage remaining`', local)
+        self.assertIn('"data-scm-toolkit-direct-usage":true', local)
+        self.assertIn('panel=(body)', local)
+        self.assertIn('min-w-[175px] flex-col`,children:usage', local)
+        self.assertEqual(codex_usage.transform(local, pie_indicator=True), local)
+        cloud = codex_usage.transform(local, pie_indicator=True, cloud_tasks=True)
+        self.assertIn('children:[heading,local,remote,worktree,start,divider,footer]', cloud)
+        self.assertIn('panel=(0,R.jsx)(Submenu', cloud)
+        self.assertNotIn('"data-scm-toolkit-direct-usage":true', cloud)
+        self.assertEqual(codex_usage.transform(cloud, enabled=False), original)
+
     def test_combined_usage_and_reset_patches_parse_as_es_module(self):
         original = """function label(e){return (0,R.jsx)(Thing,{id:`composer.mode.local`,rateLimit:limit})}function next(){}
 let{data:d}=query(options),u=d===void 0?null:d,plan=u?.plan_type;

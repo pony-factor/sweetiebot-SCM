@@ -313,6 +313,22 @@ def run():
         bar = page.get_by_role('progressbar', name='Five-hour Codex usage remaining')
         surface = page.locator('#meter-surface')
         page.wait_for_function('document.getElementById("meter-control").disabled')
+        # The transformed native trigger remains keyboard- and pointer-operable
+        # while non-usage location controls are hidden in the local-only view.
+        page.evaluate("""() => {
+            const trigger = document.createElement('button');
+            trigger.id = 'direct-usage';
+            trigger.setAttribute('data-composer-navigation-target', 'run-location');
+            trigger.setAttribute('data-scm-toolkit-direct-usage', 'true');
+            trigger.setAttribute('aria-label', 'Usage remaining');
+            trigger.textContent = '70%';
+            trigger.onclick = () => { trigger.dataset.opened = 'true'; };
+            document.body.append(trigger);
+        }""")
+        direct_usage = page.get_by_role('button', name='Usage remaining', exact=True)
+        direct_usage.press('Enter')
+        assert direct_usage.get_attribute('data-opened') == 'true'
+        direct_usage.evaluate('el => el.remove()')
         # Native footer label line boxes must not lift the pie above the
         # vertical center of its neighboring toolbar buttons.
         page.locator('#meter-control').evaluate('''button => {
