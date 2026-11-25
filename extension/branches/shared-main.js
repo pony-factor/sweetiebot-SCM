@@ -65,6 +65,19 @@ async function mainRoot(root, options = {}) {
   const branch = await run(['-C', original, 'branch', '--show-current']);
   if (branch === 'main') return original;
   if (branch) {
+    if (options.reuseCheckedOutMain) {
+      const registered = checkedOutMain(await run(['-C', original, 'worktree', 'list', '--porcelain', '-z']));
+      const existing = registered && await io.realpath(registered).catch(() => null);
+      if (existing && existing !== original) {
+        const commonDir = ['rev-parse', '--path-format=absolute', '--git-common-dir'];
+        const [originalGit, existingGit, existingBranch] = await Promise.all([
+          run(['-C', original, ...commonDir]),
+          run(['-C', existing, ...commonDir]).catch(() => null),
+          run(['-C', existing, 'branch', '--show-current']).catch(() => null)
+        ]);
+        if (existingGit === originalGit && existingBranch === 'main') return existing;
+      }
+    }
     const error = new Error('The original source folder is on ' + branch + '. Move that topic to its own worktree before opening shared main; its files and index were preserved.');
     error.code = 'SWEETIEBOT_ORIGINAL_ON_TOPIC';
     throw error;
@@ -155,7 +168,8 @@ async function openSharedMainWorkspace(vscode, options = {}) {
     if (folder.uri.scheme !== 'file') throw new Error('Shared main requires local Git folders.');
     const location = await fs.realpath(folder.uri.fsPath);
     const root = await fs.realpath(await run(['-C', location, 'rev-parse', '--show-toplevel']));
-    folders.push({ path: path.join(await mainRoot(root, options), path.relative(root, location)), name: folder.name });
+    const main = await mainRoot(root, { ...options, reuseCheckedOutMain: true });
+    folders.push({ path: path.join(main, path.relative(root, location)), name: folder.name });
   }
   if (!folders.length) throw new Error('Open a local Git workspace first.');
   return openFolders(vscode, folders, { ...options, forceNewWindow: options.forceNewWindow !== false });
@@ -369,7 +383,7 @@ async function routeBranch(vscode, repository, { branch, create = false, adoptEx
   let original = await originalRepository(root, options);
   const current = await run(['-C', root, 'branch', '--show-current']);
   if (branch === 'main') {
-    const main = await mainRoot(root, options);
+    const main = await mainRoot(root, { ...options, reuseCheckedOutMain: true });
     if (root === main && current === 'main') return true;
     await switchRepository(vscode, root, main, options);
     return true;

@@ -389,6 +389,25 @@ async function openedRoot(result) {
     await assert.rejects(openIndependentWorkspace(fallbackEditor, options),
       error => error.code === 'SWEETIEBOT_ORIGINAL_ON_TOPIC');
     assert.equal(fallbackEditor.commands.calls.length, 0, 'Never create a substitute main window');
+    const oldMain = path.join(baseDirectory, 'repo', 'old-main', 'repo');
+    await fs.mkdir(path.dirname(oldMain), {recursive: true});
+    git('-C', root, 'worktree', 'add', oldMain, 'main');
+    await fs.writeFile(path.join(oldMain, 'pending.txt'), 'keep pending main edits');
+    const home = editor(root);
+    home.workspace.workspaceFile = { scheme: 'file', fsPath: first.target };
+    let homeFolders;
+    home.workspace.updateWorkspaceFolders = (_start, _count, ...folders) => {
+      homeFolders = folders;
+      return true;
+    };
+    assert.equal(await routeBranch(home, { rootUri: { fsPath: root } }, { ...options, branch: 'main' }), true);
+    assert.deepEqual(homeFolders, [{ uri: { fsPath: oldMain }, name: 'Repo' }],
+      'Home uses the existing main checkout in the current window');
+    assert.equal(await openedRoot(await openIndependentWorkspace(editor(root), options)), oldMain);
+    assert.equal(await reconnectManagedMain(editor(oldMain), options), false,
+      'Background reconnection leaves the existing main window in place');
+    assert.equal(git('-C', oldMain, 'branch', '--show-current'), 'main');
+    assert.equal(await fs.readFile(path.join(oldMain, 'pending.txt'), 'utf8'), 'keep pending main edits');
     assert.equal(git('-C', root, 'branch', '--show-current'), 'external-topic');
     assert.equal(git('-C', root, 'status', '--porcelain'), originalStatus);
     assert.equal(git('-C', root, 'diff', '--cached'), originalIndex);
@@ -408,11 +427,7 @@ async function openedRoot(result) {
     assert.equal(git('-C', newFromOriginal, 'diff', '--cached'), originalIndex);
     // Reclaim an old managed main without changing files, commits, or staging.
     git('-C', root, 'switch', '--detach', 'main');
-    const oldMain = path.join(baseDirectory, 'repo', 'old-main', 'repo');
-    await fs.mkdir(path.dirname(oldMain), {recursive: true});
-    git('-C', root, 'worktree', 'add', oldMain, 'main');
     assert.equal(await originalRepository(oldMain, options), root);
-    await fs.writeFile(path.join(oldMain, 'pending.txt'), 'keep pending main edits');
     await assert.rejects(mainRoot(oldMain, options), /pending edits/);
     assert.equal(git('-C', oldMain, 'branch', '--show-current'), 'main');
     assert.equal(git('-C', root, 'branch', '--show-current'), '');
