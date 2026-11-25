@@ -43,6 +43,21 @@ from tests.fixtures.installer_support import (
 
 
 class WindowAndGitTransformTests(unittest.TestCase):
+    def test_checkout_editor_guard_patches_single_and_batch_opens(self):
+        native = (
+            'class EditorService{'
+            'async openEditor(e,t,n){let a,b=isTyped(e)?t:e.options,rest=0;}'
+            'async openEditors(e,t,n){if(n?.validateTrust&&!await this.handleWorkspaceTrust(e))return[];return e;}'
+            'extract(){return this.extractEditorResources([])}}'
+        )
+        patches = install.checkout_editor_edits(native, 'commands')
+        self.assertEqual(len(patches), 2)
+        for old, new in patches:
+            self.assertIn('scmToolkitAllowCheckoutEditor(this,commands,', new)
+            native = native.replace(old, new)
+        self.assertIn('isTyped(e)?{editor:e}:e', native)
+        self.assertIn('filter(Boolean);if(!e.length)return[];', native)
+
     def test_native_git_repository_limit_tracks_window_and_setting(self):
         installed = install.transform_git_repository_limit(GIT_MODEL_FIXTURE)
         self.assertEqual(install.transform_git_repository_limit(installed), installed)

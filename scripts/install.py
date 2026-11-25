@@ -780,6 +780,26 @@ def pr_workspace_explorer_edits(js):
     return [(match.group(0), replacement), (original_title, new_title)]
 
 
+def checkout_editor_edits(js, command):
+    if 'this.extractEditorResources(' not in js:
+        return []
+    ident = r'[A-Za-z_$][\w$]*'
+    single = (rf'async openEditor\(({ident}),{ident},{ident}\)\{{'
+              rf'let {ident},{ident}=({ident})\(\1\)\?{ident}:\1\.options,')
+    batch = (rf'async openEditors\(({ident}),{ident},({ident})\)\{{'
+             rf'if\(\2\?\.validateTrust&&!await this\.handleWorkspaceTrust\(\1\)\)return\[\];')
+    matches = [list(re.finditer(pattern, js)) for pattern in (single, batch)]
+    if any(len(group) != 1 for group in matches):
+        raise ValueError("Unsupported VS Code build: editor checkout guard anchors do not match.")
+    one, many = (group[0] for group in matches)
+    check = f"scmToolkitAllowCheckoutEditor(this,{command},"
+    return [
+        (one[0], one[0].replace('{', f'{{if(!await {check}{one[2]}({one[1]})?{{editor:{one[1]}}}:{one[1]}))return;', 1)),
+        (many[0], many[0].replace('{', f'{{{many[1]}=(await Promise.all({many[1]}.map(async entry=>'
+         f'await {check}entry)?entry:undefined))).filter(Boolean);if(!{many[1]}.length)return[];', 1)),
+    ]
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -861,6 +881,7 @@ def edits(js=None, settings=None):
         changes.extend(browser_globe_new_tab_edits(js, home_url))
 
     if js is not None:
+        changes.extend(checkout_editor_edits(js, command))
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(window_title_status_edits(js))
         changes.extend(window_title_push_edits(js))
@@ -1584,6 +1605,8 @@ def transform(js, css, remove=False, settings=None):
         + (WORKBENCH_ASSETS / "message-bar.js").read_text()
         + "\n"
         + (WORKBENCH_ASSETS / "live-runtime.js").read_text()
+        + "\n"
+        + (WORKBENCH_ASSETS / "checkout-editor.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()

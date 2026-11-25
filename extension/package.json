@@ -19,6 +19,7 @@
     }
   },
   "activationEvents": [
+    "onCommand:sweetiebot.allowCheckoutEditor",
     "onCommand:sweetiebot.codexHandoff.pendingQueue",
     "onCommand:sweetiebot.returnHome",
     "onCommand:sweetiebot.launchDevelopment",
@@ -393,7 +394,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "description": "Use the window's primary Git checkout for Source Control, Codex, and files opened from linked worktrees."
+          "description": "Keep Source Control and Codex in the primary Git checkout and block editor opens from other linked worktrees."
         },
         "sweetiebot.automaticWorkspaceCleanup": {
           "type": "boolean",

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { saveRepositoryDocuments, moveRepositoryEditors } = require('../../extension/branches/editor-handoff');
+const { saveRepositoryDocuments, moveRepositoryEditors, allowCheckoutEditor, duringEditorCheckoutSwitch } = require('../../extension/branches/editor-handoff');
 const file = fsPath => ({ scheme: 'file', fsPath, path: fsPath });
 const root = '/source/repo', destination = '/topic/repo';
 function fixture() {
@@ -123,6 +123,36 @@ function fixture() {
     assert.equal(rerouted.calls[0][1].fsPath, path.join(active, 'file.md'));
     assert(rerouted.group.tabs.includes(unsaved));
     assert(rerouted.group.tabs.includes(missing));
+
+    const main = path.join(temporary, 'main'), topic = path.join(temporary, 'cool gray');
+    await Promise.all([fs.mkdir(main), fs.mkdir(topic)]);
+    const listing = 'worktree ' + main + '\0branch refs/heads/main\0\0worktree ' + topic + '\0branch refs/heads/cool-gray\0\0';
+    let enabled = true, selected = main;
+    const warnings = [];
+    const vscode = {
+      workspace: {
+        get workspaceFolders() { return [{ uri: file(selected) }]; },
+        getConfiguration: () => ({ get: (_, fallback) => enabled ?? fallback }),
+      },
+      extensions: { getExtension: () => undefined },
+      window: { showWarningMessage: message => warnings.push(message) },
+    };
+    const run = async (root, args) => args[0] === 'rev-parse' ? selected : listing;
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(topic, 'file.md'))], run), false);
+    assert.match(warnings.at(-1), /Blocked file\.md from the cool-gray worktree\. This window is on main/);
+    selected = topic;
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run), false);
+    assert.match(warnings.at(-1), /Blocked file\.md from the main worktree\. This window is on cool-gray/);
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(topic, 'file.md'))], run), true);
+    enabled = false;
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run), true);
+    assert.equal(warnings.length, 2);
+    enabled = true;
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(temporary, 'unrelated.md'))], run), true);
+    assert.equal(await allowCheckoutEditor(vscode, [{ scheme: 'git', query: JSON.stringify({ path: path.join(main, 'file.md') }) }], run), false);
+    assert.equal(await duringEditorCheckoutSwitch(vscode, () =>
+      allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run)), true);
+    assert.equal(await allowCheckoutEditor(vscode, [file(path.join(main, 'file.md'))], run), false);
   } finally {
     await fs.rm(temporary, { recursive: true, force: true });
   }
