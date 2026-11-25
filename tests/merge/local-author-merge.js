@@ -164,6 +164,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,pending=false,
         }
         else {
           assert.equal(result.status,'published');assert.equal(result.githubMerged,false);
+          assert.equal(result.publicationVerified,!githubCannotVerifySignature);
           assert.equal(result.sha,await branch('main'));assert.equal(pushes.length,1);
           assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha);
           assert.equal(await inRemote('show',result.sha+':file.txt'),'finished feature');
@@ -171,6 +172,14 @@ async function fixture({protectedBase=false,rules=[],failed=false,pending=false,
           assert.equal(result.signed,requireSignedCommit||localSigningEnabled);
           if(result.signed) {assert.equal(result.verified,!githubCannotVerifySignature);await inRemote('verify-commit',result.sha);}
           const repeated=await action();assert.equal(repeated.sha,result.sha);assert.equal(repeated.status,'published');assert.equal(pushes.length,1,'A receipt prevents duplicate publication');
+          assert.equal(repeated.publicationVerified,result.publicationVerified);
+          if(kefaniaOpener) {
+            const standard=await action({directLocal:false,requireSignedCommit:false,getAppActor:async()=>null});
+            assert.equal(standard.sha,result.sha,'A GitHub squash retry recognizes the old locally signed publication');
+            assert.equal(standard.status,'published');
+            assert.equal(nativeMerged,false,'An existing publication must not trigger a second squash on GitHub');
+            assert.equal(pushes.length,1);
+          }
         }
       }
       assert.equal(await branch('feature'),headSha);assert.equal(manuallyClosed,false);

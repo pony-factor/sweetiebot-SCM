@@ -229,6 +229,45 @@ async function humanSquashMerge(repository, number, {
       author, base, baseSha, number,
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
+  if (operation === 'merge') {
+    // A durable pre-push receipt prevents duplicate publication on retry.
+    const receipt = await fs.readFile(receiptPath, 'utf8').then(JSON.parse).catch(error => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (receipt) {
+      const localProposal = primaryAuthor ? prepared : require('./commit-proposal').validateCommitProposal(
+        commitProposal, squashMessage(original.title, number, commits, { primaryAuthor: author }));
+      const localMessage = localProposal.title + '\n\n' + localProposal.message;
+      if (!SHA.test(receipt.sha || '') || !SHA.test(receipt.baseSha || '') ||
+          !SHA.test(receipt.tree || '') || receipt.headSha !== originalSha || receipt.base !== base ||
+          receipt.message !== localMessage) throw Error('A previous local squash receipt needs manual reconciliation; no new squash was attempted.');
+      const sha = receipt.sha;
+      try {
+        if (sha !== baseSha) {
+          const compare = await api(endpoint + '/compare/' + sha + '...' + baseSha);
+          if (!['ahead', 'identical'].includes(compare?.status)) throw Error('Previous squash is not an ancestor of the destination.');
+        }
+        const destination = await api(endpoint + '/commits/' + sha);
+        verifyCommit(destination, receipt.message, author, { committer: receipt.committer });
+        if (destination.parents?.length !== 1 || destination.parents[0].sha !== receipt.baseSha ||
+            destination.commit?.tree?.sha !== receipt.tree) throw Error('Previous squash ancestry or tree differs.');
+        const verified = destination.commit?.verification?.verified === true;
+        const current = await api(prPath);
+        const githubMerged = (!receipt.signed || verified) && current?.merged === true &&
+          current.merge_commit_sha === sha && current.head?.sha === originalSha && current.base?.ref === base;
+        return { merged: githubMerged, githubMerged, published: true, publicationVerified: !receipt.signed || verified,
+          status: githubMerged ? 'merged' : 'published',
+          sha, number, base, baseSha: receipt.baseSha, headSha: originalSha, previousHeadSha: originalSha, author,
+          method: receipt.signed ? 'local-signed-squash' : 'local-squash', signed: receipt.signed, verified,
+          reason: receipt.signed && !verified ? 'Previous squash is published, but GitHub has not verified its signature.'
+            : (!githubMerged ? 'Previous squash is already published; GitHub has not marked the PR merged.' : undefined),
+          url: 'https://github.com/' + repository + '/commit/' + sha };
+      } catch (error) {
+        throw Object.assign(Error('Previous squash ' + sha + ' needs manual reconciliation before retrying: ' + error.message), { publishedSha: sha });
+      }
+    }
+  }
   // GitHub can squash a clean PR without a preliminary sync.
   if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
@@ -261,39 +300,6 @@ async function humanSquashMerge(repository, number, {
     status: checks.state === 'pending' ? 'waiting' : 'checks_failed', sha: originalSha, base, baseSha,
     githubChecks: true, reason: describeMergeChecks(checks) });
   if (directLocal && operation === 'merge') {
-    // A durable pre-push receipt prevents duplicate publication on retry.
-    const receipt = await fs.readFile(receiptPath, 'utf8').then(JSON.parse).catch(error => {
-      if (error.code === 'ENOENT') return null;
-      throw error;
-    });
-    if (receipt) {
-      if (!SHA.test(receipt.sha || '') || !SHA.test(receipt.baseSha || '') ||
-          !SHA.test(receipt.tree || '') || receipt.headSha !== originalSha || receipt.base !== base ||
-          receipt.message !== preparedMessage) throw Error('A previous local squash receipt needs manual reconciliation; no new squash was attempted.');
-      const sha = receipt.sha;
-      try {
-        if (sha !== baseSha) {
-          const compare = await api(endpoint + '/compare/' + sha + '...' + baseSha);
-          if (!['ahead', 'identical'].includes(compare?.status)) throw Error('Previous squash is not an ancestor of the destination.');
-        }
-        const destination = await api(endpoint + '/commits/' + sha);
-        verifyCommit(destination, receipt.message, author, { committer: receipt.committer });
-        if (destination.parents?.length !== 1 || destination.parents[0].sha !== receipt.baseSha ||
-            destination.commit?.tree?.sha !== receipt.tree) throw Error('Previous squash ancestry or tree differs.');
-        const verified = destination.commit?.verification?.verified === true;
-        const current = await api(prPath);
-        const githubMerged = (!receipt.signed || verified) && current?.merged === true &&
-          current.merge_commit_sha === sha && current.head?.sha === originalSha && current.base?.ref === base;
-        return { merged: githubMerged, githubMerged, published: true, status: githubMerged ? 'merged' : 'published',
-          sha, number, base, baseSha: receipt.baseSha, headSha: originalSha, previousHeadSha: originalSha, author,
-          method: receipt.signed ? 'local-signed-squash' : 'local-squash', signed: receipt.signed, verified,
-          reason: receipt.signed && !verified ? 'Previous squash is published, but GitHub has not verified its signature.'
-            : (!githubMerged ? 'Previous squash is already published; GitHub has not marked the PR merged.' : undefined),
-          url: 'https://github.com/' + repository + '/commit/' + sha };
-      } catch (error) {
-        throw Object.assign(Error('Previous squash ' + sha + ' needs manual reconciliation before retrying: ' + error.message), { publishedSha: sha });
-      }
-    }
     const policyBlocked = original.mergeable !== true ||
       (original.mergeable_state && !['clean', 'unstable'].includes(original.mergeable_state));
     if (initialChecks.state === 'failed' || (policyBlocked && initialChecks.state === 'pending')) {
@@ -407,7 +413,7 @@ async function humanSquashMerge(repository, number, {
         throw Object.assign(Error('Local squash ' + sha + ' has an uncertain push result. Inspect the destination before retrying: ' + (pushError || error).message), { publishedSha: sha });
       }
       pushedSha = sha;
-      let verified = false, githubMerged = false, reason;
+      let verified = false, publicationVerified = false, githubMerged = false, reason;
       try {
         const destination = await api(endpoint + '/commits/' + sha);
         verifyCommit(destination, preparedMessage, author, { committer: identity.committer });
@@ -417,11 +423,13 @@ async function humanSquashMerge(repository, number, {
         }
         verified = destination.commit?.verification?.verified === true;
         if (signed && !verified) throw Error('GitHub has not verified the local signature.');
+        publicationVerified = true;
         const current = await api(prPath);
         githubMerged = current?.merged === true && current.merge_commit_sha === sha &&
           current.head?.sha === originalSha && current.head?.ref === head && current.base?.ref === base;
       } catch (error) { reason = error.message; }
-      return { merged: githubMerged, githubMerged, published: true, status: githubMerged ? 'merged' : 'published',
+      return { merged: githubMerged, githubMerged, published: true, publicationVerified,
+        status: githubMerged ? 'merged' : 'published',
         sha, number, base, baseSha, headSha: originalSha, previousHeadSha: originalSha, author, additionalFiles,
         method: signed ? 'local-signed-squash' : 'local-squash', signed, verified,
         reason: reason || (!githubMerged ? 'The squash is published; GitHub has not confirmed the PR as merged. Do not publish again.' : undefined),
