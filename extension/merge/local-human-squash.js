@@ -1,7 +1,7 @@
 'use strict';
 
-// Preserve PR history: syncs append commits, and successful merges require
-// GitHub's merge API and independently verified merged state.
+// Preserve PR history: ordinary local squashes publish one destination commit;
+// Lindsey's assisted merges retain GitHub-confirmed merge finalization.
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const fs = require('node:fs/promises');
@@ -21,10 +21,13 @@ const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh
 
 const { verifiedHumanAuthor, verifyCommit } = require('./human-squash-merge');
 const { configuredMergeActor } = require('../github/app-commit-identity');
+const { signingEnabled, commitIdentity, attributedCommitTree, verifyLocalCommitIdentity } = require('./commit-signing');
 
 async function humanSquashMerge(repository, number, {
   api, nativeAPI, git, gitToken, expected, resolutionPatch = null, resolutionHunks = [], repairChecks = false, checkOptions = {}, decisions = [], operation = 'merge', onProgress = () => {},
   localGitMerge = false, allowHistoryRewrite = false, rewriteReason = '', offerAuthorChoice = false, requireSignedCommit = false, commitProposal,
+  directLocal = false, repositoryPath,
+  publicationDirectory = path.join(os.homedir(), '.sweetiebot', 'local-squash-receipts'),
   temporaryDirectory = () => fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-human-squash-')),
   getAppActor = configuredMergeActor
 } = {}) {
@@ -32,7 +35,7 @@ async function humanSquashMerge(repository, number, {
       !expected || !SHA.test(expected.headSha || '') || !SHA.test(expected.baseSha || '')) {
     throw Error('Invalid repository or PR number.');
   }
-  const appActor = await getAppActor(repository);
+  const appActor = directLocal ? null : await getAppActor(repository);
   if (appActor) {
     api = appActor.api;
     gitToken = appActor.gitToken;
@@ -122,18 +125,24 @@ async function humanSquashMerge(repository, number, {
   // server-generated GitHub squash to use the local key. An explicitly chosen
   // local-signer operation still cannot be replaced with a native merge.
   const signLocally = requireSignedCommit;
-  // A human-opened PR retains its author in a native squash. Keep Lindsey as
-  // the merge actor when App mode is enabled; never switch to a human token.
+  // A native squash uses the PR opener as Git author. For Kefania PRs,
+  // preserve the verified human credit in the commit's author trailers.
+  const kefaniaOpener = original.user?.type === 'Bot' &&
+    original.user.login?.toLowerCase() === 'kefania-pony[bot]';
   // Installation-scoped repository reads can omit administrative merge settings.
   // Only an explicit false disables this route; GitHub's merge endpoint still
   // enforces the repository setting, checks and branch protection.
-  const nativeSquash = !signLocally && repositoryInfo.allow_squash_merge !== false && original.user?.type === 'User' &&
-    original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase();
+  const nativeSquash = !directLocal && !signLocally && repositoryInfo.allow_squash_merge !== false &&
+    (kefaniaOpener || (original.user?.type === 'User' &&
+      original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase()));
   decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
-  const prepared = require('./commit-proposal').validateCommitProposal(commitProposal, squashMessage(original.title, number, commits, { primaryAuthor: author }));
+  const primaryAuthor = kefaniaOpener && nativeSquash && operation === 'merge' ? undefined : author;
+  const prepared = require('./commit-proposal').validateCommitProposal(commitProposal,
+    squashMessage(original.title, number, commits, { primaryAuthor }));
   progress('message-prepared', { title: prepared.title, description: prepared.message, proposed: prepared.proposed, adjusted: prepared.adjusted });
   const preparedMessage = prepared.title + '\n\n' + prepared.message;
+  const receiptPath = path.join(publicationDirectory, repository.replace('/', '--') + '-' + number + '.json');
   // Retrying after GitHub rejects pending checks or reviews must NOT rewrite
   // the same PR head again: doing so would restart checks on every click.
   const existing = commits.length === 1 ? commits[0].commit.message.replace(/\r\n/g, '\n').trimEnd() : '';
@@ -153,6 +162,7 @@ async function humanSquashMerge(repository, number, {
   }
   let additionalFiles = [];
   const finish = async (sha, expected, method = 'rebase') => {
+    const creditAsCoauthor = method === 'squash' && kefaniaOpener;
     progress('waiting-checks', { sha, title: operationCommitTitle });
     const checks = await waitForMergeChecks(api, repository, sha, {
       ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
@@ -173,7 +183,7 @@ async function humanSquashMerge(repository, number, {
     progress('merging', { sha, title: operationCommitTitle });
     let outcome;
     try {
-      if (method === 'squash' && nativeAPI && !appActor) {
+      if (method === 'squash' && nativeAPI && !appActor && !creditAsCoauthor) {
         if (typeof original.node_id !== 'string' || !original.node_id) throw Error('Missing GitHub PR node ID; refusing an unbound merge.');
         const input = { pullRequestId: original.node_id, expectedHeadOid: sha,
           authorEmail: author.email, commitHeadline: prepared.title, commitBody: prepared.message };
@@ -206,7 +216,12 @@ async function humanSquashMerge(repository, number, {
       throw Error('GitHub did not confirm the merge; the PR branch remains available.');
     }
     const destination = await api(endpoint + '/commits/' + outcome.sha);
-    verifyCommit(destination, expected, author);
+    if (creditAsCoauthor) {
+      if (destination.parents?.length !== 1) throw Error('GitHub merged the PR, but the squash ancestry could not be verified.');
+      verifyCommit(destination, expected, undefined, { authorLogin: original.user.login, allowBot: true });
+    } else {
+      verifyCommit(destination, expected, author);
+    }
     const merged = await api(prPath);
     if (!merged.merged || merged.base?.ref !== base || merged.merge_commit_sha !== outcome.sha) {
       throw Error('PR merge bookkeeping or target was not verified; inspect GitHub.');
@@ -215,21 +230,73 @@ async function humanSquashMerge(repository, number, {
       author, base, baseSha, number,
       url: 'https://github.com/' + repository + '/commit/' + outcome.sha };
   };
-  // GitHub can squash a clean human-opened PR without a preliminary sync.
+  // GitHub can squash a clean PR without a preliminary sync.
   if (operation === 'merge' && !needsResolution && original.mergeable === true && nativeSquash && initialChecks.state !== 'failed') {
     return finish(originalSha, preparedMessage, 'squash');
   }
-  if (operation === 'merge' && alreadyPrepared && !needsResolution && !signLocally && !appActor) {
+  if (!directLocal && operation === 'merge' && alreadyPrepared && !needsResolution && !signLocally && !appActor) {
     const parent = await api(endpoint + '/commits/' + originalSha);
     if (parent.parents?.length === 1 && parent.parents[0].sha === baseSha && repositoryInfo.allow_rebase_merge === true) return finish(originalSha, existing);
     // A different base requires a new integrated tree and checks, not a blind retry.
   }
   // Discover real conflicts even if final merge attribution is unavailable.
   // Otherwise the automatic branch-only repair queue never receives them.
-  if (operation === 'merge' && !nativeSquash && original.mergeable === true && !needsResolution) return {
+  if (!directLocal && operation === 'merge' && !nativeSquash && original.mergeable === true && !needsResolution) return {
     merged: false, status: 'blocked', number, headSha: originalSha, base, baseSha,
     reason: 'A genuine GitHub squash merge cannot satisfy the required human attribution and signing with the current PR opener or authentication. No commit was published, no branch was rewritten, and no PR was closed.'
   };
+  const checkBaseWritable = async () => {
+    const branch = await api(endpoint + '/branches/' + encodeURIComponent(base));
+    if (branch.protected !== false) throw Error('The base branch is protected; local Git cannot bypass its merge policy.');
+    if (branch.commit?.sha !== baseSha) throw refreshBase();
+    let rules;
+    try { rules = await api(endpoint + '/rules/branches/' + encodeURIComponent(base)); }
+    catch (error) {
+      if (!(repositoryInfo.private === true && error.status === 403 &&
+          /^Upgrade to GitHub Pro or make this repository public to enable this feature\.?$/i.test(error.githubMessage || ''))) throw error;
+      rules = [];
+    }
+    if (!Array.isArray(rules) || rules.length) throw Error('The base has active branch rules; local Git will not bypass them.');
+  };
+  if (directLocal && operation === 'merge') {
+    // A durable pre-push receipt prevents duplicate publication on retry.
+    const receipt = await fs.readFile(receiptPath, 'utf8').then(JSON.parse).catch(error => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (receipt) {
+      if (!SHA.test(receipt.sha || '') || !SHA.test(receipt.baseSha || '') ||
+          !SHA.test(receipt.tree || '') || receipt.headSha !== originalSha || receipt.base !== base ||
+          receipt.message !== preparedMessage) throw Error('A previous local squash receipt needs manual reconciliation; no new squash was attempted.');
+      const sha = receipt.sha;
+      try {
+        if (sha !== baseSha) {
+          const compare = await api(endpoint + '/compare/' + sha + '...' + baseSha);
+          if (!['ahead', 'identical'].includes(compare?.status)) throw Error('Previous squash is not an ancestor of the destination.');
+        }
+        const destination = await api(endpoint + '/commits/' + sha);
+        verifyCommit(destination, receipt.message, author, { committer: receipt.committer });
+        if (destination.parents?.length !== 1 || destination.parents[0].sha !== receipt.baseSha ||
+            destination.commit?.tree?.sha !== receipt.tree) throw Error('Previous squash ancestry or tree differs.');
+        const verified = destination.commit?.verification?.verified === true;
+        const current = await api(prPath);
+        const githubMerged = (!receipt.signed || verified) && current?.merged === true &&
+          current.merge_commit_sha === sha && current.head?.sha === originalSha && current.base?.ref === base;
+        return { merged: githubMerged, githubMerged, published: true, status: githubMerged ? 'merged' : 'published',
+          sha, number, base, baseSha: receipt.baseSha, headSha: originalSha, previousHeadSha: originalSha, author,
+          method: receipt.signed ? 'local-signed-squash' : 'local-squash', signed: receipt.signed, verified,
+          reason: receipt.signed && !verified ? 'Previous squash is published, but GitHub has not verified its signature.'
+            : (!githubMerged ? 'Previous squash is already published; GitHub has not marked the PR merged.' : undefined),
+          url: 'https://github.com/' + repository + '/commit/' + sha };
+      } catch (error) {
+        throw Object.assign(Error('Previous squash ' + sha + ' needs manual reconciliation before retrying: ' + error.message), { publishedSha: sha });
+      }
+    }
+    if (original.mergeable !== true || (original.mergeable_state && !['clean', 'unstable'].includes(original.mergeable_state))) {
+      throw Error('The PR must be confirmed mergeable with no outstanding merge policy blocker.');
+    }
+    await checkBaseWritable();
+  }
   if (operation === 'sync') await checkHeadWritable();
   let temp, pushedSha, conflicts = [];
   try { await git('check-ref-format', '--branch', base); await git('check-ref-format', '--branch', head); }
@@ -258,9 +325,103 @@ async function humanSquashMerge(repository, number, {
       throw Error('Selected base or head changed during fetch; restart from a fresh PR snapshot.');
     }
     if (liveBase !== baseSha) throw refreshBase();
-    const finishLocalSquash = async () => ({ merged: false, additionalFiles, status: 'blocked', number,
-      headSha: originalSha, base, baseSha,
-      reason: 'Cannot complete a genuine GitHub squash merge with the required human attribution and signing under the current authentication. No squash was pushed and no PR was closed. PR branch history must not be rewritten.' });
+    const finishLocalSquash = async finalTree => {
+      if (!directLocal) return { merged: false, additionalFiles, status: 'blocked', number,
+        headSha: originalSha, base, baseSha,
+        reason: 'Cannot complete a genuine GitHub squash merge with the required human attribution and signing under the current authentication. No squash was pushed and no PR was closed. PR branch history must not be rewritten.' };
+      if (finalTree === await inRepo('rev-parse', liveBase + '^{tree}')) {
+        throw Error('Squash would make no changes; refusing empty commit.');
+      }
+      const checks = await waitForMergeChecks(api, repository, originalSha, {
+        ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
+        onPoll: checks => progress('checks-polled', { sha: originalSha, ...checks })
+      });
+      if (checks.state !== 'passed') return { merged: false, number, additionalFiles,
+        status: checks.state === 'pending' ? 'waiting' : 'checks_failed', sha: originalSha, base, baseSha,
+        reason: 'PR-head checks have not passed; no squash was published.' };
+      const samePR = current => current?.state === 'open' && !current.draft && !current.merged_at &&
+        !current.stack && current.mergeable === true &&
+        (!current.mergeable_state || ['clean', 'unstable'].includes(current.mergeable_state)) &&
+        current.title === original.title && current.head?.sha === originalSha &&
+        current.head?.ref === head && current.base?.ref === base;
+      if (!samePR(await api(prPath))) throw Error('Selected PR changed before local squash; nothing was pushed.');
+      await checkBaseWritable();
+      // The isolated checkout must use the selected workspace's effective signing
+      // configuration, not a different checkout's or an App's signing identity.
+      if (repositoryPath) {
+        for (const key of ['user.name', 'user.email', 'user.signingkey', 'commit.gpgsign',
+          'gpg.format', 'gpg.program', 'gpg.openpgp.program', 'gpg.x509.program',
+          'gpg.ssh.program', 'gpg.ssh.allowedSignersFile', 'gpg.ssh.revocationFile', 'gpg.ssh.defaultKeyCommand']) {
+          const value = await git('-C', repositoryPath, 'config', '--get', key).catch(error => {
+            if (error.code === 1 || error.exitCode === 1 || /(?:exit(?: code)?|exited with code) 1\b/i.test(error.message)) return '';
+            throw error;
+          });
+          if (value) {
+            const isRelativePath = (key === 'user.signingkey' && /^(?:\.\.?\/|~\/)/.test(value)) ||
+              /allowedSignersFile|revocationFile/.test(key);
+            const configured = isRelativePath && !path.isAbsolute(value)
+              ? (value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : path.resolve(repositoryPath, value)) : value;
+            await inRepo('config', '--local', key, configured);
+          }
+        }
+      }
+      const signed = requireSignedCommit || await signingEnabled(inRepo);
+      let identity;
+      if (signed) identity = await commitIdentity(inRepo, author, true);
+      else {
+        const name = await inRepo('config', '--get', 'user.name');
+        const email = await inRepo('config', '--get', 'user.email');
+        identity = { author, committer: { name, email }, signed: false };
+      }
+      const messageFile = path.join(temp, '.git', 'sweetiebot-squash-message');
+      await fs.writeFile(messageFile, preparedMessage + '\n', { mode: 0o600 });
+      const sha = await attributedCommitTree({ directory: temp, tree: finalTree,
+        parents: [baseSha], messageFile, identity });
+      if (!SHA.test(sha) || await inRepo('show', '-s', '--format=%P', sha) !== baseSha ||
+          await inRepo('rev-parse', sha + '^{tree}') !== finalTree) {
+        throw Error('Local Git did not create the intended one-parent squash; nothing was pushed.');
+      }
+      await verifyLocalCommitIdentity(inRepo, sha, identity);
+      const [name, email, ...body] = (await inRepo('show', '-s', '--format=%an%x00%ae%x00%B', sha)).split('\0');
+      verifyCommit({ commit: { author: { name, email }, message: body.join('\0') } }, preparedMessage, author);
+      if (!samePR(await api(prPath))) throw Error('Selected PR changed before publication; nothing was pushed.');
+      await checkBaseWritable();
+      await fs.mkdir(publicationDirectory, { recursive: true, mode: 0o700 });
+      await fs.writeFile(receiptPath, JSON.stringify({ sha, base, baseSha, headSha: originalSha, tree: finalTree,
+        message: preparedMessage, committer: identity.committer, signed }), { mode: 0o600, flag: 'wx' });
+      progress('pushing-squash-base', { sha, title: prepared.title });
+      // A failed acknowledgement may still mean a successful push. Never retry
+      // a possibly published commit; reconcile against the remote ancestry.
+      let pushError;
+      try { await inRepo('push', 'origin', sha + ':refs/heads/' + base); }
+      catch (error) { pushError = error; }
+      try {
+        await inRepo('fetch', '--quiet', 'origin', 'refs/heads/' + base);
+        await inRepo('merge-base', '--is-ancestor', sha, await inRepo('rev-parse', 'refs/remotes/origin/' + base));
+      } catch (error) {
+        throw Object.assign(Error('Local squash ' + sha + ' has an uncertain push result. Inspect the destination before retrying: ' + (pushError || error).message), { publishedSha: sha });
+      }
+      pushedSha = sha;
+      let verified = false, githubMerged = false, reason;
+      try {
+        const destination = await api(endpoint + '/commits/' + sha);
+        verifyCommit(destination, preparedMessage, author, { committer: identity.committer });
+        if (destination.parents?.length !== 1 || destination.parents[0].sha !== baseSha ||
+            destination.commit?.tree?.sha !== finalTree) {
+          throw Error('GitHub returned different squash ancestry or tree.');
+        }
+        verified = destination.commit?.verification?.verified === true;
+        if (signed && !verified) throw Error('GitHub has not verified the local signature.');
+        const current = await api(prPath);
+        githubMerged = current?.merged === true && current.merge_commit_sha === sha &&
+          current.head?.sha === originalSha && current.head?.ref === head && current.base?.ref === base;
+      } catch (error) { reason = error.message; }
+      return { merged: githubMerged, githubMerged, published: true, status: githubMerged ? 'merged' : 'published',
+        sha, number, base, baseSha, headSha: originalSha, previousHeadSha: originalSha, author, additionalFiles,
+        method: signed ? 'local-signed-squash' : 'local-squash', signed, verified,
+        reason: reason || (!githubMerged ? 'The squash is published; GitHub has not confirmed the PR as merged. Do not publish again.' : undefined),
+        url: 'https://github.com/' + repository + '/commit/' + sha };
+    };
     progress('inspecting-files');
     const mergeBase = await inRepo('merge-base', liveBase, liveHead);
     if (!SHA.test(mergeBase)) throw Error('No verified common ancestor.');
@@ -488,7 +649,7 @@ async function humanSquashMerge(repository, number, {
       if (pushedSha) Object.assign(error, { sha: pushedSha, previousHeadSha: originalSha });
       throw error;
     }
-    if (pushedSha) throw Object.assign(error, { preparedHead: pushedSha, originalHead: originalSha });
+    if (pushedSha) throw Object.assign(error, directLocal ? { publishedSha: pushedSha, originalHead: originalSha } : { preparedHead: pushedSha, originalHead: originalSha });
     throw error;
   } finally {
     if (temp) await fs.rm(temp, { recursive: true, force: true });

@@ -215,8 +215,9 @@ const { squashMergePullRequest } = require('../../extension/merge/pull-request')
       return {merged:true,sha:'b'.repeat(40)};
     }});
     assert.equal(autoSignedResult.merged,true);
-    assert.equal(autoSignedOptions,undefined,
-      'Local commit.gpgsign must not turn native squash into an unsupported local-signer operation');
+    assert.equal(autoSignedOptions.requireSignedCommit,true);
+    assert.equal(autoSignedOptions.directLocal,true);
+    assert.equal(autoSignedOptions.repositoryPath,signingRepo);
   } finally { await fs.rm(signingRepo,{recursive:true,force:true}); }
   // A human opener differing from the original author uses the same local path.
   let differentAuthorPrepared = false;

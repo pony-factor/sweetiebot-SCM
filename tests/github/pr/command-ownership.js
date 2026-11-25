@@ -140,13 +140,18 @@ async function main() {
     await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', {number: 652});
     assert.equal(merged.length, withoutBridge + 1, 'An unknown row cannot fall back to another selected PR');
     assert.match(errors.at(-1), /Could not identify the pull request/);
-    let activations = 0;
+    let activations = 0, gitLookups = 0;
     vscode.extensions = {getExtension(id) {
+      if (id === 'vscode.git') {
+        gitLookups++;
+        return undefined; // Workspace Git discovery is optional.
+      }
       assert.equal(id, 'github.vscode-pull-request-github');
       return {async activate() { activations++; github(); }};
     }};
     await vscode.commands.executeCommand('sweetiebot.squashMergeTreePullRequest', clicked);
     assert.equal(activations, 1, 'The first sidebar click activates its GitHub tree owner');
+    assert.equal(gitLookups, 1, 'The resolved row also attempts workspace Git discovery');
     assert.equal(merged.length, withoutBridge + 2, 'Resolve the same clicked row after lazy GitHub activation');
     for (const subscription of subscriptions) subscription.dispose();
   }

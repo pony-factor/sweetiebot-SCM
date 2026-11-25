@@ -76,7 +76,7 @@ async function createDraftHandoff(publish) {
           const stage = /^[a-z-]{1,48}$/.test(detail.stage) ? detail.stage : 'working';
           state.mergeProgress = { stage, startedAt: state.mergeProgress.startedAt, updatedAt: Date.now() };
         });
-        if (!result?.merged) throw new Error('GitHub did not confirm the merge. Check the pull request.');
+        if (!result?.merged && !result?.published) throw new Error('GitHub did not confirm the merge. Check the pull request.');
         state.mergeResult = result;
         delete state.errors.merge;
         delete state.errors.mergeHelp;

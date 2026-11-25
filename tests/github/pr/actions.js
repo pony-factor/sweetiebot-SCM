@@ -557,6 +557,30 @@ async function main() {
     'Required checks have not passed',
     'gh: branch protection prevented merge'
   ]);
+  // Workspace discovery is optional, but the selected repository's signing
+  // configuration must be forwarded when the built-in Git API is available.
+  for (const gitExports of [undefined, {}, { getAPI: () => ({ repositories: [
+    { state: { remotes: [{ fetchUrl: 'https://github.com/other/repo.git' }] }, rootUri: { fsPath: '/wrong' } },
+    { state: { remotes: [{ fetchUrl: 'https://github.com/owner/repo.git' }] }, rootUri: { fsPath: '/selected' } }
+  ] }) }]) {
+    const workspaceErrors = [];
+    let options;
+    registerGitHubPullRequestActions({
+      authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },
+      extensions: { getExtension: () => ({ activate: async () => gitExports }) },
+      commands: { getCommands: async () => [], registerCommand: (_id, fn) => { handler = fn; return { dispose() {} }; },
+        executeCommand: async () => {} },
+      ProgressLocation: { Window: 10 },
+      window: { withProgress: (_, fn) => fn(), showInformationMessage() {}, showErrorMessage: message => workspaceErrors.push(message) }
+    }, { subscriptions: [] }, async (_url, _execute, _confirm, selectedOptions) => {
+      options = selectedOptions;
+      return { merged: false, number: 12 };
+    });
+    await handler({ url, number: 12 });
+    assert.deepEqual(workspaceErrors, []);
+    assert.equal(options.directLocal, true);
+    assert.equal(options.repositoryPath, gitExports?.getAPI ? '/selected' : undefined);
+  }
   const selected = [];
   const notices = [];
   registerGitHubPullRequestActions({ authentication: { getSession: async () => ({ accessToken: 'test-vscode-session', scopes: ['repo'] }) },

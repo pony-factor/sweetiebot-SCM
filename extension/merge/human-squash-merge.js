@@ -40,11 +40,13 @@ function humanAuthor(commits) {
   return { name, email };
 }
 
-function verifyCommit(commit, expected, author, { allowBot = false, committer } = {}) {
+function verifyCommit(commit, expected, author, { authorLogin, allowBot = false, committer } = {}) {
   const message = commit?.commit?.message?.replace(/\r\n/g, '\n').trimEnd();
   const gitAuthor = commit?.commit?.author;
   if (message !== expected.trimEnd() ||
-      gitAuthor?.name !== author.name || gitAuthor?.email !== author.email ||
+      !gitAuthor?.name || !gitAuthor.email ||
+      (author && (gitAuthor.name !== author.name || gitAuthor.email !== author.email)) ||
+      (authorLogin && commit?.author?.login?.toLowerCase() !== authorLogin.toLowerCase()) ||
       (!allowBot && /\[bot\]|codex-pony/i.test(gitAuthor.name)) ||
       (committer && (commit?.commit?.committer?.name !== committer.name || commit?.commit?.committer?.email !== committer.email))) {
     throw Error('Merged commit author or exact squash message differs; do not claim a verified merge.');
@@ -53,11 +55,12 @@ function verifyCommit(commit, expected, author, { allowBot = false, committer } 
 
 
 async function humanSquashMerge(repository, number, { api, nativeAPI, gitToken, allowHistoryRewrite = false, localGitMerge = false, expected: selected, localMerge, trailerSeparatorStyle,
+  directLocal = false, repositoryPath, requireSignedCommit = false,
   getAppActor = require('../github/app-commit-identity').configuredMergeActor } = {}) {
   if (!REPO.test(repository) || !Number.isSafeInteger(number) || number <= 0) {
     throw Error('Invalid repository or PR number.');
   }
-  const appActor = await getAppActor(repository);
+  const appActor = directLocal ? null : await getAppActor(repository);
   if (appActor) { api = appActor.api; gitToken = appActor.gitToken; }
   api ||= require('../github/user-api').legacyAPI(require('./pull-request').githubApi);
 
@@ -91,10 +94,11 @@ async function humanSquashMerge(repository, number, { api, nativeAPI, gitToken, 
 
   const commits = await readCommits(async ([endpoint]) => api(endpoint), repository, number);
   const author = humanAuthor(commits);
-  if (localGitMerge || appActor) {
+  if (directLocal || localGitMerge || appActor) {
     localMerge ||= require('./local-human-squash').humanSquashMerge;
     return localMerge(repository, number, {
       api, nativeAPI, gitToken, localGitMerge: true, allowHistoryRewrite: false, getAppActor: async () => appActor,
+      directLocal, repositoryPath, requireSignedCommit,
       expected: { headSha, baseSha, head, base, title: original.title }
     });
   }
