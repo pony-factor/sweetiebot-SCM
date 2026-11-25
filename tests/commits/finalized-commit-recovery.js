@@ -48,10 +48,10 @@ async function run() {
           indexChanges: [], workingTreeChanges: [], mergeChanges: [] };
       }
     };
-    git('config', 'scm-toolkit.default-branch', 'main');
+    git('config', 'sweetiebot.default-branch', 'main');
     assert.equal(await autoPullClean(repository), false, 'Creating a merge commit requires opt-in');
     assert.equal(git('rev-parse', 'HEAD'), descendant);
-    git('config', 'scm-toolkit.auto-reconcile-finalized-commits', 'true');
+    git('config', 'sweetiebot.auto-reconcile-finalized-commits', 'true');
     assert.equal(await autoPullClean(repository), true);
     assert.equal(git('rev-parse', 'HEAD^{tree}'), tree);
     assert.equal(git('log', '-1', '--format=%P'), `${descendant} ${finalized}`);

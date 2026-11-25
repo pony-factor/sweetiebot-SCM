@@ -85,13 +85,13 @@ To connect your GitHub account to Kefania or access its advanced setup, open **S
 | **Pull requests**, **Kefania**, **Lindsey**, **GitHub** | PR drafting, merge dashboard, review and refresh preferences |
 | **Codex**, **Browser**, **Window**, **Initialization** | Codex adjustments, Integrated Browser, title-bar controls, startup, updates |
 
-Git-backed preferences are stored under `[scm-toolkit]` in the user's `~/.gitconfig`; VS Code-specific preferences are saved to VS Code User Settings. The configuration page handles both.
+Git-backed preferences are stored under `[sweetiebot]` in the user's `~/.gitconfig`; VS Code-specific preferences are saved to VS Code User Settings. The configuration page handles both.
 
 Individual command-line overrides remain supported for scripting:
 
 ```sh
-git config --global scm-toolkit.horizontal-branch-selector true
-git config --global scm-toolkit.ai-commit-model qwen2.5-coder:7b
+git config --global sweetiebot.horizontal-branch-selector true
+git config --global sweetiebot.ai-commit-model qwen2.5-coder:7b
 ```
 
 Use the live Settings page for the complete option list, defaults, and descriptions rather than relying on hardcoded examples in this README. Manual changes affecting the installed workbench may require another `python3 scripts/install.py` and a VS Code reload.
@@ -115,7 +115,7 @@ The Git wrapper is installed as `~/.local/bin/scm-toolkit-git`. If setting `git.
 
 Commit instructions are read from `~/.config/sweetiebot/commit-instructions.md`; the shared starter lives at `assets/commit-instructions.md`. They guide the title style without changing what was actually staged. The model can generate descriptions on the default branch; detailed descriptions on other branches are a separate opt-in setting.
 
-**Durable background Commit and Push is opt-in and off by default.** Direct mode commits normally. In durable mode, Sweetiebot saves the staged tree as a local temporary-title commit, finalizes the title in order, and pushes only after finalization. A macOS login agent can recover unfinished work while VS Code is closed if the Mac is awake and the user remains logged in. Do not amend, reset, or push a branch with unresolved placeholder jobs; use the recorded recovery information. The former legacy provisional mode is retired; its saved `scm-toolkit.ai-commit-async` setting no longer affects new commits. Recovery safeguards remain for unfinished legacy jobs.
+**Durable background Commit and Push is opt-in and off by default.** Direct mode commits normally. In durable mode, Sweetiebot saves the staged tree as a local temporary-title commit, finalizes the title in order, and pushes only after finalization. A macOS login agent can recover unfinished work while VS Code is closed if the Mac is awake and the user remains logged in. Do not amend, reset, or push a branch with unresolved placeholder jobs; use the recorded recovery information. The former legacy provisional mode is retired; its saved `sweetiebot.ai-commit-async` setting no longer affects new commits. Recovery safeguards remain for unfinished legacy jobs.
 
 Git hooks, GPG signing, staged/unstaged selection, and remote branch rules still apply. A preflight checks GitHub size limits for automatically generated commits. An oversized individual file requires explicit action; GitHub's diff-view limits are warnings rather than evidence that a commit is safe to split. **Normalize staged whitespace** controls eligible added-line trailing whitespace and final newlines independently of title generation.
 
@@ -212,7 +212,7 @@ Workspace Search is a **local file index**, not a complete historical archive of
 **Codex → Time → Show cannon** (off by default) enables Flawless-GPT’s cannon and minute counter beside active **Working for** and completed **Worked for** durations in the Codex sidebar. Precise elapsed times remain available, and the cannon takes priority over the Hide chat timestamps activity-label substitution.
 
 ```sh
-git config --global scm-toolkit.codex-show-cannon true
+git config --global sweetiebot.codex-show-cannon true
 python3 scripts/install.py --codex-only
 ```
 

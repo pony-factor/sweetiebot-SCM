@@ -1,5 +1,7 @@
 'use strict';
 
+const { readRepositoryGitSetting } = require('../ui/git-settings');
+
 const { execFile } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const { existsSync } = require('node:fs');
@@ -140,9 +142,10 @@ function queueRepositoryOperation(repository, operation) {
 async function gitConfig(repository, key, fallback) {
   if (!repository.rootUri?.fsPath) return fallback;
   try {
-    const { stdout } = await promisify(execFile)('git', ['config', '--get', key], {
-      cwd: repository.rootUri.fsPath, timeout: 10000
-    });
+    const stdout = await readRepositoryGitSetting(async args =>
+      (await promisify(execFile)('git', args, {
+        cwd: repository.rootUri.fsPath, timeout: 10000
+      })).stdout, key);
     return stdout.trim() || fallback;
   } catch {
     return fallback;
@@ -156,7 +159,7 @@ const resolvedDefaultBranches = new WeakMap();
 // Cache the result briefly so branch-control refreshes do not repeatedly fetch.
 async function resolveDefaultBranch(repository, remote = 'origin') {
   const cwd = repository.rootUri?.fsPath;
-  if (!cwd) return gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+  if (!cwd) return gitConfig(repository, 'sweetiebot.default-branch', 'main');
   const cached = resolvedDefaultBranches.get(repository);
   if (cached?.remote === remote && cached.expires > Date.now()) return cached.name;
   const git = async args => (await promisify(execFile)('git', args, {
@@ -164,10 +167,10 @@ async function resolveDefaultBranch(repository, remote = 'origin') {
   })).stdout.trim();
   let name;
   try {
-    name = await git(['config', '--local', '--get', 'scm-toolkit.default-branch']);
+    name = (await readRepositoryGitSetting(git, 'sweetiebot.default-branch', ['--local'])).trim();
   } catch { /* No local override. */ }
   if (!name && !(await git(['remote']))) {
-    const configured = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+    const configured = await gitConfig(repository, 'sweetiebot.default-branch', 'main');
     try {
       await git(['show-ref', '--verify', `refs/heads/${configured}`]);
       name = configured;
@@ -190,14 +193,14 @@ async function resolveDefaultBranch(repository, remote = 'origin') {
     } catch { /* No remote HEAD available locally. */ }
   }
   if (!name) {
-    const configured = await gitConfig(repository, 'scm-toolkit.default-branch', 'main');
+    const configured = await gitConfig(repository, 'sweetiebot.default-branch', 'main');
     try {
       await git(['show-ref', '--verify', `refs/heads/${configured}`]);
       name = configured;
     } catch { /* Do not guess a nonexistent branch. */ }
   }
   if (!name) {
-    throw new Error(`Could not determine this repository's default branch. Check ${remote}/HEAD or set a repository-local scm-toolkit.default-branch override.`);
+    throw new Error(`Could not determine this repository's default branch. Check ${remote}/HEAD or set a repository-local sweetiebot.default-branch override.`);
   }
   resolvedDefaultBranches.set(repository, { remote, name, expires: Date.now() + 60000 });
   return name;
@@ -208,7 +211,7 @@ async function automaticPullTarget(repository, head, remote) {
   if (head?.name === defaultBranch) {
     // Pulling from a fork's source must not redirect publishing or pushes to it.
     // An explicit pull remote wins; otherwise prefer an existing upstream remote.
-    let pullRemote = remote || await gitConfig(repository, 'scm-toolkit.pull-remote', 'auto');
+    let pullRemote = remote || await gitConfig(repository, 'sweetiebot.pull-remote', 'auto');
     if (pullRemote === 'auto') {
       const root = repository.rootUri?.fsPath;
       if (root) {
@@ -220,7 +223,7 @@ async function automaticPullTarget(repository, head, remote) {
         } catch { /* No upstream remote; use the existing publishing remote. */ }
       }
       if (pullRemote === 'auto') {
-        pullRemote = await gitConfig(repository, 'scm-toolkit.remote', head.upstream?.remote || 'origin');
+        pullRemote = await gitConfig(repository, 'sweetiebot.remote', head.upstream?.remote || 'origin');
       }
     }
     return { remote: pullRemote, name: defaultBranch };
@@ -274,7 +277,7 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   if (divergence.ahead !== 0) {
     const root = repository.rootUri?.fsPath;
     if (!root || head.name !== await resolveDefaultBranch(repository, target.remote)) return false;
-    if (await gitConfig(repository, 'scm-toolkit.auto-reconcile-finalized-commits', 'false') !== 'true') return false;
+    if (await gitConfig(repository, 'sweetiebot.auto-reconcile-finalized-commits', 'false') !== 'true') return false;
     const plan = await recoveryPlan(root, head.name, `refs/remotes/${target.remote}/${target.name}`);
     if (!plan || commitInProgress(repository) || await asyncCommitPending(repository)) return false;
     await repository.status();
@@ -1831,9 +1834,10 @@ function registerBranchCommands(vscode, context) {
           // A checkout while this operation was queued must wait for the next scan.
           if (disposed || repository.state.HEAD?.name !== head.name) return;
           try {
-            const { stdout } = await promisify(execFile)('git', ['config', '--bool', '--get', 'scm-toolkit.auto-pull-clean'], {
-              cwd: repository.rootUri.fsPath, timeout: 10000
-            });
+            const stdout = await readRepositoryGitSetting(async args =>
+              (await promisify(execFile)('git', args, {
+                cwd: repository.rootUri.fsPath, timeout: 10000
+              })).stdout, 'sweetiebot.auto-pull-clean', ['--bool']);
             if (stdout.trim() !== 'true') return;
           } catch (error) {
             if (error.code !== 1) return; // An unset preference defaults to enabled.

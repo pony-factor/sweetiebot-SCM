@@ -51,8 +51,8 @@ async function scanAutoCodexCommits(vscode, store, busy = new Set(), reported = 
         return;
       }
       const [name, email] = await Promise.all([
-        readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-name', 'Codex'),
-        readCommitGitSetting(root.fsPath, 'scm-toolkit.codex-coauthor-email', 'noreply@openai.com')
+        readCommitGitSetting(root.fsPath, 'sweetiebot.codex-coauthor-name', 'Codex'),
+        readCommitGitSetting(root.fsPath, 'sweetiebot.codex-coauthor-email', 'noreply@openai.com')
       ]);
       // The user can switch branches or turn the clock off during an await.
       await repository.status();

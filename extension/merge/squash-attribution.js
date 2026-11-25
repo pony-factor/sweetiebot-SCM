@@ -9,7 +9,7 @@ const SYNC_MAIN_SUBJECT = /^(?:🔄\s*)?Sync (?:brach|branch) to main(?:\s*\(#\d
 function filterSyncCommitSummariesEnabled() {
   try {
     return execFileSync('git', ['config', '--global', '--type=bool', '--get',
-      'scm-toolkit.filter-sync-commit-summaries'], { encoding: 'utf8', timeout: 3000 }).trim() !== 'false';
+      'sweetiebot.filter-sync-commit-summaries'], { encoding: 'utf8', timeout: 3000 }).trim() !== 'false';
   } catch {
     return true;
   }
@@ -18,7 +18,7 @@ const EMOJI_PREFIX = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}{2}|[0
 function omitBulletsForEmojiTitlesEnabled() {
   try {
     return execFileSync('git', ['config', '--global', '--type=bool', '--get',
-      'scm-toolkit.squash-omit-bullets-for-emoji-titles'],
+      'sweetiebot.squash-omit-bullets-for-emoji-titles'],
       { encoding: 'utf8', timeout: 3000 }).trim() === 'true';
   } catch {
     return false;
@@ -27,7 +27,7 @@ function omitBulletsForEmojiTitlesEnabled() {
 function squashTrailerSeparatorStyle() {
   try {
     const value = execFileSync('git', ['config', '--global', '--get',
-      'scm-toolkit.squash-trailer-separator-style'], { encoding: 'utf8', timeout: 3000 }).trim();
+      'sweetiebot.squash-trailer-separator-style'], { encoding: 'utf8', timeout: 3000 }).trim();
     return Object.hasOwn(SQUASH_SEPARATOR_STYLES, value) ? value : 'underscores';
   } catch {
     return 'underscores';

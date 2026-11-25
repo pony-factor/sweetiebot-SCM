@@ -25,7 +25,7 @@ async function registerAutoPublish(vscode, context) {
       // GitHub PR review checkouts (pr/<contributor>/<number>) are local snapshots,
       // not new work branches. Never publish them simply because they became active.
       if (!branch || !head.commit || isPullRequestReviewBranch(branch)) return;
-      const remote = await require('../commits/codex-commit').readCommitGitSetting(root.fsPath, 'scm-toolkit.remote', 'origin');
+      const remote = await require('../commits/codex-commit').readCommitGitSetting(root.fsPath, 'sweetiebot.remote', 'origin');
       if (!repository.state.remotes?.some(item => item.name === remote)) return;
       const tracked = head.upstream?.remote === remote && head.upstream.name === branch;
       if (tracked ? !pushAfterCommit || !(head.ahead > 0) || head.behind !== 0

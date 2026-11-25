@@ -29,7 +29,7 @@ from urllib.parse import urlsplit
 
 LABEL = "dev.ponyfactor.sweetiebot-ollama"
 URL = "http://127.0.0.1:11435"
-CONFIG_KEY = "scm-toolkit.ai-ollama-url"
+CONFIG_KEY = "sweetiebot.ai-ollama-url"
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 

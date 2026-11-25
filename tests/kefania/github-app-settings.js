@@ -8,7 +8,7 @@ const { execFileSync } = require('node:child_process');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-app-settings-test-'));
 try {
   const config = path.join(directory, 'public.gitconfig');
-  fs.writeFileSync(config, '[scm-toolkit]\n' +
+  fs.writeFileSync(config, '[sweetiebot]\n' +
     'github-app-identity-mode = separate-apps\n' +
     'kefania-app-id = 1234\nkefania-app-slug = kefania-test\nkefania-app-keychain = true\n' +
     'lindsey-app-id = 5678\nlindsey-app-slug = lindsey-test\nlindsey-app-keychain = true\n');

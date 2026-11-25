@@ -21,7 +21,7 @@ class CommitModeSettingTests(unittest.TestCase):
     def test_durable_mode_is_opt_in(self):
         self.assertFalse(DEFAULT_SETTINGS["durableBackgroundCommits"])
         self.assertEqual(SETTING_KEYS["durableBackgroundCommits"],
-                         "scm-toolkit.durable-background-commits")
+                         "sweetiebot.durable-background-commits")
     def test_custom_instructions_still_apply(self):
         self.assertTrue(DEFAULT_SETTINGS["aiEmojiPriorityRules"])
         self.assertTrue(DEFAULT_SETTINGS["aiCommit"])

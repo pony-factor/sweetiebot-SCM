@@ -44,7 +44,7 @@ def run_node(program, *args, **kwargs):
 
 def git_setting(name, value=None):
     args = ["git", "config", "--global"]
-    args += ["--get", "scm-toolkit." + name] if value is None else ["scm-toolkit." + name, value]
+    args += ["--get", "sweetiebot." + name] if value is None else ["sweetiebot." + name, value]
     result = subprocess.run(args, capture_output=True, text=True, timeout=5)
     if value is not None and result.returncode:
         raise RuntimeError("Could not save GitHub App settings.")

@@ -28,10 +28,10 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
       assert.equal(command, 'git');
       if (args[0] === 'config') {
         const key = args.at(-1);
-        const value = key === 'scm-toolkit.auto-pull-clean' ? (enabled ? 'true\n' : 'false\n')
-          : key === 'scm-toolkit.default-branch' ? 'main\n'
-          : key === 'scm-toolkit.remote' ? 'origin\n'
-          : key === 'scm-toolkit.pull-remote' ? 'upstream\n'
+        const value = key === 'sweetiebot.auto-pull-clean' ? (enabled ? 'true\n' : 'false\n')
+          : key === 'sweetiebot.default-branch' ? 'main\n'
+          : key === 'sweetiebot.remote' ? 'origin\n'
+          : key === 'sweetiebot.pull-remote' ? 'upstream\n'
           : '';
         callback(null, value, '');
       } else if (args[0] === 'rev-list') {
