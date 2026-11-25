@@ -1,5 +1,27 @@
+// Use the same coordinator and queue storage as Codex. A handoff holds its
+// own lease and exempts only the completion of the turn it actually stopped.
+const scmToolkitCheckoutInterrupts = new WeakMap();
+const scmToolkitUserQueuePauses = new WeakMap();
+const scmToolkitLoadingCheckoutHandoff = new WeakSet();
+function scmToolkitIsCheckoutInterrupt(coordinator, threadId, turnId) {
+    const handoff = scmToolkitCheckoutInterrupts.get(coordinator)?.get(threadId);
+    return Boolean(handoff?.turnId === turnId && turnId && !handoff.userStopped);
+}
+
+function scmToolkitUserQueuePause(coordinator, threadId, paused) {
+    let pauses = scmToolkitUserQueuePauses.get(coordinator);
+    if (paused === true) {
+        if (!pauses) scmToolkitUserQueuePauses.set(coordinator, pauses = new Map());
+        if (!pauses.has(threadId)) pauses.set(threadId, coordinator.deferAutomaticTurns(threadId));
+    } else if (paused === false) {
+        pauses?.get(threadId)?.[Symbol.dispose]();
+        pauses?.delete(threadId);
+    }
+    return pauses?.has(threadId) ?? false;
+}
+
 // Explicit, window-local thread handoff. Never inspect rollout or auth files.
-function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
+function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupported = false) {
     const { randomUUID } = require('node:crypto');
     const fs = require('node:fs/promises');
     const path = require('node:path');
@@ -8,6 +30,32 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
     const bindings = new Map();
     const providerName = 'sweetiebot-workspace-handoff';
     const subscriptions = [];
+    const manager = provider.hostedManager?.manager;
+    const coordinator = queueSupported ? manager?.getTurnCoordinator?.() : undefined;
+    const handoffs = new Map();
+    const submittedContinuations = new Set();
+    let disposed = false;
+    let queueReady;
+    if (coordinator) {
+        scmToolkitCheckoutInterrupts.set(coordinator, handoffs);
+        // The native view can reconnect before Sweetiebot consumes the journal.
+        // Acquire the destination lease before allowing automatic dispatch.
+        scmToolkitLoadingCheckoutHandoff.add(coordinator);
+        queueReady = vscode.commands.executeCommand('sweetiebot.codexHandoff.pendingQueue').then(plan => {
+            if (!plan || disposed || handoffs.has(plan.threadId)) return;
+            handoffs.set(plan.threadId, { ...plan, lease: coordinator.deferAutomaticTurns(plan.threadId) });
+            if (plan.queuePaused) scmToolkitUserQueuePause(coordinator, plan.threadId, true);
+        }, () => {}).finally(() => {
+            if (disposed) return;
+            scmToolkitLoadingCheckoutHandoff.delete(coordinator);
+            coordinator.executionChanged?.();
+        });
+        const stopListening = manager.addTurnInterruptStartedListener?.(threadId => {
+            const handoff = handoffs.get(threadId);
+            if (handoff) handoff.userStopped = true;
+        });
+        if (stopListening) subscriptions.push({ dispose: stopListening });
+    }
     const originalSend = connection?.sendProviderRequest;
     const failPending = () => {
         for (const request of pending.values()) {
@@ -66,6 +114,9 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
     // A frontend cache must not override the verified destination on its next
     // resume or user turn. Only this explicitly handed-off thread is affected.
     const guardedSend = typeof originalSend === 'function' ? function (name, id, method, params, ...rest) {
+        const handoff = handoffs.get(params?.threadId);
+        if (handoff && name !== providerName && method === 'turn/interrupt'
+            && (!handoff.turnId || handoff.turnId === params.turnId)) handoff.userStopped = true;
         const cwd = bindings.get(params?.threadId);
         if (cwd && ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method)) params = { ...params, cwd };
         return originalSend.call(this, name, id, method, params, ...rest);
@@ -196,62 +247,125 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode) {
     }));
 
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.prepareWorkspaceHandoff', async ({ from }) => {
+        await queueReady;
         const identity = await vscode.commands.executeCommand('sweetiebot.readCodexIdentity');
         if (!identity?.threadId) return identity?.composerFocus ? { draftOnly: true, composerFocus: identity.composerFocus } : null;
         const threadId = identity.threadId;
-        const thread = await read(threadId);
-        const oldCwd = await canonical(thread.cwd);
-        const root = await canonical(from);
-        let relative = path.relative(root, oldCwd);
-        if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
-            // Explicit branch navigation moves the visible chat too, including
-            // a historical thread still attached to another checkout. Its old
-            // relative path has no meaning in this workspace; use the new root.
-            relative = '';
-        }
-        const wasActive = thread.status?.type === 'active';
-        if (wasActive) {
-            const turns = await send('thread/turns/list', { threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
-            const turn = turns?.data?.[0];
-            if (!turn?.id || turn.status !== 'inProgress') throw new Error('Cannot identify the active Codex turn; the checkout was not switched.');
-            await send('turn/interrupt', { threadId, turnId: turn.id });
-            const deadline = Date.now() + 10000;
-            while ((await read(threadId)).status?.type === 'active') {
-                if (Date.now() >= deadline) throw new Error('Codex has not stopped writing in the previous checkout; the checkout was not switched.');
-                await new Promise(done => setTimeout(done, 100));
+        if (handoffs.has(threadId)) throw new Error('This Codex chat is already changing checkouts.');
+        const handoff = { id: randomUUID(), lease: coordinator?.deferAutomaticTurns(threadId) };
+        handoffs.set(threadId, handoff);
+        try {
+            const thread = await read(threadId);
+            const oldCwd = await canonical(bindings.get(threadId) ?? thread.cwd);
+            const root = await canonical(from);
+            let relative = path.relative(root, oldCwd);
+            if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) relative = '';
+            let wasActive = false;
+            if (thread.status?.type === 'active') {
+                if (!coordinator) throw new Error('This Codex version cannot safely move a running task. Wait for the turn to finish before switching checkouts.');
+                const latestTurn = async () => (await send('thread/turns/list', {
+                    threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded'
+                }))?.data?.[0];
+                const turn = await latestTurn();
+                if (turn?.id && turn.status === 'inProgress') {
+                    if (!handoff.userStopped) {
+                        handoff.turnId = turn.id;
+                        try { await send('turn/interrupt', { threadId, turnId: turn.id }); }
+                        catch (error) {
+                            // The turn may have finished while the interrupt was in flight.
+                            if ((await latestTurn())?.status !== 'completed') throw error;
+                        }
+                    }
+                    const deadline = Date.now() + 10000;
+                    while ((await read(threadId)).status?.type === 'active') {
+                        if (Date.now() >= deadline) throw new Error('Codex has not stopped writing in the previous checkout; the checkout was not switched.');
+                        await new Promise(done => setTimeout(done, 100));
+                    }
+                    const stopped = await latestTurn();
+                    if (stopped?.id !== turn.id) throw new Error('The active Codex turn changed during checkout preparation.');
+                    wasActive = stopped.status === 'interrupted' && !handoff.userStopped;
+                } else if ((await read(threadId)).status?.type === 'active') {
+                    throw new Error('Cannot identify the active Codex turn; the checkout was not switched.');
+                }
             }
+            return { threadId, oldCwd, relative, wasActive, id: handoff.id,
+                ...(wasActive ? { turnId: handoff.turnId } : {}),
+                queuePaused: coordinator ? scmToolkitUserQueuePause(coordinator, threadId) : false,
+                ...(identity.composerFocus ? { composerFocus: identity.composerFocus } : {}) };
+        } catch (error) {
+            handoffs.delete(threadId);
+            handoff.lease?.[Symbol.dispose]();
+            throw error;
         }
-        return { threadId, oldCwd, relative, wasActive, id: randomUUID(),
-            ...(identity.composerFocus ? { composerFocus: identity.composerFocus } : {}) };
     }));
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.resumeWorkspaceHandoff', async plan => {
-        const root = await canonical(plan.destination);
-        const cwd = await canonical(path.join(root, plan.relative || ''));
-        if (cwd !== root && !cwd.startsWith(root + path.sep)) throw new Error('Invalid Codex checkout handoff destination.');
-        bindings.set(plan.threadId, cwd);
-        const resumed = await send('thread/resume', { threadId: plan.threadId, cwd, excludeTurns: true });
-        if (resumed?.thread?.id !== plan.threadId || await canonical(resumed.cwd) !== cwd) {
-            bindings.delete(plan.threadId);
-            throw new Error('Codex did not resume the same chat in the selected checkout.');
+        await queueReady;
+        const source = handoffs.get(plan.threadId);
+        const handoff = source?.id === plan.id ? source : undefined;
+        const lease = handoff?.lease ?? coordinator?.deferAutomaticTurns(plan.threadId);
+        let checkoutVerified = false;
+        try {
+            const root = await canonical(plan.destination);
+            const cwd = await canonical(path.join(root, plan.relative || ''));
+            if (cwd !== root && !cwd.startsWith(root + path.sep)) throw new Error('Invalid Codex checkout handoff destination.');
+            const previous = bindings.get(plan.threadId);
+            bindings.set(plan.threadId, cwd);
+            try {
+                const params = { threadId: plan.threadId, cwd, excludeTurns: true };
+                let resumed = await send('thread/resume', params);
+                if (resumed?.thread?.id === plan.threadId && await canonical(resumed.cwd) !== cwd
+                    && resumed.thread.status?.type === 'idle') {
+                    // A loaded thread can ignore the cwd supplied to thread/resume.
+                    await send('thread/settings/update', { threadId: plan.threadId, cwd });
+                    resumed = await send('thread/resume', params);
+                }
+                if (resumed?.thread?.id !== plan.threadId || await canonical(resumed.cwd) !== cwd) {
+                    throw new Error('Codex did not resume the same chat in the selected checkout.');
+                }
+                checkoutVerified = true;
+                if (plan.queuePaused && !handoff) {
+                    if (!coordinator) throw new Error('Codex could not restore the intentional queue pause.');
+                    scmToolkitUserQueuePause(coordinator, plan.threadId, true);
+                }
+                if (plan.wasActive && !handoff?.userStopped && !submittedContinuations.has(plan.id)) {
+                    if (resumed.thread.status?.type === 'active') throw new Error('Codex is already active; a duplicate continuation was not submitted.');
+                    submittedContinuations.add(plan.id);
+                    const admitted = !plan.journalWorkspace || await vscode.commands.executeCommand(
+                        'sweetiebot.codexHandoff.consumeContinuation', { workspace: plan.journalWorkspace, id: plan.id });
+                    if (admitted && !handoff?.userStopped) {
+                        await send('turn/start', {
+                            threadId: plan.threadId, cwd, clientUserMessageId: plan.id,
+                            input: [{ type: 'text', text: plan.continuationText || 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
+                        });
+                    }
+                }
+            } finally {
+                if (!checkoutVerified) {
+                    if (previous) bindings.set(plan.threadId, previous);
+                    else bindings.delete(plan.threadId);
+                }
+            }
+            provider.navigateToRoute('/local/' + plan.threadId);
+            await vscode.commands.executeCommand('chatgpt.openSidebar');
+            // A late composer must never make a successfully resumed chat look paused.
+            if (plan.composerFocus) void vscode.commands.executeCommand('sweetiebot.codexHandoff.restoreFocusWhenReady',
+                { threadId: plan.threadId, state: plan.composerFocus }).catch(() => {});
+            return { threadId: plan.threadId, cwd };
+        } finally {
+            if (checkoutVerified || !handoff) {
+                if (handoff) handoffs.delete(plan.threadId);
+                lease?.[Symbol.dispose]();
+            }
         }
-        provider.navigateToRoute('/local/' + plan.threadId);
-        await vscode.commands.executeCommand('chatgpt.openSidebar');
-        if (plan.wasActive) {
-            if (resumed.thread.status?.type === 'active') throw new Error('Codex is already active; a duplicate continuation was not submitted.');
-            await send('turn/start', {
-                threadId: plan.threadId, cwd, clientUserMessageId: plan.id,
-                input: [{ type: 'text', text: plan.continuationText || 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
-            });
-        }
-        // A late composer must never make a successfully resumed chat look paused.
-        if (plan.composerFocus) void vscode.commands.executeCommand('sweetiebot.codexHandoff.restoreFocusWhenReady',
-            { threadId: plan.threadId, state: plan.composerFocus }).catch(() => {});
-        return { threadId: plan.threadId, cwd };
     }));
     return { dispose() {
+        disposed = true;
+        if (coordinator) scmToolkitLoadingCheckoutHandoff.add(coordinator);
         for (const item of subscriptions) item.dispose();
         if (guardedSend && connection.sendProviderRequest === guardedSend) connection.sendProviderRequest = originalSend;
         failPending();
         bindings.clear();
+        for (const handoff of handoffs.values()) handoff.lease?.[Symbol.dispose]();
+        handoffs.clear();
     } };
 }

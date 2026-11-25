@@ -156,6 +156,25 @@
             this.adapter = adapter;
             this.notify = notify;
         }
+        async readHostPause(coordinator) {
+            if (this.adapter.hostId !== 'local' || this.legacyHost) return;
+            const state = await coordinator.deferAutomaticTurns(this.adapter.threadId, 'sweetiebot-user-pause');
+            if (typeof state === 'boolean') return state;
+            // Older hosts ignore the extra argument and acquire a real lease.
+            // Releasing it can wake the queue, so never repeat this probe on
+            // subsequent native store notifications (including dispatch itself).
+            this.legacyHost = true;
+            (state?.[Symbol.dispose] ?? state?.dispose)?.call(state);
+        }
+        async refresh() {
+            if (this.pending || this.disposed || this.legacyHost || this.adapter.hostId !== 'local') return;
+            this.pending = true;
+            try {
+                const paused = await this.readHostPause(await this.adapter.coordinator());
+                if (!this.disposed && paused !== undefined) this.hostPaused = paused;
+            } catch { /* The composer may be reconnecting to its host. */ }
+            finally { this.pending = false; this.notify(this); }
+        }
         async toggle() {
             if (this.pending || this.disposed) return;
             this.error = '';
@@ -172,10 +191,16 @@
             try {
                 const coordinator = await this.adapter.coordinator();
                 if (typeof coordinator?.deferAutomaticTurns !== 'function') throw Error('Unsupported');
-                const lease = await coordinator.deferAutomaticTurns(this.adapter.threadId);
-                if (typeof (lease?.[Symbol.dispose] ?? lease?.dispose) !== 'function') throw Error('Unsupported');
-                if (this.disposed) (lease[Symbol.dispose] ?? lease.dispose).call(lease);
-                else this.lease = lease;
+                const paused = await this.readHostPause(coordinator);
+                if (this.disposed) return;
+                if (paused !== undefined) {
+                    this.hostPaused = await coordinator.deferAutomaticTurns(this.adapter.threadId, 'sweetiebot-user-pause', !paused);
+                } else {
+                    const lease = await coordinator.deferAutomaticTurns(this.adapter.threadId);
+                    if (typeof (lease?.[Symbol.dispose] ?? lease?.dispose) !== 'function') throw Error('Unsupported');
+                    if (this.disposed) (lease[Symbol.dispose] ?? lease.dispose).call(lease);
+                    else this.lease = lease;
+                }
             } catch { this.error = 'Queue pause is unavailable in this Codex version.'; }
             finally { this.pending = false; this.notify(this); }
         }
@@ -332,24 +357,26 @@
                 const message = document.createElement('span'); message.setAttribute('role', 'status');
                 bar.append(button, message);
                 const renderButton = (state = {}) => {
-                    const label = state.pending ? 'Pausing queue…' : state.lease ? 'Resume queue' : 'Pause queue';
-                    const icon = state.lease ? 'play' : 'pause';
+                    const paused = Boolean(state.hostPaused || state.lease);
+                    const label = state.pending ? 'Updating queue…' : paused ? 'Resume queue' : 'Pause queue';
+                    const icon = paused ? 'play' : 'pause';
                     if (button.dataset.icon !== icon) {
                         button.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
-                            + (state.lease ? '<path d="M4 2v12l10-6z"/>' : '<path d="M3 2h4v12H3zM9 2h4v12H9z"/>') + '</svg>';
+                            + (paused ? '<path d="M4 2v12l10-6z"/>' : '<path d="M3 2h4v12H3zM9 2h4v12H9z"/>') + '</svg>';
                         button.dataset.icon = icon;
                     }
                     button.setAttribute('aria-label', label);
-                    button.title = state.lease ? 'Resume automatic queued sends' : 'Pause automatic queued sends; the current response continues';
+                    button.title = paused ? 'Resume automatic queued sends' : 'Pause automatic queued sends; the current response continues';
                     button.disabled = Boolean(state.pending);
-                    button.setAttribute('aria-pressed', String(Boolean(state.lease)));
-                    const text = state.error || (state.lease ? 'Queued messages are paused' : '');
+                    button.setAttribute('aria-pressed', String(paused));
+                    const text = state.error || (paused ? 'Queued messages are paused' : '');
                     if (message.textContent !== text) message.textContent = text;
                 };
                 const pause = new QueuePause(adapter, renderButton);
                 renderButton();
                 button.addEventListener('click', () => { void pause.toggle(); });
                 entry = {bar, pause}; pausedQueues.set(key, entry);
+                void pause.refresh();
             }
             const rail = row.closest('[data-composer-rail-item]');
             const host = rail?.firstElementChild || row.parentElement;
@@ -376,6 +403,10 @@
         }
     }
     new MutationObserver(() => { try { maintain(); } catch {} }).observe(document.documentElement, {childList:true, subtree:true});
+    window.addEventListener('scm-toolkit-queue-store', ({detail: adapter}) => {
+        const key = JSON.stringify([adapter.hostId, adapter.threadId]);
+        void pausedQueues.get(key)?.pause.refresh();
+    });
     maintain();
     window.addEventListener('pagehide', () => {
         for (const {pause} of pausedQueues.values()) pause.dispose();

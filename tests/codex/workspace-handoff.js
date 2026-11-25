@@ -15,6 +15,17 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     const newThreadId = '019c56c3-06fc-7db3-a928-9c3607e17130';
     const commands = new Map(), providers = new Map(), requests = [], routes = [], opened = [];
     let active = true, wrongCwd = false, wrongThread = false, identity = { threadId }, turnStatus = 'inProgress';
+    let coordinator, notifyStop, pendingQueue, stopBeforeHandoff = false, completeBeforeHandoff = false;
+    let loadedCwd;
+    let leases = 0;
+    const queue = [{ id: 'first' }, { id: 'second' }];
+    const makeCoordinator = () => ({
+      deferAutomaticTurns(id) {
+        assert.equal(id, threadId);
+        leases++;
+        return { [Symbol.dispose]() { leases--; } };
+      }
+    });
     const connection = {
       registerProvider(name, callbacks) { providers.set(name, callbacks); return { dispose() { providers.delete(name); } }; },
       sendProviderRequest(name, id, method, params) {
@@ -28,11 +39,29 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
         } else if (method === 'thread/turns/list') {
           assert.equal(params.itemsView, 'notLoaded');
           result = { data: [{ id: 'running-turn', status: turnStatus }] };
+          if (stopBeforeHandoff) {
+            stopBeforeHandoff = false;
+            notifyStop(threadId);
+            active = false;
+            turnStatus = 'interrupted';
+            for (const message of queue) message.paused = true;
+          }
         } else if (method === 'turn/interrupt') {
-          assert.equal(params.turnId, 'running-turn'); active = false; result = {};
+          assert.equal(params.turnId, 'running-turn');
+          assert(leases > 0, 'Hold automatic dispatch before interrupting');
+          active = false;
+          turnStatus = completeBeforeHandoff ? 'completed' : 'interrupted';
+          if (turnStatus === 'interrupted' && !context.scmToolkitIsCheckoutInterrupt(coordinator, threadId, params.turnId)) {
+            for (const message of queue) message.paused = true;
+          }
+          result = {};
         } else if (method === 'thread/resume') {
-          result = { cwd: wrongCwd ? from : params.cwd, thread: { id: threadId, status: { type: 'idle' } } };
+          result = { cwd: wrongCwd ? from : loadedCwd ?? params.cwd, thread: { id: threadId, status: { type: 'idle' } } };
           assert(!('approvalPolicy' in params), 'Preserve the existing permission policy');
+        } else if (method === 'thread/settings/update') {
+          assert(leases > 0, 'Keep the native queue suspended during checkout verification');
+          loadedCwd = params.cwd;
+          result = {};
         } else if (method === 'thread/start') {
           assert.equal(params.cwd, destination);
           assert(!('approvalPolicy' in params));
@@ -51,15 +80,19 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
       registerCommand(id, fn) { commands.set(id, fn); return { dispose() { commands.delete(id); } }; },
       async executeCommand(id, ...args) {
         if (id === 'sweetiebot.readCodexIdentity') return identity;
+        if (id === 'sweetiebot.codexHandoff.pendingQueue') return pendingQueue;
         if (id === 'chatgpt.openSidebar') return;
         if (id === 'vscode.openFolder') { opened.push(args); return; }
         return commands.get(id)(...args);
       }
     } };
-    const provider = { codexMcpConnection: connection, navigateToRoute: route => routes.push(route) };
-    const context = vm.createContext({ require, setTimeout, clearTimeout, Date });
+    coordinator = makeCoordinator();
+    const provider = { codexMcpConnection: connection, navigateToRoute: route => routes.push(route),
+      hostedManager: { manager: { getTurnCoordinator: () => coordinator,
+        addTurnInterruptStartedListener(listener) { notifyStop = listener; return () => {}; } } } };
+    const context = vm.createContext({ require, setTimeout, clearTimeout, Date, Symbol });
     vm.runInContext(await fs.readFile(path.join(__dirname, '../../assets/codex/workspace-handoff-host.js'), 'utf8'), context);
-    const disposable = context.scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode);
+    let disposable = context.scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, true);
     const lookup=commands.get('sweetiebot.codex.readRateLimitReset');
     const limits=await lookup({threadId});
     assert(limits.known && limits.limited && limits.resetAt>Date.now()+1100000);
@@ -69,7 +102,7 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal((await lookup({threadId:'wrong-thread'})).known,false);
     requests.length=0;
     const prepare = commands.get('sweetiebot.codex.prepareWorkspaceHandoff');
-    const resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
+    let resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
     const openCheckout = commands.get('sweetiebot.codex.openChatCheckout');
     const visibility = commands.get('sweetiebot.codex.chatCheckoutVisibility');
     assert.equal((await visibility(threadId)).needsNewWindow, true, 'A checkout outside this window needs the shortcut');
@@ -96,10 +129,15 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal(historical.oldCwd, from, 'Retain the original worker location for recovery');
     assert.equal(historical.wasActive, true);
     assert.deepEqual(requests.slice(beforeUnrelated).map(request => request.method),
-      ['thread/read', 'thread/turns/list', 'turn/interrupt', 'thread/read'],
+      ['thread/read', 'thread/turns/list', 'turn/interrupt', 'thread/read', 'thread/turns/list'],
       'Stop the historical worker before taking over the destination');
     assert.equal(active, false);
-    active = true;
+    assert.equal(context.scmToolkitIsCheckoutInterrupt(coordinator, threadId, 'other-turn'), false);
+    assert.deepEqual(queue, [{ id: 'first' }, { id: 'second' }], 'Leave queued records untouched');
+    await resume({ ...historical, destination: from });
+    routes.length = 0;
+    requests.length = 0;
+    active = true; turnStatus = 'inProgress';
     const plan = await prepare({ from });
     assert.equal(plan.threadId, threadId); assert.equal(plan.wasActive, true);
     assert(requests.some(request => request.method === 'turn/interrupt'));
@@ -119,7 +157,7 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert(experimentDirection.includes('Preserve existing user edits and staging'));
     assert(experimentDirection.includes('Work left only in the trial checkout is not completion'));
     assert(!experimentDirection.includes('copy experimental edits back without explicit permission'));
-    active = true;
+    active = true; turnStatus = 'inProgress';
     const beforeNotice = requests.length;
     assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic', expectedThreadId: threadId }), true);
     assert.equal(requests.at(-1).method, 'turn/steer', 'In-flight chats receive a steer, not an interruption');
@@ -163,15 +201,20 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal(await retryCodexComposerFocus(staleFocus, focus, () => false, immediate), false);
 
     const beforeResumption = requests.filter(request => request.method === 'turn/start').length;
+    loadedCwd = from;
     await resume({ ...plan, destination });
+    loadedCwd = undefined;
+    assert.deepEqual(requests.slice(-4).map(request => request.method),
+      ['thread/resume', 'thread/settings/update', 'thread/resume', 'turn/start'],
+      'Verify the updated cwd when thread/resume reuses a loaded thread');
     assert.deepEqual(routes, ['/local/' + threadId]);
     assert.equal((await visibility(threadId)).needsNewWindow, false,
       'A rebound worker in the current checkout must not show the shortcut');
     assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
 
-    await resume({ ...plan, destination, continuationText: 'Try the experiment and run relevant tests here.' });
-    assert.equal(requests.at(-1).params.cwd, destination);
-    assert.equal(requests.at(-1).params.input[0].text, 'Try the experiment and run relevant tests here.');
+    await resume({ ...plan, destination });
+    assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1,
+      'Retrying a handoff must never send another continuation');
 
     const startsAfterExperiment = requests.filter(request => request.method === 'turn/start').length;
     await resume({ ...plan, destination, wasActive: false, continuationText: 'Try the experiment.' });
@@ -216,6 +259,35 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal(requests.filter(request => request.method === 'turn/start').length, tasksBeforeWrongCwd);
     wrongCwd = false;
     identity = { threadId };
+    active = true; turnStatus = 'inProgress'; stopBeforeHandoff = true;
+    const interruptsBeforeStop = requests.filter(request => request.method === 'turn/interrupt').length;
+    const manuallyStopped = await prepare({ from: destination });
+    assert.equal(manuallyStopped.wasActive, false, 'A manual Stop wins the race against checkout');
+    assert.equal(requests.filter(request => request.method === 'turn/interrupt').length, interruptsBeforeStop);
+    await resume({ ...manuallyStopped, destination });
+    assert(queue.every(message => message.paused), 'The native manual Stop pause survives');
+    assert.equal(requests.at(-1).method, 'thread/resume');
+    active = true; turnStatus = 'inProgress'; completeBeforeHandoff = true;
+    const completed = await prepare({ from: destination });
+    assert.equal(completed.wasActive, false, 'Naturally completed work must not receive a continuation');
+    await resume({ ...completed, destination });
+    completeBeforeHandoff = false;
+    active = true; turnStatus = 'inProgress';
+    context.scmToolkitUserQueuePause(coordinator, threadId, true);
+    const paused = await prepare({ from: destination });
+    assert.equal(paused.queuePaused, true);
+    context.scmToolkitUserQueuePause(coordinator, threadId, false);
+    disposable.dispose();
+    assert.equal(leases, 0);
+    coordinator = makeCoordinator();
+    pendingQueue = paused;
+    disposable = context.scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, true);
+    resume = commands.get('sweetiebot.codex.resumeWorkspaceHandoff');
+    await resume({ ...paused, destination, continuationText: 'Continue the paused task after checkout.' });
+    assert.equal(requests.at(-1).params.input[0].text, 'Continue the paused task after checkout.');
+    assert.equal(leases, 1, 'Only the intentional pause survives the destination handoff');
+    assert.equal(context.scmToolkitUserQueuePause(coordinator, threadId, false), false);
+    assert.equal(leases, 0);
     const continueAtReset = commands.get('sweetiebot.codex.continueAfterRateLimit');
     turnStatus = 'failed'; active = false;
     const resetAt = Date.now() - 1000;

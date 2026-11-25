@@ -19,6 +19,7 @@
     }
   },
   "activationEvents": [
+    "onCommand:sweetiebot.codexHandoff.pendingQueue",
     "onCommand:sweetiebot.returnHome",
     "onCommand:sweetiebot.resolveDefaultBranch",
     "onCommand:sweetiebot.openPullRequestChat",

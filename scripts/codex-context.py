@@ -26,6 +26,32 @@ HOST_ANCHOR = re.compile(
     r'(?P<type>[\w$]+)\.viewType,(?P<provider>[\w$]+),'
 )
 WEBVIEW_ANCHOR = re.compile(r'(?<![\w$])(?P<api>[\w$]+)=acquireVsCodeApi\(\)')
+QUEUE_COMPLETION = re.compile(
+    r'turnCompleted:\(\{conversationId:(?P<thread>[\w$]+),status:(?P<status>[\w$]+)\}\)=>'
+    r'\{(?P=status)==="interrupted"&&this\.mutate\('
+)
+QUEUE_DEFERRAL = re.compile(r'deferAutomaticTurns\((?P<thread>[\w$]+)\)\{if\(this\.disposed\)')
+QUEUE_DISPATCH = re.compile(
+    r'if\(this\.execution==null\|\|this\.pending\.has\((?P<thread>[\w$]+)\)'
+    r'\|\|this\.automaticTurnDeferrals\.has\((?P=thread)\)\)return;'
+)
+
+
+def queue_edits(source):
+    completions = list(QUEUE_COMPLETION.finditer(source))
+    deferrals = list(QUEUE_DEFERRAL.finditer(source))
+    dispatches = list(QUEUE_DISPATCH.finditer(source))
+    if len(completions) != 1 or len(deferrals) != 1 or len(dispatches) != 1:
+        return []
+    completion, deferral, dispatch = completions[0], deferrals[0], dispatches[0]
+    original = completion[0]
+    replacement = original.replace('})=>', ',turnId:sweetiebotTurnId})=>', 1).replace(
+        '&&this.mutate(', f'&&!scmToolkitIsCheckoutInterrupt(this,{completion["thread"]},sweetiebotTurnId)&&this.mutate(', 1
+    )
+    return [(original, replacement), (deferral[0], deferral[0].replace(
+        '){if(', ',sweetiebotPause){if(sweetiebotPause==="sweetiebot-user-pause"&&this.options.hostId==="local")'
+        f'return scmToolkitUserQueuePause(this,{deferral["thread"]},arguments[2]);if(', 1
+    )), (dispatch[0], 'if(scmToolkitLoadingCheckoutHandoff.has(this))return;' + dispatch[0])]
 
 
 def transform(source, kind, enabled=True):
@@ -41,11 +67,14 @@ def transform(source, kind, enabled=True):
         metadata = re.search(r'^/\* edit:(.*?) \*/$', payload, re.MULTILINE)
         if metadata is None:
             raise ValueError('Codex context patch is missing restoration metadata.')
-        original, replacement = json.loads(metadata.group(1))
+        edits = json.loads(metadata.group(1))
+        if isinstance(edits[0], str):
+            edits = [edits]
         source = before + after
-        if source.count(replacement) != 1:
-            raise ValueError('Installed Codex context patch changed; refusing to overwrite it.')
-        source = source.replace(replacement, original, 1)
+        for original, replacement in reversed(edits):
+            if source.count(replacement) != 1:
+                raise ValueError('Installed Codex context patch changed; refusing to overwrite it.')
+            source = source.replace(replacement, original, 1)
     if not enabled:
         return codex_drafts.transform_host(source) if had_drafts else source
     pattern = HOST_ANCHOR if kind == 'host' else WEBVIEW_ANCHOR
@@ -54,21 +83,24 @@ def transform(source, kind, enabled=True):
         raise ValueError(f'Unsupported Codex build: {kind} context anchor is ambiguous or missing.')
     match = matches[0]
     original = match.group(0)
+    queue = queue_edits(source) if kind == 'host' else []
     if kind == 'host':
         replacement = original.replace('.push(',
             f'.push(scmToolkitRegisterCodexSnapshotProvider({match["provider"]},{match["vscode"]}),'
-            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}),'
+            f'scmToolkitRegisterCodexWorkspaceHandoff({match["provider"]},{match["vscode"]}{",true" if queue else ""}),'
             f'scmToolkitRegisterCodexPermissions({match["provider"]},{match["vscode"]}),', 1)
     else:
         replacement = f'({original},scmToolkitRegisterCodexSnapshot({match["api"]}),scmToolkitRegisterCodexPermissionsMenu({match["api"]}))'
-    source = source.replace(original, replacement, 1)
+    edits = [(original, replacement), *queue]
+    for old, new in edits:
+        source = source.replace(old, new, 1)
     helper = (ASSETS / f'context-{kind}.js').read_text()
     if kind == 'webview':
         helper = (ASSETS / 'composer/focus.js').read_text() + '\n' + (ASSETS / 'rate-limit-continuation.js').read_text() + '\n' + helper
     if kind == 'host':
         helper += '\n' + (ASSETS / 'workspace-handoff-host.js').read_text()
     helper += '\n' + (ASSETS / f'permissions-{kind}.js').read_text()
-    result = (source + START + '/* edit:' + json.dumps([original, replacement]) + ' */\n'
+    result = (source + START + '/* edit:' + json.dumps(edits) + ' */\n'
               + helper + END)
     return codex_drafts.transform_host(result) if had_drafts else result
 
