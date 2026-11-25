@@ -122,10 +122,29 @@ async function run() {
     assert.equal(await reviewSyncConflicts(vscode, repository, review), true);
     const lindsey = { ...review, publishingRepository: 'owner/publishing-fork' };
     choices = ['lindsey'];
-    await assert.rejects(reviewSyncConflicts(vscode, repository, lindsey, {
-      connect: async () => { throw Error('Resolver unavailable'); }
-    }), /Resolver unavailable/);
+    let openChatGPT = false;
+    vscode.window.showWarningMessage = async (_message, options, open) => {
+      assert.equal(options.modal, true);
+      assert.match(options.detail, /Resolver unavailable/);
+      assert.match(options.detail, /sends the conflicting sections/);
+      return openChatGPT ? open : undefined;
+    };
+    const fallback = {
+      connect: async () => { throw Error('Resolver unavailable'); },
+      prepareInChatGPT: async (host, targetRepo, details, checkout, output) => {
+        assert.equal(host, vscode);
+        assert.equal(targetRepo, lindsey.publishingRepository);
+        assert.equal(details, lindsey);
+        assert.equal(checkout, root);
+        return output;
+      }
+    };
+    assert.equal(await reviewSyncConflicts(vscode, repository, lindsey, fallback), false);
     assert.equal(git('status', '--porcelain'), '', 'Setup errors leave the topic checkout clean');
+    choices = ['lindsey']; openChatGPT = true;
+    const browser = await reviewSyncConflicts(vscode, repository, lindsey, fallback);
+    assert.equal(browser.browser, true);
+    assert.equal(await browser.lindsey(root, 'preview'), 'preview');
     choices = ['lindsey'];
     const prepare = () => {};
     assert.deepEqual(await reviewSyncConflicts(vscode, repository, lindsey, {

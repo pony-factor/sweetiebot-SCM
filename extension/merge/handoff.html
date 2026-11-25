@@ -76,6 +76,13 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
   const status = document.getElementById('status');
   const results = document.getElementById('results');
   const summary = document.getElementById('summary');
+  const syncPreview = '__SYNC_PREVIEW__' === 'true';
+  if (syncPreview) {
+    document.title = 'Lindsey · Sync proposal';
+    document.querySelector('h1').textContent = document.title;
+    document.querySelector('.eyebrow').textContent = 'Lindsey sync';
+    document.getElementById('report-title').textContent = 'ChatGPT conflict proposal';
+  }
   const fragment = new URLSearchParams(location.hash.slice(1));
   const raw = fragment.get('result');
   const compressed = fragment.get('result_gz');
@@ -118,6 +125,12 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
   const stop = () => { finished = true; clearInterval(timer); };
   function display(result) {
     if (finished) return;
+    if (result.syncPreview === true) {
+      stop();
+      summary.textContent = 'Proposal received';
+      status.textContent = 'Return to Source Control to review the proposed changes in the diff editors.';
+      return;
+    }
     if (!Array.isArray(result.results)) throw Error('Invalid local execution response.');
     stop();
     status.textContent = result.results.length ? 'Local execution finished. GitHub results:'
@@ -231,8 +244,8 @@ h2{margin:5px 0 8px;font-size:21px;line-height:1.35;letter-spacing:-.02em}
       } else input = compressed ? await readCompressed(compressed) : JSON.parse(raw);
     }
     catch { throw Error('The prepared result is incomplete, oversized or malformed. No Git operation was started. Return to GPT web and request a complete Apply with Lindsey link.'); }
-    status.textContent = 'Applying the prepared handoff through the local Git CLI…';
-    summary.textContent = 'Applying locally';
+    status.textContent = syncPreview ? 'Validating the proposed conflict changes…' : 'Applying the prepared handoff through the local Git CLI…';
+    summary.textContent = syncPreview ? 'Validating proposal' : 'Applying locally';
     postPending = true;
     watch();
     const response = await fetch(location.pathname, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });

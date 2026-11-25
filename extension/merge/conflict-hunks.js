@@ -6,6 +6,20 @@ const { safePatchPath } = require('./patch');
 // from the verified head/base; no whole-file diff needs to cross the chat.
 const CHOICES = new Set(['ours', 'theirs', 'both-ours-first', 'both-theirs-first', 'custom']);
 const MAX_HUNK_BYTES = 32 * 1024 * 1024;
+const MARKER = /^<<<<<<<[^\n]*\r?\n(?<ours>[\s\S]*?)(?:^\|{7}[^\n]*\r?\n(?<base>[\s\S]*?))?^=======\r?\n(?<theirs>[\s\S]*?)^>>>>>>>[^\n]*(?:\r?\n|$)/gm;
+const UNRESOLVED = /^(?:<<<<<<<|\|{7}|=======|>>>>>>>)/m;
+
+function describeConflictHunks(text) {
+  const blocks = [...text.matchAll(MARKER)];
+  return blocks.map((block, index) => {
+    const previousEnd = index ? blocks[index - 1].index + blocks[index - 1][0].length : 0;
+    const end = block.index + block[0].length;
+    const nextStart = blocks[index + 1]?.index ?? text.length;
+    return { index, ...block.groups,
+      before: text.slice(Math.max(previousEnd, block.index - 1500), block.index).split('\n').slice(-13).join('\n'),
+      after: text.slice(end, Math.min(nextStart, end + 1500)).split('\n').slice(0, 12).join('\n') };
+  });
+}
 
 function validateResolutionHunks(value = []) {
   if (!Array.isArray(value) || value.length > 512) throw Error('Invalid compact resolution files.');
@@ -39,39 +53,37 @@ function validateResolutionHunks(value = []) {
   });
 }
 
-// Git is explicitly invoked with merge.conflictStyle=merge for this route.
 // Every conflict marker must be resolved; an incorrect count or expected side
 // aborts rather than guessing, silently dropping lines, or selecting a side.
 function applyResolutionHunks(text, hunks) {
   if (typeof text !== 'string' || !Array.isArray(hunks)) throw Error('Invalid conflict content.');
-  const marker = /^<<<<<<<[^\n]*\r?\n([\s\S]*?)^=======\r?\n([\s\S]*?)^>>>>>>>[^\n]*(?:\r?\n|$)/gm;
-  const blocks = [...text.matchAll(marker)];
+  const blocks = [...text.matchAll(MARKER)];
   if (blocks.length !== hunks.length || !blocks.length) {
     throw Error('Conflict hunk count changed; regenerate this resolution from the current base.');
   }
   let output = '', cursor = 0;
   for (let index = 0; index < blocks.length; index++) {
     const block = blocks[index], hunk = hunks[index];
-    if (hunk.index !== index || (hunk.ours !== undefined && hunk.ours !== block[1]) ||
-        (hunk.theirs !== undefined && hunk.theirs !== block[2])) {
+    const { ours, theirs } = block.groups;
+    if (hunk.index !== index || (hunk.ours !== undefined && hunk.ours !== ours) ||
+        (hunk.theirs !== undefined && hunk.theirs !== theirs)) {
       throw Error('Conflict hunk does not match the verified Git merge.');
     }
-    const ours = block[1], theirs = block[2];
     const resolved = ({
       ours: () => ours, theirs: () => theirs,
       'both-ours-first': () => ours + theirs,
       'both-theirs-first': () => theirs + ours,
       custom: () => hunk.resolved
     })[hunk.choice]();
-    if (typeof resolved !== 'string' || /^(?:<<<<<<<|=======|>>>>>>>)/m.test(resolved)) {
+    if (typeof resolved !== 'string' || UNRESOLVED.test(resolved)) {
       throw Error('Compact resolution cannot introduce conflict markers.');
     }
     output += text.slice(cursor, block.index) + resolved;
     cursor = block.index + block[0].length;
   }
   output += text.slice(cursor);
-  if (/^(?:<<<<<<<|=======|>>>>>>>)/m.test(output)) throw Error('Unresolved conflict markers remain.');
+  if (UNRESOLVED.test(output)) throw Error('Unresolved conflict markers remain.');
   return output;
 }
 
-module.exports = { validateResolutionHunks, applyResolutionHunks };
+module.exports = { validateResolutionHunks, describeConflictHunks, applyResolutionHunks };

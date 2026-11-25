@@ -8,12 +8,16 @@ const path = require('node:path');
 const { validateSelection } = require('./dashboard');
 const { validateResolution, executeResolution } = require('./resolution');
 
-async function createMergeHandoff(rawSelection, { execute = executeResolution, validate = validateResolution,
-  onResult = () => {}, ttlMs = 6 * 3600000, persistent = false } = {}) {
-  const selection = validateSelection(rawSelection);
+async function createMergeHandoff(rawSelection, options) {
+  return createHandoff(validateSelection(rawSelection), options);
+}
+
+async function createHandoff(selection, { execute = executeResolution, validate = validateResolution,
+  onResult = () => {}, ttlMs = 6 * 3600000, persistent = false, syncPreview = false } = {}) {
   const route = '/lindsey-merge/' + randomUUID();
   const page = readFileSync(path.join(__dirname, 'handoff.html'), 'utf8')
-    .replace('__MERGE_HEADER_CSS__', readFileSync(path.join(__dirname, 'header.css'), 'utf8'));
+    .replace('__MERGE_HEADER_CSS__', readFileSync(path.join(__dirname, 'header.css'), 'utf8'))
+    .replace('__SYNC_PREVIEW__', String(syncPreview));
   let attempted = false, running = false, outcome, failure, prompt;
   let staged; // Only the rare oversized handoff occupies local memory.
   const maxBodyBytes = 64 * 1024 * 1024;
@@ -123,4 +127,4 @@ async function createMergeHandoff(rawSelection, { execute = executeResolution, v
     dispose() { receiver?.retire();clearTimeout(expiry); server.close(); } };
 }
 
-module.exports = { createMergeHandoff };
+module.exports = { createMergeHandoff, createHandoff };

@@ -9,6 +9,7 @@ const { createHash } = require('node:crypto');
 const {
   lindseyScript, safeRelative, inspectPreview, applyPreview, generatePreview, offerConflictRecoveryOptions
 } = require('../../extension/merge/lindsey-conflicts');
+const { prepareChatGPTSyncPreview } = require('../../extension/merge/sync-chatgpt');
 
 async function run() {
   for (const invalid of ['../../secret', '/tmp/abc', '.git/index', 'a//b', 'a\\b', '']) {
@@ -103,6 +104,70 @@ async function run() {
       },
       run: async () => { assert.fail('App-authenticated sync should not invoke the shared-secret CLI'); }
     }), { files: [{ path: 'file.txt', sha256: createHash('sha256').update('merged\n').digest('hex') }] });
+
+    const untouched = 'unchanged local context\n';
+    const diff3 = Buffer.from('<<<<<<< HEAD\nours\n||||||| ancestor\ncommon behavior\n=======\ntheirs\n>>>>>>> main\n');
+    fs.writeFileSync(path.join(root, 'file.txt'), untouched + diff3);
+    const repository = 'pony-factor/example';
+    const details = { branch: 'topic', head: base, target: 'a'.repeat(40), defaultBranch: 'main' };
+    let cancel;
+    const webUI = {
+      ...syncUI, ProgressLocation: { Notification: 15 },
+      workspace: { async openTextDocument(document) {
+        assert.match(document.content, /Keep both changes/);
+        return document;
+      } },
+      window: { ...syncUI.window, async showTextDocument() {}, withProgress: async (options, task) => {
+        assert.equal(options.cancellable, true);
+        return task({}, { onCancellationRequested(callback) {
+          cancel = callback;
+          return { dispose() {} };
+        } });
+      } },
+      commands: { async executeCommand(command, value, candidatePath) {
+        if (command === 'vscode.diff') {
+          assert.equal(fs.readFileSync(candidatePath, 'utf8'), untouched + 'combined implementation\n');
+          return;
+        }
+        assert.equal(command, 'workbench.action.browser.open');
+        const launch = new URL(value.url);
+        assert.equal(launch.origin, 'https://chatgpt.com');
+        assert(!value.url.includes('file.txt'), 'Conflict text stays out of the navigation URL');
+        const callback = new URLSearchParams(launch.hash.slice(1)).get('return_to');
+        const { prompt } = await (await fetch(callback + '/prompt')).json();
+        assert.match(prompt, /file\.txt/);
+        assert(prompt.includes(untouched.trim()), 'The local context accompanies the conflict');
+        assert.match(prompt, /"base":"common behavior/);
+        const post = result => fetch(callback, {
+          method: 'POST', headers: { Origin: new URL(callback).origin, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: 1, repository, results: [result] })
+        });
+        const proposal = { headSha: base, baseSha: details.target, resolutionHunks: [
+          { path: 'file.txt', hunks: [{ index: 0, choice: 'custom', resolved: 'combined implementation\n' }] }
+        ], decisions: [{ path: 'file.txt', title: '🛠️ Keep both changes',
+          description: 'Both sides add an independent line.' }] };
+        assert.equal((await post({ ...proposal, baseSha: base })).status, 400);
+        assert.equal((await post({ ...proposal, resolutionHunks: [] })).status, 400);
+        assert.equal((await post({ ...proposal, decisions: [] })).status, 400);
+        for (const hunk of [{ index: 0, choice: 'ours' }, { index: 0, choice: 'custom', resolved: 'ours\n' }]) {
+          const oneSide = await post({ ...proposal, resolutionHunks: [{ path: 'file.txt', hunks: [hunk] }] });
+          assert.equal(oneSide.status, 400);
+          assert.match((await oneSide.json()).error, /before choosing one side/);
+        }
+        assert.deepEqual(await (await post(proposal)).json(), { syncPreview: true });
+      } }
+    };
+    approve = false;
+    const webPreview = () => generatePreview(webUI, mockRepo, { sync: true, lindsey: (checkout, output) =>
+      prepareChatGPTSyncPreview(webUI, repository, details, checkout, output) });
+    assert.equal(await webPreview(), undefined);
+    assert.deepEqual(fs.readFileSync(path.join(root, 'file.txt')), Buffer.concat([Buffer.from(untouched), diff3]));
+    webUI.commands.executeCommand = async command => {
+      assert.equal(command, 'workbench.action.browser.open');
+      cancel();
+    };
+    assert.equal(await webPreview(), undefined);
+    assert(git('ls-files', '-u'), 'ChatGPT review does not stage the conflict');
     const failedPreview = stderr => generatePreview(syncUI, mockRepo, {
       ...previewOptions, run: async () => { throw Object.assign(new Error('Command failed'), { stderr }); }
     });

@@ -80,6 +80,7 @@ async function syncPublisher(root, remote, { enabled = separateAppsEnabled, tran
     } catch (error) { throw gitFailure(error, ['push']); }
   };
   publish.repository = repo;
+  publish.author = author;
   publish.commit = async message => {
     try {
       await run('git', ['commit', '-m', message], { cwd: root, timeout: 120000,
