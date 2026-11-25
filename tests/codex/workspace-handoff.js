@@ -247,6 +247,17 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     connection.sendProviderRequest('frontend', 'frontend-request', 'thread/resume', { threadId, cwd: from });
     assert.equal(requests.at(-1).params.cwd, destination, 'A stale frontend resume cannot reattach the worker to main');
 
+    let windowLimit = true;
+    vscode.workspace.getConfiguration = () => ({ get: () => windowLimit });
+    await fs.mkdir(path.join(destination, '.git'));
+    connection.sendProviderRequest('frontend', 'new-thread', 'thread/start', { cwd: from });
+    assert.equal(requests.at(-1).params.cwd, destination, 'New chats start in the window checkout');
+    connection.sendProviderRequest('frontend', 'queued-turn', 'turn/start', { threadId: newThreadId, cwd: from });
+    assert.equal(requests.at(-1).params.cwd, destination, 'The native queue cannot start in another checkout');
+    windowLimit = false;
+    connection.sendProviderRequest('frontend', 'queued-turn', 'turn/start', { threadId: newThreadId, cwd: from });
+    assert.equal(requests.at(-1).params.cwd, from, 'Disabling the limit keeps native cwd selection');
+
     wrongCwd = true;
     const before = requests.filter(request => request.method === 'turn/start').length;
     await assert.rejects(resume({ ...plan, destination }), /did not resume the same chat/);

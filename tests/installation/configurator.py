@@ -254,6 +254,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertIn('name="durableBackgroundCommits"', commits)
         self.assertIn('name="placeholderPrefix"', commits)
         self.assertIn('id="signing-key"', source)
+        self.assertRegex(source, r'name="singleRepositoryPerWindow"[^>]*\bchecked\b')
         self.assertIn('>AI</button>', page)
 
     def test_missing_gpg_does_not_claim_no_keys_exist(self):

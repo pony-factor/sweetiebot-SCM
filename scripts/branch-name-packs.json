@@ -1418,7 +1418,7 @@
         "star-tracker",
         "gallop-j-fry",
         "tangerine-glamour",
-        "teachers-pettruffle",
+        "truffle-shuffle",
         "tender-taps",
         "cherry-quartz",
         "waltzer",
@@ -1426,7 +1426,8 @@
         "frosty-quartz"
       ],
       "aliases": {
-        "snide-bullyscore": "score"
+        "snide-bullyscore": "score",
+        "teachers-pettruffle": "truffle-shuffle"
       }
     },
     {

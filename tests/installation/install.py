@@ -151,7 +151,72 @@ def browser_open_action_fixture():
     )
 
 
+GIT_MODEL_FIXTURE = """
+class GitModel {
+    constructor() {
+        api.workspace.onDidChangeConfiguration(this.onDidChangeConfiguration,this,this.disposables)
+    }
+    disposables = [];
+    openRepositories = [];
+    logger = {};
+    git = {open: root => root};
+    async onDidChangeWorkspaceFolders({added:e,removed:t}){try{
+        for (const s of this.openRepositories) e.some(c=>contains(c.uri.fsPath,s.repository.root));
+        await Promise.all(e.map(folder => this.openRepository(folder.uri.fsPath)));
+    }catch(error){throw error}}
+    onDidChangeConfiguration() {}
+    scanWorkspaceFolders() {}
+    onDidChangeVisibleTextEditors() {}
+    async getRepositoryRoot(root) { return { repositoryRoot: root }; }
+    async openRepository(e){
+        let{repositoryRoot:s,unsafeRepositoryMatch:c}=await this.getRepositoryRoot(e);
+        let y=this.git.open(s,m,f,this.logger);
+        const entry = {
+            repository: {root: y},
+            dispose: () => this.openRepositories.splice(this.openRepositories.indexOf(entry), 1),
+        };
+        this.openRepositories.push(entry);
+    }
+}
+"""
+
+
 class TransformTests(unittest.TestCase):
+    def test_native_git_repository_limit_tracks_window_and_setting(self):
+        installed = install.transform_git_repository_limit(GIT_MODEL_FIXTURE)
+        self.assertEqual(install.transform_git_repository_limit(installed), installed)
+        self.assertEqual(install.transform_git_repository_limit(installed, remove=True), GIT_MODEL_FIXTURE)
+        script = """
+const assert = require('node:assert/strict');
+const contains = (folder, path) => path === folder || path.startsWith(folder + '/');
+const folder = fsPath => ({uri: {scheme: 'file', fsPath}});
+const m = null, f = null;
+let enabled, settingChanged;
+const api = {workspace: {
+    workspaceFolders: [folder('/main')],
+    getConfiguration: () => ({get: (name, fallback) => enabled ?? fallback}),
+    onDidChangeConfiguration: (listener, model) => { settingChanged ??= listener.bind(model); },
+}, window: {visibleTextEditors: []}};
+""" + installed + """
+(async () => {
+    const model = new GitModel();
+    const roots = () => model.openRepositories.map(entry => entry.repository.root);
+    await Promise.all(['/other', '/main/module', '/main'].map(root => model.openRepository(root)));
+    assert.deepEqual(roots(), ['/main']);
+    enabled = false;
+    await model.openRepository('/other');
+    assert.deepEqual(roots(), ['/main', '/other']);
+    enabled = true;
+    settingChanged({affectsConfiguration: () => true});
+    assert.deepEqual(roots(), ['/main']);
+    api.workspace.workspaceFolders = [folder('/other')];
+    await model.onDidChangeWorkspaceFolders({added: [], removed: []});
+    await model.openRepository('/main');
+    assert.deepEqual(roots(), ['/other']);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+        # Run the injected Git model code with two independent checkout paths.
+        subprocess.run(['node', '-'], input=script, check=True, text=True)
     def test_window_title_uses_single_repository_before_editor_selection(self):
         native = '''class Title {
 getWindowTitle(){let e=this.editorService.activeEditor,t=this.contextService.getWorkspace();let v='',p='',b='';return {rootName:v,rootPath:p,rootNameShort:b}}
@@ -2102,7 +2167,8 @@ class IndependentRepairTests(WorkbenchFixture):
             'let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
             'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}'
             'async updateWhenIdleAndWait(){await this.whenIdleAndFocused(),await this.status(),await pause(5e3)}}'
-            'decorate([debounce(1e3)],Repository.prototype,"eventuallyUpdateWhenIdleAndWait",1)')
+            'decorate([debounce(1e3)],Repository.prototype,"eventuallyUpdateWhenIdleAndWait",1)'
+            + GIT_MODEL_FIXTURE)
         self.preload = resources / 'out/vs/platform/browserView/electron-browser/preload-browserView.js'
         self.preload.parent.mkdir(parents=True)
         self.preload.write_text('"vscode:browserView:preloadReady";')
