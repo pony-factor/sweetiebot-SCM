@@ -780,6 +780,26 @@ def pr_workspace_explorer_edits(js):
     return [(match.group(0), replacement), (original_title, new_title)]
 
 
+def checkout_editor_edits(js, command):
+    if 'this.extractEditorResources(' not in js:
+        return []
+    ident = r'[A-Za-z_$][\w$]*'
+    single = (rf'async openEditor\(({ident}),{ident},{ident}\)\{{'
+              rf'let {ident},{ident}=({ident})\(\1\)\?{ident}:\1\.options,')
+    batch = (rf'async openEditors\(({ident}),{ident},({ident})\)\{{'
+             rf'if\(\2\?\.validateTrust&&!await this\.handleWorkspaceTrust\(\1\)\)return\[\];')
+    matches = [list(re.finditer(pattern, js)) for pattern in (single, batch)]
+    if any(len(group) != 1 for group in matches):
+        raise ValueError("Unsupported VS Code build: editor checkout guard anchors do not match.")
+    one, many = (group[0] for group in matches)
+    check = f"scmToolkitAllowCheckoutEditor(this,{command},"
+    return [
+        (one[0], one[0].replace('{', f'{{if(!await {check}{one[2]}({one[1]})?{{editor:{one[1]}}}:{one[1]}))return;', 1)),
+        (many[0], many[0].replace('{', f'{{{many[1]}=(await Promise.all({many[1]}.map(async entry=>'
+         f'await {check}entry)?entry:undefined))).filter(Boolean);if(!{many[1]}.length)return[];', 1)),
+    ]
+
+
 def edits(js=None, settings=None):
     command, notification, configuration, mcp, observe, dimension = "fe", "Le", "Xe", "Me", "pe", "xi"
     ident = r"[A-Za-z_$][\w$]*"
@@ -861,6 +881,7 @@ def edits(js=None, settings=None):
         changes.extend(browser_globe_new_tab_edits(js, home_url))
 
     if js is not None:
+        changes.extend(checkout_editor_edits(js, command))
         changes.extend(browser_cross_window_reopen_edits(js))
         changes.extend(window_title_status_edits(js))
         changes.extend(window_title_push_edits(js))
@@ -1389,6 +1410,101 @@ def transform_git_background(source, remove=False):
     return source
 
 
+def transform_git_repository_limit(source, remove=False):
+    """Keep the Git model on the primary checkout for this window."""
+    start = '/* sweetiebot-repository-limit:start */'
+    end = '/* sweetiebot-repository-limit:end */'
+    if source.count(start) != source.count(end):
+        raise ValueError('Incomplete Git repository limit patch.')
+    source = re.sub(re.escape(start) + r'.*?' + re.escape(end), '', source, flags=re.DOTALL)
+    if remove:
+        return source
+
+    ident = r'[A-Za-z_$][\w$]*'
+    workspace_change = (
+        rf'async onDidChangeWorkspaceFolders\(\{{added:({ident}),removed:{ident}\}}\)\{{try\{{'
+    )
+    contains_path = re.search(rf'\.some\(({ident})=>({ident})\(\1\.uri\.fsPath,{ident}\.repository\.root\)\)', source)
+    configuration_listener = (
+        rf'({ident})\.workspace\.onDidChangeConfiguration\(this\.onDidChangeConfiguration,this,this\.disposables\)'
+    )
+    resolve_root = (
+        rf'let\{{repositoryRoot:({ident}),unsafeRepositoryMatch:{ident}\}}=await this\.getRepositoryRoot\({ident}\);'
+    )
+    # Check before the native trust prompt and again before registration, since
+    # workspace folders and settings can change while the prompt is open.
+    register_repository = rf'let {ident}=this\.git\.open\(({ident}),{ident},{ident},this\.logger\)'
+    patterns = (workspace_change, configuration_listener, resolve_root, register_repository)
+    matches = [list(re.finditer(pattern, source)) for pattern in patterns]
+    if not contains_path or any(len(group) != 1 for group in matches):
+        raise ValueError('Unsupported native Git repository discovery lifecycle.')
+    folders, listener, resolved, register = (group[0] for group in matches)
+    if not folders.start() < resolved.start() < register.start() or resolved[1] != register[1]:
+        raise ValueError('Unsupported native Git repository registration.')
+    api, contains, root = listener[1], contains_path[2], resolved[1]
+    open_method = source.rfind('async openRepository(', folders.end(), resolved.start())
+    if open_method < 0:
+        raise ValueError('Unsupported native Git repository open method.')
+
+    methods = f"""
+    sweetiebotLimitsRepositories() {{
+        return {api}.workspace.getConfiguration("sweetiebot").get("singleRepositoryPerWindow", true);
+    }}
+    sweetiebotSelectRepository(root, reconcile = false) {{
+        if (!this.sweetiebotLimitsRepositories()) return true;
+        const folders = ({api}.workspace.workspaceFolders ?? []).filter(folder => folder.uri.scheme === "file");
+        const priority = path => {{
+            for (const [index, folder] of folders.entries()) {{
+                const workspacePath = folder.uri.fsPath;
+                const parent = {contains}(path, workspacePath);
+                const child = {contains}(workspacePath, path);
+                if (parent || child) return index * 3 + (parent && child ? 0 : parent ? 1 : 2);
+            }}
+            return folders.length ? Infinity : 0;
+        }};
+        let best = Infinity;
+        let keep;
+        for (const entry of this.openRepositories) {{
+            const rank = priority(entry.repository.root);
+            if (rank < best) {{
+                best = rank;
+                keep = entry;
+            }}
+        }}
+        const accept = root !== undefined && priority(root) < best;
+        if (reconcile && (accept || root === undefined)) {{
+            // Dispose the model entry without marking the repository as manually closed.
+            for (const entry of [...this.openRepositories]) {{
+                if (accept || entry !== keep) entry.dispose();
+            }}
+        }}
+        return accept;
+    }}
+    """
+    folder_update = (
+        f'if(this.sweetiebotLimitsRepositories()){{this.sweetiebotSelectRepository(undefined,true);'
+        f'{folders[1]}={api}.workspace.workspaceFolders??[];}}'
+    )
+    setting_update = f"""{api}.workspace.onDidChangeConfiguration(event => {{
+        if (!event.affectsConfiguration("sweetiebot.singleRepositoryPerWindow")) return;
+        if (this.sweetiebotLimitsRepositories()) {{
+            this.sweetiebotSelectRepository(undefined, true);
+        }}
+        void this.scanWorkspaceFolders();
+        void this.onDidChangeVisibleTextEditors({api}.window.visibleTextEditors);
+    }}, this, this.disposables),"""
+    edits = (
+        (folders.end(), folder_update),
+        (listener.start(), setting_update),
+        (open_method, methods),
+        (resolved.end(), f'if(!this.sweetiebotSelectRepository({root}))return;'),
+        (register.start(), f'if(!this.sweetiebotSelectRepository({root},true))return;'),
+    )
+    for offset, insertion in sorted(edits, reverse=True):
+        source = source[:offset] + start + insertion + end + source[offset:]
+    return source
+
+
 def remove_legacy_branch_picker(js, css):
     # The predecessor picker owns the same widget hooks. Leaving its saved
     # anchors in comments can make a new install patch metadata instead of code.
@@ -1489,6 +1605,8 @@ def transform(js, css, remove=False, settings=None):
         + (WORKBENCH_ASSETS / "message-bar.js").read_text()
         + "\n"
         + (WORKBENCH_ASSETS / "live-runtime.js").read_text()
+        + "\n"
+        + (WORKBENCH_ASSETS / "checkout-editor.js").read_text()
         + END
     )
     toolkit_css = (WORKBENCH_ASSETS / "picker.css").read_text()
@@ -2040,8 +2158,9 @@ def main():
         git_old = git_extension.read_text()
         paths.append(git_extension)
         old.append(git_old)
-        new.append(transform_git_refresh(
-            transform_git_background(git_old, remove=args.uninstall), remove=args.uninstall))
+        new.append(transform_git_repository_limit(transform_git_refresh(
+            transform_git_background(git_old, remove=args.uninstall), remove=args.uninstall),
+            remove=args.uninstall))
         for browser_path, browser_old, browser_new in browser_pr.patch_files(args.app, remove=args.uninstall):
             paths.append(browser_path)
             old.append(browser_old)

@@ -414,6 +414,7 @@ function settings() {
 }
 
 async function activate(context) {
+  registerEditorWorkspaceHandoff(vscode, context);
   await migrateLegacySettings(vscode);
   // Choose native persistent workspace browser storage before opening ChatGPT
   // tabs; never overwrite explicit user settings or erase existing drafts.
@@ -430,7 +431,6 @@ async function activate(context) {
   registerGitGraphRelativeDates(vscode, context);
   void require('./branches/commit-drafts').registerCommitDrafts(vscode, context)
     .catch(error => console.warn('Sweetiebot commit draft restore:', error.message));
-  registerEditorWorkspaceHandoff(vscode, context);
   registerCodexWorkspaceHandoff(vscode, context);
   registerCommitLimitCommand(vscode, context);
   registerSpellcheckPreviewCommand(vscode, context);

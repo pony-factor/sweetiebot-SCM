@@ -2068,7 +2068,11 @@ class IndependentRepairTests(WorkbenchFixture):
             'let r=[...this.indexGroup.resourceStates.map(o=>o.resourceUri.fsPath)];'
             'let x=api.workspace.getConfiguration("git",api.Uri.file(this.root));return "native"}'
             'async updateWhenIdleAndWait(){await this.whenIdleAndFocused(),await this.status(),await pause(5e3)}}'
-            'decorate([debounce(1e3)],Repository.prototype,"eventuallyUpdateWhenIdleAndWait",1)')
+            'decorate([debounce(1e3)],Repository.prototype,"eventuallyUpdateWhenIdleAndWait",1)'
+            'class GitModel{constructor(){api.workspace.onDidChangeConfiguration(this.onDidChangeConfiguration,this,this.disposables)}'
+            'async onDidChangeWorkspaceFolders({added:e,removed:t}){try{e.some(c=>contains(c.uri.fsPath,s.repository.root))}catch{}}'
+            'async openRepository(e){let{repositoryRoot:s,unsafeRepositoryMatch:c}=await this.getRepositoryRoot(e);'
+            'let y=this.git.open(s,m,f,this.logger)}}')
         self.preload = resources / 'out/vs/platform/browserView/electron-browser/preload-browserView.js'
         self.preload.parent.mkdir(parents=True)
         self.preload.write_text('"vscode:browserView:preloadReady";')

@@ -24,6 +24,7 @@ function scmToolkitUserQueuePause(coordinator, threadId, paused) {
 function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupported = false) {
     const { randomUUID } = require('node:crypto');
     const fs = require('node:fs/promises');
+    const { existsSync, realpathSync } = require('node:fs');
     const path = require('node:path');
     const connection = provider.codexMcpConnection;
     const pending = new Map();
@@ -107,18 +108,45 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
         const paths = await Promise.all(roots.map(folder => canonical(folder.uri.fsPath).catch(() => null)));
         return paths.includes(cwd);
     };
+    const activeCheckout = () => {
+        if (!vscode.workspace.getConfiguration?.('sweetiebot').get('singleRepositoryPerWindow', true)) return undefined;
+        const folders = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file');
+        const active = vscode.extensions?.getExtension('vscode.git')?.exports?.getAPI(1).repositories[0]?.rootUri.fsPath;
+        const contains = (root, file) => file === root || file.startsWith(root + path.sep);
+        for (const { uri } of folders) {
+            let folder = uri.fsPath;
+            if (active && (contains(active, folder) || contains(folder, active))) return active;
+            // Thread startup can precede the Git extension's initial scan.
+            while (folder !== path.dirname(folder)) {
+                if (existsSync(path.join(folder, '.git'))) return folder;
+                folder = path.dirname(folder);
+            }
+        }
+        return undefined;
+    };
     subscriptions.push(vscode.commands.registerCommand('sweetiebot.codex.chatCheckoutVisibility', async threadId => {
         const cwd = await chatCheckoutPath(threadId);
         return { threadId, needsNewWindow: !(await checkoutAlreadyOpen(cwd)) };
     }));
-    // A frontend cache must not override the verified destination on its next
-    // resume or user turn. Only this explicitly handed-off thread is affected.
+    // Native turns follow the window checkout. Explicit handoff requests still
+    // verify the chosen destination before resuming the same chat.
     const guardedSend = typeof originalSend === 'function' ? function (name, id, method, params, ...rest) {
         const handoff = handoffs.get(params?.threadId);
         if (handoff && name !== providerName && method === 'turn/interrupt'
             && (!handoff.turnId || handoff.turnId === params.turnId)) handoff.userStopped = true;
-        const cwd = bindings.get(params?.threadId);
-        if (cwd && ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method)) params = { ...params, cwd };
+        const bound = bindings.get(params?.threadId);
+        const continuing = ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method);
+        if (continuing || method === 'thread/start') {
+            const root = name !== providerName && activeCheckout();
+            let cwd = continuing ? bound : undefined;
+            if (root) {
+                try {
+                    const relative = path.relative(realpathSync.native(root), realpathSync.native(cwd ?? params?.cwd));
+                    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) cwd = root;
+                } catch { cwd = root; }
+            }
+            if (cwd) params = { ...params, cwd };
+        }
         return originalSend.call(this, name, id, method, params, ...rest);
     } : undefined;
     if (guardedSend) connection.sendProviderRequest = guardedSend;

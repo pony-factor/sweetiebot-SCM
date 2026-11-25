@@ -2,6 +2,10 @@
 
 const path = require('node:path');
 const { realpathSync } = require('node:fs');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const exec = promisify(execFile);
+const openingHandoffEditors = new WeakMap();
 
 // VS Code keeps the path it opened, while Git routing uses a real path.
 // Resolve the nearest existing parent for deleted and as-yet unsaved files.
@@ -29,6 +33,59 @@ function relativeFile(root, uri) {
   if (relative) return relative;
   const resolved = resolveEditorPath(uri.fsPath);
   return resolved ? relativeToRoot(resolved) : null;
+}
+
+function localFile(uri) {
+  if (uri?.scheme === 'file') return uri;
+  if (uri?.scheme === 'git') {
+    try {
+      const fsPath = JSON.parse(uri.query).path;
+      if (typeof fsPath === 'string' && path.isAbsolute(fsPath)) return { scheme: 'file', fsPath };
+    } catch { /* Other virtual documents retain their identity. */ }
+  }
+  return undefined;
+}
+
+async function allowCheckoutEditor(vscode, resources, run = async (root, args) =>
+  (await exec('git', ['-C', root, ...args], { timeout: 5000 })).stdout) {
+  if (!vscode.workspace.getConfiguration('sweetiebot').get('singleRepositoryPerWindow', true)) return true;
+  const transition = openingHandoffEditors.get(vscode);
+  const files = resources.map(localFile).filter(uri => uri && !transition?.has(uri.fsPath));
+  if (!files.length) return true;
+  const folders = vscode.workspace.workspaceFolders?.filter(folder => folder.uri.scheme === 'file') || [];
+  const repository = vscode.extensions.getExtension('vscode.git')?.exports?.getAPI(1).repositories[0];
+  let root = repository?.rootUri?.fsPath;
+  if (root && !folders.some(({ uri }) => root === uri.fsPath || relativeFile(root, uri) ||
+      relativeFile(uri.fsPath, { scheme: 'file', fsPath: root }))) root = undefined;
+  if (!root) {
+    for (const folder of folders) {
+      root = (await run(folder.uri.fsPath, ['rev-parse', '--show-toplevel']).catch(() => '')).trim();
+      if (root) break;
+    }
+  }
+  if (root) root = resolveEditorPath(root);
+  if (!root) return true;
+  const outside = files.filter(uri => relativeFile(root, uri) === null);
+  if (!outside.length) return true;
+  const listing = await run(root, ['worktree', 'list', '--porcelain', '-z']);
+  const worktrees = listing.split('\0\0').map(record => {
+    const fields = record.split('\0');
+    return {
+      root: fields[0]?.startsWith('worktree ') ? resolveEditorPath(fields[0].slice(9)) : null,
+      branch: fields.find(field => field.startsWith('branch refs/heads/'))?.slice(18),
+    };
+  });
+  const selected = worktrees.find(worktree => worktree.root === root);
+  for (const file of outside) {
+    const worktree = worktrees.find(other => other.root && other.root !== root && relativeFile(other.root, file) !== null);
+    if (!worktree) continue;
+    const branch = worktree.branch ? 'the ' + worktree.branch + ' worktree' : 'a different worktree';
+    void vscode.window.showWarningMessage('Blocked ' + path.basename(file.fsPath) + ' from ' + branch + '. ' +
+      (selected?.branch ? 'This window is on ' + selected.branch + '. ' : '') +
+      'Open it in a window on that checkout.');
+    return false;
+  }
+  return true;
 }
 
 // Save only this repository's documents. saveAll would also write unrelated
@@ -98,7 +155,15 @@ async function moveRepositoryEditors(vscode, root, destination) {
   };
   assertSavedTabs();
   const editors = plans.map(({ tab, ...editor }) => editor);
-  for (const editor of editors) await openEditor(vscode, editor);
+  try {
+    for (const editor of editors) {
+      const resources = [editor.uri, editor.original, editor.modified].map(localFile).filter(Boolean);
+      openingHandoffEditors.set(vscode, new Set(resources.map(uri => uri.fsPath)));
+      await openEditor(vscode, editor);
+    }
+  } finally {
+    openingHandoffEditors.delete(vscode);
+  }
   assertSavedRepositoryDocuments(vscode, root);
   assertSavedTabs();
   // Opening a preview can already have replaced its original preview tab.
@@ -115,6 +180,8 @@ function openEditor(vscode, { uri, original, modified, viewType, options }) {
 }
 
 function registerEditorWorkspaceHandoff(vscode, context) {
+  context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.allowCheckoutEditor',
+    resources => allowCheckoutEditor(vscode, resources)));
   const key = workspace => 'sweetiebot.editorHandoff.' + workspace;
   context.subscriptions.push(vscode.commands.registerCommand('sweetiebot.editorHandoff.save', (workspace, editors) => {
     const stored = editors?.map(({ options, ...editor }) => {
@@ -144,4 +211,4 @@ function registerEditorWorkspaceHandoff(vscode, context) {
 }
 
 module.exports = { saveRepositoryDocuments, assertSavedRepositoryDocuments, moveRepositoryEditors,
-  registerEditorWorkspaceHandoff };
+  registerEditorWorkspaceHandoff, allowCheckoutEditor };
