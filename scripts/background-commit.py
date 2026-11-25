@@ -882,8 +882,10 @@ def finalize_message(directory, job):
 def captured_diff(job):
     base = job['parent'] or git('hash-object', '-w', '-t', 'tree', '--stdin', input='')
     args = ['diff', '--no-ext-diff', '--no-color']
-    stat = git(*args, '--stat', base, job['tree'])
-    diff = git(*args, '--unified=2', base, job['tree'])
+    # Git can emit non-UTF-8 text from blobs it treats as text. Replace invalid
+    # bytes in the title prompt without changing the snapshot or its paths.
+    stat = git(*args, '--stat', base, job['tree'], encoding='utf-8', errors='replace')
+    diff = git(*args, '--unified=2', base, job['tree'], encoding='utf-8', errors='replace')
     files = git(*args, '--name-only', '-z', base, job['tree']).split('\x00')
     return stat, diff, [name for name in files if name]
 
