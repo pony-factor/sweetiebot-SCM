@@ -132,6 +132,17 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.equal(second.value.continueUrl,undefined,'Successful synchronization finishes the repair loop');
   } finally {repair.dispose();}
 
+  const fullRepair = await createMergeBatch(repairSelection, { api, destination: 'https://chatgpt.com/',
+    branchOnly: true, fullSyncRepair: true, execute: async () => { assert.fail('Unexpected execution'); } });
+  try {
+    const prompt = await readPrompt(fullRepair.url);
+    assert.match(prompt, /Choose the design yourself/);
+    assert.match(prompt, /supporting source or test files/);
+    assert.match(prompt, /title and body you would use/);
+    assert(!prompt.includes('resolutionHunks') && !prompt.includes('AUTOMATIC SEQUENTIAL BULK MERGE'));
+    assert.equal(new URLSearchParams(new URL(fullRepair.url).hash.slice(1)).get('sweetiebot_sync_preview'), '1');
+  } finally { fullRepair.dispose(); }
+
   // Choices travel through the local handoff rather than a personal connector.
   {
     const decision = { number: 1, headSha: a, kind: 'human_review', reason: 'Two incompatible storage scopes.',

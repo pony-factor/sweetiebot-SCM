@@ -12,23 +12,25 @@ function validateDecisions(value = []) {
         typeof item.title !== 'string' || item.title.length > 160 ||
         !/^\p{Extended_Pictographic}\uFE0F?\s+\S/u.test(item.title) || /[\r\n\x00]/.test(item.title) ||
         typeof item.description !== 'string' || !item.description.trim() || item.description.length > 4000 ||
-        /\x00/.test(item.description) || /^Co-authored-by:/im.test(item.description)) {
+        /\x00/.test(item.description) || /^Co-authored-by:/im.test(item.description) ||
+        (item.keepBase !== undefined && typeof item.keepBase !== 'boolean')) {
       throw Error('Each conflicted file needs a unique safe path, emoji decision title and explanation.');
     }
     seen.add(item.path);
-    return { path: item.path, title: item.title.trim(), description: item.description.trim() };
+    return { path: item.path, title: item.title.trim(), description: item.description.trim(),
+      ...(item.keepBase ? { keepBase: true } : {}) };
   });
 }
 
 // Build an append-only PR history in an isolated index. main is only a tree
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
-  conflicts, decisions, author, automationCommitter = null, base, onCommit = () => {},
+  conflicts, decisions, supportingFiles = [], author, automationCommitter = null, base, onCommit = () => {},
   messageDirectory = path.join(directory, '.git'), preserveMergeAncestry = true, skipUnchanged = false,
   createCommitTree = attributedCommitTree }) {
   decisions = validateDecisions(decisions);
-  if (conflicts.some(file => !safePatchPath(file)) ||
-      conflicts.length !== decisions.length || conflicts.some(file => !decisions.some(item => item.path === file))) {
+  if (conflicts.some(file => !safePatchPath(file) || !decisions.some(item => item.path === file)) ||
+      decisions.some(item => !conflicts.includes(item.path) && !supportingFiles.includes(item.path))) {
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
   }
   const messageFile = path.join(messageDirectory, 'sweetiebot-resolution-message');

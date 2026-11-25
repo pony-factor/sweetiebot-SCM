@@ -75,13 +75,17 @@ async function approveSyncPullRequestRepair(vscode, item) {
   }
   const review = await vscode.workspace.openTextDocument({ language: 'plaintext', content: [
     'Proposed branch sync for PR #' + item.number, 'Head: ' + item.headSha, 'Incoming: ' + item.baseSha,
-    item.explanation, ...item.decisions.map(file => [file.path, file.title, file.description].join('\n'))
+    item.explanation, ...item.decisions.map(file => [
+      file.path + (file.keepBase ? ' (keep incoming version)' : ''), file.title, file.description
+    ].join('\n'))
   ].filter(Boolean).join('\n\n') });
   await vscode.window.showTextDocument(review, { preview: false });
-  const changes = await vscode.workspace.openTextDocument(item.patch
-    ? { language: 'diff', content: item.patch }
-    : { language: 'json', content: JSON.stringify(item.resolutionHunks, null, 2) });
-  await vscode.window.showTextDocument(changes, { preview: false, viewColumn: vscode.ViewColumn.Beside });
+  if (item.patch || item.resolutionHunks.length) {
+    const changes = await vscode.workspace.openTextDocument(item.patch
+      ? { language: 'diff', content: item.patch }
+      : { language: 'json', content: JSON.stringify(item.resolutionHunks, null, 2) });
+    await vscode.window.showTextDocument(changes, { preview: false, viewColumn: vscode.ViewColumn.Beside });
+  }
   const apply = 'Apply and publish with Lindsey';
   return await vscode.window.showInformationMessage(
     'Review the PR repair and any supporting changes before Lindsey updates the PR branch.', apply) === apply;
@@ -468,6 +472,7 @@ async function resumePRSession(vscode, context) {
           persistentHandoffs:true,
           onProgress: update => progress.report(update),
           branchOnly: true,
+          fullSyncRepair: Boolean(input.options.reviewSync),
           api: endpoint => {
             if (!endpoint.startsWith(prefix + '/')) throw Error('Repair API request is outside the selected repository.');
             return githubGet(readFetch, auth.accessToken, selection.repository, endpoint.slice(prefix.length));

@@ -79,9 +79,15 @@ async function humanSquashMerge(repository, number, {
     throw Error('Selected PR head, base or title changed; prepare a fresh handoff.');
   }
   resolutionHunks = validateResolutionHunks(resolutionHunks);
+  decisions = require('./resolution-commits').validateDecisions(decisions);
   const compactResolution = resolutionHunks.length > 0;
+  const baseOnlyResolution = operation === 'sync' && !compactResolution && resolutionPatch === null &&
+    decisions.length > 0 && decisions.every(item => item.keepBase);
+  if (decisions.some(item => item.keepBase) && (operation !== 'sync' || compactResolution)) {
+    throw Error('Keeping the exact incoming file requires a full branch-sync resolution.');
+  }
   if (compactResolution && resolutionPatch !== null) throw Error('Compact hunks and a full patch are mutually exclusive.');
-  const needsResolution = resolutionPatch !== null || compactResolution;
+  const needsResolution = resolutionPatch !== null || compactResolution || baseOnlyResolution;
   if (needsResolution && baseSha !== expected.baseSha) throw refreshBase();
   if (resolutionPatch !== null && (!expected || typeof resolutionPatch !== 'string' ||
       !resolutionPatch.trim() || Buffer.byteLength(resolutionPatch) > 32 * 1024 * 1024)) {
@@ -284,6 +290,7 @@ async function humanSquashMerge(repository, number, {
     const requiredFiles = originalFiles.filter(name => treeEntries.get(liveBase).get(name) !== treeEntries.get(liveHead).get(name));
     await inRepo('checkout', '--quiet', '--detach', liveBase);
     let resolvedFiles;
+    let supportingDecisionFiles = [];
     if (needsResolution) {
       // Determine actual conflicts independently of model-supplied metadata.
       try { await inRepo(...(compactResolution ? ['-c', 'merge.conflictStyle=merge'] : []),
@@ -293,7 +300,7 @@ async function humanSquashMerge(repository, number, {
         if (!conflicts.length) throw error;
         if (conflicts.some(name => !safePatchPath(name))) throw Error('Conflict involves an unsafe or secret-bearing path.');
       }
-      if (conflicts.length && (conflicts.length !== decisions.length ||
+      if (conflicts.length && ((operation !== 'sync' || compactResolution) && conflicts.length !== decisions.length ||
           conflicts.some(file => !decisions.some(item => item.path === file)))) {
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
           conflictPaths: conflicts, reason: 'Provide a specific decision title and explanation for each conflicted file before preparing the merge.' };
@@ -333,13 +340,22 @@ async function humanSquashMerge(repository, number, {
         await inRepo('diff', '--cached', '--check');
       } else {
       const patchFile = path.join(temp, '.git', 'sweetiebot-resolution.patch');
-      await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
-      const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
-      resolvedFiles = patchPaths(resolutionPatch, numstat);
-      const missing = requiredFiles.filter(name => !resolvedFiles.includes(name));
-      if (missing.some(name => conflicts.includes(name))) {
-        throw Error('Resolution patch must cover every conflicted PR file.');
+      resolvedFiles = [];
+      if (!baseOnlyResolution) {
+        await fs.writeFile(patchFile, resolutionPatch, { mode: 0o600 });
+        const numstat = await inRepo('apply', '--numstat', '-z', '--', patchFile);
+        resolvedFiles = patchPaths(resolutionPatch, numstat);
       }
+      const keptBase = new Set(decisions.filter(item => item.keepBase).map(item => item.path));
+      if ([...keptBase].some(name => !conflicts.includes(name) || resolvedFiles.includes(name)) ||
+          conflicts.some(name => !keptBase.has(name) && !resolvedFiles.includes(name))) {
+        throw Error('Resolve every conflicted file in the patch or explicitly keep the incoming file unchanged.');
+      }
+      if (operation === 'sync') supportingDecisionFiles = resolvedFiles.filter(name => !conflicts.includes(name));
+      if (decisions.some(item => !conflicts.includes(item.path) && !supportingDecisionFiles.includes(item.path))) {
+        throw Error('A supporting-file decision must match a file edited by the approved patch.');
+      }
+      const missing = requiredFiles.filter(name => !resolvedFiles.includes(name) && !keptBase.has(name));
       // Keep Git's clean integration for PR files outside the supplied patch.
       // This diff is generated from the isolated three-way index, never from
       // the old PR tree, which could discard newer base changes.
@@ -362,8 +378,10 @@ async function humanSquashMerge(repository, number, {
         throw Error('Resolution patches cannot modify existing symlinks or submodules.');
       }
       progress('applying-resolution');
-      await inRepo('apply', '--check', '--index', '--', patchFile);
-      await inRepo('apply', '--index', '--', patchFile);
+      if (!baseOnlyResolution) {
+        await inRepo('apply', '--check', '--index', '--', patchFile);
+        await inRepo('apply', '--index', '--', patchFile);
+      }
       // Preserve Git's own clean index entries, including image blobs. Model
       // supplied patches remain text-only and never choose these blob IDs.
       for (const entry of cleanEntries) {
@@ -391,7 +409,7 @@ async function humanSquashMerge(repository, number, {
         reason: 'No merge conflicts or explicit resolution changes; left the PR branch unchanged.' };
     }
     const staged = await inRepo('diff', '--cached', '--name-only', '-z');
-    if (!staged.trim()) throw Error('Squash would make no changes; refusing empty commit.');
+    if (!staged.trim() && !baseOnlyResolution) throw Error('Squash would make no changes; refusing empty commit.');
     // Additional supporting files are allowed when explicitly supplied by the
     // resolution patch. Keep the staged tree bound to that validated patch.
     const proposedFiles = staged.split('\0').filter(Boolean).sort();
@@ -433,7 +451,8 @@ async function humanSquashMerge(repository, number, {
       const finalTree = await inRepo('write-tree');
       const prepared = await require('./resolution-commits').createResolutionCommits({
         git: inRepo, directory: temp, headSha: originalSha, baseSha, finalTree,
-        conflicts, decisions, author: automationAuthor || author, automationCommitter: automationAuthor, base,
+        conflicts, decisions, supportingFiles: supportingDecisionFiles,
+        author: automationAuthor || author, automationCommitter: automationAuthor, base,
         onCommit: decision => progress('decision-commit', decision)
       });
       operationCommitTitle = '🔄 Sync branch to ' + base;
