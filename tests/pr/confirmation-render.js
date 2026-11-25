@@ -5,7 +5,8 @@ const vm=require('node:vm');
 const html=fs.readFileSync(require.resolve('../../extension/ui/draft-confirmation.html'),'utf8')
   .replace('__MARKDOWN_RENDERER__',fs.readFileSync(require.resolve('../../extension/merge/dashboard-markdown.js'),'utf8'));
 assert.match(html,/\.merge-buttons\{display:flex;align-items:center;gap:8px/,'Merge method buttons retain spacing beside the PR badge');
-assert.match(html,/id="merge-local-signed"/,'Local signed squash is an explicit choice');
+assert.match(html,/id="merge-local-signed"[^>]*title=/,'Local signed squash remains an explicit recovery choice with a tooltip');
+assert.doesNotMatch(html,/id="merge-(?:history|local-signed)-help"/,'Merge explanations do not occupy permanent space below the controls');
 assert.match(html,/class="merge-spinner" aria-hidden="true"/,'The progress indicator includes a visible spinner');
 assert.match(html,/@media\(prefers-reduced-motion:reduce\)\{\.merge-spinner\{animation:none\}\}/,
   'The merge spinner respects reduced-motion preferences');
@@ -418,6 +419,23 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.equal(getElementById('pony-section').hidden,true,'Switching back to PR-only removes the pony column');
   assert.equal(getElementById('subtitle').textContent,'Pull request published. Review the details.');
+  layoutState={...layoutState,ci:{state:'pending',message:'CI checks are still running or queued — Compile bridge.'}};
+  await context.refresh();
+  assert.equal(getElementById('ci-status').hidden,false,'CI is visible before a merge attempt');
+  assert.match(getElementById('ci-status').textContent,/running or queued.*Compile bridge/);
+  layoutState={...layoutState,mergeIssue:{kind:'ci-pending',message:layoutState.ci.message},mergeHelpAvailable:true};
+  await context.refresh();
+  assert.equal(getElementById('merge-issue-title').textContent,'Waiting for CI checks');
+  assert.equal(getElementById('merge-help').hidden,true);
+  layoutState={...layoutState,mergeIssue:{kind:'ci-failed',message:'CI checks failed — Test suite.'}};
+  await context.refresh();
+  assert.equal(getElementById('merge-issue-title').textContent,'CI checks failed');
+  assert.match(getElementById('merge-error').textContent,/Test suite/);
+  assert.equal(getElementById('merge-help').hidden,false);
+  layoutState={...layoutState,ci:{state:'passed',message:'CI checks passed.'},mergeIssue:undefined};
+  await context.refresh();
+  assert.equal(getElementById('ci-status').textContent,'CI checks passed.');
+  assert.equal(getElementById('merge-issue').hidden,true);
   layoutState={errors:{merge:'Resolve the overlapping edits.'},result:{number:479,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/479'},mergeIssue:{kind:'conflict',message:'Resolve the overlapping edits.'},mergeHelpAvailable:true};
   await context.refresh();
   assert.equal(getElementById('title').textContent,'Merge conflicts need resolution');
@@ -451,13 +469,21 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   assert.equal(getElementById('merge-local-signed').hidden,true,'No local handler means no signer action');
   layoutState={...layoutState,localSignedMergeAvailable:true};
   await context.refresh();
-  assert.equal(getElementById('merge-local-signed').hidden,false,'Published PR exposes the available signer immediately');
-  assert.equal(getElementById('merge-local-signed-help').hidden,false,'Direct signer action includes its explanation');
+  assert.equal(getElementById('merge-local-signed').hidden,true,'Normal publication shows only the ordinary squash even with a local signing handler');
+  assert.equal(getElementById('merge').hidden,false,'Ordinary squash remains visible');
   assert.equal(getElementById('merge-history').hidden,true,'History-preserving merge still requires an attribution choice');
   layoutState={...layoutState,mergeChoice:'SQUASH_AUTHOR_CHOICE_REQUIRED'};
   await context.refresh();
   assert.equal(getElementById('merge-history').hidden,false,'Attribution choice exposes history-preserving merge');
-  assert.equal(getElementById('merge-local-signed').hidden,false,'Signer remains available with an attribution choice');
+  assert.equal(getElementById('merge-local-signed').hidden,false,'Explicit signer is available for attribution recovery');
+  layoutState={...layoutState,merging:true};
+  await context.refresh();
+  assert.equal(getElementById('merge-local-signed').disabled,true,'Signer recovery is disabled during a merge');
+  assert.equal(getElementById('merge-history').disabled,true,'History recovery is disabled during a merge');
+  layoutState={...layoutState,merging:false,localSignedMergeAvailable:false};
+  await context.refresh();
+  assert.equal(getElementById('merge-local-signed').hidden,true,'Attribution recovery does not expose an unavailable signer');
+  layoutState={...layoutState,localSignedMergeAvailable:true};
   layoutState={...layoutState,mergeChoice:undefined,mergeResult:{merged:false}};
   await context.refresh();
   assert.equal(getElementById('merge-local-signed').hidden,true,'An already-published squash cannot be repeated');
@@ -516,12 +542,13 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   assert.equal(signerPrompts,1,'Even Ludicrous mode requires explicit signed squash approval');
   assert.equal(signerCalls,0,'Cancelling cannot publish a signed squash');
   state.mergeChoice=undefined;
-  await getElementById('merge-local-signed').onclick();
-  assert.equal(signerPrompts,2,'Signed squash is available without an attribution choice');
-  assert.equal(signerCalls,0,'Cancelling the direct action cannot publish either');
   approveSigner=true;
   await getElementById('merge-local-signed').onclick();
-  assert.equal(signerPrompts,3,'Direct signed squash still requires confirmation');
+  assert.equal(signerPrompts,1,'Hidden recovery action cannot prompt during normal publication');
+  assert.equal(signerCalls,0,'Hidden recovery action cannot publish');
+  state.mergeChoice='SQUASH_AUTHOR_CHOICE_REQUIRED';
+  await getElementById('merge-local-signed').onclick();
+  assert.equal(signerPrompts,2,'Recovery signed squash still requires confirmation');
   assert.equal(signerCalls,1,'Explicit approval posts exactly one signed squash request');
   for(const blocked of [
     {result:null},
@@ -535,7 +562,7 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
     await getElementById('merge-local-signed').onclick();
     state=available;
   }
-  assert.equal(signerPrompts,3,'Unavailable signed squash actions cannot prompt');
+  assert.equal(signerPrompts,2,'Unavailable signed squash actions cannot prompt');
   assert.equal(signerCalls,1,'Unavailable signed squash actions cannot publish');
   // Restore the normal successful merge mock for close-after-merge assertions.
   state={result:{number:2},ludicrousMode:false};

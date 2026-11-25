@@ -8,10 +8,31 @@ const { verifiedHumanAuthor } = require('./human-squash-merge');
 const { humanSquashMerge } = require('./local-human-squash');
 const { squashMessage, readCommits } = require('./squash-attribution');
 const { configuredMergeActor } = require('../github/app-commit-identity');
+const { readMergeChecks, describeMergeChecks } = require('./checks');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
 const SHA = /^[a-f0-9]{40}$/i;
+
+async function readPullRequestCI(repository, result, request) {
+  if (!REPOSITORY.test(repository) || !Number.isSafeInteger(result?.number) || result.number < 1 ||
+      result.url !== `https://github.com/${repository}/pull/${result.number}`) {
+    throw new Error('Cannot verify the selected pull request.');
+  }
+  const pr = await request(`repos/${repository}/pulls/${result.number}`);
+  if (pr.html_url !== result.url || !SHA.test(pr.head?.sha || '')) {
+    throw new Error('Cannot verify the pull-request head.');
+  }
+  if (pr.state !== 'open' || pr.merged_at) return null;
+  const checks = await readMergeChecks(request, repository, pr.head.sha, { collectEvidence: true });
+  return { state: checks.state, message: describeMergeChecks(checks) };
+}
+
+function ciError(status, message) {
+  return Object.assign(new Error(message), {
+    code: status === 'waiting' ? 'SWEETIEBOT_CI_PENDING' : 'SWEETIEBOT_CI_FAILED'
+  });
+}
 
 async function gitCommitSigningEnabled(directory) {
   if (typeof directory !== 'string' || !directory.trim()) return false;
@@ -141,8 +162,10 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     const prepared = squashMessage(pr.title, result.number, commits,
       { primaryAuthor: human.login.toLowerCase() === actor.login.toLowerCase() ? human : undefined });
     onProgress({ stage: 'reading-checks' });
-    const checks = await require('./checks').readMergeChecks(path => request(path), repository, pr.head.sha);
-    if (checks.state !== 'passed') throw new Error('PR checks must pass before merging while preserving commits.');
+    const checks = await readMergeChecks(path => request(path), repository, pr.head.sha, { collectEvidence: true });
+    if (checks.state !== 'passed') {
+      throw ciError(checks.state === 'pending' ? 'waiting' : 'checks_failed', describeMergeChecks(checks));
+    }
     const fresh = await request(endpoint);
     if (fresh.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== pr.title ||
         fresh.head?.sha !== pr.head.sha || fresh.head?.ref !== head || fresh.base?.ref !== base || await readBaseTip() !== baseSha) {
@@ -195,6 +218,9 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     });
     if (landed?.published === true && SHA.test(landed.sha || '')) return { ...landed, url: result.url, commitUrl: landed.url };
     if (landed?.merged !== true || landed.githubMerged === false || !SHA.test(landed.sha || '')) {
+      if (landed?.githubChecks) {
+        throw ciError(landed.status, landed.reason);
+      }
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
         landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' }
           : landed?.status === 'needs_resolution' ? { code: 'SWEETIEBOT_MERGE_CONFLICT' } : {});
@@ -207,7 +233,6 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       ...(landed.signed ? { signed: true } : {}) };
   };
   if (method === 'local-signed-squash') {
-    if (pr.mergeable !== true) throw new Error('The PR must be confirmed mergeable before starting a signed local squash.');
     return mergeWithHumanAuthor(true);
   }
   if (directLocal) return mergeWithHumanAuthor(await gitCommitSigningEnabled(repositoryPath));
@@ -243,4 +268,4 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
   return { merged: true, sha: merged.sha, url: result.url, number: result.number, base };
 }
 
-module.exports = { squashMergePullRequest, githubApi, gitCommitSigningEnabled, retryBaseAdvance };
+module.exports = { squashMergePullRequest, readPullRequestCI, githubApi, gitCommitSigningEnabled, retryBaseAdvance };

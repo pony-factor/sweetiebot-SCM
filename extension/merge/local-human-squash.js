@@ -11,7 +11,7 @@ const { existsSync } = require('node:fs');
 const { splitSquashTrailers, squashMessage, readCommits } = require('./squash-attribution');
 const { inspectResolutionPatch, safePatchPath } = require('./patch');
 const { validateResolutionHunks, applyResolutionHunks } = require('./conflict-hunks');
-const { readMergeChecks, waitForMergeChecks } = require('./checks');
+const { readMergeChecks, waitForMergeChecks, describeMergeChecks } = require('./checks');
 const { readPushedPR } = require('../github/pushed-pr');
 
 const exec = promisify(execFile);
@@ -156,7 +156,7 @@ async function humanSquashMerge(repository, number, {
   const message = alreadyPrepared ? existing : preparedMessage;
   let operationCommitTitle = commits.at(-1)?.commit?.message?.split('\n')[0] || prepared.title;
   progress('reading-checks', { sha: originalSha });
-  const initialChecks = await readMergeChecks(api, repository, originalSha);
+  const initialChecks = await readMergeChecks(api, repository, originalSha, { collectEvidence: directLocal });
   if (repairChecks && (resolutionPatch === null || initialChecks.state !== 'failed')) {
     throw Error('A check repair requires a complete patch and confirmed failing checks on the selected head.');
   }
@@ -169,9 +169,8 @@ async function humanSquashMerge(repository, number, {
       onPoll: checks => progress('checks-polled', { sha, ...checks })
     });
     if (checks.state !== 'passed') return { merged: false, additionalFiles, status: checks.state === 'pending' ? 'waiting' : 'checks_failed',
-      sha, previousHeadSha: originalSha, base, baseSha, number, author,
-      reason: checks.state === 'pending' ? 'Waiting for checks on the integrated PR head'
-        : 'Checks failed on the integrated PR head: ' + checks.names.join(', ') };
+      sha, previousHeadSha: originalSha, base, baseSha, number, author, githubChecks: true,
+      reason: describeMergeChecks(checks) };
     progress('checks-passed', { sha, title: operationCommitTitle });
     const fresh = await api(prPath);
     if (fresh?.state !== 'open' || fresh.draft || fresh.merged_at || fresh.title !== original.title || fresh.head?.sha !== sha ||
@@ -258,6 +257,9 @@ async function humanSquashMerge(repository, number, {
     }
     if (!Array.isArray(rules) || rules.length) throw Error('The base has active branch rules; local Git will not bypass them.');
   };
+  const localCheckBlocker = checks => ({ merged: false, number, additionalFiles,
+    status: checks.state === 'pending' ? 'waiting' : 'checks_failed', sha: originalSha, base, baseSha,
+    githubChecks: true, reason: describeMergeChecks(checks) });
   if (directLocal && operation === 'merge') {
     // A durable pre-push receipt prevents duplicate publication on retry.
     const receipt = await fs.readFile(receiptPath, 'utf8').then(JSON.parse).catch(error => {
@@ -292,7 +294,12 @@ async function humanSquashMerge(repository, number, {
         throw Object.assign(Error('Previous squash ' + sha + ' needs manual reconciliation before retrying: ' + error.message), { publishedSha: sha });
       }
     }
-    if (original.mergeable !== true || (original.mergeable_state && !['clean', 'unstable'].includes(original.mergeable_state))) {
+    const policyBlocked = original.mergeable !== true ||
+      (original.mergeable_state && !['clean', 'unstable'].includes(original.mergeable_state));
+    if (initialChecks.state === 'failed' || (policyBlocked && initialChecks.state === 'pending')) {
+      return localCheckBlocker(initialChecks);
+    }
+    if (policyBlocked) {
       throw Error('The PR must be confirmed mergeable with no outstanding merge policy blocker.');
     }
     await checkBaseWritable();
@@ -336,9 +343,7 @@ async function humanSquashMerge(repository, number, {
         ...checkOptions, expectChecks: initialChecks.hasChecks, collectEvidence: true,
         onPoll: checks => progress('checks-polled', { sha: originalSha, ...checks })
       });
-      if (checks.state !== 'passed') return { merged: false, number, additionalFiles,
-        status: checks.state === 'pending' ? 'waiting' : 'checks_failed', sha: originalSha, base, baseSha,
-        reason: 'PR-head checks have not passed; no squash was published.' };
+      if (checks.state !== 'passed') return localCheckBlocker(checks);
       const samePR = current => current?.state === 'open' && !current.draft && !current.merged_at &&
         !current.stack && current.mergeable === true &&
         (!current.mergeable_state || ['clean', 'unstable'].includes(current.mergeable_state)) &&
