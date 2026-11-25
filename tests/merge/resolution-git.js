@@ -197,14 +197,32 @@ const run = promisify(execFile);
     stalePushReads = resolving ? 2 : 0;
     const extraProgress = [];
     const configPatch = 'diff --git a/support-config.json b/support-config.json\n--- a/support-config.json\n+++ b/support-config.json\n@@ -1 +1 @@\n-{"enabled":false}\n+{"enabled":true}\n';
+    if (resolving) {
+      await assert.rejects(attempt({ resolutionPatch: additionalPatch }), /Resolve every conflicted file/);
+      const keep = await attempt({ resolutionPatch: null, decisions: [{
+        path: 'file.txt', title: '🛠️ Keep the complete incoming behavior',
+        description: 'The incoming implementation already includes this PR behavior.', keepBase: true
+      }] });
+      assert.equal(keep.status, 'synced');
+      assert.equal(await git('--git-dir=' + remote, 'show', keep.sha + ':file.txt'), 'base update');
+      assert.equal(await git('--git-dir=' + remote, 'show', keep.sha + ':feature-only.txt'), 'retain this new feature');
+      await git('--git-dir=' + remote, 'update-ref', 'refs/heads/feature', headSha, keep.sha);
+      pushed = false;
+      stalePushReads = 2;
+    }
     const incremental = await attempt({ api: dependentApi,
-      ...(resolving ? { resolutionPatch: completePatch + additionalPatch + configPatch } : {}),
+      ...(resolving ? { resolutionPatch: completePatch + additionalPatch + configPatch,
+        decisions: [...decisions, { path: 'tests/supporting.test.mjs', title: '🧪 Cover the repaired integration',
+          description: 'Add regression coverage for the combined behavior.' }] } : {}),
       onProgress: event => extraProgress.push(event) });
     assert.equal(stalePushReads, 0, 'Wait for stale post-push metadata before accepting synchronization');
     if (resolving) {
       assert.deepEqual(incremental.additionalFiles, ['support-config.json', 'tests/supporting.test.mjs']);
       assert.deepEqual(extraProgress.find(event => event.stage === 'additional-files').additionalFiles, incremental.additionalFiles);
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':tests/supporting.test.mjs'), '// Supporting regression coverage');
+      const supportingCommit = incremental.resolutionCommits.find(item => item.path === 'tests/supporting.test.mjs');
+      assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%s', supportingCommit.sha),
+        '🧪 Cover the repaired integration');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':support-config.json'), '{"enabled":true}');
       assert.equal(await git('--git-dir=' + remote, 'show', incremental.sha + ':feature-only.txt'), 'retain this new feature');
       assert.equal(await git('--git-dir=' + remote, 'rev-parse', incremental.sha + ':feature-art.png'), await git('--git-dir=' + remote, 'rev-parse', headSha + ':feature-art.png'), 'Text conflict resolution retains the exact clean binary blob');
