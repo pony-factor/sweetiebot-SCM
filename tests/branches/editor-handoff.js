@@ -1,5 +1,8 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { saveRepositoryDocuments, moveRepositoryEditors } = require('../../extension/branches/editor-handoff');
 const file = fsPath => ({ scheme: 'file', fsPath, path: fsPath });
 const root = '/source/repo', destination = '/topic/repo';
@@ -89,5 +92,24 @@ function fixture() {
   dirtyCustom.text.isDirty = true;
   await assert.rejects(moveRepositoryEditors(dirtyCustom.vscode, root, destination), /Save the repository/);
   assert.equal(dirtyCustom.calls.length, 0, 'Keep unsaved custom editors open');
+
+  const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'editor-alias-')));
+  try {
+    const actual = path.join(temporary, 'checkout');
+    const alias = path.join(temporary, 'alias');
+    await fs.mkdir(actual);
+    await fs.symlink(actual, alias, 'dir');
+    const aliased = fixture();
+    const filename = path.join(alias, 'new', 'draft.md');
+    aliased.text.input.uri = file(filename);
+    aliased.vscode.workspace.textDocuments = [doc(file(filename))];
+    await saveRepositoryDocuments(aliased.vscode, actual);
+    assert.equal(aliased.vscode.workspace.textDocuments[0].isDirty, false);
+    await moveRepositoryEditors(aliased.vscode, actual, destination);
+    assert.deepEqual(aliased.closed, [aliased.text]);
+    assert.equal(aliased.calls[0][1].fsPath, path.join(destination, 'new', 'draft.md'));
+  } finally {
+    await fs.rm(temporary, { recursive: true, force: true });
+  }
   console.log('editor handoff tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

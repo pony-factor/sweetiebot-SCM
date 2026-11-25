@@ -119,7 +119,8 @@ async function mainRoot(root, options = {}) {
 }
 
 async function openFolders(vscode, folders, { forceNewWindow = false,
-  baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main', handoff, branch = 'main' } = {}) {
+  baseDirectory = independentWorkspaceParent(), io = fs, kind = 'shared-main',
+  handoff, branch = 'main', editors = [] } = {}) {
   const workspace = vscode.workspace.workspaceFile;
   if (!forceNewWindow && workspace?.scheme === 'file') {
     // Keep the existing workbench and workspace identity. Opening a different
@@ -145,17 +146,20 @@ async function openFolders(vscode, folders, { forceNewWindow = false,
   try {
     // A unique workspace file permits separate windows on the SAME main
     // folder. It does not introduce another Git checkout or another main ref.
-    await io.writeFile(target, JSON.stringify({ folders }, null, 2) + '\n');
+    const contents = JSON.stringify({ folders }, null, 2) + '\n';
+    await io.writeFile(target, contents);
     await io.writeFile(path.join(directory, '.sweetiebot-workspace.json'), JSON.stringify({
-      version: 1, kind, repositories: [], workspaceFileContents:
-        JSON.stringify({ folders }, null, 2) + '\n'
+      version: 1, kind, repositories: [], workspaceFileContents: contents
     }, null, 2) + '\n');
+    // A bare folder must reload into a workspace file and gets new editor storage.
+    if (editors.length) await vscode.commands.executeCommand('sweetiebot.editorHandoff.save', target, editors);
     if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.save', { workspace: target, plan: handoff });
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(target),
       forceNewWindow ? { forceNewWindow: true } : { forceReuseWindow: true });
     return { directory, target, folders };
   } catch (error) {
     if (handoff) await vscode.commands.executeCommand('sweetiebot.codexHandoff.clear', target).catch(() => {});
+    if (editors.length) await vscode.commands.executeCommand('sweetiebot.editorHandoff.save', target).catch(() => {});
     await io.rm(directory, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
@@ -187,8 +191,8 @@ async function replaceRepository(vscode, root, destination, options) {
     folders.push({ path: sameRoot
       ? path.join(destination, path.relative(root, location)) : folder.uri.fsPath, name: folder.name });
   }
-  await moveRepositoryEditors(vscode, root, destination);
-  return openFolders(vscode, folders, options);
+  const editors = await moveRepositoryEditors(vscode, root, destination);
+  return openFolders(vscode, folders, { ...options, editors });
 }
 
 async function capturePendingFiles(root, run) {

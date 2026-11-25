@@ -90,6 +90,11 @@ async function openedRoot(result) {
     assert(closedSourceTab, 'A new branch must close editors that still point into main');
     assert(topicEditor.commands.calls.some(call => call[0] === 'vscode.open' &&
       call[1].fsPath === path.join(topic, 'file.txt')), 'The open working file follows the new branch');
+    const editorHandoff = topicEditor.commands.calls.at(-2);
+    assert.equal(editorHandoff[0], 'sweetiebot.editorHandoff.save');
+    assert.equal(editorHandoff[1], topicWorkspace);
+    assert.equal(editorHandoff[2][0].uri.fsPath, path.join(topic, 'file.txt'),
+      'The replacement window can restore the file from the topic checkout');
     assert.equal(path.dirname(path.dirname(topic)), path.join(baseDirectory, 'repo'));
     assert.match(path.basename(path.dirname(topic)), /^topic-(?:\d+-)?[a-z]+$/);
     assert.equal(path.dirname(path.dirname(topicWorkspace)), path.join(baseDirectory, 'repo'));
