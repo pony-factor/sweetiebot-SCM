@@ -429,12 +429,13 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       const userAPI = require('./user-api').githubUserAPI(session.accessToken);
       const repo = new URL(url).pathname.slice(1).split('/').slice(0, 2).join('/');
       const appRead = userAPI;
-      const gitExtension = vscode.extensions.getExtension('vscode.git');
-      const gitAPI = gitExtension && (await gitExtension.activate()).getAPI(1);
-      const selectedRepository = gitAPI?.repositories.find(candidate => candidate.state.remotes.some(remote =>
+      const gitExtension = vscode.extensions?.getExtension?.('vscode.git');
+      const gitExports = await gitExtension?.activate?.();
+      const gitAPI = gitExports?.getAPI?.(1);
+      const selectedRepository = gitAPI?.repositories?.find(candidate => candidate.state?.remotes?.some(remote =>
         [remote.fetchUrl, remote.pushUrl].some(value => value &&
           require('./pull-request').githubRepository(value) === 'https://github.com/' + repo)));
-      const repositoryPath = selectedRepository?.rootUri.fsPath;
+      const repositoryPath = selectedRepository?.rootUri?.fsPath;
       const humanAPI = (endpoint, method = 'GET', fields = []) => {
         const body = {};
         for (let i = 0; i < fields.length; i += 2) {
