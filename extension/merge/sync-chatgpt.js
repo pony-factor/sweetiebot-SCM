@@ -102,7 +102,9 @@ async function prepareChatGPTSyncPreview(vscode, repository, { branch, head, tar
           files: [...files].map(([name, { hunks }]) => ({ path: name, hunks })) })
       ].join('\n\n'));
       const url = new URL('https://chatgpt.com/');
-      url.hash = new URLSearchParams({ sweetiebot_merge: '1', return_to: bridge.url }).toString();
+      url.hash = new URLSearchParams({
+        sweetiebot_merge: '1', sweetiebot_sync_preview: '1', return_to: bridge.url
+      }).toString();
       await openWorkflow(vscode, url.href, { openToSide: true });
       return await result;
     } finally {

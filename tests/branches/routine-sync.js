@@ -82,14 +82,17 @@ async function run() {
         const result = syncBranch(repository, { ...options, strategy, createPublisher,
           reviewConflicts: async (_, details) => {
             assert.equal(details.publishingRepository, 'owner/repo');
-            return { lindsey: preparePreview };
+            return { lindsey: preparePreview, browser: scenario === 'cancel' };
           },
           resolveConflicts: async (checkout, preview) => {
             assert.equal(checkout, repository);
             assert.equal(preview, preparePreview, 'The approved resolver is forwarded to conflict resolution');
             proposed++;
             assert(git('ls-files', '-u'), 'Resolver receives the actual conflicting index');
-            if (scenario === 'cancel') return undefined;
+            if (scenario === 'cancel') {
+              assert.equal(repository.inputBox.value, 'Human draft');
+              return undefined;
+            }
             const contents = 'main change\ntopic change\n';
             fs.writeFileSync(path.join(root, 'shared.txt'), contents);
             if (scenario === 'edited') fs.appendFileSync(path.join(root, 'shared.txt'), 'later edit\n');
@@ -113,6 +116,7 @@ async function run() {
         assert.equal(git('config', 'user.name'), 'Human Author', 'App identity does not change user config');
         if (!success) {
           assert.equal(git('rev-parse', 'HEAD'), before, 'Cancelled or stale proposals cannot create a commit');
+          if (scenario === 'cancel') assert.equal(repository.inputBox.value, 'Human draft');
           continue;
         }
         assert.equal(git('show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce'),

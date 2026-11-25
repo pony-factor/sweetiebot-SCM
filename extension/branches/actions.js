@@ -1275,6 +1275,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   // invent a Codex/Web co-author; preserve credits in existing commits.
   const routineCommitMessage = message;
   repository.inputBox.value = message;
+  let browserReview = false;
   try {
     const root = repository.rootUri?.fsPath;
     const git = root ? async args => (await promisify(execFile)('git', args, {
@@ -1324,6 +1325,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       });
       if (!approved) return false;
       conflictChoice = approved;
+      browserReview = approved.browser === true;
+      if (browserReview && repository.inputBox.value === message) repository.inputBox.value = previousMessage;
       // A reviewer might switch branches, edit files, or move the target while
       // looking at the preview. Never apply a stale decision.
       await checkBranch();
@@ -1445,7 +1448,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     }
   } finally {
     await repository.status();
-    if (!repository.state.mergeChanges.length && repository.inputBox.value === message) {
+    if ((browserReview || !repository.state.mergeChanges.length) && repository.inputBox.value === message) {
       repository.inputBox.value = previousMessage;
     }
   }

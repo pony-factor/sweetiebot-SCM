@@ -262,6 +262,11 @@ assert.match(f.composer.innerText,/As a last resort/,'Second failure requests fe
 f.tick(500);
 assert.equal(f.clicks(),3,'At most one link retry and one JSON fallback request');
 f.tick(30000);assert.equal(f.clicks(),3,'No unbounded follow-up loop');
+f=fixture({url:mergeUrl+'&sweetiebot_sync_preview=1&return_to='+encodeURIComponent(mergeCallback),
+  text:'',assistantText:'I am preparing the JSON proposal.'});
+f.tick(250);f.composer.innerText='';f.tick(500);f.tick(500);f.tick(6500);
+assert.equal(f.composer.innerText,'','Sync previews leave no merge-link retry in the composer');
+assert.equal(f.clicks(),1);
 f=fixture({url:mergeUrl+'&return_to='+encodeURIComponent(mergeCallback),text:'',
   assistantText:'Incomplete result without link',streaming:true});
 f.tick(10000);

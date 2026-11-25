@@ -72,10 +72,7 @@ This requires a compatible local `lindsey-sync` checkout and server deployment.
 If the server and Sweetiebot use different keys for the App, the server must
 also trust the public key corresponding to the saved Sweetiebot key.
 
-If the resolver is unavailable, Sweetiebot offers to send the textual conflict
-hunks to ChatGPT in the integrated browser. The browser returns a proposal for
-the same local diff review. Approving the sync still publishes as Lindsey.
-
+If the resolver is unavailable, Sweetiebot offers to send the textual conflict hunks to ChatGPT in the integrated browser. The browser returns a proposal for the same local diff review. Approving the sync still publishes as Lindsey.
 The connection is still the **Lindsey GitHub App**: its installation token is the
 author of automated review and merge comments, not the GitHub user signed in to
 Sweetiebot. The shortcut does not introduce a second credential store or a

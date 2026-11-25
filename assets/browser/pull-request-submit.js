@@ -7,6 +7,7 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
   const payload = fragmentLaunch ? fragment : launch.searchParams;
   const prLaunch = payload.get('sweetiebot_pr') === '1';
   const mergeLaunch = fragmentLaunch && payload.get('sweetiebot_merge') === '1';
+  const syncPreview = mergeLaunch && payload.get('sweetiebot_sync_preview') === '1';
   const collectOnly = mergeLaunch && fragment.get('sweetiebot_collect') === '1';
   const prompt = payload.get('q');
   const existingConversation = /^\/(?:g\/g-p-[A-Za-z0-9-]+\/)?c\/[A-Za-z0-9-]+\/?$/.test(launch.pathname);
@@ -318,8 +319,9 @@ function scmToolkitStartPullRequestWorkflow(launchAddress = window.location.href
       }
       // If the first completed answer omitted its clickable compressed link,
       // ask once for the link, then request raw JSON only as a last resort.
+      // Sync proposals already request JSON and use the collector above.
       // Do not overwrite user input, retry Git, or act on an unsubmitted prompt.
-      if (mergeLaunch && initialSubmitted && recoveryAllowed && !latest && !staging && !generating) {
+      if (mergeLaunch && !syncPreview && initialSubmitted && recoveryAllowed && !latest && !staging && !generating) {
         const assistantNodes = [...document.querySelectorAll('[data-message-author-role="assistant"]'),
           ...document.querySelectorAll('[data-markdown-text-style="assistant-message"]'),
           ...[...document.querySelectorAll('[data-conversation-role="assistant"]')]
