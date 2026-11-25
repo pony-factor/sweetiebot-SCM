@@ -127,7 +127,15 @@ async function maintain(root, { base = independentWorkspaceParent(), count = 3, 
           await release(directory, { ...existing, lastActive: now });
           continue;
         }
-        if (!await retire(directory, existing, run)) continue;
+        // Update the existing checkout incrementally instead of recreating
+        // all its files when the local base advances. Preserve unreachable
+        // detached commits and any unrecognized checkout state.
+        if (!await reachable(existing, run)) continue;
+        await run(['-C', path.join(directory, repo.name), '-c', 'core.hooksPath=/dev/null',
+          'switch', '--detach', sha]);
+        const refreshed = { ...existing, sha, lastActive: now };
+        if (await valid(directory, refreshed, run)) await release(directory, refreshed);
+        continue;
       }
       try { await fs.mkdir(directory, { mode: 0o700 }); }
       catch (error) { if (error.code === 'EEXIST') continue; throw error; }
@@ -147,16 +155,16 @@ async function maintain(root, { base = independentWorkspaceParent(), count = 3, 
 async function consume(original, destination, branch, start, {
   base = independentWorkspaceParent(), count = 3, run = git
 } = {}) {
-  const repo = await identity(original, run);
+  const repo = await identity(original, run).catch(() => null);
   if (!repo || !await plain(base)) return false;
-  const sha = await run(['-C', original, 'rev-parse', '--verify', (start || 'main') + '^{commit}']);
+  const sha = await run(['-C', original, 'rev-parse', '--verify', (start || 'main') + '^{commit}']).catch(() => '');
   if (!SHA.test(sha)) return false;
   for (const directory of slots(base, repo, count)) {
     if (!await plain(path.dirname(directory))) continue;
     const receipt = await readClaim(directory);
     if (!receipt) continue;
     if (receipt.common !== repo.common || !await valid(directory, receipt, run)) continue;
-    if (receipt.sha !== sha) { await release(directory, receipt); continue; }
+    if (receipt.sha !== sha) { await release(directory, receipt).catch(() => {}); continue; }
     const source = path.join(directory, repo.name);
     try {
       // Git moves both the filesystem and registry, preserving worktree IDs.
@@ -169,7 +177,7 @@ async function consume(original, destination, branch, start, {
         error.preservePrepared = true;
         throw error;
       }
-      if (await valid(directory, receipt, run)) await release(directory, receipt);
+      if (await valid(directory, receipt, run)) await release(directory, receipt).catch(() => {});
       continue;
     }
     // From here on, destination is registered even if switching fails.
