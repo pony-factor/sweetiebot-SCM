@@ -117,7 +117,7 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(parsed['codexComposerLabelColor'], '#43AF49')
         self.assertEqual(parsed['codexNewChatDotColor'], '#AABBCC')
         self.assertEqual(toolkit_settings.SETTING_KEYS['codexNewChatDotColor'],
-                         'scm-toolkit.codex-new-chat-dot-color')
+                         'sweetiebot.codex-new-chat-dot-color')
         page = configurator.render_form(parsed, [], 'Ready', 'test-token', 'Save')
         self.assertIn('name="codexNewChatDotColor" value="#AABBCC"', page)
         self.assertEqual(parsed['codexSendForeground'], '')

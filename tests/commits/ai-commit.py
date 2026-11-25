@@ -232,7 +232,7 @@ class NewlineRoutingTests(unittest.TestCase):
     def test_staged_whitespace_normalization_defaults_on(self, config):
         config.return_value = True
         self.assertTrue(ai_commit.staged_whitespace_enabled())
-        config.assert_called_once_with("scm-toolkit.normalize-staged-whitespace", True)
+        config.assert_called_once_with("sweetiebot.normalize-staged-whitespace", True)
 
     def test_toggle_off_skips_normalization_for_manual_and_generated_commits(self):
         for args in [["commit", "-m", "Keep this message"], ["commit"]]:
@@ -353,7 +353,7 @@ class PostCommitRoutingTests(unittest.TestCase):
                 ai_commit.REAL_GIT,
                 [ai_commit.REAL_GIT, "commit", "-m", "🗑️ Use final title directly"],
             )
-            self.assertNotIn("scm-toolkit.ai-commit-async", [
+            self.assertNotIn("sweetiebot.ai-commit-async", [
                 call.args[0] for call in config.call_args_list
             ])
 
@@ -362,7 +362,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_emoji_priority_enforcement_defaults_on(self):
         with patch.object(ai_commit, "git_config_bool", return_value=True) as config:
             self.assertTrue(ai_commit.emoji_priority_enabled())
-            config.assert_called_once_with("scm-toolkit.ai-emoji-priority-rules", True)
+            config.assert_called_once_with("sweetiebot.ai-emoji-priority-rules", True)
 
     @patch.object(ai_commit, "git_config_bool", return_value=False)
     def test_ai_commit_can_be_disabled_globally(self, _config):
@@ -377,7 +377,7 @@ class ConfigurationTests(unittest.TestCase):
             ai_commit, "git_config_bool", side_effect=lambda _key, default: default
         ) as config:
             self.assertFalse(ai_commit.manual_spellcheck_enabled())
-        config.assert_called_once_with("scm-toolkit.spellcheck-preview", False)
+        config.assert_called_once_with("sweetiebot.spellcheck-preview", False)
 
     def test_description_is_limited_to_the_configured_default_branch(self):
         with patch.object(
@@ -404,13 +404,13 @@ class ConfigurationTests(unittest.TestCase):
         ) as config:
             self.assertEqual(ai_commit.configured_spellcheck_model(), "spell:test")
         config.assert_called_once_with(
-            "scm-toolkit.spellcheck-model", ai_commit.DEFAULT_SPELLCHECK_MODEL
+            "sweetiebot.spellcheck-model", ai_commit.DEFAULT_SPELLCHECK_MODEL
         )
 
     def test_models_can_be_selected_from_git_config(self):
         values = {
-            "scm-toolkit.ai-commit-model": "primary:test",
-            "scm-toolkit.ai-commit-low-memory-model": "fallback:test",
+            "sweetiebot.ai-commit-model": "primary:test",
+            "sweetiebot.ai-commit-low-memory-model": "fallback:test",
         }
         with patch.object(
             ai_commit,

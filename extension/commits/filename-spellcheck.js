@@ -90,7 +90,7 @@ async function spellcheckFilenames(vscode, resource, dependencies = {}) {
     vscode.window.showInformationMessage('No changed filenames to spellcheck. Select a file or make a change first.');
     return [];
   }
-  const configuredModel = dependencies.model || await (dependencies.readConfig || readGitConfig)('scm-toolkit.spellcheck-model');
+  const configuredModel = dependencies.model || await (dependencies.readConfig || readGitConfig)('sweetiebot.spellcheck-model');
   const model = configuredModel || SPELLCHECK_MODEL;
   const proposals = [];
   const stat = dependencies.stat || (uri => vscode.workspace.fs.stat(uri));

@@ -351,7 +351,7 @@ class SettingsOverviewTests(unittest.TestCase):
 
     def test_placeholder_prefix_is_user_configurable_and_validated(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["placeholderPrefix"], "hoof_")
-        self.assertEqual(toolkit_settings.SETTING_KEYS["placeholderPrefix"], "scm-toolkit.placeholder-prefix")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["placeholderPrefix"], "sweetiebot.placeholder-prefix")
         setting = next(item for item in configurator.SETTINGS if item.name == "placeholderPrefix")
         self.assertEqual(setting.kind, "placeholder_prefix")
 

@@ -42,9 +42,9 @@ class BackgroundCommitPreflightTests(BackgroundCommitFixture):
         import post_commit_spellcheck
         (self.repo / 'note.md').write_text('A speling mistake.\n')
         self.git('add', 'note.md')
-        self.git('config', 'scm-toolkit.post-commit-spellcheck', 'true')
+        self.git('config', 'sweetiebot.post-commit-spellcheck', 'true')
         original_config = worker.core.git_config_bool
-        with patch.object(worker.core, 'git_config_bool', side_effect=lambda key, default: True if key == 'scm-toolkit.post-commit-spellcheck' else original_config(key, default)), patch.object(post_commit_spellcheck, 'spawn_post_commit') as spellcheck, patch.object(worker.core, 'generate_message', return_value=('📝 Record note', '')) as generate:
+        with patch.object(worker.core, 'git_config_bool', side_effect=lambda key, default: True if key == 'sweetiebot.post-commit-spellcheck' else original_config(key, default)), patch.object(post_commit_spellcheck, 'spawn_post_commit') as spellcheck, patch.object(worker.core, 'generate_message', return_value=('📝 Record note', '')) as generate:
             directory = self.queue(message='')
             generate.assert_not_called()
             spellcheck.assert_called_once()

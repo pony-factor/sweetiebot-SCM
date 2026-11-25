@@ -107,7 +107,7 @@ class AsyncCommitTests(unittest.TestCase):
     def test_placeholder_prefix_uses_user_setting_and_rejects_invalid_values(self):
         with patch.object(asynchronous, "read_git_string", return_value="pony_") as read:
             self.assertEqual(asynchronous.get_placeholder_prefix(), "pony_")
-            read.assert_called_once_with("scm-toolkit.placeholder-prefix", "hoof_")
+            read.assert_called_once_with("sweetiebot.placeholder-prefix", "hoof_")
         with patch.object(asynchronous, "read_git_string", return_value="pony"):
             with self.assertRaisesRegex(RuntimeError, "Invalid provisional commit prefix"):
                 asynchronous.get_placeholder_prefix()

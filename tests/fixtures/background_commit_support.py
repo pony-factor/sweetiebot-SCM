@@ -44,7 +44,7 @@ class BackgroundCommitFixture(unittest.TestCase):
         self.git('init', '-q', '-b', 'main')
         self.git('config', 'user.name', 'Test Author')
         self.git('config', 'user.email', 'test@example.invalid')
-        self.git('config', 'scm-toolkit.post-commit-spellcheck', 'false')
+        self.git('config', 'sweetiebot.post-commit-spellcheck', 'false')
         self.git('init', '--bare', '-q', str(self.root / 'remote'))
         self.git('remote', 'add', 'origin', str(self.root / 'remote'))
         (self.repo / 'story.txt').write_text('Captured change\n')

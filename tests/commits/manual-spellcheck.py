@@ -60,9 +60,9 @@ class ManualSpellcheckTests(unittest.TestCase):
     def test_draft_spellchecking_includes_custom_preferences_and_preserves_terms(self):
         def config(key, default=""):
             return {
-                "scm-toolkit.draft-spellcheck-style": "grammar",
-                "scm-toolkit.draft-spellcheck-vocabulary": "Instinet\nSoroban",
-                "scm-toolkit.draft-spellcheck-guidance": "Prefer consistent capitalization.",
+                "sweetiebot.draft-spellcheck-style": "grammar",
+                "sweetiebot.draft-spellcheck-vocabulary": "Instinet\nSoroban",
+                "sweetiebot.draft-spellcheck-guidance": "Prefer consistent capitalization.",
             }.get(key, default)
         with patch.object(ai_commit, "git_config_string", side_effect=config), patch.object(
             ai_commit, "manual_spellcheck_enabled", return_value=True
@@ -114,7 +114,7 @@ class ManualSpellcheckTests(unittest.TestCase):
             return {"response": '{"subject":"Fix spelling"}'}
         ai_commit.spellcheck_thinking_capabilities.cache_clear()
         with patch.object(ai_commit, "git_config_string", side_effect=lambda key, default="": (
-            "high" if key == "scm-toolkit.spellcheck-thinking-effort" else default
+            "high" if key == "sweetiebot.spellcheck-thinking-effort" else default
         )), patch.object(ai_commit, "manual_spellcheck_enabled", return_value=True), patch.object(
             ai_commit, "installed_local_model_names", return_value={"thinking:test"}
         ), patch.object(ai_commit, "configured_spellcheck_model", return_value="thinking:test"), patch.object(
@@ -188,7 +188,7 @@ class ManualSpellcheckTests(unittest.TestCase):
                 "description": "Full normal-generation description.",
             })
             generator.assert_called_once()
-            setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
+            setting.assert_called_once_with("sweetiebot.spellcheck-changes-emoji", True)
 
     def test_reviewed_spellcheck_emoji_removal_only_changes_leading_emoji(self):
         import io
@@ -221,7 +221,7 @@ class ManualSpellcheckTests(unittest.TestCase):
                 "title": expected, "description": "Normal description.",
             })
             generator.assert_called_once()
-            setting.assert_called_once_with("scm-toolkit.spellcheck-changes-emoji", True)
+            setting.assert_called_once_with("sweetiebot.spellcheck-changes-emoji", True)
 
     def test_reviewed_spellcheck_emoji_removal_rejects_empty_title(self):
         import io

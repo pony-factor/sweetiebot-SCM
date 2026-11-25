@@ -153,10 +153,10 @@ class SettingsPreferencesTests(unittest.TestCase):
         page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
         self.assertIn('name="ludicrousMode" value="true" checked', page)
         self.assertIn('Ludicrous mode', page)
-        self.assertEqual(toolkit_settings.SETTING_KEYS["ludicrousMode"], "scm-toolkit.ludicrous-mode")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["ludicrousMode"], "sweetiebot.ludicrous-mode")
         with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
             configurator.save_settings(parsed)
-        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.ludicrous-mode", "true"] for call in run.call_args_list))
+        self.assertTrue(any(call.args[0][-2:] == ["sweetiebot.ludicrous-mode", "true"] for call in run.call_args_list))
         values.pop("ludicrousMode")
         self.assertFalse(configurator.parse_submission(values)["ludicrousMode"])
 
@@ -190,7 +190,7 @@ class SettingsPreferencesTests(unittest.TestCase):
         self.assertNotIn('name="kefaniaShowCloseButton"', page)
         with patch.object(configurator.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="", stderr="")) as run:
             configurator.save_settings(parsed)
-        self.assertTrue(any(call.args[0][-2:] == ["scm-toolkit.kefania-show-close-button", "false"] for call in run.call_args_list))
+        self.assertTrue(any(call.args[0][-2:] == ["sweetiebot.kefania-show-close-button", "false"] for call in run.call_args_list))
         for invalid in ("", "center", "top", "left\\nright"):
             values["kefaniaCloseButtonPosition"] = [invalid]
             with self.assertRaises(ValueError):
@@ -198,10 +198,10 @@ class SettingsPreferencesTests(unittest.TestCase):
 
     def test_legacy_kefania_close_position_is_preserved_until_saved(self):
         def read_string(key, default, preserve_empty=False):
-            if key == "scm-toolkit.kefania-close-button-position":
+            if key == "sweetiebot.kefania-close-button-position":
                 return None
             return default
-        with patch.object(toolkit_settings, "read_git_string", side_effect=read_string), patch.object(toolkit_settings, "read_git_bool", side_effect=lambda key, default: False if key == "scm-toolkit.kefania-close-button-left" else default):
+        with patch.object(toolkit_settings, "read_git_string", side_effect=read_string), patch.object(toolkit_settings, "read_git_bool", side_effect=lambda key, default: False if key == "sweetiebot.kefania-close-button-left" else default):
             settings = toolkit_settings.load_settings()
         self.assertEqual(settings["kefaniaCloseButtonPosition"], "right")
 
@@ -264,7 +264,7 @@ class SettingsPreferencesTests(unittest.TestCase):
     def test_manual_draft_emoji_toggle_is_independent_of_spellcheck(self):
         values = form_values()
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "scm-toolkit.draft-commit-emoji")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["draftCommitEmoji"], "sweetiebot.draft-commit-emoji")
         self.assertFalse(configurator.parse_submission(values)["draftCommitEmoji"])
         values["draftCommitEmoji"] = ["true"]
         configured = configurator.parse_submission(values)
@@ -277,7 +277,7 @@ class SettingsPreferencesTests(unittest.TestCase):
         values = form_values()
         key = "spellcheckChangesEmoji"
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
-        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.spellcheck-changes-emoji")
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "sweetiebot.spellcheck-changes-emoji")
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["draftCommitEmoji"])
         self.assertTrue(configurator.parse_submission(values)[key])
         unchecked = dict(values)
@@ -320,7 +320,7 @@ class SettingsPreferencesTests(unittest.TestCase):
     def test_spellcheck_thinking_effort_uses_supported_persisted_levels(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckThinkingEffort"], "default")
         self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckThinkingEffort"],
-                         "scm-toolkit.spellcheck-thinking-effort")
+                         "sweetiebot.spellcheck-thinking-effort")
         values = form_values()
         self.assertEqual(configurator.parse_submission(values)["spellcheckThinkingEffort"], "default")
         for effort in ("low", "medium", "high"):
@@ -355,7 +355,7 @@ class SettingsPreferencesTests(unittest.TestCase):
 
     def test_custom_emoji_priority_enforcement_defaults_on_and_can_be_disabled(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiEmojiPriorityRules"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "scm-toolkit.ai-emoji-priority-rules")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiEmojiPriorityRules"], "sweetiebot.ai-emoji-priority-rules")
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["aiEmojiPriorityRules"])
         values.pop("aiEmojiPriorityRules")
@@ -372,7 +372,7 @@ class SettingsPreferencesTests(unittest.TestCase):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["normalizeStagedWhitespace"])
         self.assertEqual(
             toolkit_settings.SETTING_KEYS["normalizeStagedWhitespace"],
-            "scm-toolkit.normalize-staged-whitespace",
+            "sweetiebot.normalize-staged-whitespace",
         )
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["normalizeStagedWhitespace"])
@@ -391,7 +391,7 @@ class SettingsPreferencesTests(unittest.TestCase):
         setting = next(setting for setting in configurator.SETTINGS if setting.name == "aiCommitFallback")
         self.assertEqual(setting.section, "AI")
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["aiCommitFallback"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "scm-toolkit.ai-commit-fallback")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["aiCommitFallback"], "sweetiebot.ai-commit-fallback")
         values = form_values()
         self.assertTrue(configurator.parse_submission(values)["aiCommitFallback"])
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "test-token", "Save")
@@ -401,8 +401,8 @@ class SettingsPreferencesTests(unittest.TestCase):
 
     def test_commit_time_budget_setting_renders_and_validates(self):
         for name, default, maximum, key in (
-                ('aiCommitRequestTimeoutSeconds', '45', '900', 'scm-toolkit.ai-commit-request-timeout-seconds'),
-                ('aiCommitAttempts', '3', '10', 'scm-toolkit.ai-commit-attempts')):
+                ('aiCommitRequestTimeoutSeconds', '45', '900', 'sweetiebot.ai-commit-request-timeout-seconds'),
+                ('aiCommitAttempts', '3', '10', 'sweetiebot.ai-commit-attempts')):
             setting = next(s for s in configurator.SETTINGS if s.name == name)
             self.assertEqual(setting.section, 'AI')
             self.assertEqual(toolkit_settings.DEFAULT_SETTINGS[name], default)

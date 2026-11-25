@@ -481,7 +481,7 @@ class TitleTests(unittest.TestCase):
     def test_fallback_setting_is_enabled_by_default_and_can_be_disabled(self):
         with patch.object(ai_commit, "git_config_bool", side_effect=lambda _key, default: default) as setting:
             self.assertTrue(ai_commit.commit_fallback_enabled())
-        setting.assert_called_once_with("scm-toolkit.ai-commit-fallback", True)
+        setting.assert_called_once_with("sweetiebot.ai-commit-fallback", True)
         with patch.object(ai_commit, "git_config_bool", return_value=False):
             self.assertFalse(ai_commit.commit_fallback_enabled())
 

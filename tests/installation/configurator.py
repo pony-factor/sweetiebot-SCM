@@ -43,7 +43,7 @@ class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_bool")
     @patch("toolkit_settings.read_git_string")
     def test_access_visibility_uses_composer_layout(self, read_string, read_bool):
-        legacy_key = "scm-toolkit.codex-hide-permissions-icon"
+        legacy_key = "sweetiebot.codex-hide-permissions-icon"
         read_bool.side_effect = lambda key, default: key == legacy_key or default
         read_string.side_effect = lambda key, default, preserve_empty=False: default
 
@@ -54,7 +54,7 @@ class GitConfigTests(unittest.TestCase):
         default_layout["hidden"].append("access")
         saved_layout = json.dumps(default_layout)
         read_string.side_effect = lambda key, default, preserve_empty=False: (
-            saved_layout if key == "scm-toolkit.codex-composer-layout" else default
+            saved_layout if key == "sweetiebot.codex-composer-layout" else default
         )
 
         settings = toolkit_settings.load_settings()
@@ -66,7 +66,7 @@ class GitConfigTests(unittest.TestCase):
     def test_disabled_staged_whitespace_setting_loads(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: default
         read_bool.side_effect = lambda key, default: (
-            False if key == "scm-toolkit.normalize-staged-whitespace" else default
+            False if key == "sweetiebot.normalize-staged-whitespace" else default
         )
         settings = toolkit_settings.load_settings()
         self.assertFalse(settings["normalizeStagedWhitespace"])
@@ -78,10 +78,10 @@ class GitConfigTests(unittest.TestCase):
             returncode=1 if "--get" in args else 0, stdout="", stderr=""
         )
 
-        self.assertTrue(toolkit_settings.read_git_bool("scm-toolkit.branch-picker", True))
-        self.assertEqual(toolkit_settings.read_git_string("scm-toolkit.remote", "origin"), "origin")
+        self.assertTrue(toolkit_settings.read_git_bool("sweetiebot.branch-picker", True))
+        self.assertEqual(toolkit_settings.read_git_string("sweetiebot.remote", "origin"), "origin")
         toolkit_settings.persist_message_bar_layout({"messageBarLayout": '{"before":[],"after":[]}'})
-        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_count, 7)
         self.assertTrue(all(call.kwargs.get("cwd") == Path.home() for call in run.call_args_list))
 
     @patch("toolkit_settings.read_git_bool")
@@ -90,7 +90,7 @@ class GitConfigTests(unittest.TestCase):
         read_bool.side_effect = lambda _key, default: default
 
         def read_value(key, default, preserve_empty=False):
-            if key == "scm-toolkit.branch-name-disabled-packs":
+            if key == "sweetiebot.branch-name-disabled-packs":
                 self.assertTrue(preserve_empty)
                 return ""
             return default
@@ -105,10 +105,10 @@ class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_string")
     def test_legacy_short_placeholder_false_restores_native_placeholder(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: (
-            None if key == "scm-toolkit.message-placeholder" else default
+            None if key == "sweetiebot.message-placeholder" else default
         )
         read_bool.side_effect = lambda key, default: (
-            False if key == "scm-toolkit.short-placeholder" else default
+            False if key == "sweetiebot.short-placeholder" else default
         )
 
         settings = toolkit_settings.load_settings()
@@ -119,7 +119,7 @@ class GitConfigTests(unittest.TestCase):
     @patch("toolkit_settings.read_git_string")
     def test_new_message_placeholder_overrides_legacy_toggle(self, read_string, read_bool):
         read_string.side_effect = lambda key, default, preserve_empty=False: (
-            "Commit here" if key == "scm-toolkit.message-placeholder" else default
+            "Commit here" if key == "sweetiebot.message-placeholder" else default
         )
         read_bool.return_value = False
 
@@ -127,7 +127,7 @@ class GitConfigTests(unittest.TestCase):
 
         self.assertEqual(settings["messagePlaceholder"], "Commit here")
         self.assertFalse(any(
-            call.args[0] == "scm-toolkit.short-placeholder"
+            call.args[0] == "sweetiebot.short-placeholder"
             for call in read_bool.call_args_list
         ))
 
@@ -151,7 +151,7 @@ class GitConfigTests(unittest.TestCase):
                 "config",
                 "--global",
                 "--replace-all",
-                "scm-toolkit.ai-commit-model",
+                "sweetiebot.ai-commit-model",
                 "qwen2.5-coder:7b",
             ],
             writes,

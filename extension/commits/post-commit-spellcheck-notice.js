@@ -86,7 +86,7 @@ async function git(cwd, args) {
 // The SCM toolbar and Settings use exactly the same global Git preference.
 // A Git config read with exit status 1 simply means the opt-in is unset.
 async function postCommitSpellcheck(action = 'get', run = git) {
-  const key = 'scm-toolkit.post-commit-spellcheck';
+  const key = 'sweetiebot.post-commit-spellcheck';
   let enabled;
   try {
     enabled = (await run(process.cwd(), ['config', '--global', '--bool', '--get', key])) === 'true';
@@ -428,7 +428,7 @@ async function showNotice(vscode, repository, notice, readDiff = gitDiff, readCo
   if (!patch.trim()) return;
 
   let email = DEFAULT_EMAIL;
-  try { email = await readConfig(notice.root, ['config', '--get', 'scm-toolkit.spellcheck-coauthor-email']) || DEFAULT_EMAIL; }
+  try { email = await readConfig(notice.root, ['config', '--get', 'sweetiebot.spellcheck-coauthor-email']) || DEFAULT_EMAIL; }
   catch { /* Use the default bot identity. */ }
   let branch;
   try { branch = await readConfig(notice.root, ['symbolic-ref', '--quiet', 'HEAD']); }

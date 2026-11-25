@@ -55,7 +55,7 @@ class SettingsControlsTests(unittest.TestCase):
 
     def test_bulk_merge_commit_history_toggle_defaults_on_and_persists(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["mergeShowPrCommits"])
-        self.assertEqual(toolkit_settings.SETTING_KEYS["mergeShowPrCommits"], "scm-toolkit.merge-show-pr-commits")
+        self.assertEqual(toolkit_settings.SETTING_KEYS["mergeShowPrCommits"], "sweetiebot.merge-show-pr-commits")
         values = form_values()
         parsed = configurator.parse_submission(values)
         self.assertTrue(parsed["mergeShowPrCommits"])
@@ -80,7 +80,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_sync_commit_filter_defaults_on_and_persists(self):
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS["filterSyncCommitSummaries"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["filterSyncCommitSummaries"],
-                         "scm-toolkit.filter-sync-commit-summaries")
+                         "sweetiebot.filter-sync-commit-summaries")
         values = form_values()
         parsed = configurator.parse_submission(values)
         self.assertTrue(parsed["filterSyncCommitSummaries"])
@@ -96,7 +96,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_emoji_only_squash_summary_format_toggle(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["squashOmitBulletsForEmojiTitles"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["squashOmitBulletsForEmojiTitles"],
-                         "scm-toolkit.squash-omit-bullets-for-emoji-titles")
+                         "sweetiebot.squash-omit-bullets-for-emoji-titles")
         values = form_values()
         self.assertFalse(configurator.parse_submission(values)["squashOmitBulletsForEmojiTitles"])
         values["squashOmitBulletsForEmojiTitles"] = ["true"]
@@ -110,7 +110,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_squash_separator_style_round_trip(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["squashTrailerSeparatorStyle"], "underscores")
         self.assertEqual(toolkit_settings.SETTING_KEYS["squashTrailerSeparatorStyle"],
-                         "scm-toolkit.squash-trailer-separator-style")
+                         "sweetiebot.squash-trailer-separator-style")
         for style in ("underscores", "hyphens", "none"):
             values = form_values()
             values["squashTrailerSeparatorStyle"] = [style]
@@ -127,7 +127,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_ai_title_explanation_toggle_defaults_off_and_persists(self):
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS["aiTitleExplanations"])
         self.assertEqual(toolkit_settings.SETTING_KEYS["aiTitleExplanations"],
-                         "scm-toolkit.ai-title-explanations")
+                         "sweetiebot.ai-title-explanations")
         values = form_values()
         self.assertFalse(configurator.parse_submission(values)["aiTitleExplanations"])
         values["aiTitleExplanations"] = ["true"]
@@ -150,7 +150,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_spellcheck_only_date_format_persists_and_has_a_separate_panel(self):
         self.assertEqual(toolkit_settings.DEFAULT_SETTINGS["spellcheckDateFormat"], "preserve")
         self.assertEqual(toolkit_settings.SETTING_KEYS["spellcheckDateFormat"],
-                         "scm-toolkit.spellcheck-date-format")
+                         "sweetiebot.spellcheck-date-format")
         values = form_values()
         values["spellcheckDateFormat"] = ["day-first"]
         parsed = configurator.parse_submission(values)
@@ -396,7 +396,7 @@ class SettingsControlsTests(unittest.TestCase):
         self.assertEqual(setting.label, "Relative Codex reset times")
         self.assertIn("absolute reset dates and times", setting.description)
         self.assertIn("live relative countdowns", setting.description)
-        self.assertEqual(setting.git_key, "scm-toolkit.codex-usage-reset-countdown")
+        self.assertEqual(setting.git_key, "sweetiebot.codex-usage-reset-countdown")
         page = configurator.render_form(install.DEFAULT_SETTINGS, [], "Ready", "token", "Save")
         self.assertIn("Relative Codex reset times", page)
         self.assertIn("live relative countdowns", page)
@@ -405,7 +405,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_rate_limit_continuation_checkbox(self):
         key = 'codexContinueAtReset'
         self.assertFalse(toolkit_settings.DEFAULT_SETTINGS[key])
-        self.assertEqual(toolkit_settings.SETTING_KEYS[key], 'scm-toolkit.codex-continue-at-reset')
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], 'sweetiebot.codex-continue-at-reset')
         values = form_values()
         # This preference is off by default; the browser submits the key only
         # after the user explicitly checks its box.
@@ -442,7 +442,7 @@ class SettingsControlsTests(unittest.TestCase):
     def test_codex_send_interrupt_option_is_persisted(self):
         key = "codexInterruptOnSendClick"
         self.assertTrue(toolkit_settings.DEFAULT_SETTINGS[key])
-        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "scm-toolkit.codex-interrupt-on-send-click")
+        self.assertEqual(toolkit_settings.SETTING_KEYS[key], "sweetiebot.codex-interrupt-on-send-click")
         values = form_values()
         values.pop(key)
         disabled = configurator.parse_submission(values)
