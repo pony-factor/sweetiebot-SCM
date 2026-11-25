@@ -10,6 +10,8 @@ The branch selector can be a horizontal popup or native picker. **Branch names**
 
 **Open a Window on Shared Main** provides a managed main window. The ordinary new-branch action starts at the resolved default branch where possible; the **stacked branch** action starts at the current topic branch. If GitHub metadata or remote synchronization times out, New Branch can use an existing, verified local default-branch commit without changing or publishing main. It warns that the remote may be newer; missing local commits, authentication errors, and merge conflicts remain blocking failures. Optional `gh-stack` manages native stacks. Creating a stacked branch is not publishing a PR; verify parent/base relationships before merging.
 
+If the original repository folder is on a topic branch and `main` is already checked out in a linked worktree, Home and **Open a Window on Shared Main** use that existing `main` worktree.
+
 Unsent Codex new-chat text and attachments belong to the saved window and Git branch. Separate windows on the same main checkout have independent drafts. Reloading restores that window's draft; switching branches selects that branch's slot. Delayed updates from the previous branch cannot populate the new one.
 
 An explicit checkout handoff transfers the captured draft once and retires the matching source copy after saving the destination. Retrying a handoff cannot restore text or attachments already sent, and an existing destination draft is preserved. Older checkout-wide caches remain stored but do not automatically seed new windows.
