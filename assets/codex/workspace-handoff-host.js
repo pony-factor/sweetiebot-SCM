@@ -24,6 +24,7 @@ function scmToolkitUserQueuePause(coordinator, threadId, paused) {
 function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupported = false) {
     const { randomUUID } = require('node:crypto');
     const fs = require('node:fs/promises');
+    const { existsSync, realpathSync } = require('node:fs');
     const path = require('node:path');
     const connection = provider.codexMcpConnection;
     const pending = new Map();
@@ -90,6 +91,29 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
     });
     const canonical = value => typeof value === 'string' && path.isAbsolute(value)
         ? fs.realpath(value) : Promise.reject(new Error('Codex did not report an absolute checkout path.'));
+    const existingPath = value => {
+        if (typeof value !== 'string' || !path.isAbsolute(value)) return undefined;
+        try { return realpathSync.native(value); } catch { return undefined; }
+    };
+    const inside = (root, location) => location && (location === root || location.startsWith(root + path.sep));
+    const selectedCheckout = () => {
+        if (!vscode.workspace.getConfiguration?.('sweetiebot').get('singleRepositoryPerWindow', true)) return undefined;
+        const folders = (vscode.workspace.workspaceFolders || []).filter(folder => folder.uri.scheme === 'file');
+        const git = vscode.extensions?.getExtension('vscode.git');
+        const repo = git?.exports?.getAPI(1).repositories[0]?.rootUri?.fsPath;
+        const selected = existingPath(repo);
+        for (const folder of folders) {
+            let location = existingPath(folder.uri.fsPath);
+            if (!location) continue;
+            if (selected && (inside(selected, location) || inside(location, selected))) return selected;
+            // The first request can precede Git extension activation.
+            while (location !== path.dirname(location)) {
+                if (existsSync(path.join(location, '.git'))) return location;
+                location = path.dirname(location);
+            }
+        }
+        return undefined;
+    };
     const read = async threadId => {
         const result = await send('thread/read', { threadId, includeTurns: false });
         if (result?.thread?.id !== threadId) throw new Error('Codex returned a different chat during checkout handoff.');
@@ -111,14 +135,22 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
         const cwd = await chatCheckoutPath(threadId);
         return { threadId, needsNewWindow: !(await checkoutAlreadyOpen(cwd)) };
     }));
-    // A frontend cache must not override the verified destination on its next
-    // resume or user turn. Only this explicitly handed-off thread is affected.
+    // Native and queued turns use the window checkout even when the frontend
+    // cached an old cwd. Explicit handoffs still verify their destination.
     const guardedSend = typeof originalSend === 'function' ? function (name, id, method, params, ...rest) {
         const handoff = handoffs.get(params?.threadId);
         if (handoff && name !== providerName && method === 'turn/interrupt'
             && (!handoff.turnId || handoff.turnId === params.turnId)) handoff.userStopped = true;
-        const cwd = bindings.get(params?.threadId);
-        if (cwd && ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method)) params = { ...params, cwd };
+        const bound = bindings.get(params?.threadId);
+        const threadRequest = ['thread/resume', 'turn/start', 'turn/addUserMessage'].includes(method);
+        if (threadRequest || method === 'thread/start' ||
+            (method === 'thread/settings/update' && params?.cwd != null)) {
+            const root = name === providerName ? undefined : selectedCheckout();
+            const requested = threadRequest ? bound ?? params?.cwd : params?.cwd;
+            const cwd = root ? (inside(root, existingPath(requested)) ? requested : root)
+                : threadRequest ? bound : undefined;
+            if (cwd && cwd !== params?.cwd) params = { ...params, cwd };
+        }
         return originalSend.call(this, name, id, method, params, ...rest);
     } : undefined;
     if (guardedSend) connection.sendProviderRequest = guardedSend;

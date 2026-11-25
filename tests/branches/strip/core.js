@@ -5,7 +5,8 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip, pullRequestCacheKey } = require('../../../extension/branches/strip');
+const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip, pullRequestCacheKey,
+  omitMergedBranches } = require('../../../extension/branches/strip');
 const { worktreeLocations } = require('../../../extension/branches/worktree-registry');
 
 assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
@@ -78,6 +79,30 @@ assert(unknown.branches.every(item => item.hasPr === null));
     git('-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
       'commit', '--allow-empty', '-m', 'Initial commit');
     git('-C', root, 'worktree', 'add', '-b', 'occupied', topic);
+    const baseTip = git('-C', root, 'rev-parse', 'main');
+    git('-C', topic, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      'commit', '--allow-empty', '-m', 'Merged PR head');
+    const mergedTip = git('-C', topic, 'rev-parse', 'HEAD');
+    git('-C', topic, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+      'commit', '--allow-empty', '-m', 'Post-merge work');
+    const extraTip = git('-C', topic, 'rev-parse', 'HEAD');
+    const mergedPr = { mergedHeads: [{ oid: mergedTip, base: 'main' }] };
+    const sample = [
+      { name: 'main', tip: baseTip, pr: mergedPr },
+      { name: 'current', tip: mergedTip, pr: mergedPr },
+      { name: 'squash-merged', tip: mergedTip, pr: mergedPr },
+      { name: 'older-local-tip', tip: baseTip, pr: mergedPr },
+      { name: 'new-work', tip: extraTip, pr: mergedPr },
+      { name: 'open-pr', tip: mergedTip, pr: { ...mergedPr, hasOpenPr: true } },
+      { name: 'fresh-branch', tip: baseTip },
+      { name: 'updated-remote', tip: mergedTip, origin: true, pr: mergedPr }
+    ].map(item => ({ ...item, local: true }));
+    const sampleRefs = sample.map(item => `refs/heads/${item.name}\t0\t${item.tip}`);
+    sampleRefs.push(`refs/remotes/origin/updated-remote\t0\t${extraTip}`);
+    const visible = await omitMergedBranches(root, sample, sampleRefs.join('\n'), '',
+      'current', 'main', 'origin');
+    assert.deepEqual(visible.map(item => item.name),
+      ['main', 'current', 'new-work', 'open-pr', 'fresh-branch', 'updated-remote']);
     const registry = worktreeLocations(git('-C', root, 'worktree', 'list', '--porcelain'));
     assert.equal(await fs.realpath(registry.get('occupied')), await fs.realpath(topic),
       'Map branch to its real checkout across macOS /var aliases');

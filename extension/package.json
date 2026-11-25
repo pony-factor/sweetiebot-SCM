@@ -389,6 +389,12 @@
           "scope": "application",
           "description": "Idle minutes before clean unused standby worktrees become eligible for reclamation."
         },
+        "sweetiebot.singleRepositoryPerWindow": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Use the window's primary Git checkout for Source Control, Codex, and files opened from linked worktrees."
+        },
         "sweetiebot.automaticWorkspaceCleanup": {
           "type": "boolean",
           "default": true,
