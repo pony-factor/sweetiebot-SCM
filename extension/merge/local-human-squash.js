@@ -284,7 +284,8 @@ async function humanSquashMerge(repository, number, {
         const current = await api(prPath);
         const githubMerged = (!receipt.signed || verified) && current?.merged === true &&
           current.merge_commit_sha === sha && current.head?.sha === originalSha && current.base?.ref === base;
-        return { merged: githubMerged, githubMerged, published: true, status: githubMerged ? 'merged' : 'published',
+        return { merged: githubMerged, githubMerged, published: true, publicationVerified: !receipt.signed || verified,
+          status: githubMerged ? 'merged' : 'published',
           sha, number, base, baseSha: receipt.baseSha, headSha: originalSha, previousHeadSha: originalSha, author,
           method: receipt.signed ? 'local-signed-squash' : 'local-squash', signed: receipt.signed, verified,
           reason: receipt.signed && !verified ? 'Previous squash is published, but GitHub has not verified its signature.'
@@ -407,7 +408,7 @@ async function humanSquashMerge(repository, number, {
         throw Object.assign(Error('Local squash ' + sha + ' has an uncertain push result. Inspect the destination before retrying: ' + (pushError || error).message), { publishedSha: sha });
       }
       pushedSha = sha;
-      let verified = false, githubMerged = false, reason;
+      let verified = false, publicationVerified = false, githubMerged = false, reason;
       try {
         const destination = await api(endpoint + '/commits/' + sha);
         verifyCommit(destination, preparedMessage, author, { committer: identity.committer });
@@ -417,11 +418,13 @@ async function humanSquashMerge(repository, number, {
         }
         verified = destination.commit?.verification?.verified === true;
         if (signed && !verified) throw Error('GitHub has not verified the local signature.');
+        publicationVerified = true;
         const current = await api(prPath);
         githubMerged = current?.merged === true && current.merge_commit_sha === sha &&
           current.head?.sha === originalSha && current.head?.ref === head && current.base?.ref === base;
       } catch (error) { reason = error.message; }
-      return { merged: githubMerged, githubMerged, published: true, status: githubMerged ? 'merged' : 'published',
+      return { merged: githubMerged, githubMerged, published: true, publicationVerified,
+        status: githubMerged ? 'merged' : 'published',
         sha, number, base, baseSha, headSha: originalSha, previousHeadSha: originalSha, author, additionalFiles,
         method: signed ? 'local-signed-squash' : 'local-squash', signed, verified,
         reason: reason || (!githubMerged ? 'The squash is published; GitHub has not confirmed the PR as merged. Do not publish again.' : undefined),

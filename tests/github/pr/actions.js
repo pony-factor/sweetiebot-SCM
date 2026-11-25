@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { squashMergePullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../../../extension/github/pr-actions');
+const { squashMergePullRequest, closePublishedPullRequest, deleteMergedRemoteBranch, closeMergedPullRequestTab, registerGitHubPullRequestActions } = require('../../../extension/github/pr-actions');
 const { squashMessage } = require('../../../extension/merge/squash-attribution');
 const url = 'https://github.com/owner/repo/pull/12';
 const open = { state: 'OPEN', isDraft: false, baseRefName: 'main', headRefName: 'topic',
@@ -31,7 +31,43 @@ function mockMerge({ views = [open, open, mergedPr], submission = pending, respo
 }
 const quickPoll = { preferLocalGit: false, wait: async () => {}, pollAttempts: 2 };
 
+async function testClosePublishedPullRequest() {
+  const published = { published: true, publicationVerified: true, merged: false, repo: 'owner/repo',
+    number: 12, base: 'main', sha: 'c'.repeat(40), headSha: open.headRefOid, pr: open };
+  const selected = { state: 'open', title: open.title,
+    head: { ref: open.headRefName, sha: open.headRefOid, repo: { full_name: published.repo } },
+    base: { ref: published.base, repo: { full_name: published.repo } } };
+  const branch = 'repos/owner/repo/branches/main';
+  const endpoint = 'repos/owner/repo/pulls/12';
+  const newerTip = 'd'.repeat(40);
+  const compare = `repos/owner/repo/compare/${published.sha}...${newerTip}`;
+  const calls = [];
+  let current = selected;
+  let comparison = 'ahead';
+  const request = async (path, options) => {
+    calls.push([path, options]);
+    if (path === branch) return { commit: { sha: newerTip } };
+    if (path === compare) return { status: comparison };
+    assert.equal(path, endpoint);
+    return options ? { ...current, state: 'closed' } : current;
+  };
+  await assert.rejects(closePublishedPullRequest({ ...published, publicationVerified: false }, request), /Verify the published squash/);
+  assert.deepEqual(calls, []);
+  await closePublishedPullRequest(published, request);
+  assert.deepEqual(calls, [[branch, undefined], [compare, undefined], [endpoint, undefined],
+    [endpoint, { method: 'PATCH', body: { state: 'closed' } }]]);
+  calls.length = 0;
+  current = { ...selected, head: { ...selected.head, sha: 'e'.repeat(40) } };
+  await assert.rejects(closePublishedPullRequest(published, request), /pull request changed/);
+  assert.deepEqual(calls, [[branch, undefined], [compare, undefined], [endpoint, undefined]]);
+  calls.length = 0;
+  comparison = 'diverged';
+  await assert.rejects(closePublishedPullRequest(published, request), /no longer on the destination/);
+  assert.deepEqual(calls, [[branch, undefined], [compare, undefined]]);
+}
+
 async function main() {
+  await testClosePublishedPullRequest();
   const local = mockMerge();
   let delegated=false;
   const localResult=await squashMergePullRequest(url,local.execute,undefined,{preferLocalGit:true,humanMerge:async(repo,number,options)=>{
