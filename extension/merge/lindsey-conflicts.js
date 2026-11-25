@@ -144,6 +144,7 @@ async function generatePreview(vscode, repository, { sync = false, lindsey, run 
         ? 'Lindsey conflict resolution service is not configured. Configure LINDSEY_RESOLVE_URL and LINDSEY_RESOLVE_SECRET in the local VS Code environment, then retry. No resolutions were applied.'
         : 'Lindsey could not prepare conflict proposals. Check the local resolution service and retry. No resolutions were applied.');
     }
+    if (manifest === undefined) return undefined;
     const files = await inspectPreview(repository, temporary, manifest);
     for (const file of files) {
       await vscode.commands.executeCommand('vscode.diff',

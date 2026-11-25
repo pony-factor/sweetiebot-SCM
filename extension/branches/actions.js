@@ -1335,7 +1335,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       return true;
     };
     const merge = async (args, headBefore, expectedTree) => {
-      try { await git(args); }
+      try { await git(conflictChoice?.browser ? ['-c', 'merge.conflictStyle=merge', ...args] : args); }
       catch (error) {
         if (expectedTree !== null || !conflictChoice?.lindsey || !publish
             || typeof resolveConflicts !== 'function') throw error;

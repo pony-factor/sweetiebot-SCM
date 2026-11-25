@@ -5,6 +5,7 @@ const { existsSync } = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { checkLindseyResolver } = require('./lindsey-conflicts');
+const { prepareChatGPTSyncPreview } = require('./sync-chatgpt');
 const exec = promisify(execFile);
 const SHA = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/i;
 const gh = ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find(existsSync) || 'gh';
@@ -17,7 +18,9 @@ function githubRepository(url) {
   const found = String(url || '').match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
   return found ? found[1] + '/' + found[2] : null;
 }
-async function reviewSyncConflicts(vscode, repository, details, { connect = checkLindseyResolver } = {}) {
+async function reviewSyncConflicts(vscode, repository, details, {
+  connect = checkLindseyResolver, prepareInChatGPT = prepareChatGPTSyncPreview
+} = {}) {
   const { branch, defaultBranch, remote, head, target, strategy } = details;
   const root = repository.rootUri?.fsPath;
   if (!root || !SHA.test(head) || !SHA.test(target)) throw Error('Missing verified sync revisions.');
@@ -43,7 +46,20 @@ async function reviewSyncConflicts(vscode, repository, details, { connect = chec
     if (!choice || choice.id === 'cancel') return false;
     await unchanged();
     if (choice.id === 'lindsey') {
-      return { lindsey: await connect(vscode, root, details.publishingRepository) };
+      try {
+        return { lindsey: await connect(vscode, root, details.publishingRepository) };
+      } catch (error) {
+        const open = 'Open ChatGPT';
+        const fallback = await vscode.window.showWarningMessage(
+          'The Lindsey resolver is unavailable. Ask ChatGPT for conflict proposals?', {
+            modal: true,
+            detail: error.message + '\n\nThis sends the conflicting sections of the files to ChatGPT in VS Code. You can review the proposed changes in local diffs before approving the sync.'
+          }, open);
+        if (fallback !== open) continue;
+        await unchanged();
+        return { browser: true, lindsey: (checkout, output) =>
+          prepareInChatGPT(vscode, details.publishingRepository, details, checkout, output) };
+      }
     }
     if (choice.id === 'own') {
       const suggested = '🛠️ Prepare ' + branch + ' for synchronization with ' + defaultBranch;

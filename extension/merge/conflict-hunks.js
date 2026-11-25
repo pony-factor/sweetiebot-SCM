@@ -6,6 +6,11 @@ const { safePatchPath } = require('./patch');
 // from the verified head/base; no whole-file diff needs to cross the chat.
 const CHOICES = new Set(['ours', 'theirs', 'both-ours-first', 'both-theirs-first', 'custom']);
 const MAX_HUNK_BYTES = 32 * 1024 * 1024;
+const MARKER = /^<<<<<<<[^\n]*\r?\n([\s\S]*?)^=======\r?\n([\s\S]*?)^>>>>>>>[^\n]*(?:\r?\n|$)/gm;
+
+function describeConflictHunks(text) {
+  return Array.from(text.matchAll(MARKER), (block, index) => ({ index, ours: block[1], theirs: block[2] }));
+}
 
 function validateResolutionHunks(value = []) {
   if (!Array.isArray(value) || value.length > 512) throw Error('Invalid compact resolution files.');
@@ -44,8 +49,7 @@ function validateResolutionHunks(value = []) {
 // aborts rather than guessing, silently dropping lines, or selecting a side.
 function applyResolutionHunks(text, hunks) {
   if (typeof text !== 'string' || !Array.isArray(hunks)) throw Error('Invalid conflict content.');
-  const marker = /^<<<<<<<[^\n]*\r?\n([\s\S]*?)^=======\r?\n([\s\S]*?)^>>>>>>>[^\n]*(?:\r?\n|$)/gm;
-  const blocks = [...text.matchAll(marker)];
+  const blocks = [...text.matchAll(MARKER)];
   if (blocks.length !== hunks.length || !blocks.length) {
     throw Error('Conflict hunk count changed; regenerate this resolution from the current base.');
   }
@@ -74,4 +78,4 @@ function applyResolutionHunks(text, hunks) {
   return output;
 }
 
-module.exports = { validateResolutionHunks, applyResolutionHunks };
+module.exports = { validateResolutionHunks, describeConflictHunks, applyResolutionHunks };
