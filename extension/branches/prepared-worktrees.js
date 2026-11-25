@@ -17,6 +17,9 @@ const IDLE_MS = 30 * 60 * 1000;
 const SCAN_MS = 30 * 1000;
 const SHA = /^[a-f0-9]{40,64}$/;
 let output;
+const FRESH_MS = 60000;
+const fetched = new Map();
+const fetching = new Map();
 
 function timing(stage, started) {
   output?.appendLine(stage + ': ' + Math.round(performance.now() - started) + ' ms');
@@ -93,7 +96,7 @@ async function retire(directory, receipt, run) {
   await fs.rmdir(directory).catch(() => {});
   return true;
 }
-async function localBase(repo, run) {
+async function defaultName(repo, run) {
   const local = args => run(['-C', repo.original, ...args]);
   let name = await local(['config', '--local', '--get', 'sweetiebot.default-branch']).catch(() => '');
   if (!name) name = await local(['config', '--local', '--get', 'scm-toolkit.default-branch']).catch(() => '');
@@ -101,8 +104,56 @@ async function localBase(repo, run) {
     const ref = await local(['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']).catch(() => '');
     name = ref.startsWith('refs/remotes/origin/') ? ref.slice('refs/remotes/origin/'.length) : 'main';
   }
-  const sha = await local(['rev-parse', '--verify', 'refs/heads/' + name + '^{commit}']).catch(() => '');
+  return name;
+}
+async function localBase(repo, run) {
+  const name = await defaultName(repo, run);
+  const sha = await run(['-C', repo.original, 'rev-parse', '--verify', 'refs/heads/' + name + '^{commit}']).catch(() => '');
   return SHA.test(sha) ? sha : null;
+}
+function fetchKey(repo, remote, name) { return JSON.stringify([repo.common, remote, name]); }
+async function noteFetch(root, remote, name, { run = git, now = Date.now() } = {}) {
+  try {
+    const repo = await identity(root, run);
+    if (!repo) return;
+    const sha = await run(['-C', root, 'rev-parse', '--verify', 'refs/remotes/' + remote + '/' + name + '^{commit}']);
+    if (SHA.test(sha)) fetched.set(fetchKey(repo, remote, name), { sha, now });
+  } catch { /* Never turn a successful fetch into a failure for caching. */ }
+}
+async function freshBase(root, defaultBranch, remote, { run = git, now = Date.now() } = {}) {
+  try {
+    const repo = await identity(root, run);
+    if (!repo) return null;
+    const upstream = await run(['-C', root, 'rev-parse', '--symbolic-full-name', defaultBranch + '@{upstream}']);
+    const prefix = 'refs/remotes/' + remote + '/';
+    if (!upstream.startsWith(prefix)) return null;
+    const receipt = fetched.get(fetchKey(repo, remote, upstream.slice(prefix.length)));
+    if (!receipt || now - receipt.now >= FRESH_MS || now < receipt.now) return null;
+    const refs = await run(['-C', root, 'rev-parse', 'refs/heads/' + defaultBranch + '^{commit}', upstream + '^{commit}']);
+    const [local, tracking] = refs.split(/\\s+/);
+    // Cache only an equal, recently fetched base. Behind/ahead/diverged,
+    // changed upstream or changed remote tip all use the original sync flow.
+    return local === receipt.sha && tracking === receipt.sha ? local : null;
+  } catch { return null; }
+}
+async function prefetchTopicBase(root, repo, run) {
+  const name = await defaultName(repo, run);
+  const current = await run(['-C', root, 'branch', '--show-current']);
+  if (!current || current === name) return; // Existing auto-pull handles main.
+  const remote = await run(['-C', root, 'config', '--get', 'branch.' + name + '.remote']).catch(() => '');
+  const merge = await run(['-C', root, 'config', '--get', 'branch.' + name + '.merge']).catch(() => '');
+  if (!remote || remote === '.' || !merge.startsWith('refs/heads/')) return;
+  const remoteName = merge.slice('refs/heads/'.length);
+  const key = fetchKey(repo, remote, remoteName);
+  const now = Date.now();
+  if (now - (fetching.get(key) || 0) < FRESH_MS || now - (fetched.get(key)?.now || 0) < FRESH_MS) return;
+  const tracking = 'refs/remotes/' + remote + '/' + remoteName;
+  await run(['-C', root, 'check-ref-format', tracking]);
+  fetching.set(key, now);
+  // This is fetch-only; never update local main, merge, or push in a warmer.
+  // Run independently of the foreground repository-operation queue.
+  await run(['-C', root, 'fetch', '--no-tags', '--', remote, '+' + merge + ':' + tracking]);
+  await noteFetch(root, remote, remoteName, { run, now });
 }
 async function maintain(root, { base = independentWorkspaceParent(), count = 3, run = git, now = Date.now() } = {}) {
   const repo = await identity(root, run);
@@ -239,8 +290,13 @@ function registerPreparedWorktrees(vscode, context) {
         // Prepared paths themselves must never trigger pool maintenance.
         if (root.split(path.sep).some(part => SLOT.test(part))) continue;
         active.add(repo.common);
-        if (settings.enabled && (initial || settings.replenish))
-          await maintain(root, { base, count: settings.count }).catch(() => {});
+        if (settings.enabled) {
+          // Fetch in parallel with disk preparation; errors only invalidate
+          // the fast path, not normal branch creation.
+          void prefetchTopicBase(root, repo, git).catch(() => {});
+          if (initial || settings.replenish)
+            await maintain(root, { base, count: settings.count }).catch(() => {});
+        }
       }
       initial = false;
       await reap(base, settings.enabled ? active : new Set(), {
@@ -255,4 +311,4 @@ function registerPreparedWorktrees(vscode, context) {
   first.unref?.(); timer.unref?.();
   context.subscriptions.push({ dispose() { disposed = true; clearTimeout(first); clearInterval(timer); } });
 }
-module.exports = { config, maintain, consume, reap, timing, registerPreparedWorktrees };
+module.exports = { config, maintain, consume, reap, timing, noteFetch, freshBase, registerPreparedWorktrees };
