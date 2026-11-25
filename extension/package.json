@@ -361,6 +361,12 @@
           "scope": "application",
           "description": "Commit staged changes locally at once with a placeholder, then apply the generated message and optionally push in the background, with restart recovery. Off uses the earlier direct commit workflow."
         },
+        "sweetiebot.singleRepositoryPerWindow": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Use the window's primary Git checkout for Source Control, Codex, and files opened from linked worktrees."
+        },
         "sweetiebot.automaticWorkspaceCleanup": {
           "type": "boolean",
           "default": true,

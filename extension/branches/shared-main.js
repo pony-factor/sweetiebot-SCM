@@ -10,7 +10,7 @@ const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-lay
 const { worktreeLocations } = require('./worktree-registry');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { prepareCodexHandoff } = require('../codex/workspace-handoff');
-const { saveRepositoryDocuments, assertSavedRepositoryDocuments, moveRepositoryEditors } = require('./editor-handoff');
+const { saveRepositoryDocuments, assertSavedRepositoryDocuments, moveRepositoryEditors, duringEditorCheckoutSwitch } = require('./editor-handoff');
 
 const exec = promisify(execFile);
 const DELETION_RETURN = 'sweetiebot-deleted-branch.json';
@@ -191,8 +191,10 @@ async function replaceRepository(vscode, root, destination, options) {
     folders.push({ path: sameRoot
       ? path.join(destination, path.relative(root, location)) : folder.uri.fsPath, name: folder.name });
   }
-  const editors = await moveRepositoryEditors(vscode, root, destination);
-  return openFolders(vscode, folders, { ...options, editors });
+  return duringEditorCheckoutSwitch(vscode, async () => {
+    const editors = await moveRepositoryEditors(vscode, root, destination);
+    return openFolders(vscode, folders, { ...options, editors });
+  });
 }
 
 async function capturePendingFiles(root, run) {
