@@ -18,6 +18,7 @@ const { recoveryPlan } = require('../commits/finalized-commit-recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
 const { routeBranch, routeExistingBranchWorktree, recordDeletedBranchReturn } = require('./shared-main');
 const { createStackedBranch } = require('./stacked-branch');
+const prepared = require('./prepared-worktrees');
 const { isPullRequestReviewBranch } = require('./publish-policy');
 const { findExperimentWorkspace, trashExperimentWorkspace } = require('./experiment-workspace');
 
@@ -258,7 +259,10 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   if (!target.remote || !target.name) return false;
   if (fetch) {
     if (repository.state.mergeChanges?.length) return false;
+    const fetchStarted = Date.now();
     await retryFetch(() => repository.fetch({ remote: target.remote, ref: target.name }));
+    if (repository.rootUri?.fsPath)
+      await prepared.noteFetch(repository.rootUri.fsPath, target.remote, target.name, { now: fetchStarted });
     await repository.status();
     if (commitInProgress(repository) || await asyncCommitPending(repository)) return false;
     const current = repository.state.HEAD;
@@ -631,7 +635,7 @@ async function syncDefaultBranchInBackground(repository, defaultBranch, remote) 
   }
 }
 
-async function createBranch(repository, { defaultBranch, remote, names, isolateBranch, continueFromBranch, onOfflineMain }, secureRandomInt) {
+async function createBranch(repository, { defaultBranch, remote, names, isolateBranch, continueFromBranch, onOfflineMain, usePreparedBase = false }, secureRandomInt) {
   if (!names?.length) throw new Error('No pony branch names are configured.');
   await repository.status();
   if (repository.state.mergeChanges?.length) {
@@ -742,7 +746,11 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
     }
   } else {
     try {
-      start = await syncDefaultBranchInBackground(repository, defaultBranch, remote);
+      const phase = performance.now();
+      const cached = usePreparedBase && repository.rootUri?.fsPath &&
+        await prepared.freshBase(repository.rootUri.fsPath, defaultBranch, remote);
+      start = cached || await syncDefaultBranchInBackground(repository, defaultBranch, remote);
+      prepared.timing(cached ? 'Verified recent base' : 'Foreground base synchronization', phase);
     } catch (error) {
       if (!isTransientNetworkFailure(error)) throw error;
       // The network may be down, but a verified local main commit remains
@@ -751,14 +759,16 @@ async function createBranch(repository, { defaultBranch, remote, names, isolateB
       offlineReason ||= errorText(error);
     }
   }
-  const refs = await repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] });
+  const [refs, history] = await Promise.all([
+    repository.getRefs({ pattern: ['refs/heads', `refs/remotes/${remote}`] }),
+    loadBranchNameHistory(repository)
+  ]);
   const used = new Set(refs.flatMap(ref => [
     ref.name,
     ref.name?.startsWith(`${remote}/`) ? ref.name.slice(remote.length + 1) : ref.name
   ]));
   const available = [...new Set(names)].filter(name => !used.has(name));
   if (!available.length) throw new Error('All configured pony branch names are already in use.');
-  const history = await loadBranchNameHistory(repository);
   const { branch, selected } = chooseBranchName(available, history.selected, secureRandomInt);
   await repository.status();
   if (repository.state.HEAD?.name !== original) throw new Error('The active branch changed while preparing the new branch.');
@@ -1622,6 +1632,7 @@ function registerBranchCommands(vscode, context) {
           const result = await action(repository, {
             ...options, defaultBranch,
             ...(command === 'sweetiebot.createBranch' ? {
+              usePreparedBase: prepared.config(vscode).enabled && vscode.workspace.isTrusted !== false,
               onOfflineMain: ({ branch, defaultBranch: base }) => {
                 void vscode.window?.showWarningMessage?.(
                   `Created "${branch}" from local ${base}. GitHub was unreachable during branch preparation; the remote may have newer commits. Sync ${base} when connectivity returns.`
