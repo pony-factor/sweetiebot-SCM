@@ -39,7 +39,10 @@ async function connectLindseyResolver(repository, { env = process.env, fetchImpl
     if (response.status === 401 || response.status === 403) {
       throw Error('The Lindsey resolver could not verify this App key or repository installation.');
     }
-    if (!response.ok) throw Error('The Lindsey resolver request failed (HTTP ' + response.status + '). Check that the resolver supports App authentication.');
+    if (response.status === 404 || response.status === 405) {
+      throw Error('The deployed Lindsey resolver does not support App authentication yet.');
+    }
+    if (!response.ok) throw Error('The Lindsey resolver request failed (HTTP ' + response.status + ').');
     let result;
     try { result = await response.json(); } catch { /* Invalid response. */ }
     if (!result?.ok || (method === 'GET' && result.authentication !== 'lindsey-app-v1')) {

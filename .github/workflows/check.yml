@@ -297,6 +297,7 @@ jobs:
           node tests/kefania/github-app-settings.js
           node tests/kefania/app-environment.js
           node tests/lindsey/bulk-merge.js
+          node tests/lindsey/resolver-auth.js
 
   packaged-runtime:
     name: Installed extension imports (ubuntu-latest)

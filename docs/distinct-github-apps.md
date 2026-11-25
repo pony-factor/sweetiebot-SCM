@@ -64,6 +64,14 @@ and use **Check comment permissions** to verify the saved installation. This
 check covers Issues and Pull requests write access alongside the existing
 read-only checks, and does not post a comment, submit a review, or merge code.
 
+**Resolve and sync with Lindsey** uses the same saved GitHub App key. Sweetiebot
+discovers the resolver from the App's HTTPS `/webhook` URL and authenticates
+before starting the merge. The resolver verifies the signed request and the
+publishing repository's installation before processing the conflicting files.
+This requires a compatible local `lindsey-sync` checkout and server deployment.
+If the server and Sweetiebot use different keys for the App, the server must
+also trust the public key corresponding to the saved Sweetiebot key.
+
 The connection is still the **Lindsey GitHub App**: its installation token is the
 author of automated review and merge comments, not the GitHub user signed in to
 Sweetiebot. The shortcut does not introduce a second credential store or a
