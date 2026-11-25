@@ -7,7 +7,7 @@ const {execFile}=require('node:child_process');
 const run=require('node:util').promisify(execFile);
 const {humanSquashMerge}=require('../../extension/merge/local-human-squash');
 const {squashMessage}=require('../../extension/merge/squash-attribution');
-async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true}={}) {
+async function fixture({protectedBase=false,rules=[],failed=false,race=false,advanceBase=false,humanOpener=false,kefaniaOpener=false,failedOriginalOnly=false,lostAck=false,privateRepository=false,rulesUnavailable=false,rulesForbidden=false,requireSignedCommit=false,conflict=false,missingSigningKey=false,githubCannotVerifySignature=false,appMode=false,syncOnly=false,protectedHead=false,dependentPR=false,closeRetry=false,localSigningEnabled=false,userGraphQL=false,squashSetting=true,directLocal=false}={}) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lindsey-local-author-'));
   const remote=path.join(root,'remote.git'),work=path.join(root,'work');
   const author={name:'Original Human',email:'human@example.test'};
@@ -63,7 +63,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
       const tip=await branch('main');
       // GitHub recognizes a direct push only when the PR head is included.
       // Pushing an unrelated squash to main must not fake a merged response.
-      const merged=nativeMerged || tip!==baseSha && !race &&
+      const merged=nativeMerged || !directLocal && tip!==baseSha && !race &&
         (humanOpener&&!appMode&&!requireSignedCommit&&!conflict || tip===await branch('feature'));
       return {node_id:'PR_fixture',state:merged||manuallyClosed?'closed':'open',merged,merged_at:merged?'2026-10-28':null,
         merge_commit_sha:merged?tip:null,title:'✨ Complete feature',mergeable:!conflict,mergeable_state:conflict?'dirty':'clean',
@@ -120,6 +120,7 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         const signed=/(?:^|\n)gpgsig /.test(await inRemote('cat-file','-p',sha));
         return {author:{login:name===kefania.name?kefania.name:'human'},
           commit:{author:{name,email},committer:{name:committerName,email:committerEmail},message:message.join('\0'),
+          tree:{sha:await inRemote('rev-parse',sha+'^{tree}')},
           verification:{verified:signed&&!githubCannotVerifySignature,
             reason:!signed?'unsigned':githubCannotVerifySignature?'bad_email':'valid'}}, 
           parents:(await inRemote('show','-s','--format=%P',sha)).split(' ').map(sha=>({sha}))};
@@ -136,19 +137,41 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
         pushes.push(args);
         assert(!args.some(arg=>arg.startsWith('--force')||arg==='-f'||arg.startsWith('+')),
           'Force-pushes are forbidden on every branch');
-        assert((syncOnly||conflict)&&args.at(-1).endsWith(':refs/heads/feature'),
+        assert(directLocal ? args.at(-1).endsWith(':refs/heads/main') : (syncOnly||conflict)&&args.at(-1).endsWith(':refs/heads/feature'),
           'Only conflict repair may append to the PR head; main is merged by GitHub');
         if(race){competing=await inRemote('commit-tree',baseSha+'^{tree}','-p',baseSha,'-m','Concurrent base update');await inRemote('update-ref','refs/heads/main',competing,baseSha);}
       }
       return git(...args);
     };
-    const action=(options={})=>humanSquashMerge('owner/repo',1,{api:appMode?()=>assert.fail('App mode must not borrow the user API'):api,
-      git:localGit,localGitMerge:true,requireSignedCommit,
+    const action=(options={})=>humanSquashMerge('owner/repo',1,{api:appMode&&!directLocal?()=>assert.fail('App mode must not borrow the user API'):api,
+      git:localGit,localGitMerge:true,requireSignedCommit,directLocal,
       nativeAPI:appMode?()=>assert.fail('App merges never borrow the human native API'):userGraphQL?api:undefined,
-      getAppActor:async()=>appMode?{api,gitToken:async()=> 'fixture-app-token',author:bot}:null,
+      getAppActor:async()=>{if(directLocal)assert.fail('Ordinary local squash must not resolve Lindsey credentials');return appMode?{api,gitToken:async()=> 'fixture-app-token',author:bot}:null;},
       expected:{headSha,baseSha,head:'feature',base:'main',title:'✨ Complete feature'},
       publicationDirectory:path.join(root,'receipts'),
       temporaryDirectory:()=>fs.mkdtemp(path.join(root,'executor-')),...options});
+    if(directLocal) {
+      if(protectedBase||rules.length||missingSigningKey) {
+        await assert.rejects(action());
+        assert.equal(pushes.length,0);
+        assert.equal(await branch('main'),baseSha);
+      } else {
+        const result=await action();
+        if(failed) {assert.equal(result.status,'checks_failed');assert.equal(pushes.length,0);}
+        else {
+          assert.equal(result.status,'published');assert.equal(result.githubMerged,false);
+          assert.equal(result.sha,await branch('main'));assert.equal(pushes.length,1);
+          assert.equal(await inRemote('show','-s','--format=%P',result.sha),baseSha);
+          assert.equal(await inRemote('show',result.sha+':file.txt'),'finished feature');
+          assert.equal(await inRemote('show','-s','--format=%an',result.sha),author.name);
+          assert.equal(result.signed,requireSignedCommit||localSigningEnabled);
+          if(result.signed) {assert.equal(result.verified,!githubCannotVerifySignature);await inRemote('verify-commit',result.sha);}
+          const repeated=await action();assert.equal(repeated.sha,result.sha);assert.equal(repeated.status,'published');assert.equal(pushes.length,1,'A receipt prevents duplicate publication');
+        }
+      }
+      assert.equal(await branch('feature'),headSha);assert.equal(manuallyClosed,false);
+      return;
+    }
     if(!syncOnly && ((!humanOpener && !kefaniaOpener) || requireSignedCommit || squashSetting===false)) {
       const blocked = await action();
       assert.equal(blocked.merged,false,'Unsupported attribution/signing must not be reported as merged');
@@ -224,7 +247,8 @@ async function fixture({protectedBase=false,rules=[],failed=false,race=false,adv
     await fs.rm(root,{recursive:true,force:true});
   }
 }
-(async()=>{for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true},{githubCannotVerifySignature:true}])await fixture(options);
+(async()=>{for(const options of [{kefaniaOpener:true,requireSignedCommit:true,appMode:true},{humanOpener:true,localSigningEnabled:true},{kefaniaOpener:true},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{requireSignedCommit:true,missingSigningKey:true},{requireSignedCommit:true,githubCannotVerifySignature:true}])await fixture({...options,directLocal:true});
+ for(const options of [{},{protectedBase:true},{rules:[{type:'pull_request'}]},{failed:true},{race:true},{advanceBase:true},{advanceBase:true,conflict:true},{advanceBase:true,humanOpener:true,failedOriginalOnly:true},{privateRepository:true,rulesUnavailable:true},{rulesUnavailable:true},{privateRepository:true,rulesForbidden:true},{advanceBase:true,humanOpener:true,requireSignedCommit:true},{missingSigningKey:true},{githubCannotVerifySignature:true}])await fixture(options);
  // Keep response-loss recovery separate from the branch-rules safety matrix.
  await fixture({humanOpener:true,lostAck:true});
  await fixture({humanOpener:true,userGraphQL:true,lostAck:true});

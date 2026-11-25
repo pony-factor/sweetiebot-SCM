@@ -96,7 +96,8 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     throw new Error('Invalid published pull-request identity; refusing to merge.');
   }
   const originalRequest = request;
-  const appActor = await getAppActor(repository);
+  const directLocal = method === 'local-signed-squash' || (method === 'squash' && Boolean(repositoryPath));
+  const appActor = directLocal ? null : await getAppActor(repository);
   if (appActor) { request = appActor.request; gitToken = appActor.gitToken; }
   const endpoint = `repos/${repository}/pulls/${result.number}`;
   onProgress({ stage: 'reading-pr' });
@@ -176,7 +177,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     onProgress({ stage: 'preparing-local' });
     const landed = await retryBaseAdvance(() => humanMerge(repository, result.number, { api, gitToken, onProgress, localGitMerge: true, offerAuthorChoice: false,
       nativeAPI: require('../github/user-api').legacyAPI(originalRequest),
-      getAppActor: async () => appActor,
+      getAppActor: async () => appActor, directLocal, repositoryPath,
       allowHistoryRewrite: false, rewriteReason: '', requireSignedCommit: signLocally,
       expected: { headSha: pr.head.sha, baseSha, head, base, title: pr.title } }), {
       refresh: async () => {
@@ -188,6 +189,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
       },
       onRetry: () => onProgress({ stage: 'refreshing-base' })
     });
+    if (landed?.published === true && SHA.test(landed.sha || '')) return { ...landed, url: result.url, commitUrl: landed.url };
     if (landed?.merged !== true || landed.githubMerged === false || !SHA.test(landed.sha || '')) {
       throw Object.assign(new Error(landed?.reason || 'GitHub did not confirm the merge. Check the pull request.'),
         landed?.needsAuthorChoice ? { code: 'SQUASH_AUTHOR_CHOICE_REQUIRED' } : {});
@@ -203,6 +205,7 @@ async function squashMergePullRequest({ repository, head, base, result }, reques
     if (pr.mergeable !== true) throw new Error('The PR must be confirmed mergeable before starting a signed local squash.');
     return mergeWithHumanAuthor(true);
   }
+  if (directLocal) return mergeWithHumanAuthor(await gitCommitSigningEnabled(repositoryPath));
   if (pr.user.type === 'Bot' || /\[bot\]$/i.test(pr.user.login)) {
     return mergeWithHumanAuthor();
   }

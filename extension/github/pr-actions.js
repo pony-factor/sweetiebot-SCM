@@ -28,7 +28,7 @@ const protectedLocalBase = reason => [
 // branch protections and merge-queue requirements.
 async function squashMergePullRequest(url, execute = executeGh, confirmNonMain = async () => false,
   { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 12, pollIntervalMs = 1000,
-    humanMerge = humanSquashMerge, readAPI, preferLocalGit = false, confirmPreserveCommits } = {}) {
+    humanMerge = humanSquashMerge, readAPI, preferLocalGit = false, directLocal = false, repositoryPath, confirmPreserveCommits } = {}) {
   const match = String(url || '').match(/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)$/);
   if (!match) throw new Error('Could not identify the pull request. Refresh the GitHub Pull Requests view and use the merge button on its PR row.');
   const repo = `${match[1]}/${match[2]}`;
@@ -101,6 +101,15 @@ async function squashMergePullRequest(url, execute = executeGh, confirmNonMain =
   // retaining both parents and the original PR head.
   if (!metadata?.user?.login || !['Bot', 'User'].includes(metadata.user.type)) {
     throw new Error('Cannot verify PR opener identity; refusing a possibly bot-authored squash.');
+  }
+  if (directLocal && !pr.isCrossRepository) {
+    const landed = await localMerge({ directLocal: true, repositoryPath, localGitMerge: true, allowHistoryRewrite: false,
+      expected: { headSha: pr.headRefOid, head: pr.headRefName, base: pr.baseRefName, title: pr.title } });
+    if (landed.published && !landed.merged) return { ...landed, repo, number, base: pr.baseRefName };
+    if (landed.status === 'waiting') return { merged: false, pending: true, repo, number, base: pr.baseRefName };
+    if (!landed.merged) throw Error(landed.reason || 'Local squash did not complete.');
+    const verified = await verifyLocalCompletion(landed);
+    return { ...verified, locallySquashed: true };
   }
   let protectedBase = false;
   if (preferLocalGit && !pr.isCrossRepository) {
@@ -419,8 +428,13 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
       };
       const userAPI = require('./user-api').githubUserAPI(session.accessToken);
       const repo = new URL(url).pathname.slice(1).split('/').slice(0, 2).join('/');
-      const appRead = require('./user-api').githubUserAPI(session.accessToken,
-        require('./read-api').createLindseyReadFetch(repo));
+      const appRead = userAPI;
+      const gitExtension = vscode.extensions.getExtension('vscode.git');
+      const gitAPI = gitExtension && (await gitExtension.activate()).getAPI(1);
+      const selectedRepository = gitAPI?.repositories.find(candidate => candidate.state.remotes.some(remote =>
+        [remote.fetchUrl, remote.pushUrl].some(value => value &&
+          require('./pull-request').githubRepository(value) === 'https://github.com/' + repo)));
+      const repositoryPath = selectedRepository?.rootUri.fsPath;
       const humanAPI = (endpoint, method = 'GET', fields = []) => {
         const body = {};
         for (let i = 0; i < fields.length; i += 2) {
@@ -430,7 +444,7 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
           (endpoint, { method, ...(method === 'GET' ? {} : { body }) });
       };
       const result = await merge(url, execute, confirmNonMain, {
-        readAPI: appRead,
+        readAPI: appRead, directLocal: true, repositoryPath,
         confirmPreserveCommits: async ({ number, base }) => {
           const action = 'Merge preserving commits';
           const choice = await vscode.window.showWarningMessage(
@@ -443,10 +457,15 @@ function registerGitHubPullRequestActions(vscode, context, merge = squashMergePu
         // The sidebar merge button must never authorize history rewrites, even if a
         // future caller accidentally requests one. Explicit author-handoff is separate.
         humanMerge: (repo, number, options) => humanSquashMerge(repo, number,
-          { ...options, allowHistoryRewrite: false, api: humanAPI, nativeAPI: humanAPI, gitToken: session.accessToken })
+          { ...options, allowHistoryRewrite: false, api: humanAPI, nativeAPI: humanAPI, gitToken: session.accessToken,
+            getAppActor: async () => null })
       });
       if (result.cancelled) return { state: 'cancelled' };
       const base = result.base || result.pr?.baseRefName || 'main';
+      if (result.published && !result.merged) {
+        vscode.window.showWarningMessage(`PR #${result.number}: squash ${result.sha.slice(0, 8)} published to ${base}. ${result.reason || 'GitHub has not confirmed the PR as merged.'}`);
+        return { state: 'published', sha: result.sha };
+      }
       if (!result.merged) {
         const status = result.pending ? 'asynchronous squash still processing'
           : result.enqueued ? 'added to merge queue' : 'queued for merge';

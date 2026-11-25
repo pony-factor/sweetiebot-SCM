@@ -850,7 +850,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
         const session = await require('./session').githubSession(vscode);
         return merge({ repository: input.repository, head: branch, base: options.base, result },
           require('./user-api').githubUserAPI(session.accessToken),
-          { method: 'local-signed-squash', gitToken: session.accessToken, onProgress });
+          { method: 'local-signed-squash', gitToken: session.accessToken, repositoryPath: repository.rootUri.fsPath, onProgress });
       },
       onMergeHelp: result => openKefaniaMergeHelp(vscode, context, repository.rootUri,
         input.repository, { ...result, head: branch, base: options.base }),
