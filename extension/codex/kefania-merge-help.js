@@ -29,6 +29,9 @@ async function openKefaniaMergeHelp(vscode, context, rootUri, repository, publis
     number: pr.number, title: pr.title, url,
     head: pr.head.ref, base: pr.base.ref, headSha: pr.head.sha
   }] }, auth.accessToken, { context, rootUri, refreshOnOpen: true });
+  await vscode.commands.executeCommand('vscode.setEditorLayout', {
+    orientation: 0, groups: [{ size: 0.2 }, { size: 0.8 }]
+  });
   return true;
 }
 
