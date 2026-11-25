@@ -133,7 +133,11 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
   } finally {repair.dispose();}
 
   const fullRepair = await createMergeBatch(repairSelection, { api, destination: 'https://chatgpt.com/',
-    branchOnly: true, fullSyncRepair: true, execute: async () => ({ repository: selection.repository,
+    branchOnly: true, fullSyncRepair: true,
+    collectSyncEvidence: async pr => ({ headSha: pr.headSha, baseSha: pr.baseSha,
+      mergeBaseSha: 'f'.repeat(40), status: 'conflicts', conflictPaths: ['first-attempt.js'],
+      ancestorToHead: { text: '+topic evidence' }, ancestorToIncoming: { text: '+incoming evidence' } }),
+    execute: async () => ({ repository: selection.repository,
       results: [{ number: 1, status: 'needs_resolution', conflictPaths: ['options.html'],
         reason: 'Resolve every conflicted file in the patch or explicitly keep the incoming file unchanged.' }]
     }) });
@@ -143,6 +147,10 @@ const item = (number, baseSha, patch = null, headSha = number === 1 ? a : b) => 
     assert.match(prompt, /one commit per related repair category/);
     assert.match(prompt, /groupTitle/);
     assert.match(prompt, /skipping unchanged decision groups/);
+    assert.match(prompt, /first-attempt\.js/);
+    assert.match(prompt, /"mergeBaseSha":"f{40}"/);
+    assert.match(prompt, /\+topic evidence/);
+    assert.match(prompt, /\+incoming evidence/);
     assert.match(prompt, /supporting source or test files/);
     assert.match(prompt, /title and body you would use/);
     assert(!prompt.includes('resolutionHunks') && !prompt.includes('AUTOMATIC SEQUENTIAL BULK MERGE'));

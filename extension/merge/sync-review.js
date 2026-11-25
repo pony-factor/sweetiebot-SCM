@@ -19,6 +19,73 @@ function githubRepository(url) {
   return found ? found[1] + '/' + found[2] : null;
 }
 
+// Match the isolated repair executor's incoming-base-first merge orientation.
+// Only Git objects may be created; no index, working files, refs or remote are changed.
+async function collectSyncEvidence(root, { headSha, baseSha }) {
+  const evidence = { headSha, baseSha, status: 'unavailable' };
+  if (!root || !SHA.test(headSha || '') || !SHA.test(baseSha || '')) return evidence;
+  const read = async (...args) => {
+    const { stdout } = await exec('git', args, { cwd: root, encoding: 'buffer',
+      timeout: 20000, maxBuffer: 2 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+    if (!require('node:buffer').isUtf8(stdout)) throw Error('Non-UTF-8 Git output');
+    return stdout.toString('utf8');
+  };
+  try {
+    evidence.mergeBaseShas = (await read('merge-base', '--all', baseSha, headSha)).trim().split(/\s+/);
+    if (!evidence.mergeBaseShas.every(sha => SHA.test(sha))) throw Error('Invalid merge base');
+    if (evidence.mergeBaseShas.length === 1) evidence.mergeBaseSha = evidence.mergeBaseShas[0];
+    let output;
+    try {
+      output = await read('merge-tree', '--write-tree', '--name-only', '-z', baseSha, headSha);
+      evidence.status = 'clean';
+    } catch (error) {
+      if (error.code !== 1 || !Buffer.isBuffer(error.stdout) ||
+          !require('node:buffer').isUtf8(error.stdout)) throw error;
+      output = error.stdout.toString('utf8');
+      evidence.status = 'conflicts';
+    }
+    const records = output.split('\0');
+    if (!SHA.test(records.shift() || '') || (evidence.status === 'conflicts' && !records.includes(''))) {
+      throw Error('Invalid merge-tree output');
+    }
+    const paths = [...new Set(records.slice(0, records.indexOf('')).filter(Boolean))];
+    // Retain exact filenames, not quoted Git display strings. Bound the prompt
+    // transport independently of Git's output buffer and disclose omissions.
+    evidence.conflictPaths = [];
+    for (const file of paths) {
+      const next = [...evidence.conflictPaths, file];
+      if (Buffer.byteLength(JSON.stringify(next)) > 12000) break;
+      evidence.conflictPaths = next;
+    }
+    evidence.omittedConflictPaths = paths.length - evidence.conflictPaths.length;
+    if (evidence.status === 'clean') return evidence;
+    if (!evidence.mergeBaseSha || !evidence.conflictPaths.length) {
+      evidence.diffNote = 'No single ancestor or usable conflict path list; inspect the exact revisions directly.';
+      return evidence;
+    }
+    const diff = async revision => {
+      try {
+        const patch = await read('--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv',
+          '--no-color', '--no-renames', evidence.mergeBaseSha, revision, '--', ...evidence.conflictPaths);
+        let text = patch;
+        while (Buffer.byteLength(JSON.stringify(text)) > 10000) text = text.slice(0, Math.floor(text.length / 2));
+        if (text !== patch) text = text.slice(0, text.lastIndexOf('\n') + 1);
+        return { text, truncated: text !== patch };
+      } catch {
+        return { unavailable: true };
+      }
+    };
+    evidence.ancestorToHead = await diff(headSha);
+    evidence.ancestorToIncoming = await diff(baseSha);
+    return evidence;
+  } catch {
+    // A refreshed remote revision may not yet exist in this local checkout.
+    // Never pass stale conflict information off as a successful preflight.
+    return { ...evidence, status: 'unavailable', reason: 'Local Git could not inspect these exact revisions.' };
+  }
+}
+
 async function findSyncPullRequest(details, api = githubApi) {
   const { publishingRepository: repo, branch, defaultBranch, head, target } = details;
   const query = new URLSearchParams({ state: 'open', head: repo.split('/')[0] + ':' + branch,
@@ -224,5 +291,5 @@ function registerSyncReportPublisher(vscode, context) {
   context.subscriptions.push({ dispose() { disposed = true; clearInterval(timer); } });
   void poll().catch(() => {});
 }
-module.exports = { githubRepository, findSyncPullRequest, reviewSyncConflicts, reportBody,
+module.exports = { githubRepository, findSyncPullRequest, reviewSyncConflicts, reportBody, collectSyncEvidence,
   queueSyncReport, publishSyncReports, registerSyncReportPublisher };

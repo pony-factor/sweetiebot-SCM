@@ -140,16 +140,33 @@ class SubmissionTests(unittest.TestCase):
                 marker.write_text('{"commit": "malformed"}')
                 self.assertEqual(configurator.read_build_revision(), "")
 
-    def test_build_age_uses_commit_time_in_whole_days(self):
+    def test_build_age_shows_inside_revision_pill_with_hours_until_two_days(self):
         now = 1800000000
-        for seconds, label in ((0, "0 days ago"), (86400, "1 day ago"),
-                               (3 * 86400 + 3600, "3 days ago"), (-86400, "0 days ago")):
+        for seconds, label in (
+            (-86400, "just now"),
+            (59, "just now"),
+            (60, "1 minute ago"),
+            (3599, "59 minutes ago"),
+            (3600, "60 minutes ago"),
+            (2 * 3600 - 1, "119 minutes ago"),
+            (2 * 3600, "2 hours ago"),
+            (86400, "24 hours ago"),
+            (48 * 3600 - 1, "47 hours ago"),
+            (48 * 3600, "2 days ago"),
+            (3 * 86400 + 3600, "3 days ago"),
+        ):
             with self.subTest(seconds=seconds), patch.object(configurator.time, "time", return_value=now):
+                revision = "a" * 40
                 page = configurator.render_form(
                     dict(install.DEFAULT_SETTINGS), [], "Ready", "test-token", "Save",
-                    build_revision="a" * 40, build_committed_at=now - seconds,
+                    build_revision=revision, build_committed_at=now - seconds,
                 )
-                self.assertIn(f'>{label}</span>', page)
+                self.assertEqual(page.count('class="settings-build-revision"'), 1)
+                self.assertIn(
+                    f'aria-label="Built from commit {revision}, {label}">'
+                    f'{revision[:8]}<small class="settings-build-age">{label}</small></span>',
+                    page,
+                )
 
     def test_build_age_reads_bundled_timestamp(self):
         with tempfile.TemporaryDirectory() as directory:

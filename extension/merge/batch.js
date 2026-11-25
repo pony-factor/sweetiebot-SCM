@@ -18,7 +18,7 @@ function recordBatchActivity(activities, number, phase, message, round, now = ne
 
 async function createMergeBatch(rawSelection, { api, execute, makePrompt, destination,
   onResult = async () => {}, onState = async () => {}, onProgress = () => {}, reviewOrder = 'Oldest first', branchOnly = false, fullSyncRepair = false,
-  parallelConflicts = false, persistentHandoffs = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
+  collectSyncEvidence, parallelConflicts = false, persistentHandoffs = false, maxRounds = rawSelection.pullRequests.length * 4 + 4 } = {}) {
   const original = validateSelection(rawSelection);
   const entries = new Map(original.pullRequests.map(pr => [pr.number, { ...pr, attempts: 0 }]));
   const merged = [], prepared = [], deferred = [], history = [], bridges = [];
@@ -251,8 +251,10 @@ async function createMergeBatch(rawSelection, { api, execute, makePrompt, destin
       require('./blocker-actions').reportOptionsInstructions(),
       resolutionInstructions(selection, bridge.url)
     ].join('\n\n');
+    const syncEvidence = fullSyncRepair && collectSyncEvidence
+      ? await collectSyncEvidence(snapshots[0]) : undefined;
     const prompt = fullSyncRepair
-      ? require('./resolution').syncRepairInstructions(snapshots[0], original.repository, previous, bridge.url)
+      ? require('./resolution').syncRepairInstructions(snapshots[0], original.repository, previous, bridge.url, syncEvidence)
       : (makePrompt ? makePrompt(selection) + '\n\n' : '') + instructions;
     const url = new URL(destination);
     bridge.setPrompt(prompt);

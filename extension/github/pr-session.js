@@ -57,7 +57,7 @@ async function launchSyncPullRequestRepair(vscode, context, root, selection, syn
   });
   const token = (await require('./session').githubSession(vscode)).accessToken;
   const handoff = await prepareBranchRepair(vscode, selection, url, {
-    api: mergeReadAPI(selection.repository, token), reviewSync,
+    api: mergeReadAPI(selection.repository, token), reviewSync, root,
     execute: localResolutionRunner(vscode, root, token, {
       syncOnly: true, reviewSync, recordPublication: publications.record
     })
@@ -227,12 +227,13 @@ function localResolutionRunner(vscode, root, token, { syncOnly, reviewSync, getD
   }), executionResources(result, snapshot, syncOnly));
 }
 
-function prepareBranchRepair(vscode, selection, url, { reviewSync, api, execute, onResult, onState }) {
+function prepareBranchRepair(vscode, selection, url, { reviewSync, root, api, execute, onResult, onState }) {
   const initialPrompt = new URLSearchParams(url.hash.slice(1)).get('q') || '';
   return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
     title: 'Preparing Lindsey PR fix ' + selection.pullRequests.map(pr => '#' + pr.number).join(', '), cancellable: false
   }, progress => require('../merge/batch').createMergeBatch(selection, {
     persistentHandoffs: true, branchOnly: true, fullSyncRepair: Boolean(reviewSync),
+    ...(reviewSync && root?.fsPath ? { collectSyncEvidence: pr => require('../merge/sync-review').collectSyncEvidence(root.fsPath, pr) } : {}),
     api, execute, onResult, onState, onProgress: update => progress.report(update),
     destination: url.origin + url.pathname,
     makePrompt: () => initialPrompt + '\n\n' + require('../merge/review-policy').statusUpdateInstructions(
@@ -480,7 +481,7 @@ async function resumePRSession(vscode, context) {
       }
       if (syncOnly) {
         handoff = await prepareBranchRepair(vscode, selection, url, {
-          reviewSync, api, execute: runLocal,
+          reviewSync, root, api, execute: runLocal,
           onResult: async result => {
             const controller = await resumeMergeDashboard(vscode, directory, context);
             controller?.recordLocalResult?.(result);
