@@ -573,7 +573,7 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
       review: 'Human review required',
       queued: 'GitHub reports the pull request is queued',
       'checks-pending': 'PR is open; checks are queued or in progress',
-      checks: checkResults?.state === 'failed' ? describeMergeChecks(checkResults) : 'PR is open; one or more checks failed',
+      checks: checkResults?.state === 'failed' ? describeMergeChecks(checkResults) : '',
       blocked: info.state !== 'open' ? 'GitHub PR state is unavailable; merging is blocked'
         : checkResults?.state === 'passed' && checkResults.hasChecks ? 'Checks passed; GitHub is still blocking the merge'
         : 'PR is open; merging is blocked',

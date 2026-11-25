@@ -395,7 +395,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
       commitFetches++;
       result = [{ sha, commit: { message: 'Add the feature' }, parents: [] }];
     }
-    else if (/\/commits\/[a-f0-9]{40}\/check-runs$/.test(pathname)) result = { check_runs: [
+    else if (/\/commits\/[a-f0-9]{40}\/check-runs$/.test(pathname)) result = { check_runs: checkConclusion === undefined ? [] : [
       { id: 1, name: 'CI', status: checkConclusion === null ? 'in_progress' : 'completed',
         conclusion: checkConclusion, app: { id: 1 } }] };
     else if (/\/commits\/[a-f0-9]{40}\/check-suites$/.test(pathname)) result = { check_suites: [] };
@@ -743,7 +743,7 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'checks');
   assert.equal(events.at(-1).events.at(-1).state, 'checks');
-  assert.equal(events.at(-1).events.at(-1).message, 'PR is open; one or more checks failed');
+  assert.equal(events.at(-1).events.at(-1).message, 'CI checks failed — CI.');
   const selectedAction = events.at(-1).prs[0].blockerOptions[0];
   const actionMessage = { type: 'blocker-action', number: 12, headSha: nextSha,
     actionId: selectedAction.id, optionKey: selectedAction.key };
@@ -760,10 +760,12 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   assert.equal(actionLaunches.length, 2, 'A stale selected head never launches');
   info = { ...info, head: { ...info.head, sha: nextSha } };
   info = { ...info, mergeable_state: 'blocked' };
+  checkConclusion = undefined;
   await dashboard.refresh();
   assert.equal(events.at(-1).prs[0].state, 'blocked');
   assert.equal(events.at(-1).events.at(-1).message, 'PR is open; merging is blocked',
     'Branch restrictions remain distinct from checks that are not passing');
+  checkConclusion = 'failure';
   inlineCommentsForPr = [{ id: 90, path: 'src/file.js', line: 1, side: 'RIGHT',
     html_url: url + '#discussion_r90',
     body: REVIEW_MARKER + '\nWhich API should this conflict preserve?\n' + liveDecisions },
@@ -1151,6 +1153,32 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   const countBefore = events.length;
   await dashboard.refresh();
   assert.equal(events.length, countBefore);
+
+  // Kefania explicitly opens a recovery view with a live first load even
+  // while VS Code reports its window as unfocused or auto-refresh is off.
+  info = { ...info, state: 'open', merged: false, merged_at: null,
+    mergeable: true, mergeable_state: 'blocked', head: { ...info.head, sha } };
+  checkConclusion = 'failure';
+  vscode.window.state = { focused: false };
+  layoutConfig.mergeAutoRefresh = false;
+  const requestCountBeforeOpen = apiRequests;
+  const resolution = startMergeDashboard(vscode, selection, 'test-token', {
+    fetchImpl: fakeFetch, refreshOnOpen: true,
+    setTimer(callback) { pollCallback = callback; return 17; }, clearTimer() {}
+  });
+  assert(apiRequests > requestCountBeforeOpen, 'Opening recovery starts the first GitHub fetch');
+  await resolution.refresh();
+  const resolutionModel = events.at(-1);
+  assert.equal(resolutionModel.prs[0].commits[0].sha, sha);
+  assert.equal(resolutionModel.prs[0].actionPlan.actions[0].id, 'fix-checks');
+  assert(resolutionModel.events.some(event => event.state === 'checks' && event.message === 'CI checks failed — CI.'));
+  const hydratedRequestCount = apiRequests;
+  await resolution.refresh();
+  assert.equal(apiRequests, hydratedRequestCount, 'The recovery view still respects background polling preferences');
+  checkConclusion = 'success';
+  await resolution.refresh({ force: true });
+  assert.equal(events.at(-1).prs[0].state, 'blocked', 'Passing checks can coexist with other merge requirements');
+  disposeHandler();
   fs.rmSync(reactionStorage, { recursive: true, force: true });
 
   await assert.rejects(githubGet(async () => ({ ok: false, status: 403 }), 'test-token',

@@ -19,6 +19,7 @@ const { openKefaniaMergeHelp } = require('../../extension/codex/kefania-merge-he
       launched++; observed=selection;
       assert.equal(vs,vscode);assert.equal(token,'verified-token');
       assert.equal(opts.context,context);assert.equal(opts.rootUri,rootUri);
+      assert.equal(opts.refreshOnOpen,true);
     }
   };
   assert.equal(await openKefaniaMergeHelp(vscode,context,rootUri,repo,published,deps),true);
