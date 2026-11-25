@@ -48,16 +48,18 @@ async function run() {
   // Exercise actual Git commits through the App writer, mocking only network
   // authorization/publication and the external conflict proposal service.
   for (const strategy of ['merge', 'squash']) {
-    for (const scenario of ['clean', 'conflict', 'cancel', 'edited', 'index-changed']) {
+    for (const scenario of ['clean', 'conflict', 'browser', 'cancel', 'edited', 'index-changed']) {
       const { root, git, repository, options } = setup();
       try {
         if (scenario !== 'clean') {
           git('switch', 'main');
           fs.writeFileSync(path.join(root, 'shared.txt'), 'main change\n');
+          if (scenario === 'browser') fs.writeFileSync(path.join(root, 'keep.txt'), 'main variant\n');
           git('add', '.'); git('commit', '-m', 'Conflicting main edit');
           git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'));
           git('switch', 'topic');
           fs.writeFileSync(path.join(root, 'shared.txt'), 'topic change\n');
+          if (scenario === 'browser') fs.writeFileSync(path.join(root, 'keep.txt'), 'topic variant\n');
           git('add', '.'); git('commit', '-m', 'Conflicting topic edit');
         }
         const before = git('rev-parse', 'HEAD');
@@ -82,7 +84,7 @@ async function run() {
         const result = syncBranch(repository, { ...options, strategy, createPublisher,
           reviewConflicts: async (_, details) => {
             assert.equal(details.publishingRepository, 'owner/repo');
-            return { lindsey: preparePreview, browser: scenario === 'cancel' };
+            return { lindsey: preparePreview, browser: ['browser', 'cancel'].includes(scenario) };
           },
           resolveConflicts: async (checkout, preview) => {
             assert.equal(checkout, repository);
@@ -100,7 +102,17 @@ async function run() {
               fs.writeFileSync(path.join(root, 'unreviewed'), 'keep separate\n');
               git('add', 'unreviewed');
             }
-            return { files: [{ path: 'shared.txt', sha256: createHash('sha256').update(contents).digest('hex') }] };
+            const files = [{ path: 'shared.txt', sha256: createHash('sha256').update(contents).digest('hex') }];
+            if (scenario !== 'browser') return { files };
+            const kept = 'topic variant\n';
+            fs.writeFileSync(path.join(root, 'keep.txt'), kept);
+            files.push({ path: 'keep.txt', sha256: createHash('sha256').update(kept).digest('hex') });
+            return { files, decisions: [
+              { path: 'shared.txt', title: '🛠️ Preserve both edits to the shared file',
+                description: 'Keep the independent main and topic lines.' },
+              { path: 'keep.txt', title: '🛠️ Keep the topic variant',
+                description: 'The branch already contains the selected behavior.' }
+            ] };
           }
         });
         if (['edited', 'index-changed'].includes(scenario)) {
@@ -108,7 +120,7 @@ async function run() {
         } else {
           assert.equal(await result, scenario === 'cancel' ? false : 'topic');
         }
-        const success = ['clean', 'conflict'].includes(scenario);
+        const success = ['clean', 'conflict', 'browser'].includes(scenario);
         assert.equal(pushed, success ? 1 : 0);
         assert.equal(proposed, scenario === 'clean' ? 0 : 1);
         assert.equal(git('rev-parse', 'main'), main, 'Synchronization never rewrites main');
@@ -121,7 +133,15 @@ async function run() {
         }
         assert.equal(git('show', '-s', '--format=%an%x00%ae%x00%cn%x00%ce'),
           'lindsey-fixture[bot]\x00123+lindsey-fixture[bot]@users.noreply.github.com\x00lindsey-fixture[bot]\x00123+lindsey-fixture[bot]@users.noreply.github.com');
-        assert.equal(git('rev-parse', 'HEAD^'), before);
+        if (scenario === 'browser') {
+          assert.equal(git('rev-parse', 'HEAD~2'), before);
+          assert.equal(git('show', '-s', '--format=%s', 'HEAD'), '🔄 Sync branch to main');
+          assert.equal(git('show', '-s', '--format=%B', 'HEAD^'),
+            '🛠️ Preserve both edits to the shared file\n\nKeep the independent main and topic lines.');
+          assert.equal(git('diff', '--name-only', 'HEAD~2', 'HEAD^'), 'shared.txt');
+          assert.equal(git('diff', '--name-only', 'HEAD^', 'HEAD'), 'main.txt');
+          assert.equal(git('show', '-s', '--format=%an', 'HEAD^'), 'lindsey-fixture[bot]');
+        } else assert.equal(git('rev-parse', 'HEAD^'), before);
         assert.equal(git('status', '--porcelain'), '');
         assert.equal(git('show', '-s', '--format=%P').split(' ').length, strategy === 'merge' ? 2 : 1);
         assert(!git('log', '-1', '--format=%B').includes('Co-authored-by:'), 'Routine automation invents no assistant credits');

@@ -10,6 +10,7 @@ const { openWorkflow } = require('../github/pr-workflows');
 const { applyResolutionHunks, describeConflictHunks, validateResolutionHunks } = require('./conflict-hunks');
 const { createHandoff } = require('./handoff');
 const { safePatchPath } = require('./patch');
+const { validateDecisions } = require('./resolution-commits');
 
 const exec = promisify(execFile);
 const timeout = 20 * 60 * 1000;
@@ -65,13 +66,18 @@ async function prepareChatGPTSyncPreview(vscode, repository, { branch, head, tar
     if (resolutions.length !== files.size || resolutions.some(file => !files.has(file.path))) {
       throw Error('The ChatGPT proposal must resolve every conflicted file exactly once.');
     }
-    return resolutions.map(file => {
+    const decisions = validateDecisions(result.decisions);
+    if (decisions.length !== files.size || decisions.some(file => !files.has(file.path))) {
+      throw Error('The ChatGPT proposal needs one decision for every conflicted file.');
+    }
+    const candidates = resolutions.map(file => {
       const contents = applyResolutionHunks(files.get(file.path).text, file.hunks);
       if (Buffer.byteLength(contents) > maxFileBytes) throw Error('A ChatGPT proposal exceeds 256 KiB.');
       return { path: file.path, contents };
     });
+    return { candidates, decisions };
   };
-  const resolutions = await vscode.window.withProgress({
+  const proposal = await vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification, title: 'Waiting for ChatGPT conflict proposals', cancellable: true
   }, async (_progress, token) => {
     let receive, reject, timer;
@@ -95,9 +101,12 @@ async function prepareChatGPTSyncPreview(vscode, repository, { branch, head, tar
         'Ours is the branch being synced. Theirs is the incoming branch. Preserve both intentions where compatible and keep every change within the specified hunks.',
         'Return exactly one fenced json block with this shape: ' + JSON.stringify({
           version: 1, repository, results: [{ headSha: head, baseSha: target,
-            resolutionHunks: [{ path: '<exact path>', hunks: [{ index: 0, choice: 'ours' }] }] }]
+            resolutionHunks: [{ path: '<exact path>', hunks: [{ index: 0, choice: 'ours' }] }],
+            decisions: [{ path: '<exact path>', title: '🛠️ Describe the behavior preserved',
+              description: 'Explain what each side intended and why the chosen resolution preserves that behavior.' }] }]
         }),
         'Return every file and hunk in index order. Choices are ours, theirs, both-ours-first, both-theirs-first, or custom. For custom include resolved with the complete replacement text including a final newline when appropriate. Do not include conflict markers. The browser sends this JSON back for local diff review.',
+        'Give one decision per conflicted file. Write a specific emoji-led commit title and explain the changes from each side, the resulting behavior, and any tradeoff. Do not claim that checks ran. These decisions become individual local commits before the remaining upstream sync.',
         JSON.stringify({ branch, incomingBranch: defaultBranch,
           files: [...files].map(([name, { hunks }]) => ({ path: name, hunks })) })
       ].join('\n\n'));
@@ -113,14 +122,14 @@ async function prepareChatGPTSyncPreview(vscode, repository, { branch, head, tar
       bridge.dispose();
     }
   });
-  if (!resolutions) return undefined;
+  if (!proposal) return undefined;
   const candidates = [];
-  for (const { path: name, contents } of resolutions) {
+  for (const { path: name, contents } of proposal.candidates) {
     const candidate = 'candidate-' + candidates.length + '.txt';
     await fs.writeFile(path.join(output, candidate), contents, { flag: 'wx', mode: 0o600 });
     candidates.push({ path: name, candidate, originalSha: files.get(name).originalSha });
   }
-  return { version: 1, branch, head, files: candidates };
+  return { version: 1, branch, head, files: candidates, decisions: proposal.decisions };
 }
 
 module.exports = { prepareChatGPTSyncPreview };

@@ -9,6 +9,7 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 const { pathToFileURL } = require('node:url');
 const { connectLindseyResolver } = require('./lindsey-resolver-auth');
+const { validateDecisions } = require('./resolution-commits');
 
 const exec = promisify(execFile);
 const sha256 = data => createHash('sha256').update(data).digest('hex');
@@ -146,6 +147,15 @@ async function generatePreview(vscode, repository, { sync = false, lindsey, run 
     }
     if (manifest === undefined) return undefined;
     const files = await inspectPreview(repository, temporary, manifest);
+    const decisions = sync && manifest.decisions !== undefined ? validateDecisions(manifest.decisions) : undefined;
+    if (decisions) {
+      if (decisions.length !== files.length || decisions.some(decision => !files.some(file => file.path === decision.path))) {
+        throw Error('Each proposed conflict resolution needs its own decision.');
+      }
+      const document = await vscode.workspace.openTextDocument({ language: 'plaintext',
+        content: decisions.map(({ path, title, description }) => [path, title, description].join('\n\n')).join('\n\n---\n\n') });
+      await vscode.window.showTextDocument(document, { preview: false });
+    }
     for (const file of files) {
       await vscode.commands.executeCommand('vscode.diff',
         vscode.Uri.file(file.target), vscode.Uri.file(file.candidate),
@@ -153,11 +163,13 @@ async function generatePreview(vscode, repository, { sync = false, lindsey, run 
     }
     const action = sync ? 'Apply and sync with Lindsey' : 'Apply proposed resolutions';
     const approval = await vscode.window.showInformationMessage(sync
-      ? 'Review the Lindsey diff editors. Apply and sync with Lindsey will stage these ' + files.length + ' resolved file(s), commit the synchronization and publish using the configured Lindsey App identity.'
+      ? decisions ? 'Review the Lindsey diffs and decision explanations. Apply and sync with Lindsey will create the file-level decision commits, then commit the remaining sync and publish as the configured Lindsey App identity.'
+        : 'Review the Lindsey diff editors. Apply and sync with Lindsey will stage these ' + files.length + ' resolved file(s), commit the synchronization and publish using the configured Lindsey App identity.'
       : 'Review the Lindsey diff editors, then choose Apply proposed resolutions to write ' + files.length + ' working-tree file(s). Nothing will be staged, committed or pushed.', action);
     if (approval !== action) return undefined;
     const applied = await applyPreview(repository, temporary, manifest);
-    if (sync) return { files: files.map(file => ({ path: file.path, sha256: sha256(file.proposed) })) };
+    if (sync) return { files: files.map(file => ({ path: file.path, sha256: sha256(file.proposed) })),
+      ...(decisions ? { decisions } : {}) };
     void vscode.window.showInformationMessage(
       'Applied Lindsey proposals to ' + applied + ' file(s). Review, stage and commit the results yourself.');
     return undefined;

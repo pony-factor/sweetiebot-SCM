@@ -10,6 +10,7 @@ const { promisify } = require('node:util');
 
 const { isConflictState, offerConflictRecoveryOptions, generatePreview, safeRelative } = require('../merge/lindsey-conflicts');
 const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = require('../merge/sync-review');
+const { createResolutionCommits, validateDecisions } = require('../merge/resolution-commits');
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name-selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./strip');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
@@ -1289,7 +1290,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     const target = mainRef || `refs/remotes/${remote}/${defaultBranch}`;
     const publish = git ? await createPublisher(root, publishingRemote) : null;
     const commit = message => publish ? publish.commit(message) : git(['commit', '-m', message]);
-    let conflictChoice, resolved = false;
+    let conflictChoice, resolved = false, resolution;
     const isAncestor = async () => promisify(execFile)('git',
       ['merge-base', '--is-ancestor', target, 'HEAD'], { cwd: root })
       .then(() => true, error => {
@@ -1361,6 +1362,13 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
             || !proposal.files.every(file => paths.includes(file.path))) {
           throw Error('Lindsey must resolve every sync conflict before committing.');
         }
+        if (conflictChoice.browser || proposal.decisions !== undefined) {
+          const decisions = validateDecisions(proposal.decisions);
+          if (!publish.author || decisions.length !== paths.length || decisions.some(item => !paths.includes(item.path))) {
+            throw Error('Lindsey needs a verified author and one decision for each conflicted file.');
+          }
+          resolution = { paths, decisions, targetSha };
+        }
         for (const file of proposal.files) {
           const filename = path.join(root, file.path);
           if (!(await lstat(filename)).isFile()) throw Error('A Lindsey proposal changed file type after review.');
@@ -1379,9 +1387,35 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
       }
       return true;
     };
-    const commitSync = async () => commit(resolved
-      ? `🛠️ Resolve conflicts syncing ${branch} to ${defaultBranch}\n\nApply reviewed Lindsey conflict resolutions and incorporate incoming ${defaultBranch} changes.`
-      : publish ? message : routineCommitMessage);
+    const commitSync = async headBefore => {
+      if (!resolution) return commit(resolved
+        ? `🛠️ Resolve conflicts syncing ${branch} to ${defaultBranch}\n\nApply reviewed Lindsey conflict resolutions and incorporate incoming ${defaultBranch} changes.`
+        : publish ? message : routineCommitMessage);
+      const finalTree = await git(['write-tree']);
+      const temporary = await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-sync-decisions-'));
+      try {
+        const isolatedGit = async (...args) => (await promisify(execFile)('git', args, {
+          cwd: root, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0',
+            GIT_INDEX_FILE: path.join(temporary, 'index') }
+        })).stdout.trimEnd();
+        const { sha } = await createResolutionCommits({
+          git: isolatedGit, directory: root, messageDirectory: temporary, headSha: headBefore,
+          baseSha: resolution.targetSha, finalTree, conflicts: resolution.paths, decisions: resolution.decisions,
+          author: publish.author, automationCommitter: publish.author, base: defaultBranch,
+          preserveMergeAncestry: strategy === 'merge', skipUnchanged: true
+        });
+        await checkBranch();
+        if (await git(['rev-parse', 'HEAD']) !== headBefore || await git(['rev-parse', target]) !== resolution.targetSha
+            || await git(['write-tree']) !== finalTree || await git(['diff', '--name-only'])
+            || await git(['ls-files', '--others', '--exclude-standard'])) {
+          throw Error('Git changed while preparing Lindsey decision commits. The branch was not advanced.');
+        }
+        await git(['update-ref', '-m', 'Sweetiebot: sync with Lindsey', 'refs/heads/' + branch, sha, headBefore]);
+        await git(['merge', '--quit']);
+      } finally {
+        await rm(temporary, { recursive: true, force: true });
+      }
+    };
     const recordSync = async before => {
       const sha = await git(['rev-parse', 'HEAD']);
       const targetSha = await git(['rev-parse', target]);
@@ -1412,7 +1446,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
         const mergeHead = await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).catch(() => '');
         if (!mergeHead) throw new Error('Git did not leave a verifiable merge to commit.');
         await verifyAutomaticResult(expectedTree);
-        await commitSync();
+        await commitSync(headBefore);
         if (!resolved) await recordSync(headBefore);
       }
     } else {
@@ -1437,7 +1471,7 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
             throw new Error('The branch advanced during synchronization; changes were left staged.');
           }
           await verifyAutomaticResult(expectedTree);
-          await commitSync();
+          await commitSync(headBefore);
           if (!resolved) await recordSync(headBefore);
         }
       }

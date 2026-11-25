@@ -112,7 +112,11 @@ async function run() {
     let cancel;
     const webUI = {
       ...syncUI, ProgressLocation: { Notification: 15 },
-      window: { ...syncUI.window, withProgress: async (options, task) => {
+      workspace: { async openTextDocument(document) {
+        assert.match(document.content, /Keep both changes/);
+        return document;
+      } },
+      window: { ...syncUI.window, async showTextDocument() {}, withProgress: async (options, task) => {
         assert.equal(options.cancellable, true);
         return task({}, { onCancellationRequested(callback) {
           cancel = callback;
@@ -138,9 +142,11 @@ async function run() {
         });
         const proposal = { headSha: base, baseSha: details.target, resolutionHunks: [
           { path: 'file.txt', hunks: [{ index: 0, choice: 'both-ours-first' }] }
-        ] };
+        ], decisions: [{ path: 'file.txt', title: '🛠️ Keep both changes',
+          description: 'Both sides add an independent line.' }] };
         assert.equal((await post({ ...proposal, baseSha: base })).status, 400);
         assert.equal((await post({ ...proposal, resolutionHunks: [] })).status, 400);
+        assert.equal((await post({ ...proposal, decisions: [] })).status, 400);
         assert.deepEqual(await (await post(proposal)).json(), { syncPreview: true });
       } }
     };

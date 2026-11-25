@@ -24,13 +24,14 @@ function validateDecisions(value = []) {
 // source: every new parent chain starts at the selected PR head.
 async function createResolutionCommits({ git, directory, headSha, baseSha, finalTree,
   conflicts, decisions, author, automationCommitter = null, base, onCommit = () => {},
+  messageDirectory = path.join(directory, '.git'), preserveMergeAncestry = true, skipUnchanged = false,
   createCommitTree = attributedCommitTree }) {
   decisions = validateDecisions(decisions);
   if (conflicts.some(file => !safePatchPath(file)) ||
       conflicts.length !== decisions.length || conflicts.some(file => !decisions.some(item => item.path === file))) {
     throw Error('Provide one decision for every actual conflicted file, and no unrelated files.');
   }
-  const messageFile = path.join(directory, '.git', 'sweetiebot-resolution-message');
+  const messageFile = path.join(messageDirectory, 'sweetiebot-resolution-message');
   const identity = await commitIdentity(git, author, false, false, automationCommitter);
   const commit = async (tree, parent, message, incoming) => {
     await fs.writeFile(messageFile, message + '\n', { mode: 0o600 });
@@ -40,6 +41,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
     return sha;
   };
   await git('read-tree', headSha);
+  let currentTree = skipUnchanged ? await git('write-tree') : undefined;
   let tip = headSha;
   const commits = [];
   for (const decision of decisions) {
@@ -50,6 +52,8 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
       await git('update-index', '--add', '--cacheinfo', match[1], match[2], decision.path);
     } else await git('update-index', '--force-remove', '--', decision.path);
     const tree = await git('write-tree');
+    if (tree === currentTree) continue;
+    if (skipUnchanged) currentTree = tree;
     const message = decision.title + '\n\n' + decision.description;
     tip = await commit(tree, tip, message);
     commits.push({ ...decision, sha: tip });
@@ -57,7 +61,7 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
   }
   // The remaining tree difference contains only nonconflicting incoming work.
   // Keep an empty sync marker if all incoming changes were resolved above.
-  tip = await commit(finalTree, tip, '🔄 Sync branch to ' + base, baseSha);
+  tip = await commit(finalTree, tip, '🔄 Sync branch to ' + base, preserveMergeAncestry ? baseSha : undefined);
   return { sha: tip, commits };
 }
 
