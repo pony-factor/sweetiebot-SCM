@@ -1570,6 +1570,7 @@ class GitConfigTests(unittest.TestCase):
                 '    message-placeholder = ""\n'
                 '    ai-commit\n'
                 '    custom-setting = preserved\n'
+                '    single-repository-per-window = false\n'
                 '[sweetiebot]\n'
                 '    remote = new\n'
                 '[user]\n'
@@ -1588,6 +1589,8 @@ class GitConfigTests(unittest.TestCase):
                 self.assertEqual(get("sweetiebot.message-placeholder").stdout, "\n")
                 self.assertEqual(get("sweetiebot.ai-commit").stdout, "true\n")
                 self.assertEqual(get("sweetiebot.custom-setting").stdout, "preserved\n")
+                self.assertEqual(get("sweetiebot.single-repository-per-window").stdout, "false\n")
+                self.assertFalse(toolkit_settings.read_git_bool("sweetiebot.single-repository-per-window", True))
                 self.assertEqual(get("user.name").stdout, "Unrelated\n")
                 self.assertEqual(get("scm-toolkit.remote").returncode, 1)
                 before = config.read_bytes()
@@ -1599,6 +1602,11 @@ class GitConfigTests(unittest.TestCase):
             set(toolkit_settings.DEFAULT_SETTINGS),
             set(toolkit_settings.SETTING_KEYS),
         )
+
+    def test_all_git_settings_use_sweetiebot_namespace(self):
+        for name, key in toolkit_settings.SETTING_KEYS.items():
+            with self.subTest(setting=name):
+                self.assertTrue(key.startswith("sweetiebot."), key)
 
     @patch("toolkit_settings.subprocess.run")
     def test_boolean_git_config_uses_parsed_value(self, run):
