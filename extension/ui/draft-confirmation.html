@@ -464,7 +464,7 @@ if(state.merging){
     ?Math.max(0,Math.floor((Date.now()-started)/1000))+'s':'';
 }
 const mergeIssue=state.mergeResult||state.merging?null:state.mergeIssue;
-const ci=state.mergeResult||state.merging?null:state.ci;
+const ci=state.mergeResult?null:state.merging?state.mergeProgress?.ci:state.ci;
 renderCIStatus(ci);
 const issueHeadings={
   conflict:'Merge conflicts need resolution',method:'Choose how to merge',
