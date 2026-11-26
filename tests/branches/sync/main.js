@@ -60,6 +60,30 @@ async function run() {
     assert.equal(fetches.at(-1), 'upstream', 'Button prefers upstream while origin remains the publishing remote');
     assert.equal(fs.readFileSync(path.join(root, 'incoming'), 'utf8'), 'upstream work\n');
     assert.equal(repository.inputBox.value, 'Preserved draft');
+
+    const mainGitDir = git(main, 'rev-parse', '--absolute-git-dir');
+    const marker = path.join(mainGitDir, 'sweetiebot-background-commit.json');
+    const pendingJob = fs.mkdtempSync(path.join(directory, 'pending-main-'));
+    const jobPath = path.join(pendingJob, 'job.json');
+    const job = { branch: 'main', phase: 'finalizing' };
+    fs.writeFileSync(marker, JSON.stringify({ directory: pendingJob }));
+    fs.writeFileSync(path.join(source, 'another-incoming'), 'new upstream work\n');
+    git(source, 'add', 'another-incoming');
+    git(source, '-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'More incoming work');
+    git(source, 'push', 'origin', 'main');
+    const topicSync = { branch: 'topic', defaultBranch: 'main', remote: 'origin', createPublisher: async () => null };
+    fs.writeFileSync(jobPath, JSON.stringify({ ...job, provisional: true, sha: tip }));
+    await assert.rejects(syncBranch(repository, topicSync), /still being finalized/);
+    assert(!fs.existsSync(path.join(root, 'another-incoming')));
+    fs.writeFileSync(jobPath, JSON.stringify(job));
+    assert.equal(await syncBranch(repository, topicSync), 'topic');
+    assert.equal(fs.readFileSync(path.join(root, 'another-incoming'), 'utf8'), 'new upstream work\n');
+    assert.equal(git(main, 'rev-parse', 'HEAD'), tip);
+    assert(!fs.existsSync(path.join(main, 'another-incoming')));
+    assert(fs.existsSync(marker));
+    fs.unlinkSync(marker);
+    await refreshMain(repository, options);
+
     const topicTip = git(root, 'rev-parse', 'HEAD');
     git(main, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
       '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'Local main');
