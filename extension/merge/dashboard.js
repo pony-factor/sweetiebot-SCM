@@ -698,13 +698,9 @@ function startMergeDashboard(vscode, rawSelection, token, { fetchImpl = globalTh
         const baseTip=await githubGet(readFetch,token,selection.repository,
           '/branches/'+encodeURIComponent(candidate.base));
         if(disposed || !SHA.test(baseTip.commit?.sha || '')) return;
-        if(baseTip.commit.sha!==candidate.baseSha && !conflict){
-          addEvent(pr,'updated','Automatic '+kind+' repair skipped · current base branch advanced');
-          return;
-        }
-        // Conflict repair has not produced a patch yet. Review the same verified
-        // PR head against today's base instead of stranding it after a batch merge.
-        const repairCandidate = conflict ? {...candidate, baseSha:baseTip.commit.sha} : candidate;
+        // No repair patch exists yet. Use the current base for the new task and
+        // verify any CI failures on the exact selected PR head below.
+        const repairCandidate = { ...candidate, baseSha: baseTip.commit.sha };
         const checkApi = endpoint => {
           const prefix = 'repos/' + selection.repository;
           if (!endpoint.startsWith(prefix + '/')) throw Error('Unexpected GitHub checks endpoint.');

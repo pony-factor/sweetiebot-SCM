@@ -762,13 +762,20 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   commentsForPr = [];
   await dashboard.refresh();
   const repairState = { repository: selection.repository,
-    pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'c'.repeat(40) }],
+    pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'b'.repeat(40) }],
     history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
     deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
   const autoStart = actionLaunches.length;
+  checkConclusion = null;
   dashboard.recordBatchState(repairState);
   await new Promise(resolve => setTimeout(resolve, 25));
-  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when selected integrated-head CI fails');
+  assert.equal(actionLaunches.length, autoStart, 'An old failure cannot launch repair while the live head has pending checks');
+  checkConclusion = 'failure';
+  await dashboard.refresh({ force: true });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(actionLaunches.length, autoStart + 1, 'Launch once when the selected head still fails after the base advances');
+  assert.equal(actionLaunches.at(-1)[4].headSha, nextSha);
+  assert.equal(actionLaunches.at(-1)[4].baseSha, 'c'.repeat(40), 'CI repair uses the current base tip');
   assert.equal(actionLaunches.at(-1)[6], 'codex', 'Auto repair uses the configured method');
   dashboard.recordBatchState(repairState);
   await new Promise(resolve => setTimeout(resolve, 10));
