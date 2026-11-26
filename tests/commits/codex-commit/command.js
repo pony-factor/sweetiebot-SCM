@@ -59,15 +59,15 @@ async function run() {
       return setTimeout(callback, delay);
     },
     require: name => {
-      if (name === '../ui/python-runtime') {
+      if (name === '../../ui/python-runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
           pythonLaunchError: error => error
         };
       }
       if (name === 'node:path') return path;
-      if (name === '../codex/attribution') return require('../../../extension/codex/attribution');
-      if (name === '../ui/git-settings') return require('../../../extension/ui/git-settings');
+      if (name === '../../codex/attribution') return require('../../../extension/codex/attribution');
+      if (name === '../../ui/git-settings') return require('../../../extension/ui/git-settings');
       assert.equal(name, 'child_process'); return { execFile(exe, args, options, callback) {
         if (exe === 'git') {
           assert.equal(options.cwd, '/selected');
@@ -90,7 +90,7 @@ async function run() {
       return child;
     } }; }
   });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../../extension/commits/codex-commit.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../../extension/commits/codex/manual.js'), 'utf8'), sandbox);
   const readSetting = sandbox.module.exports.readCommitGitSetting;
   const key = 'sweetiebot.codex-coauthor-name';
   const legacyKey = 'scm-toolkit.codex-coauthor-name';

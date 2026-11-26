@@ -1,10 +1,10 @@
 'use strict';
 
-const { readRepositoryGitSetting } = require('../ui/git-settings');
+const { readRepositoryGitSetting } = require('../../ui/git-settings');
 
 const { spawn, execFile } = require('child_process');
-const { resolvePythonExecutable, pythonLaunchError } = require('../ui/python-runtime');
-const { isCodex, withModel, collapse } = require('../codex/attribution');
+const { resolvePythonExecutable, pythonLaunchError } = require('../../ui/python-runtime');
+const { isCodex, withModel, collapse } = require('../../codex/attribution');
 
 function generateMessage(script, cwd, context) {
   return new Promise((resolve, reject) => {

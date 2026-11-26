@@ -1,5 +1,5 @@
 'use strict';
-const { mergedBranchStatus, warnMergedBranch } = require('../branches/merged-branch');
+const { mergedBranchStatus, warnMergedBranch } = require('../../branches/merged-branch');
 
 function recoveryError(error, target, step) {
   const details = [error?.stderr, error?.stdout, error?.message].filter(Boolean).join('\n');

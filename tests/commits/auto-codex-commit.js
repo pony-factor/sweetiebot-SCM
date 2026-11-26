@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 async function run() {
-  const source = fs.readFileSync(path.join(__dirname, '../../extension/commits/auto-codex-commit.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../../extension/commits/codex/auto.js'), 'utf8');
   const intervals = [];
   const commits = [];
   const warnings = [];
@@ -58,7 +58,7 @@ async function run() {
     setInterval: (callback, ms) => { intervals.push({ callback, ms }); return 1; },
     clearInterval: () => {},
     require: id => {
-      assert.equal(id, './codex-commit');
+      assert.equal(id, './manual');
       return {
         readCommitGitSetting: async (_root, _key, fallback) => fallback,
         coauthorTrailer: (name, email) => 'Co-authored-by: ' + name + ' <' + email + '>'

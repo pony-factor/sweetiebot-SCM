@@ -1,6 +1,6 @@
 'use strict';
 const { pendingPRCommits } = require('./pr-commit-wait');
-const { runKefania } = require('../codex/kefania-runner');
+const { runKefania } = require('../codex/kefania/runner');
 const { githubRepository, normalizeConversationSource, sourceWithSharedConversationUrl,
   readOptionalCodexConversation, stackedPullRequestBase } = require('./pull-request');
 const { resolveForkPullRequestTarget, chooseForkPullRequestTarget } = require('./fork-pr-target');

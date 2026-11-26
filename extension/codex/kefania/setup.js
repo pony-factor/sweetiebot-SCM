@@ -3,7 +3,7 @@
 const { spawn } = require('node:child_process');
 const net = require('node:net');
 const path = require('node:path');
-const { resolveKefaniaFile } = require('./kefania-paths');
+const { resolveKefaniaFile } = require('./paths');
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -41,7 +41,7 @@ async function probeSetup(port, { fetchImpl = fetch, occupied = tcpOccupied } = 
 }
 
 async function launchKefaniaSetup({
-  repositoryPath = path.resolve(__dirname, '..', '..'),
+  repositoryPath = path.resolve(__dirname, '..', '..', '..'),
   resolveFile = resolveKefaniaFile,
   probe = probeSetup,
   spawnProcess = spawn,

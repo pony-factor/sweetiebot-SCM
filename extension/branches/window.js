@@ -2,8 +2,8 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { independentWorkspaceParent } = require('./workspace-trust');
-const { SESSION_PREFIX } = require('./workspace-prune');
+const { independentWorkspaceParent } = require('./workspace/trust');
+const { SESSION_PREFIX } = require('./workspace/prune');
 
 const SESSION_MAX_AGE_MS = 150 * 1000;
 

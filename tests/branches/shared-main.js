@@ -8,7 +8,7 @@ const { openIndependentWorkspace } = require('../../extension/branches/new-works
 const { maintain } = require('../../extension/branches/prepared-worktrees');
 const { routeBranch, mainRoot, originalRepository, reconnectManagedMain, recordDeletedBranchReturn, reconnectDeletedBranch } = require('../../extension/branches/shared-main');
 const { registerManagedWindowActivity, stopManagedWindowActivity } =
-  require('../../extension/branches/workspace-activity');
+  require('../../extension/branches/workspace/activity');
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const editor = root => ({

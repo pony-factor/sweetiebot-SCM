@@ -6,8 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { openExperimentWorkspace, privateParent, findExperimentWorkspace, trashExperimentWorkspace } =
-  require('../../extension/branches/experiment-workspace');
-const { isExperimentWorkspace, deferExperimentPublish } = require('../../extension/branches/experiment-policy');
+  require('../../extension/branches/experiment/workspace');
+const { isExperimentWorkspace, deferExperimentPublish } = require('../../extension/branches/experiment/policy');
 
 function git(...args) {
   return execFileSync('git', args, {

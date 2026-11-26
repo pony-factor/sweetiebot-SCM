@@ -53,9 +53,9 @@ async function run() {
       if (name === 'vscode') return vscode;
       if (name === 'node:os') return { homedir: () => '/stable-home' };
       if (name === 'node:path') return require('node:path');
-      if (name === './codex/kefania-close-position') return require('../../extension/codex/kefania-close-position');
+      if (name === './codex/kefania/close-position') return require('../../extension/codex/kefania/close-position');
       if (name === './ui/extension-cache') return { invalidateUserExtensionCache() {} };
-      if (name === './branches/workspace-activity') {
+      if (name === './branches/workspace/activity') {
         return { stopManagedWindowActivity: async () => { managedActivityStops++; } };
       }
       if (name === './ui/python-runtime') {

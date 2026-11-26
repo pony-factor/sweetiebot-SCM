@@ -43,7 +43,7 @@ async function childDirectories(directory) {
   }
 }
 
-function kefaniaCandidates(repositoryPath, { home = homedir(), moduleDirectory = __dirname } = {}) {
+function kefaniaCandidates(repositoryPath, { home = homedir(), moduleDirectory = path.dirname(__dirname) } = {}) {
   const parent = path.dirname(path.resolve(repositoryPath));
   const candidates = [
     path.join(parent, 'kefania'),

@@ -73,7 +73,7 @@ def wrapper_files(directory, executable):
     files[executable.with_name(executable.name + "-spellcheck.py")] = (
         directory / "post-commit-spellcheck.py")
     files[executable.with_name("pony-git-publish.js")] = (
-        directory.parent / "extension/commits/pony-git-publish.js")
+        directory.parent / "extension/commits/pony/publish.js")
     for source in files.values():
         if not source.is_file():
             raise RuntimeError(f"Git wrapper source is missing: {source.name}")

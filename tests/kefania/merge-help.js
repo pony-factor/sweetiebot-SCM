@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { openKefaniaMergeHelp } = require('../../extension/codex/kefania-merge-help');
+const { openKefaniaMergeHelp } = require('../../extension/codex/kefania/merge-help');
 
 (async () => {
   const vscode = {}, context = {}, rootUri = { fsPath: '/test/worktree' };

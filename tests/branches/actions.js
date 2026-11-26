@@ -576,7 +576,7 @@ async function run() {
     assert.equal(await commands.get('sweetiebot.publishBranch')({ rootUri: uri }, {
       branch: 'topic', remote: 'origin'
     }), true);
-    const experimentPolicy = require('../../extension/branches/experiment-policy');
+    const experimentPolicy = require('../../extension/branches/experiment/policy');
     const originalPolicy = experimentPolicy.deferExperimentPublish;
     experimentPolicy.deferExperimentPublish = async () => true;
     try {

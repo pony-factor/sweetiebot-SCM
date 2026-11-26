@@ -1,6 +1,6 @@
 'use strict';
 
-const { readStatus } = require('../commits/background-commit');
+const { readStatus } = require('../commits/background');
 
 // Return a waiter only when the durable queue owns unfinished work. This also
 // works in the independent PR extension host, where in-memory promises do not.

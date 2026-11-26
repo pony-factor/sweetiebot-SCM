@@ -4,7 +4,7 @@
 // Background commit generation and post-commit spellcheck still use Ollama.
 const {execFile} = require('node:child_process');
 const {promisify} = require('node:util');
-const {startNativeSpellcheckBridge} = require('./native-spellcheck-bridge');
+const {startNativeSpellcheckBridge} = require('./spellcheck/native-bridge');
 const {resolveChatgptReviewProjectUrl} = require('../codex/chatgpt-project');
 
 const execFileAsync = promisify(execFile);

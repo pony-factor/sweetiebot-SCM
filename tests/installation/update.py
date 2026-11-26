@@ -334,7 +334,7 @@ class UpdateTests(unittest.TestCase):
                 'scripts/ai-commit.py': 'current Git wrapper',
                 'scripts/sweetiebot-async-commit.py': 'current async helper',
                 'scripts/post-commit-spellcheck.py': 'current spellcheck helper',
-                'extension/commits/post-commit-spellcheck-notice.js': 'current notice handler',
+                'extension/commits/spellcheck/post-commit-notice.js': 'current notice handler',
                 'extension/package.json': '{"publisher":"pony-factor","name":"sweetiebot-scm","version":"0.3.2"}',
             }
             # Model a complete published runtime, not only the historically
@@ -342,8 +342,8 @@ class UpdateTests(unittest.TestCase):
             script_dir = Path(update.__file__).resolve().parent
             payload.update({f"scripts/{name}": source.read_text()
                             for name, source in wrapper_dependencies.runtime_sources(script_dir).items()})
-            payload["extension/commits/pony-git-publish.js"] = (
-                script_dir.parent / "extension/commits/pony-git-publish.js").read_text()
+            payload["extension/commits/pony/publish.js"] = (
+                script_dir.parent / "extension/commits/pony/publish.js").read_text()
             destination = extensions / 'pony-factor.sweetiebot-scm-0.3.2'
             installed = destination / 'codex-customizations'
             wrapper = root / 'bin/scm-toolkit-git'
@@ -390,7 +390,7 @@ class UpdateTests(unittest.TestCase):
             self.assertIsNotNone(prepare())
             legacy.with_name(legacy.name + '-spellcheck.py').symlink_to(helper)
             self.assertIsNone(prepare())
-            for target in [destination / 'commits' / 'post-commit-spellcheck-notice.js', destination / 'ai-commit.py', wrapper, helper, async_helper]:
+            for target in [destination / 'commits' / 'spellcheck' / 'post-commit-notice.js', destination / 'ai-commit.py', wrapper, helper, async_helper]:
                 expected = target.read_bytes()
                 target.write_text('stale runtime')
                 self.assertIsNotNone(prepare())

@@ -3,8 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const {startNativeSpellcheckBridge, registerNativeSpellcheckBridge} = require('../../extension/commits/native-spellcheck-bridge');
-const {acceptableTitle, stagedDiff, registerChatgptCommitTitle} = require('../../extension/commits/chatgpt-commit-title');
+const {startNativeSpellcheckBridge, registerNativeSpellcheckBridge} = require('../../extension/commits/spellcheck/native-bridge');
+const {acceptableTitle, stagedDiff, registerChatgptCommitTitle} = require('../../extension/commits/chatgpt-title');
 
 function response(port, ticket, method, path, payload) {
   return new Promise((resolve, reject) => {

@@ -60,7 +60,7 @@ class SettingsOverviewTests(unittest.TestCase):
     def test_kefania_setup_launcher_uses_installed_companion_layout(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
-            launcher = directory / "codex" / "kefania-setup.js"
+            launcher = directory / "codex" / "kefania" / "setup.js"
             launcher.parent.mkdir()
             launcher.touch()
             with patch.object(configurator, "__file__", str(directory / "configurator.py")), \
@@ -79,7 +79,7 @@ class SettingsOverviewTests(unittest.TestCase):
                 "url": "http://127.0.0.1:8766/", "reused": True,
             })
             self.assertEqual(run.call_args.args[0][0], "/usr/local/bin/node")
-            self.assertIn("kefania-setup.js", run.call_args.args[0][1])
+            self.assertTrue(Path(run.call_args.args[0][1]).as_posix().endswith("/codex/kefania/setup.js"))
         with patch.object(configurator.shutil, "which", return_value="/usr/local/bin/node"), \
              patch.object(configurator.subprocess, "run", return_value=launch("https://example.com/")):
             with self.assertRaisesRegex(RuntimeError, "invalid local setup URL"):

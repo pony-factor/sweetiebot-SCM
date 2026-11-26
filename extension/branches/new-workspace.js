@@ -4,8 +4,8 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { independentWorkspaceParent } = require('./workspace-trust');
-const { createWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { independentWorkspaceParent } = require('./workspace/trust');
+const { createWorkspaceDirectory, workspaceFileName } = require('./workspace/layout');
 const { openSharedMainWorkspace } = require('./shared-main');
 
 const OPEN_WORKSPACE_COMMAND = 'sweetiebot.openIndependentWorkspace';
