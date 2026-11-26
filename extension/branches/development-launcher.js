@@ -64,6 +64,21 @@ function braveArgs(root, profile, url) {
     '--no-first-run', '--no-default-browser-check', '--new-window', url];
 }
 
+async function openRegularBrave(vscode, root, url, run = promisify(execFile)) {
+  const action = await vscode.window.showQuickPick([
+    { label: 'Open test page', description: 'Use the regular Brave profile with this checkout already loaded', kind: 'open' },
+    { label: 'Set up checkout in Brave', description: 'Copy the checkout path and open Brave Extensions', kind: 'setup' }
+  ], { placeHolder: 'Use your existing Brave settings and sign-ins' });
+  if (action?.kind === 'open') {
+    await run('/usr/bin/open', ['-a', 'Brave Browser', url]);
+  } else if (action?.kind === 'setup') {
+    await vscode.env.clipboard.writeText(root);
+    await run('/usr/bin/open', ['-a', 'Brave Browser', 'brave://extensions/']);
+    vscode.window.showInformationMessage(
+      'Checkout path copied. In Brave Extensions, disable the other copy of this extension, then use Load unpacked to select the checkout. Launch the preset again to open the test page.');
+  }
+}
+
 async function readJson(root, name) {
   try { return JSON.parse(await fs.readFile(path.join(root, name), 'utf8')); }
   catch { return null; }
@@ -125,17 +140,22 @@ function registerDevelopmentLauncher(vscode, context) {
       { label: 'Custom process', kind: 'process', description: 'Run a command in a task terminal' }
     ];
     if (process.platform === 'darwin' && extension)
-      choices.unshift({ label: 'Isolated Brave extension', kind: 'brave', description: 'Load this checkout in a separate browser profile' });
+      choices.unshift(
+        { label: 'Isolated Brave extension', kind: 'brave', description: 'Load this checkout in a separate browser profile' },
+        { label: 'Regular Brave profile', kind: 'brave', braveProfile: 'regular', description: 'Use existing Brave extensions, settings, and sign-ins' }
+      );
     const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Choose a development launch preset' });
     if (!selected) return;
     if (selected.kind === 'brave') {
-      const input = await vscode.window.showInputBox({ prompt: 'Page to open in the isolated Brave profile', value: existing?.kind === 'brave' ? existing.url : 'https://chatgpt.com/' });
+      const browser = selected.braveProfile === 'regular' ? 'regular' : 'isolated';
+      const input = await vscode.window.showInputBox({ prompt: `Page to open in the ${browser} Brave profile`, value: existing?.kind === 'brave' ? existing.url : 'https://chatgpt.com/' });
       if (input === undefined) return;
       const url = new URL(input);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Enter an HTTP(S) URL without credentials.');
+      if (browser === 'regular') return { kind: 'brave', url: url.href, braveProfile: 'regular' };
       const modes = [
         { label: 'Separate sign-in (default)', description: 'Keep the checkout profile independent', copyBraveCookies: false },
-        { label: 'Copy normal Brave cookies', description: 'Opt in to seeding fresh checkout profiles only', copyBraveCookies: true }
+        { label: 'Copy normal Brave login cookies', description: 'Seed a fresh profile with website login cookies only', copyBraveCookies: true }
       ];
       const mode = await vscode.window.showQuickPick(modes, {
         placeHolder: existing?.copyBraveCookies ? 'Cookie copying was previously enabled; choose again' : 'Choose how to sign in to the test browser'
@@ -200,6 +220,10 @@ function registerDevelopmentLauncher(vscode, context) {
       if (config.kind === 'brave') {
         if (process.platform !== 'darwin' || ![2, 3].includes((await readJson(root, 'manifest.json'))?.manifest_version))
           throw new Error('The Brave preset requires a macOS browser-extension checkout.');
+        if (config.braveProfile === 'regular') {
+          await openRegularBrave(vscode, root, config.url);
+          return;
+        }
         const profile = path.join(context.globalStorageUri.fsPath, 'brave-tests', checkoutId(root));
         await fs.mkdir(profile, { recursive: true, mode: 0o700 });
         if (config.copyBraveCookies === true && await seedBraveProfile(vscode, profile) === false) return;
@@ -231,4 +255,4 @@ function registerDevelopmentLauncher(vscode, context) {
     launch(uri).catch(error => vscode.window.showErrorMessage('Development launch: ' + error.message))));
 }
 
-module.exports = { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, seedBraveProfile, registerDevelopmentLauncher };
+module.exports = { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, openRegularBrave, seedBraveProfile, registerDevelopmentLauncher };
