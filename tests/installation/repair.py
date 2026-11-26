@@ -122,7 +122,7 @@ class RepairTests(unittest.TestCase):
                 install.main()
                 write.assert_not_called()
             self.assertEqual(helper.read_bytes(), (install.HERE / 'post-commit-spellcheck.py').read_bytes())
-            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / 'commits' / notice.name).read_bytes())
+            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / 'commits' / 'spellcheck' / notice.name).read_bytes())
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=wrapper_path))
             self.assertFalse(workspace_search.sync_extension(check=True, settings=dict(toolkit_settings.DEFAULT_SETTINGS)))
             picker.assert_not_called()

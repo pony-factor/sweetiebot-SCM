@@ -5,8 +5,8 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { independentWorkspaceParent } = require('../branches/workspace-trust');
-const { createWorkspaceDirectory } = require('../branches/workspace-layout');
+const { independentWorkspaceParent } = require('../branches/workspace/trust');
+const { createWorkspaceDirectory } = require('../branches/workspace/layout');
 const { reviewPublicationInstructions } = require('./review-policy');
 
 const OPTIONS_MARKER = /<!--\s*sweetiebot-merge-options\s*\n([\s\S]*?)\n\s*-->/g;

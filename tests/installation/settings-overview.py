@@ -61,7 +61,7 @@ class SettingsOverviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
             launcher = directory / "codex" / "kefania" / "setup.js"
-            launcher.parent.mkdir()
+            launcher.parent.mkdir(parents=True)
             launcher.touch()
             with patch.object(configurator, "__file__", str(directory / "configurator.py")), \
                  patch.object(configurator.shutil, "which", return_value="/usr/local/bin/node"), \
