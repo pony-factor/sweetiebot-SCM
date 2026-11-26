@@ -84,10 +84,11 @@ async function humanSquashMerge(repository, number, {
   resolutionHunks = validateResolutionHunks(resolutionHunks);
   decisions = require('./resolution-commits').validateDecisions(decisions);
   const compactResolution = resolutionHunks.length > 0;
-  const baseOnlyResolution = operation === 'sync' && !compactResolution && resolutionPatch === null &&
-    decisions.length > 0 && decisions.every(item => item.keepBase);
-  if (decisions.some(item => item.keepBase) && (operation !== 'sync' || compactResolution)) {
-    throw Error('Keeping the exact incoming file requires a full branch-sync resolution.');
+  const keepsBase = decisions.some(item => item.keepBase);
+  const baseOnlyResolution = resolutionPatch === null && !compactResolution && keepsBase &&
+    decisions.every(item => item.keepBase);
+  if (keepsBase && (compactResolution || (resolutionPatch === null && !baseOnlyResolution))) {
+    throw Error('Use a complete base-relative patch with keepBase decisions, or patch:null when every decision keeps the incoming file.');
   }
   if (compactResolution && resolutionPatch !== null) throw Error('Compact hunks and a full patch are mutually exclusive.');
   const needsResolution = resolutionPatch !== null || compactResolution || baseOnlyResolution;
@@ -135,7 +136,6 @@ async function humanSquashMerge(repository, number, {
   const nativeSquash = !directLocal && !signLocally && repositoryInfo.allow_squash_merge !== false &&
     (kefaniaOpener || (original.user?.type === 'User' &&
       original.user.login?.toLowerCase() === verifiedAuthor.login.toLowerCase()));
-  decisions = require('./resolution-commits').validateDecisions(decisions);
   if (!['merge', 'sync'].includes(operation)) throw Error('Unknown local merge operation.');
   const primaryAuthor = kefaniaOpener && nativeSquash && operation === 'merge' ? undefined : author;
   const prepared = require('./commit-proposal').validateCommitProposal(commitProposal,
@@ -474,7 +474,7 @@ async function humanSquashMerge(repository, number, {
         if (!conflicts.length) throw error;
         if (conflicts.some(name => !safePatchPath(name))) throw Error('Conflict involves an unsafe or secret-bearing path.');
       }
-      if (conflicts.length && ((operation !== 'sync' || compactResolution) && conflicts.length !== decisions.length ||
+      if (conflicts.length && (compactResolution && conflicts.length !== decisions.length ||
           conflicts.some(file => !decisions.some(item => item.path === file)))) {
         return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
           conflictPaths: conflicts, reason: 'Provide a specific decision title and explanation for each conflicted file before preparing the merge.' };
@@ -523,13 +523,10 @@ async function humanSquashMerge(repository, number, {
       if ([...keptBase].some(name => !conflicts.includes(name) || resolvedFiles.includes(name)) ||
           conflicts.some(name => !keptBase.has(name) && !resolvedFiles.includes(name))) {
         const reason = 'Resolve every conflicted file in the patch or explicitly keep the incoming file unchanged.';
-        if (operation === 'sync') {
-          return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
-            conflictPaths: conflicts, reason };
-        }
-        throw Error(reason);
+        return { merged: false, status: 'needs_resolution', number, headSha: originalSha, baseSha,
+          conflictPaths: conflicts, reason };
       }
-      if (operation === 'sync') supportingDecisionFiles = resolvedFiles.filter(name => !conflicts.includes(name));
+      supportingDecisionFiles = resolvedFiles.filter(name => !conflicts.includes(name));
       if (decisions.some(item => !conflicts.includes(item.path) && !supportingDecisionFiles.includes(item.path))) {
         throw Error('A supporting-file decision must match a file edited by the approved patch.');
       }
@@ -587,7 +584,9 @@ async function humanSquashMerge(repository, number, {
         reason: 'No merge conflicts or explicit resolution changes; left the PR branch unchanged.' };
     }
     const staged = await inRepo('diff', '--cached', '--no-renames', '--name-only', '-z');
-    if (!staged.trim() && !baseOnlyResolution) throw Error('Squash would make no changes; refusing empty commit.');
+    if (!staged.trim() && !(operation === 'sync' && baseOnlyResolution)) {
+      throw Error('Squash would make no changes; refusing empty commit.');
+    }
     // Additional supporting files are allowed when explicitly supplied by the
     // resolution patch. Keep the staged tree bound to that validated patch.
     const proposedFiles = staged.split('\0').filter(Boolean).sort();
