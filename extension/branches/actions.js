@@ -20,6 +20,7 @@ const { recoveryPlan } = require('../commits/finalized-commit-recovery');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
 const { routeBranch, routeExistingBranchWorktree, recordDeletedBranchReturn } = require('./shared-main');
 const { createStackedBranch } = require('./stacked-branch');
+const { worktreeLocations } = require('./worktree-registry');
 const prepared = require('./prepared-worktrees');
 const { isPullRequestReviewBranch } = require('./publish-policy');
 const { findExperimentWorkspace, trashExperimentWorkspace } = require('./experiment-workspace');
@@ -306,6 +307,48 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
     await repository.merge(`${target.remote}/${target.name}`);
   }
   await repository.status();
+  return true;
+}
+
+async function autoPullDefaultWorktree(repository, openRoots = new Set(), attempted = new Set()) {
+  const root = repository.rootUri?.fsPath;
+  const head = repository.state.HEAD;
+  if (!root || !existsSync(path.join(root, '.git')) || !head?.name) return false;
+  const defaultBranch = await resolveDefaultBranch(repository);
+  if (head.name === defaultBranch) return false;
+
+  const exec = promisify(execFile);
+  const git = async (args, cwd = root) => (await exec('git', args, { cwd, timeout: 10000 })).stdout.trim();
+  const { stdout } = await exec('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, timeout: 10000 });
+  const worktree = worktreeLocations(stdout).get(defaultBranch);
+  if (!worktree || openRoots.has(worktree) || attempted.has(worktree)) return false;
+  attempted.add(worktree);
+
+  const worktreeRepository = { rootUri: { fsPath: worktree } };
+  const ref = `refs/heads/${defaultBranch}`;
+  const trackedRemote = await git(['config', '--get', `branch.${defaultBranch}.remote`], worktree)
+    .catch(error => { if (error.code === 1) return ''; throw error; });
+  const { remote, name } = await automaticPullTarget(repository, {
+    name: defaultBranch, upstream: { remote: trackedRemote || undefined }
+  });
+  const incoming = `refs/remotes/${remote}/${name}`;
+  if (await asyncCommitPending(worktreeRepository, { refs: [ref] })) return false;
+  const fetchStarted = Date.now();
+  await retryFetch(() => repository.fetch({ remote, ref: name }));
+  await prepared.noteFetch(root, remote, name, { now: fetchStarted });
+
+  const before = await git(['rev-parse', '--verify', ref]);
+  const tip = await git(['rev-parse', '--verify', incoming]);
+  if (before === tip) return false;
+  const fastForward = await exec('git', ['merge-base', '--is-ancestor', before, tip], { cwd: root, timeout: 10000 })
+    .then(() => true, error => { if (error.code === 1) return false; throw error; });
+  if (!fastForward || await asyncCommitPending(worktreeRepository, { refs: [ref] })) return false;
+  const metadata = await git(['rev-parse', '--absolute-git-dir'], worktree);
+  if (['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer']
+    .some(marker => existsSync(path.join(metadata, marker)))) return false;
+  if (await git(['symbolic-ref', '--quiet', 'HEAD'], worktree) !== ref ||
+      await git(['rev-parse', 'HEAD'], worktree) !== before) return false;
+  await exec('git', ['merge', '--ff-only', '--no-autostash', tip], { cwd: worktree, timeout: 120000 });
   return true;
 }
 
@@ -1827,7 +1870,10 @@ function registerBranchCommands(vscode, context) {
           }));
         }
       }
-      for (const repository of gitApi.repositories ?? []) {
+      const repositories = gitApi.repositories ?? [];
+      const openRoots = new Set(repositories.map(repository => repository.rootUri.fsPath));
+      const checkedDefaultWorktrees = new Set();
+      for (const repository of repositories) {
         if (disposed || repository.rootUri.scheme !== 'file') continue;
         watch(repository);
         const head = repository.state.HEAD;
@@ -1853,7 +1899,12 @@ function registerBranchCommands(vscode, context) {
           } catch (error) {
             if (error.code !== 1) return; // An unset preference defaults to enabled.
           }
-          if (fetch) lastFetch.set(repository, Date.now());
+          if (fetch) {
+            lastFetch.set(repository, Date.now());
+            // A topic window may be the only open window for this Git repository.
+            await autoPullDefaultWorktree(repository, openRoots, checkedDefaultWorktrees).catch(() => {});
+            if (disposed || repository.state.HEAD?.name !== head.name) return;
+          }
           await autoPullClean(repository, { fetch });
           retryAfter.delete(repository);
         }).catch(() => {
@@ -1897,6 +1948,7 @@ module.exports = {
   syncBranch,
   registerBranchCommands,
   autoPullClean,
+  autoPullDefaultWorktree,
   beginRepositoryCommit,
   endRepositoryCommit,
   commitInProgress,

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { autoPullClean } = require('../../../extension/branches/actions');
+const { autoPullClean, autoPullDefaultWorktree } = require('../../../extension/branches/actions');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-auto-pull-'));
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
@@ -41,20 +41,35 @@ async function run() {
     },
     async fetch({ remote, ref }) { git(local, 'fetch', remote, ref); }
   };
+  const topic = path.join(directory, 'topic');
+  git(local, 'worktree', 'add', '-b', 'topic', topic, 'main');
+  const topicHead = git(topic, 'rev-parse', 'HEAD');
+  const topicRepository = {
+    rootUri: { fsPath: topic }, state: { HEAD: { name: 'topic' } },
+    async fetch({ remote, ref }) { git(topic, 'fetch', remote, ref); }
+  };
+  fs.writeFileSync(path.join(topic, 'draft.txt'), 'Pending PR edit\n');
   const pendingJournal = path.join(git(local, 'rev-parse', '--absolute-git-dir'),
     'sweetiebot-async-commit.json');
   fs.writeFileSync(pendingJournal, '{"state":"pending"}', 'utf8');
   const pendingHead = git(local, 'rev-parse', 'HEAD');
   assert.equal(await autoPullClean(repository, { fetch: true }), false,
     'Pending local commit title prevents a direct-Git auto-pull');
+  assert.equal(await autoPullDefaultWorktree(topicRepository), false,
+    'A topic window respects pending commit titles in its main worktree');
   assert.equal(git(local, 'rev-parse', 'HEAD'), pendingHead);
   fs.unlinkSync(pendingJournal);
   git(local, 'config', 'sweetiebot.pull-remote', 'origin');
   assert.equal(await autoPullClean(repository, { fetch: true }), false,
     'An explicit pull-remote override uses origin even when upstream exists');
   git(local, 'config', '--unset', 'sweetiebot.pull-remote');
-  assert.equal(await autoPullClean(repository, { fetch: true }), true,
-    'Auto-detection pulls upstream with the publish remote still set to origin');
+  assert.equal(await autoPullDefaultWorktree(topicRepository, new Set([git(local, 'rev-parse', '--show-toplevel')])), false,
+    'The regular poller handles main when it is already open');
+  assert.equal(await autoPullDefaultWorktree(topicRepository), true,
+    'A topic window fast-forwards its separate main worktree from upstream');
+  assert.equal(git(topic, 'rev-parse', 'HEAD'), topicHead);
+  assert.equal(git(topic, 'branch', '--show-current'), 'topic');
+  assert.equal(git(topic, 'status', '--porcelain'), '?? draft.txt');
   assert.equal(git(local, 'config', '--get', 'branch.main.remote'), 'origin',
     'Auto-pull never changes the tracked push remote');
   assert.equal(git(local, 'config', '--get', 'sweetiebot.remote'), 'origin');
@@ -68,6 +83,7 @@ async function run() {
   const before = git(local, 'rev-parse', 'HEAD');
   fs.writeFileSync(path.join(other, 'note.txt'), 'Overlapping incoming change\n');
   git(other, 'add', 'note.txt'); git(other, 'commit', '-m', 'Overlap'); git(other, 'push');
+  await assert.rejects(autoPullDefaultWorktree(topicRepository), /overwritten by merge/);
   await assert.rejects(autoPullClean(repository, { fetch: true }), /overwritten by merge/);
   assert.equal(git(local, 'rev-parse', 'HEAD'), before);
   assert.equal(fs.readFileSync(path.join(local, 'note.txt'), 'utf8'), 'Keep my unstaged note\n');
