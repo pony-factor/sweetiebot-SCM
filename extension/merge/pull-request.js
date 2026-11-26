@@ -27,7 +27,8 @@ async function readPullRequestCI(repository, result, request) {
     state: checks.state,
     message: describeMergeChecks(checks),
     summary: describeMergeChecks(checks, { includeNames: false }),
-    names: mergeCheckNames(checks)
+    names: mergeCheckNames(checks),
+    checks: checks.evidence || []
   };
 }
 
