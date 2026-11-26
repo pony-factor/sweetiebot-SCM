@@ -8,7 +8,7 @@
 .pony-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:12px}.pony-heading .status:not(.pack-tag){grid-column:1/-1}.pony-heading .pack-tag{white-space:nowrap}
 .pr-heading{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.pr-heading h2{min-width:0;overflow-wrap:anywhere}.pr-number{flex:none;padding:2px 9px;border:1px solid var(--line);border-radius:999px;font-size:12px;white-space:nowrap;text-decoration:none}
 .status.pack-tag{padding:2px 8px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--accent);background:#ffffff06}.status.pack-tag::before{display:none}
-.ci-status{margin:10px 0 0;font-size:13px;overflow-wrap:anywhere}.ci-status[data-state="failed"]{color:var(--kefania-error,#f28f79)}.ci-check-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px}.ci-check-list li{display:flex;align-items:baseline;gap:8px;overflow-wrap:anywhere}.ci-check-list li::before{content:'';flex:none;width:7px;height:7px;border:1px solid currentColor;border-radius:50%;align-self:start;margin-top:7px;opacity:.8}.ci-check-list span{min-width:0}.merge-issue[data-kind="ci-pending"]{border-color:var(--line);background:transparent}.merge-issue[data-kind="ci-pending"] strong,.merge-issue[data-kind="ci-pending"] .publication{color:var(--text)}
+.ci-status{margin:10px 0 0;font-size:13px;overflow-wrap:anywhere}.ci-status[data-state="failed"]{color:var(--kefania-error,#f28f79)}.ci-check-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px}.ci-check-list li{display:flex;align-items:baseline;gap:8px;overflow-wrap:anywhere}.ci-check-list li::before{content:'';flex:none;width:13px;height:13px;border:1px solid currentColor;border-radius:50%;align-self:start;margin-top:3px;display:grid;place-items:center;font-size:10px;line-height:1;font-weight:bold;color:var(--muted);box-sizing:border-box}.ci-check-list li[data-check-state="passed"]::before{content:'✓';color:var(--kefania-success,#2da44e)}.ci-check-list li[data-check-state="failed"]::before{content:'×';color:var(--kefania-error,#f28f79)}.ci-check-list li[data-check-state="skipped"]::before{content:'−'}.ci-check-list li[data-check-state="running"]::before{border-color:var(--line);border-top-color:var(--accent);animation:merge-spin .8s linear infinite}.ci-check-list li[data-check-state="pending"]::before{color:var(--kefania-warning,#bf8700)}@media(prefers-reduced-motion:reduce){.ci-check-list li[data-check-state="running"]::before{animation:none}}.ci-check-list span{min-width:0}.merge-issue[data-kind="ci-pending"]{border-color:var(--line);background:transparent}.merge-issue[data-kind="ci-pending"] strong,.merge-issue[data-kind="ci-pending"] .publication{color:var(--text)}
 .merge-action-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.merge-buttons{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.merge-action-row .pr-number{margin-left:auto}.merge-controls{margin:12px 0 14px;padding:4px 8px}.merge-controls button{padding:10px 15px;border-radius:10pt}.merge-controls .publication{color:#f0bdc5}.merge-issue{margin:16px 0 4px;padding:16px 18px;border:1px solid var(--kefania-error,#f28f79);border-left:5px solid var(--kefania-error,#f28f79);border-radius:12px;background:color-mix(in srgb,var(--kefania-error,#f28f79) 9%,transparent)}.merge-issue strong{display:block;color:var(--kefania-error,#f28f79);font-size:17px;line-height:1.35}.merge-issue p{margin:8px 0 12px;overflow-wrap:anywhere}.merge-issue button{margin-top:4px}.merge-issue .publication{margin-top:10px}.close-confirmation{position:fixed;top:20px;left:20px;right:auto;z-index:10;display:grid;place-items:center;width:36px;height:36px;margin:0;padding:0;font-size:22px;line-height:1;border-radius:10pt;letter-spacing:0;box-shadow:none;color:#fff}.close-confirmation.on-right{left:auto;right:20px}.pony-column{display:flex;flex-direction:column;min-width:0}
 /* A PR without pony research should occupy the complete content grid. */
 .layout:has(#pony-section[hidden]){grid-template-columns:minmax(0,1fr)}
@@ -414,17 +414,27 @@ function renderCIStatus(ci){
   const target=el('ci-status');
   target.hidden=!ci;
   target.setAttribute('data-state',ci?.state||'');
-  const names=Array.isArray(ci?.names)?ci.names:[];
-  const summary=names.length?(ci.summary||ci.message||''):(ci?.message||'');
-  const signature=JSON.stringify([summary,names]);
+  const checks=Array.isArray(ci?.checks)?ci.checks:
+    (Array.isArray(ci?.names)?ci.names.map(name=>({name,result:ci.state==='failed'?'failure':'pending'})):[]);
+  const summary=checks.length?(ci.summary||ci.message||''):(ci?.message||'');
+  const signature=JSON.stringify([summary,checks]);
   if(signature===lastCIStatus)return;
   lastCIStatus=signature;
   target.textContent=summary;
-  if(!names.length)return;
+  if(!checks.length)return;
   const list=document.createElement('ul');
   list.className='ci-check-list';
-  for(const name of names){
+  for(const {name,result} of checks){
     const item=document.createElement('li'),label=document.createElement('span');
+    const status=result==='success'?'passed':
+      ['neutral','skipped'].includes(result)?'skipped':
+      result==='in_progress'?'running':
+      ['queued','pending','waiting','requested'].includes(result)?'pending':
+      ['failure','error','cancelled','timed_out','action_required','stale','startup_failure'].includes(result)?'failed':'unknown';
+    const description=String(result||'unknown').replace(/_/g,' ');
+    item.setAttribute('data-check-state',status);
+    item.setAttribute('aria-label',name+' — '+description);
+    item.title=description;
     label.textContent=name;
     item.append(label);
     list.append(item);
@@ -454,7 +464,7 @@ if(state.merging){
     ?Math.max(0,Math.floor((Date.now()-started)/1000))+'s':'';
 }
 const mergeIssue=state.mergeResult||state.merging?null:state.mergeIssue;
-const ci=state.mergeResult||state.merging||mergeIssue?.kind?.startsWith('ci-')?null:state.ci;
+const ci=state.mergeResult||state.merging?null:state.ci;
 renderCIStatus(ci);
 const issueHeadings={
   conflict:'Merge conflicts need resolution',method:'Choose how to merge',
