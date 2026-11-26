@@ -118,11 +118,11 @@ async function prepareChatGPTSyncPreview(vscode, repository, { branch, head, tar
         'Return exactly one fenced json block with this shape: ' + JSON.stringify({
           version: 1, repository, results: [{ headSha: head, baseSha: target,
             resolutionHunks: [{ path: '<exact path>', hunks: [{ index: 0, choice: '<choice>' }] }],
-            decisions: [{ path: '<exact path>', groupTitle: '🛠️ Integrate the related behavior', title: '🛠️ Describe the behavior preserved',
+            decisions: [{ path: '<exact path>', groupTitle: '🛠️ Integrate the related behavior', groupDescription: 'Describe the combined change and why it matters.', title: '🛠️ Describe the behavior preserved',
               description: 'Explain what each side intended and why the chosen resolution preserves that behavior.' }] }]
         }),
         'Return every file and hunk in index order. Use custom with complete replacement text when integrating overlapping changes. Use both-ours-first or both-theirs-first only when both snippets can be kept verbatim without duplication or changing execution order incorrectly. Use ours or theirs only when that side alone implements the intended behavior. If both sides differ from base and the result exactly picks one side, include a reason on that hunk naming the other change and explaining where it is already preserved or why it should be superseded. Include a final newline when appropriate. Do not include conflict markers.',
-        'Give one decision per conflicted file. Write a specific emoji-led commit title and explain the changes from each side, the resulting behavior, and any tradeoff, including any reason for keeping one side. Do not claim that checks ran. Assign the same emoji-led groupTitle to related files so each cohesive repair category becomes one local commit before any remaining substantive upstream sync; unchanged groups and empty sync markers produce no commit.',
+        'Give one decision per conflicted file. Write a specific emoji-led commit title and explain the changes from each side, the resulting behavior, and any tradeoff, including any reason for keeping one side. Do not claim that checks ran. Assign the same emoji-led groupTitle to related files so each cohesive repair category becomes one local commit before any remaining substantive upstream sync; unchanged groups and empty sync markers produce no commit. Set groupDescription on the first decision of each group. Write one cohesive Git commit body in plain prose and keep per-file headings and rationale in the individual decisions.',
         JSON.stringify({ branch, incomingBranch: defaultBranch,
           files: [...files].map(([name, { hunks }]) => ({ path: name, hunks })) })
       ].join('\n\n'));

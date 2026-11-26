@@ -267,9 +267,10 @@ const run = promisify(execFile);
  }
  for (const checkState of ['success', 'pending', 'failure']) await successiveMerges(checkState);
  await successiveMerges('success', true);
+ for (const mode of ['patch', 'null']) await successiveMerges('success', true, mode);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
-async function successiveMerges(checkState, appMode = false) {
+async function successiveMerges(checkState, appMode = false, keepBaseMode) {
  const { createMergeBatch } = require('../../extension/merge/batch');
  const { executeResolution } = require('../../extension/merge/resolution');
  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lindsey-successive-test-'));
@@ -284,16 +285,26 @@ async function successiveMerges(checkState, appMode = false) {
    const repo = (...args) => git('-C', working, ...args);
    const file = path.join(working, 'price.js');
    await fs.writeFile(file, 'function price(n) { return n * 2; }\n');
-   await repo('add', 'price.js'); await repo('commit', '--quiet', '-m', 'Initial fixture');
+   await fs.writeFile(path.join(working, 'label.txt'), 'Original\n');
+   await repo('add', 'price.js', 'label.txt'); await repo('commit', '--quiet', '-m', 'Initial fixture');
    const initial = await repo('rev-parse', 'HEAD');
    const heads = {};
-   for (const [number, code] of [[1, 'function price(n) { return n * 3; }\n'],
+   const firstPrice = keepBaseMode === 'null' ? 'function price(n, tax = 0) { return n * 3 + tax; }\n'
+     : 'function price(n) { return n * 3; }\n';
+   for (const [number, code] of [[1, firstPrice],
      [2, 'function price(n, tax = 0) { return n * 2 + tax; }\n'], [3, null]]) {
      await repo('checkout', '--quiet', '-B', 'feature-' + number, initial);
      if (number === 3) {
        await fs.writeFile(path.join(working, 'extra.txt'), 'Independent third feature\n');
        await repo('add', 'extra.txt');
      } else await fs.writeFile(file, code);
+     if (keepBaseMode === 'patch' && number <= 2) {
+       await fs.writeFile(path.join(working, 'label.txt'), number === 1 ? 'Incoming label\n' : 'PR label\n');
+     }
+     if (keepBaseMode && number === 2) {
+       await fs.writeFile(path.join(working, 'retained.txt'), 'Independent PR change\n');
+       await repo('add', 'retained.txt');
+     }
      if (number === 1) await fs.writeFile(path.join(working, 'main-only.txt'), 'Independent incoming main work\n');
      if (number === 1) await repo('add', 'main-only.txt');
      await repo('commit', '--quiet', '-am', 'Feature fixture\n\nCo-authored-by: Codex <noreply@openai.com>');
@@ -397,15 +408,19 @@ async function successiveMerges(checkState, appMode = false) {
          getAppActor: async()=>appMode ? { api, gitToken:async()=> 'fixture-app-token', author:bot } : null,
          git: localGit, publicationDirectory:path.join(root,'receipts'), checkOptions: { timeoutMs: 0 },
          temporaryDirectory: () => fs.mkdtemp(path.join(root, 'executor-')) }) }) });
-   const submit = async (url, number, patch = null) => {
+   const submit = async (url, number, patch = null, keepPath) => {
      const launch = new URLSearchParams(new URL(url).hash.slice(1));
      const callback = launch.get('return_to');
      const response = await fetch(callback, { method: 'POST', headers: {
        Origin: new URL(callback).origin, 'Content-Type': 'application/json' }, body: JSON.stringify({
        version: 1, repository: 'owner/repo', results: [{ number, headSha: heads[number], baseSha: await branch('main'),
          assistantModelNumber: '6.1',
-         patch, ...(patch ? { decisions: [{ path: 'price.js', title: '🛠️ Retain multiplier three while adding tax',
-           description: 'Main corrected the multiplier. Preserve that correction while adding the PR’s optional tax argument; do not restore multiplier two.' }] } : {}),
+         patch, decisions: [
+           ...(patch ? [{ path: 'price.js', title: '🛠️ Retain multiplier three while adding tax',
+             description: 'Main corrected the multiplier. Preserve that correction while adding the PR’s optional tax argument.' }] : []),
+           ...(keepPath ? [{ path: keepPath, keepBase: true, title: '🛠️ Keep the incoming behavior',
+             description: 'The incoming file already implements the intended behavior.' }] : [])
+         ],
          explanation: number === 1 ? 'Correct the multiplier to three.' : 'Keep multiplier three and add optional tax.' }] }) });
      assert.equal(response.status, 200);
      return response.json();
@@ -416,10 +431,11 @@ async function successiveMerges(checkState, appMode = false) {
      'Squash publication leaves the original PR branch intact');
    const conflict = await submit(first.continueUrl, 2);
    assert.equal(conflict.results[0].status, 'needs_resolution');
-   assert.deepEqual(conflict.results[0].conflictPaths, ['price.js']);
+   assert.deepEqual(conflict.results[0].conflictPaths.sort(), keepBaseMode === 'patch' ? ['label.txt', 'price.js'] : ['price.js']);
    assert.equal(await branch('feature-2'), heads[2], 'A detected conflict does not push a partial tree');
    const patch = 'diff --git a/price.js b/price.js\n--- a/price.js\n+++ b/price.js\n@@ -1 +1 @@\n-function price(n) { return n * 3; }\n+function price(n, tax = 0) { return n * 3 + tax; }\n';
-   const final = await submit(conflict.continueUrl, 2, patch);
+   const final = await submit(conflict.continueUrl, 2, keepBaseMode === 'null' ? null : patch,
+     keepBaseMode === 'patch' ? 'label.txt' : keepBaseMode === 'null' ? 'price.js' : undefined);
     assert.equal(final.results[0].status, 'merged', JSON.stringify(final));
     await git('--git-dir='+remote,'merge-base','--is-ancestor',heads[2],await branch('feature-2'));
     assert(merged.has(2),'GitHub confirms the PR as merged through its merge API');
@@ -432,6 +448,13 @@ async function successiveMerges(checkState, appMode = false) {
    const code = await git('--git-dir=' + remote, 'show', 'main:price.js');
    const price = require('node:vm').runInNewContext(code + '; price;');
    assert.equal(price(2), 6); assert.equal(price(2, 1), 7);
+   if (keepBaseMode) {
+     const keptPath = keepBaseMode === 'patch' ? 'label.txt' : 'price.js';
+     assert.equal(await git('--git-dir=' + remote, 'rev-parse', 'main:' + keptPath),
+       await git('--git-dir=' + remote, 'rev-parse', first.results[0].sha + ':' + keptPath),
+       'The verified squash retains the exact incoming blob');
+     assert.equal(await git('--git-dir=' + remote, 'show', 'main:retained.txt'), 'Independent PR change');
+   }
    assert.equal(await git('--git-dir=' + remote, 'show', '-s', '--format=%an <%ae>', 'main'),
      'John Wooten <human@example.test>', 'The original human stays the squash author in App mode');
    if(appMode) {
