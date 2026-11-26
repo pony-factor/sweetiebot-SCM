@@ -463,6 +463,11 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.deepEqual(rows().map(item=>item.textContent),allChecks.map(check=>check.name),'Completed checks remain visible');
   assert.deepEqual(rows().map(item=>item['data-check-state']),['passed','passed','passed','skipped']);
+  layoutState={...layoutState,merging:true,mergeProgress:{stage:'checks-polled',ci:{state:'pending',message:'Waiting for CI checks.',checks:allChecks}}};
+  await context.refresh();
+  assert.equal(getElementById('ci-status').hidden,false,'Live merge polling displays individual checks');
+  assert.deepEqual(rows().map(item=>item['data-check-state']),['passed','running','pending','skipped']);
+  layoutState={...layoutState,merging:false,mergeProgress:undefined};
   assert.equal(getElementById('merge-issue').hidden,true);
   layoutState={errors:{merge:'Resolve the overlapping edits.'},result:{number:479,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/479'},mergeIssue:{kind:'conflict',message:'Resolve the overlapping edits.'},mergeHelpAvailable:true};
   await context.refresh();
