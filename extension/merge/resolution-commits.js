@@ -20,6 +20,7 @@ function decisionTitle(value, field) {
 function validateDecisions(value = []) {
   if (!Array.isArray(value) || value.length > 512) throw Error('Invalid per-file resolution decisions.');
   const seen = new Set();
+  const groupDescriptions = new Map();
   return value.map((item, index) => {
     const decision = `Resolution decision ${index + 1}`;
     if (!safePatchPath(item?.path)) throw Error(`${decision} needs a safe repository-relative path.`);
@@ -30,12 +31,26 @@ function validateDecisions(value = []) {
         /\x00/.test(item.description) || /^Co-authored-by:/im.test(item.description)) {
       throw Error(`${decision} description needs an explanation of 1–4000 characters without a co-author trailer.`);
     }
+    let groupDescription;
+    if (item.groupDescription !== undefined) {
+      if (typeof item.groupDescription !== 'string' || !item.groupDescription.trim() || item.groupDescription.length > 4000 ||
+          /\x00/.test(item.groupDescription) || /^Co-authored-by:/im.test(item.groupDescription)) {
+        throw Error(`${decision} groupDescription needs a commit body of 1–4000 characters without a co-author trailer.`);
+      }
+      groupDescription = item.groupDescription.trim();
+      const group = groupTitle || title;
+      if (groupDescriptions.has(group) && groupDescriptions.get(group) !== groupDescription) {
+        throw Error(`${decision} must use a single shared commit body for the repair group.`);
+      }
+      groupDescriptions.set(group, groupDescription);
+    }
     if (item.keepBase !== undefined && typeof item.keepBase !== 'boolean') {
       throw Error(`${decision} keepBase must be true or false.`);
     }
     seen.add(item.path);
     return { path: item.path, title, description: item.description.trim(),
       ...(groupTitle !== undefined ? { groupTitle } : {}),
+      ...(groupDescription !== undefined ? { groupDescription } : {}),
       ...(item.keepBase ? { keepBase: true } : {}) };
   });
 }
@@ -92,20 +107,20 @@ async function createResolutionCommits({ git, directory, headSha, baseSha, final
         await git('update-index', '--add', '--cacheinfo', match[1], match[2], decision.path);
       } else await git('update-index', '--force-remove', '--', decision.path);
       const nextTree = await git('write-tree');
-      if (nextTree !== stagedTree) changed.push(decision.path);
+      if (nextTree !== stagedTree) changed.push(decision);
       stagedTree = nextTree;
     }
     // An unchanged alias or keepBase decision is evidence, not a new commit.
     if (stagedTree === currentTree) continue;
-    const description = group.length === 1 ? group[0].description :
-      group.map(decision => decision.path + ' — ' + decision.title + '\n' + decision.description).join('\n\n');
+    const description = group.find(decision => decision.groupDescription)?.groupDescription ??
+      [...new Set(changed.map(decision => decision.description))].join('\n\n');
     // If this category completes the final tree, it is the last substantive
     // commit. Record incoming ancestry here rather than adding an empty marker.
     tip = await commit(stagedTree, tip, title + '\n\n' + description,
       preserveMergeAncestry && stagedTree === finalTree ? baseSha : undefined);
     currentTree = stagedTree;
     const entry = { ...(group.length === 1 ? group[0] : {}), title, description,
-      paths: changed, decisions: group, sha: tip };
+      paths: changed.map(decision => decision.path), decisions: group, sha: tip };
     commits.push(entry);
     try { onCommit(entry); } catch { /* Reporting cannot alter the prepared tree. */ }
   }
