@@ -135,10 +135,16 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal(merges,1);
     assert.equal((await (await fetch(url+'/state')).json()).mergeResult.merged,true);
     const progressId='12121212-3434-4333-8444-121212121212';
-    let releaseMerge;
+    let releaseMerge, releaseChecks, releasePassed;
     const mergeGate=new Promise(resolve=>{releaseMerge=resolve;});
+    const checksGate=new Promise(resolve=>{releaseChecks=resolve;});
+    const passedGate=new Promise(resolve=>{releasePassed=resolve;});
     handoff.register(progressId,{onMerge:async (_published,report)=>{
       report({stage:'reading-pr'});
+      await checksGate;
+      report({stage:'checks-polled',sha:'a'.repeat(40),state:'pending',hasChecks:true,evidence:[{name:'Build',result:'success'},{name:'Test',result:'in_progress'}]});
+      await passedGate;
+      report({stage:'checks-polled',sha:'a'.repeat(40),state:'passed',hasChecks:true,evidence:[{name:'Build',result:'success'},{name:'Test',result:'success'}]});
       await mergeGate;
       report({stage:'verifying-merge'});
       return {merged:true,sha:'d'.repeat(40)};
@@ -159,6 +165,20 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal(inFlight.mergeProgress.stage,'reading-pr','A real merge stage is visible while GitHub work is pending');
     assert.equal(typeof inFlight.mergeProgress.startedAt,'number');
     assert.equal((await progressPost('/merge')).status,409,'Progress must not permit a duplicate merge');
+    releaseChecks();
+    for(let attempt=0;attempt<30;attempt++){
+      inFlight=await (await fetch(progressUrl+'/state')).json();
+      if(inFlight.mergeProgress?.ci?.state==='pending')break;
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.deepEqual(inFlight.mergeProgress.ci.checks.map(check=>check.result),['success','in_progress']);
+    releasePassed();
+    for(let attempt=0;attempt<30;attempt++){
+      inFlight=await (await fetch(progressUrl+'/state')).json();
+      if(inFlight.mergeProgress?.ci?.state==='passed')break;
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.deepEqual(inFlight.mergeProgress.ci.checks.map(check=>check.result),['success','success']);
     releaseMerge();
     assert.equal((await pendingMerge).status,200);
     const completedProgress=await (await fetch(progressUrl+'/state')).json();
