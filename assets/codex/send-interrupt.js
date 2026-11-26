@@ -34,6 +34,10 @@
         if (doc && typeof doc.textBetween === 'function') return doc.textBetween(0, doc.content.size, '\n');
         return editor && 'value' in editor ? editor.value : (editor?.innerText ?? editor?.textContent ?? '');
     }
+    function runInProgress(props) {
+        // Current Codex exposes turn state on the composer footer.
+        return props?.turn?.serverInProgress ?? props?.isResponseInProgress;
+    }
     function nativeRun(button) {
         const key = Object.keys(button || {}).find(key => key.startsWith('__reactFiber$'));
         let fiber = key && button[key];
@@ -44,7 +48,7 @@
         if (top.stateNode?.current && top.stateNode.current !== top) fiber = fiber.alternate;
         for (let depth = 0; fiber && depth < 40; fiber = fiber.return, depth++) {
             const props = fiber.memoizedProps;
-            if (typeof props?.isResponseInProgress === 'boolean'
+            if (typeof runInProgress(props) === 'boolean'
                 && typeof props.onStop === 'function') return props;
         }
         return null;
@@ -56,7 +60,7 @@
             if (!editor) continue;
             const stop = [...root.querySelectorAll('button')].find(candidate => composerControl(candidate) && enabled(candidate) && STOP.test(label(candidate)));
             if (stop && stop !== button) return {root, editor, stop};
-            if ((nativeRun(button) || nativeRun(editor))?.isResponseInProgress) return {root, editor, nativeButton: button};
+            if (runInProgress(nativeRun(button) || nativeRun(editor))) return {root, editor, nativeButton: button};
         }
         return null;
     }
@@ -65,7 +69,7 @@
         const {root, editor, stop, nativeButton} = surface;
         const draft = readText(editor);
         const run = nativeButton && (nativeRun(nativeButton) || nativeRun(editor));
-        if (!draft.trim() || (nativeButton ? !run?.isResponseInProgress : !enabled(stop))) return false;
+        if (!draft.trim() || (nativeButton ? !runInProgress(run) : !enabled(stop))) return false;
         sending = root;
         try {
             if (nativeButton) await run.onStop();
@@ -77,7 +81,7 @@
                 const buttons = [...root.querySelectorAll('button')].filter(composerControl);
                 if (nativeButton) {
                     const currentRun = buttons.map(nativeRun).find(Boolean) || nativeRun(editor);
-                    if (!currentRun || currentRun.isResponseInProgress) continue;
+                    if (!currentRun || runInProgress(currentRun)) continue;
                 }
                 if (buttons.some(candidate => enabled(candidate) && STOP.test(label(candidate)))) continue;
                 const send = buttons.find(isImmediateSend);

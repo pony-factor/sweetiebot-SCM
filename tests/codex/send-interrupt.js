@@ -56,16 +56,20 @@ async function check() {
     queue.parentElement = root;
     let nativeStops = 0, queued = 0;
     const props = {
-        isResponseInProgress: true,
-        onStop() { nativeStops++; props.isResponseInProgress = false; queue.name = 'Send message'; },
+        turn: {serverInProgress: true},
+        onStop() { nativeStops++; props.turn = {serverInProgress: false}; queue.name = 'Send message'; },
     };
-    queue.__reactFiber$fixture = {memoizedProps: props};
+    queue.__reactFiber$fixture = {return: {memoizedProps: props}};
     queue.click = () => {queued++;};
     buttons = [queue];
     editor.value = 'interrupt with this draft';
     assert.equal(hooks.controls(queue).nativeButton, queue);
     assert.equal(hooks.isSend(button('Steer')), true);
-    assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), true);
+    const ev = {isTrusted:true, defaultPrevented:false, button:0, detail:1,
+        target:{closest:()=>queue}, preventDefault(){prevented++;}, stopImmediatePropagation(){}};
+    hooks.onClick(ev);
+    for (let i=0; i<10 && !queued; i++) await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(prevented, 3, 'the composer footer state intercepts the native Queue click');
     assert.equal(nativeStops, 1);
     assert.equal(queued, 1);
     assert.equal(hooks.controls(queue), null, 'idle Send keeps native behavior');
@@ -77,14 +81,14 @@ async function check() {
     stale.alternate = current;
     stale.stateNode.current = current;
     queue.__reactFiber$fixture = stale;
-    props.isResponseInProgress = true;
+    props.turn = {serverInProgress: true};
     assert.equal(hooks.nativeRun(queue), props);
 
-    props.onStop = () => { props.isResponseInProgress = false; };
+    props.onStop = () => { props.turn = {serverInProgress: false}; };
     assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
     assert.equal(queued, 1, 'an idle but still Queue-labelled control is never replayed');
     assert.equal(editor.value, 'interrupt with this draft');
-    props.isResponseInProgress = true;
+    props.turn = {serverInProgress: true};
     const rail = button('Steer');
     rail.closest = () => ({});
     assert.equal(hooks.isSend(rail), false, 'queued-message row actions stay native');
@@ -92,12 +96,12 @@ async function check() {
     assert.equal(hooks.isImmediateSend(button('Queue')), false);
     assert.equal(hooks.isImmediateSend(button('Send message')), true);
 
-    props.onStop = () => { editor.value = 'new user edit'; props.isResponseInProgress = false; };
+    props.onStop = () => { editor.value = 'new user edit'; props.turn = {serverInProgress: false}; };
     assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
     assert.equal(queued, 1, 'never submit a draft edited during interruption');
     assert.equal(editor.value, 'new user edit');
 
-    props.isResponseInProgress = true;
+    props.turn = {serverInProgress: true};
     props.onStop = () => {};
     assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
     assert.equal(queued, 1, 'never queue when interruption does not finish');
@@ -105,6 +109,10 @@ async function check() {
     props.onStop = async () => { throw new Error('stop unavailable'); };
     assert.equal(await hooks.interruptAndSend(hooks.controls(queue)), false);
     assert.equal(editor.value, 'new user edit', 'preserve the draft if stop fails');
+
+    const legacy = {isResponseInProgress: true, onStop() {}};
+    queue.__reactFiber$fixture = {memoizedProps: legacy};
+    assert.equal(hooks.controls(queue).nativeButton, queue, 'older composer props still work');
 
     // Enter dispatches a keyboard-generated click (detail 0), not a pointer click.
     // Its native queue submission must not be intercepted.
