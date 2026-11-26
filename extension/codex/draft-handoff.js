@@ -109,7 +109,17 @@ async function createDraftHandoff(publish) {
         const result = await merge(state.result, detail => {
           if (!state.merging || typeof detail?.stage !== 'string') return;
           const stage = /^[a-z-]{1,48}$/.test(detail.stage) ? detail.stage : 'working';
-          state.mergeProgress = { stage, checksState: stage === 'checks-polled' ? detail.state : undefined, startedAt: state.mergeProgress.startedAt, updatedAt: Date.now() };
+          const prior = state.mergeProgress;
+          const sameHead = !detail.sha || detail.sha === prior.checkHead;
+          const ci = stage === 'checks-polled' && Array.isArray(detail.evidence)
+            ? { state: detail.state, message: ({
+                pending: 'CI checks are still running or queued.',
+                failed: 'CI checks failed.',
+                passed: detail.hasChecks === false ? 'GitHub has reported no CI checks.' : 'CI checks passed.'
+              })[detail.state] || 'Checking CI status…', checks: detail.evidence }
+            : sameHead ? prior.ci : undefined;
+          state.mergeProgress = { stage, checksState: stage === 'checks-polled' ? detail.state : undefined,
+            startedAt: prior.startedAt, updatedAt: Date.now(), checkHead: detail.sha || prior.checkHead, ci };
         });
         if (!result?.merged && !result?.published) throw new Error('GitHub did not confirm the merge. Check the pull request.');
         state.mergeResult = result;
