@@ -5,9 +5,9 @@ const path = require('node:path');
 const { constants } = require('node:fs');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { createWorkspaceDirectory, isWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { createWorkspaceDirectory, isWorkspaceDirectory, workspaceFileName } = require('../workspace/layout');
 const { randomBytes } = require('node:crypto');
-const { copyRemotes } = require('./new-workspace');
+const { copyRemotes } = require('../new-workspace');
 
 const OPEN_EXPERIMENT_COMMAND = 'sweetiebot.openExperimentWorkspace';
 const EXPERIMENT_PARENT = '/var/tmp/Sweetiebot';

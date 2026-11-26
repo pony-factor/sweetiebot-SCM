@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { recoveryPlan } = require('../../extension/commits/finalized-commit-recovery');
+const { recoveryPlan } = require('../../extension/commits/recovery/finalized');
 const { autoPullClean } = require('../../extension/branches/actions');
 
 async function run() {

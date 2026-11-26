@@ -340,7 +340,7 @@ def runtime():
             Path(temporary).unlink(missing_ok=True)
     pony_source = Path(__file__).with_name('pony-git-publish.js')
     if not pony_source.exists():
-        pony_source = Path(__file__).resolve().parent.parent / 'extension' / 'commits' / 'pony-git-publish.js'
+        pony_source = Path(__file__).resolve().parent.parent / 'extension' / 'commits' / 'pony' / 'publish.js'
     if pony_source.resolve() != (target / pony_source.name).resolve():
         fd, temporary = tempfile.mkstemp(dir=target)
         try:
@@ -425,7 +425,7 @@ def work_pony(directory):
                     return
                 helper = Path(__file__).with_name('pony-git-publish.js')
                 if not helper.exists():
-                    helper = Path(__file__).resolve().parent.parent / 'extension' / 'commits' / 'pony-git-publish.js'
+                    helper = Path(__file__).resolve().parent.parent / 'extension' / 'commits' / 'pony' / 'publish.js'
                 env = os.environ.copy()
                 env.pop('GIT_INDEX_FILE', None)
                 env['GIT_TERMINAL_PROMPT'] = '0'

@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { readGitConfig, requestJson } = require('../search/ollama');
+const { readGitConfig, requestJson } = require('../../search/ollama');
 
 const SPELLCHECK_MODEL = 'qwen2.5:3b';
 const MAX_FILES = 80;

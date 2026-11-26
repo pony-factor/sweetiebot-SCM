@@ -5,8 +5,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { renderSpellcheckDiff, spellcheckDiffFiles } = require('./spellcheck-diff');
-const { resolvePythonExecutable, pythonLaunchError } = require('../ui/python-runtime');
+const { renderSpellcheckDiff, spellcheckDiffFiles } = require('./diff');
+const { resolvePythonExecutable, pythonLaunchError } = require('../../ui/python-runtime');
 
 const execFileAsync = promisify(execFile);
 const NOTICE_NAME = 'sweetiebot-spellcheck-ready.json';
@@ -59,9 +59,9 @@ function spellcheckMessage(paths, email = DEFAULT_EMAIL, model = '', title = '')
 }
 
 async function generateReviewedCommitMessage(cwd, paths) {
-  const bundled = path.join(__dirname, '../ai-commit.py');
+  const bundled = path.join(__dirname, '../../ai-commit.py');
   const script = await fs.access(bundled).then(() => bundled,
-    () => path.join(__dirname, '../../scripts/ai-commit.py'));
+    () => path.join(__dirname, '../../../scripts/ai-commit.py'));
   // The normal generator controls its own retries and model selection.
   const {stdout} = await execFileAsync(resolvePythonExecutable(),
     [script, '--spellcheck-generate-message', JSON.stringify({paths})],
@@ -226,9 +226,9 @@ async function undoSpellcheckChange(vscode, sessionId, changeId) {
 }
 
 async function normalizeReviewedWhitespace(root, paths) {
-  const bundled = path.join(__dirname, '../local-codex-commit.py');
+  const bundled = path.join(__dirname, '../../local-codex-commit.py');
   const script = await fs.access(bundled).then(() => bundled,
-    () => path.join(__dirname, '../../scripts/local-codex-commit.py'));
+    () => path.join(__dirname, '../../../scripts/local-codex-commit.py'));
   await new Promise((resolve, reject) => {
     const child = execFile(resolvePythonExecutable(), [script, '--normalize-reviewed-whitespace'],
       {cwd: root, timeout: 30000}, (error, _stdout, stderr) => {

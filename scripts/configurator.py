@@ -988,8 +988,8 @@ def _open_kefania_setup() -> dict[str, object]:
     directory = Path(__file__).resolve().parent
     # The installed companion keeps codex beside configurator.py; the source
     # checkout keeps it under extension/ beside scripts/.
-    launchers = [directory / "codex" / "kefania-setup.js",
-                 directory.parent / "extension" / "codex" / "kefania-setup.js"]
+    launchers = [directory / "codex" / "kefania" / "setup.js",
+                 directory.parent / "extension" / "codex" / "kefania" / "setup.js"]
     launcher = next((candidate for candidate in launchers if candidate.is_file()), None)
     if launcher is None:
         raise RuntimeError("Kefania setup launcher is missing. Rebuild Sweetiebot, then retry.")

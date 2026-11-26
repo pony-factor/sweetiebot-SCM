@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { createWorkspaceDirectory, workspaceFileName, isWorkspaceDirectory } =
-  require('../../extension/branches/workspace-layout');
+  require('../../extension/branches/workspace/layout');
 
 (async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-workspace-layout-'));

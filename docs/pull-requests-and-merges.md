@@ -41,4 +41,4 @@ Complete text patches remain supported when a compact hunk is unsuitable. Resour
 
 In optional separate-App mode, Lindsey may read PRs/checks/diffs via a repository-scoped installation token; write operations, merges, pushes and reactions still require appropriately authorized accounts. Missing credentials **fail closed** without impersonation. See [App identity configuration](distinct-github-apps.md).
 
-Source: [PR flow](../extension/github/pull-request.js), [Kefania runner](../extension/codex/kefania-runner.js), [merge batch](../extension/merge/batch.js), [dashboard](../extension/merge/dashboard.js), [review reply](../extension/codex/ai-review-reply.js). See [troubleshooting](troubleshooting.md).
+Source: [PR flow](../extension/github/pull-request.js), [Kefania runner](../extension/codex/kefania/runner.js), [merge batch](../extension/merge/batch.js), [dashboard](../extension/merge/dashboard.js), [review reply](../extension/codex/ai-review-reply.js). See [troubleshooting](troubleshooting.md).

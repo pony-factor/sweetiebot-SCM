@@ -54,7 +54,7 @@ async function kefaniaUpstreamAppAccess(repository) {
 
 // An upstream failure is not permission to publish to a different repository.
 async function chooseForkPullRequestTarget(vscode, repositoryPath, target, branch, {
-  run = require('../codex/kefania-runner').runKefania,
+  run = require('../codex/kefania/runner').runKefania,
   checkApp = kefaniaUpstreamAppAccess, priorDecision, skipProbe = false
 } = {}) {
   if (!target.fork) return target;

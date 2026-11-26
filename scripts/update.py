@@ -99,7 +99,7 @@ def installed_sources_match(candidate, extensions_dir):
                 not os.access(target, os.X_OK) or target.read_bytes() != source.read_bytes()):
             return False
     legacy = Path.home() / ".local/bin/git-auto-title"
-    pony_source = candidate / "extension/commits/pony-git-publish.js"
+    pony_source = candidate / "extension/commits/pony/publish.js"
     pony_target = wrapper.with_name("pony-git-publish.js")
     if pony_source.is_file() and (pony_target.is_symlink() or not pony_target.is_file()
             or pony_target.read_bytes() != pony_source.read_bytes()):

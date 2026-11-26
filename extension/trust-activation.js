@@ -1,7 +1,7 @@
 'use strict';
 
 const vscode = require('vscode');
-const { registerIndependentWorkspaceTrustCommand, promptForIndependentWorkspaceTrust } = require('./branches/workspace-trust');
+const { registerIndependentWorkspaceTrustCommand, promptForIndependentWorkspaceTrust } = require('./branches/workspace/trust');
 let trustedExtension;
 
 async function activate(context) {

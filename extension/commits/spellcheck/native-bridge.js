@@ -4,7 +4,7 @@
 // preload is the only intended client; never forward ChatGPT cookies or tokens.
 const http = require('node:http');
 const {randomBytes, timingSafeEqual} = require('node:crypto');
-const {normalizeChatgptProjectUrl, resolveChatgptReviewProjectUrl} = require('../codex/chatgpt-project');
+const {normalizeChatgptProjectUrl, resolveChatgptReviewProjectUrl} = require('../../codex/chatgpt-project');
 
 const ADDRESS = '127.0.0.1';
 const MAX_INPUT = 60000;

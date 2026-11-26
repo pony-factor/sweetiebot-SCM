@@ -55,7 +55,7 @@ async function createDraftHandoff(publish) {
   // cannot prevent unrelated SCM commands from registering during activation.
   const page = readFileSync(join(__dirname, '../ui/draft-confirmation.html'), 'utf8')
     .replace('__MARKDOWN_RENDERER__', readFileSync(join(__dirname, '../merge/dashboard-markdown.js'), 'utf8'));
-  const { normalizeKefaniaClosePosition } = require('./kefania-close-position');
+  const { normalizeKefaniaClosePosition } = require('./kefania/close-position');
   const drafts = new Map();
   async function publishDraft(id, state) {
     if (state.result) return state.result;

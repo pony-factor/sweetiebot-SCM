@@ -6,9 +6,9 @@ const { execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { promisify } = require('node:util');
-const { independentWorkspaceParent } = require('./workspace-trust');
-const { isWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
-const { MANIFEST, ACTIVATED, SESSION_PREFIX } = require('./workspace-prune');
+const { independentWorkspaceParent } = require('./trust');
+const { isWorkspaceDirectory, workspaceFileName } = require('./layout');
+const { MANIFEST, ACTIVATED, SESSION_PREFIX } = require('./prune');
 
 const exec = promisify(execFile);
 const HEARTBEAT_MS = 60 * 1000;
@@ -21,7 +21,7 @@ function scheduleClosedWorktreeCleanup(groups) {
     // Deactivation also happens on reload: do not detach until a delayed,
     // separately revalidated check confirms no destination window exists.
     const child = spawn(process.execPath,
-      [path.join(__dirname, 'closed-worktree.js'), ...groups], {
+      [path.join(__dirname, '../closed-worktree.js'), ...groups], {
         detached: true, stdio: 'ignore',
         env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
       });

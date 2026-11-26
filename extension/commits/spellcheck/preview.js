@@ -1,7 +1,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
-const { resolvePythonExecutable, pythonLaunchError } = require('../ui/python-runtime');
+const { resolvePythonExecutable, pythonLaunchError } = require('../../ui/python-runtime');
 
 function runSpellcheck(script, cwd, subject, { spellcheck = true, professionalEmoji = false, manual = false } = {}) {
   return new Promise((resolve, reject) => {

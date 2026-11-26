@@ -4,7 +4,7 @@
 // committed, published, and independently checked against the review text.
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { resolveCommitRepository } = require('../commits/codex-commit');
+const { resolveCommitRepository } = require('../commits/codex/manual');
 const { githubSession } = require('../github/session');
 const runFile = promisify(execFile);
 const STATE_KEY = 'sweetiebot.aiReviewReplyPending.v1';

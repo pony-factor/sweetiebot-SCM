@@ -4,8 +4,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify, isDeepStrictEqual } = require('node:util');
-const { independentWorkspaceParent } = require('./workspace-trust');
-const { isWorkspaceDirectory, workspaceFileName } = require('./workspace-layout');
+const { independentWorkspaceParent } = require('./trust');
+const { isWorkspaceDirectory, workspaceFileName } = require('./layout');
 
 const execFileAsync = promisify(execFile);
 const IDLE_MS = 10 * 60 * 1000;

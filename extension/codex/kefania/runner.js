@@ -1,9 +1,9 @@
 'use strict';
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { resolveKefaniaFile } = require('./kefania-paths');
-const { createPonyPublishQueue } = require('../commits/pony-publish-queue');
-const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../github/app-identity');
+const { resolveKefaniaFile } = require('./paths');
+const { createPonyPublishQueue } = require('../../commits/pony/queue');
+const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../../github/app-identity');
 
 function missingAppRepositoryAccess(error) {
   return error?.code === 'SWEETIEBOT_APP_REPOSITORY_ACCESS' ||

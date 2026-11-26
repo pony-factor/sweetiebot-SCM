@@ -6,7 +6,7 @@ const { EventEmitter } = require('node:events');
 const path = require('node:path');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { launchKefaniaSetup, probeSetup } = require('../../extension/codex/kefania-setup');
+const { launchKefaniaSetup, probeSetup } = require('../../extension/codex/kefania/setup');
 
 const url = 'http://127.0.0.1:8766/';
 

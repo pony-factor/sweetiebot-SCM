@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { registerCommitShortcut } = require('../../extension/commits/shortcut');
-const { resolveCommitRepository } = require('../../extension/commits/codex-commit');
+const { resolveCommitRepository } = require('../../extension/commits/codex/manual');
 const manifest = require('../../extension/package.json');
 
 (async () => {

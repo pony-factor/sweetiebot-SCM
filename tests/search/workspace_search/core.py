@@ -41,7 +41,7 @@ class WorkspaceSearchInstallerTests(unittest.TestCase):
     def test_pony_publisher_is_bundled_beside_background_worker(self):
         files = workspace_search.source_files()
         self.assertEqual(files[Path('pony-git-publish.js')].read_bytes(),
-                         (Path(__file__).resolve().parent.parent.parent.parent / 'extension/commits/pony-git-publish.js').read_bytes())
+                         (Path(__file__).resolve().parent.parent.parent.parent / 'extension/commits/pony/publish.js').read_bytes())
 
     def test_bundled_git_wrapper_can_switch_branches(self):
         with tempfile.TemporaryDirectory() as tmp:

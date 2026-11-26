@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { createPushErrorHandler, registerPushRecovery } = require('../../extension/commits/push-recovery');
+const { createPushErrorHandler, registerPushRecovery } = require('../../extension/commits/recovery/push');
 
 const rejected = reason => Object.assign(new Error('Git error'), {
   gitErrorCode: 'PushRejected', stderr: ` ! [rejected] main -> main (${reason})`

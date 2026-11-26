@@ -42,7 +42,7 @@ async function run() {
     clearTimeout: () => {},
     require(name) {
       if (name === 'child_process') return { spawn };
-      if (name === '../ui/python-runtime') {
+      if (name === '../../ui/python-runtime') {
         return {
           resolvePythonExecutable: () => '/resolved/python3',
           pythonLaunchError: error => error
@@ -52,7 +52,7 @@ async function run() {
     }
   });
   vm.runInContext(
-    fs.readFileSync(require.resolve('../../extension/commits/spellcheck-preview.js'), 'utf8'),
+    fs.readFileSync(require.resolve('../../extension/commits/spellcheck/preview.js'), 'utf8'),
     sandbox
   );
 

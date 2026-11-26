@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { publishPonyProfile, pendingPonyProfiles } = require('../../extension/commits/pony-git-publish');
-const { createPonyPublishQueue, resolvePonyWorkerScript } = require('../../extension/commits/pony-publish-queue');
+const { publishPonyProfile, pendingPonyProfiles } = require('../../extension/commits/pony/publish');
+const { createPonyPublishQueue, resolvePonyWorkerScript } = require('../../extension/commits/pony/queue');
 
 const pony = { packId: 'g4-mares', slug: 'stardom' };
 const stored = 'g4-mares/stardom.json';

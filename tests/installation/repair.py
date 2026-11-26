@@ -114,7 +114,7 @@ class RepairTests(unittest.TestCase):
             self.assertIn('/* sweetiebot-repository-limit:start */', git_extension.read_text())
             destination = workspace_search.extension_destination(extensions)
             helper = wrapper_path.with_name(wrapper_path.name + '-spellcheck.py')
-            notice = destination / 'commits' / 'post-commit-spellcheck-notice.js'
+            notice = destination / 'commits' / 'spellcheck' / 'post-commit-notice.js'
             # A later startup must repair these even when the app patch is current.
             helper.write_text('stale helper')
             notice.write_text('stale notice')
@@ -122,7 +122,7 @@ class RepairTests(unittest.TestCase):
                 install.main()
                 write.assert_not_called()
             self.assertEqual(helper.read_bytes(), (install.HERE / 'post-commit-spellcheck.py').read_bytes())
-            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / 'commits' / notice.name).read_bytes())
+            self.assertEqual(notice.read_bytes(), (workspace_search.SOURCE / 'commits' / 'spellcheck' / notice.name).read_bytes())
             self.assertFalse(install.sync_ai_wrapper(check=True, destination=wrapper_path))
             self.assertFalse(workspace_search.sync_extension(check=True, settings=dict(toolkit_settings.DEFAULT_SETTINGS)))
             picker.assert_not_called()

@@ -16,14 +16,14 @@ const { createResolutionCommits, validateDecisions } = require('../merge/resolut
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name-selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./strip');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
-const { recoveryPlan } = require('../commits/finalized-commit-recovery');
+const { recoveryPlan } = require('../commits/recovery/finalized');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
 const { routeBranch, routeExistingBranchWorktree, recordDeletedBranchReturn } = require('./shared-main');
 const { createStackedBranch } = require('./stacked-branch');
 const { worktreeLocations } = require('./worktree-registry');
 const prepared = require('./prepared-worktrees');
 const { isPullRequestReviewBranch } = require('./publish-policy');
-const { findExperimentWorkspace, trashExperimentWorkspace } = require('./experiment-workspace');
+const { findExperimentWorkspace, trashExperimentWorkspace } = require('./experiment/workspace');
 
 const repositoryOperations = new WeakMap();
 const activeCommits = new WeakMap();
@@ -1616,7 +1616,7 @@ function registerBranchCommands(vscode, context) {
         if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
             && isPullRequestReviewBranch(options.branch)) return false;
         if (['sweetiebot.publishBranch', 'sweetiebot.pushCommittedBranch'].includes(command) && options.automatic === true
-            && await require('./experiment-policy').deferExperimentPublish(repository.rootUri?.fsPath)) return false;
+            && await require('./experiment/policy').deferExperimentPublish(repository.rootUri?.fsPath)) return false;
         const commitDraftValue = repository.inputBox?.value;
         if (command === 'sweetiebot.createBranch' && repository.rootUri?.fsPath)
           await require('./commit-drafts').preserveCommitDraft(vscode, repository.rootUri.fsPath, undefined, commitDraftValue);

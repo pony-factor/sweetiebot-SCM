@@ -1,6 +1,6 @@
 'use strict';
 
-const { coauthorTrailer, readCommitGitSetting } = require('./codex-commit');
+const { coauthorTrailer, readCommitGitSetting } = require('./manual');
 
 const AUTO_COMMIT_INTERVAL_MS = 30_000;
 const AUTO_COMMIT_KEY_PREFIX = 'sweetiebot.autoCommitForBranch.v1:';

@@ -2,13 +2,13 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { enqueue: enqueueBackground } = require('./background-commit');
-const { pendingPonyProfiles } = require('./pony-git-publish');
+const { enqueue: enqueueBackground } = require('../background');
+const { pendingPonyProfiles } = require('./publish');
 
 // Installed extensions package the worker beside package.json, while a source
 // checkout retains it in scripts/. Never escape the installed extension root
 // to ~/.vscode/extensions/scripts if its packaged worker is missing.
-function resolvePonyWorkerScript(directory = __dirname, exists = fs.existsSync) {
+function resolvePonyWorkerScript(directory = path.dirname(__dirname), exists = fs.existsSync) {
   const moduleDirectory = path.resolve(directory);
   const installed = path.resolve(moduleDirectory, '../background-commit.py');
   if (exists(installed)) return installed;

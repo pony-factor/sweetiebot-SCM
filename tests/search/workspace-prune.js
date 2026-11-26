@@ -5,7 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
-const { pruneManagedWorkspaces, releaseClosedWorktree } = require('../../extension/branches/workspace-prune');
+const { pruneManagedWorkspaces, releaseClosedWorktree } = require('../../extension/branches/workspace/prune');
 const { run: runClosedWorker } = require('../../extension/branches/closed-worktree');
 
 const BASE = '/Users/test/Library/Application Support/Sweetiebot/Workspaces';
@@ -275,7 +275,7 @@ function fixture({
     assert.deepEqual(await pruneManagedWorkspaces({
       baseDirectory: base, run, alive: () => false
     }), [], 'A relative saved workspace reference also protects its target');
-    const { hasSavedWorkspaceReference } = require('../../extension/branches/workspace-prune');
+    const { hasSavedWorkspaceReference } = require('../../extension/branches/workspace/prune');
     assert.equal(await hasSavedWorkspaceReference(fs, [saved], path.join(base, 'unrelated')), false,
       'Relative saved paths must not block every unrelated checkout');
     await fs.rm(saved, { recursive: true });

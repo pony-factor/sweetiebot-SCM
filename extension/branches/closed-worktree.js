@@ -1,7 +1,7 @@
 'use strict';
 
 const { setTimeout: pause } = require('node:timers/promises');
-const { releaseClosedWorktree } = require('./workspace-prune');
+const { releaseClosedWorktree } = require('./workspace/prune');
 
 // Survive VS Code shutdown and allow a fresh window/reload to renew ownership.
 async function run(groups, { wait = pause, release = releaseClosedWorktree } = {}) {

@@ -1,6 +1,6 @@
 'use strict';
 
-const { resolveCommitRepository } = require('./codex-commit');
+const { resolveCommitRepository } = require('./codex/manual');
 
 // The shortcut must target the Source Control repository that owns the draft.
 // Otherwise VS Code can resolve git.commit against another repository when an

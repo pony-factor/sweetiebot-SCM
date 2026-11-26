@@ -220,8 +220,8 @@ jobs:
           node-version: '22'
       - name: Check shutdown and pruning source and test syntax
         run: |
-          node --check extension/branches/workspace-activity.js
-          node --check extension/branches/workspace-prune.js
+          node --check extension/branches/workspace/activity.js
+          node --check extension/branches/workspace/prune.js
           node --check extension/branches/closed-worktree.js
           node --check tests/search/workspace-activity.js
           node --check tests/search/workspace-prune.js
@@ -293,7 +293,7 @@ jobs:
       - name: Check separate App auth wiring and regressions
         run: |
           node --check extension/github/app-identity.js
-          node --check extension/codex/kefania-runner.js
+          node --check extension/codex/kefania/runner.js
           node --check extension/github/local-pull-request.js
           node --check extension/merge/lindsey-bulk-merge.js
           node --check extension/github/pull-request.js
@@ -361,8 +361,8 @@ jobs:
       - name: Check shutdown and pruning source and test syntax
         if: ${{ !cancelled() }}
         run: |
-          node --check extension/branches/workspace-activity.js
-          node --check extension/branches/workspace-prune.js
+          node --check extension/branches/workspace/activity.js
+          node --check extension/branches/workspace/prune.js
           node --check extension/branches/closed-worktree.js
           node --check tests/search/workspace-activity.js
           node --check tests/search/workspace-prune.js
