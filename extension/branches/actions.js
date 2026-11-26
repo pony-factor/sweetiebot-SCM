@@ -1321,9 +1321,11 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
   const publishingRemote = remote;
   remote = pull.remote;
   const { refreshMain } = require('./sync-main');
-  await requireFinalizedCommit(repository, { refs: [`refs/heads/${defaultBranch}`] });
-  const mainRef = await refreshMain(repository, { defaultBranch, remote, checkBranch });
+  const useRemoteBase = await asyncCommitPending(repository, { refs: [`refs/heads/${defaultBranch}`] });
+  const mainRef = await refreshMain(repository, { defaultBranch, remote, checkBranch, useRemoteBase });
   if (!mainRef) await retryFetch(() => repository.fetch({ remote, ref: defaultBranch }));
+  const target = mainRef || `refs/remotes/${remote}/${defaultBranch}`;
+  if (useRemoteBase) await requireFinalizedCommit(repository, { refs: [branch, target] });
   await checkBranch();
   const previousMessage = repository.inputBox.value;
   const message = defaultBranch === 'main'
@@ -1344,7 +1346,6 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     if (git && await git(['status', '--porcelain'])) {
       throw new Error('Commit or stash your changes before syncing the default branch. Unrelated edits must be reviewed and committed separately.');
     }
-    const target = mainRef || `refs/remotes/${remote}/${defaultBranch}`;
     const publish = git ? await createPublisher(root, publishingRemote) : null;
     const commit = message => publish ? publish.commit(message) : git(['commit', '-m', message]);
     let conflictChoice, resolved = false, resolution;

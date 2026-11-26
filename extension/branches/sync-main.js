@@ -12,7 +12,7 @@ const exec = promisify(execFile);
 
 // Refresh the shared main without switching the topic checkout or disturbing
 // another window's edits. Divergence requires an explicit main-branch sync.
-async function refreshMain(repository, { defaultBranch, remote, checkBranch }) {
+async function refreshMain(repository, { defaultBranch, remote, checkBranch, useRemoteBase = false }) {
   const root = repository.rootUri?.fsPath;
   if (!root || !existsSync(require('node:path').join(root, '.git'))) return null;
   const git = async (args, cwd = root) => (await exec('git', args, {
@@ -30,6 +30,8 @@ async function refreshMain(repository, { defaultBranch, remote, checkBranch }) {
   await checkBranch();
   const incoming = `refs/remotes/${remote}/${sourceBranch}`;
   const tip = await git(['rev-parse', '--verify', incoming]);
+  // A topic can incorporate the fetched base while a separate local main job owns the checkout.
+  if (useRemoteBase) return incoming;
   const local = `refs/heads/${defaultBranch}`;
   const before = await git(['rev-parse', '--verify', local]).catch(() => null);
   if (before === tip) return local;
