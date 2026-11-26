@@ -423,6 +423,19 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await context.refresh();
   assert.equal(getElementById('ci-status').hidden,false,'CI is visible before a merge attempt');
   assert.match(getElementById('ci-status').textContent,/running or queued.*Compile bridge/);
+  const checkNames=['GitHub pull requests','Commit system','Installation and configuration','Lindsey bulk merge','Build, test','<script>literal name</script>'];
+  layoutState={...layoutState,ci:{state:'pending',message:'CI checks are still running or queued — GitHub pull requests and 5 more.',summary:'CI checks are still running or queued.',names:checkNames}};
+  await context.refresh();
+  const ciList=getElementById('ci-status').children[0];
+  assert.equal(ciList.tag,'ul');
+  assert.equal(ciList.className,'ci-check-list');
+  assert.deepEqual(ciList.children.map(item=>item.tag),checkNames.map(()=> 'li'));
+  assert.deepEqual(ciList.children.map(item=>item.textContent),checkNames);
+  await context.refresh();
+  assert.equal(getElementById('ci-status').children[0],ciList,'Unchanged polls preserve the live region contents');
+  layoutState={...layoutState,ci:{...layoutState.ci,names:['Build, test']}};
+  await context.refresh();
+  assert.deepEqual(getElementById('ci-status').children[0].children.map(item=>item.textContent),['Build, test']);
   layoutState={...layoutState,mergeIssue:{kind:'ci-pending',message:layoutState.ci.message},mergeHelpAvailable:true};
   await context.refresh();
   assert.equal(getElementById('merge-issue-title').textContent,'Waiting for CI checks');
@@ -435,6 +448,7 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   layoutState={...layoutState,ci:{state:'passed',message:'CI checks passed.'},mergeIssue:undefined};
   await context.refresh();
   assert.equal(getElementById('ci-status').textContent,'CI checks passed.');
+  assert.equal(getElementById('ci-status').children.length,0,'Passing checks clear the list');
   assert.equal(getElementById('merge-issue').hidden,true);
   layoutState={errors:{merge:'Resolve the overlapping edits.'},result:{number:479,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/479'},mergeIssue:{kind:'conflict',message:'Resolve the overlapping edits.'},mergeHelpAvailable:true};
   await context.refresh();

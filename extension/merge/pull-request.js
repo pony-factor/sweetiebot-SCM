@@ -6,7 +6,7 @@ const { verifiedHumanAuthor } = require('./human-squash-merge');
 const { humanSquashMerge } = require('./local-human-squash');
 const { squashMessage, readCommits } = require('./squash-attribution');
 const { configuredMergeActor } = require('../github/app-commit-identity');
-const { readMergeChecks, describeMergeChecks } = require('./checks');
+const { readMergeChecks, describeMergeChecks, mergeCheckNames } = require('./checks');
 
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF = /^[^\\\x00-\x20\x7f]+$/;
@@ -23,7 +23,12 @@ async function readPullRequestCI(repository, result, request) {
   }
   if (pr.state !== 'open' || pr.merged_at) return null;
   const checks = await readMergeChecks(request, repository, pr.head.sha, { collectEvidence: true });
-  return { state: checks.state, message: describeMergeChecks(checks) };
+  return {
+    state: checks.state,
+    message: describeMergeChecks(checks),
+    summary: describeMergeChecks(checks, { includeNames: false }),
+    names: mergeCheckNames(checks)
+  };
 }
 
 function ciError(status, message) {
