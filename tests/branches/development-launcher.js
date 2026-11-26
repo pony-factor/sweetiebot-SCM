@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, seedBraveProfile, registerDevelopmentLauncher } = require('../../extension/branches/development-launcher');
+const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, openRegularBrave, seedBraveProfile, registerDevelopmentLauncher } = require('../../extension/branches/development-launcher');
 
 (async () => {
   assert.deepEqual(parseArgs('["npm","run","dev","a b"]'), ['npm', 'run', 'dev', 'a b']);
@@ -38,6 +38,25 @@ const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady,
   assert.deepEqual(calls.pop(), ['external', 'http://localhost:5173/']);
   browser.workspace.getConfiguration = () => ({ get: () => 'ephemeral' });
   await assert.rejects(openDevelopmentUrl(browser, 'http://localhost:5173/', 'integrated'), /persistent/);
+  const regularBrave = {
+    env: { clipboard: { writeText: async text => calls.push(['clipboard', text]) } },
+    window: {
+      showQuickPick: async () => undefined,
+      showInformationMessage: () => {}
+    }
+  };
+  const run = async (...args) => calls.push(args);
+  await openRegularBrave(regularBrave, '/a repo', 'https://chatgpt.com/', run);
+  assert.deepEqual(calls, []);
+  regularBrave.window.showQuickPick = async choices => choices.find(choice => choice.kind === 'setup');
+  await openRegularBrave(regularBrave, '/a repo', 'https://chatgpt.com/', run);
+  assert.deepEqual(calls.splice(0), [
+    ['clipboard', '/a repo'],
+    ['/usr/bin/open', ['-a', 'Brave Browser', 'brave://extensions/']]
+  ]);
+  regularBrave.window.showQuickPick = async choices => choices.find(choice => choice.kind === 'open');
+  await openRegularBrave(regularBrave, '/a repo', 'https://chatgpt.com/', run);
+  assert.deepEqual(calls.splice(0), [['/usr/bin/open', ['-a', 'Brave Browser', 'https://chatgpt.com/']]]);
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-brave-seed-'));
   try {
     const runner = async (...args) => calls.push(args);
