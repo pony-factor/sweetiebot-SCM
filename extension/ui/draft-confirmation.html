@@ -409,6 +409,14 @@ function needsMergeMethodChoice(state){
 function canOfferSignedSquash(state){
   return needsMergeMethodChoice(state)&&state.localSignedMergeAvailable===true;
 }
+function ciCheckStatus(result){
+  return result==='success'?'passed':
+    ['neutral','skipped'].includes(result)?'skipped':
+    result==='in_progress'?'running':
+    ['queued','pending','waiting','requested'].includes(result)?'pending':
+    ['failure','error','cancelled','timed_out','action_required','stale','startup_failure'].includes(result)?'failed':'unknown';
+}
+const ciCheckPriority={failed:0,running:1,pending:1,unknown:1,skipped:2,passed:3};
 let lastCIStatus;
 function renderCIStatus(ci){
   const target=el('ci-status');
@@ -417,20 +425,19 @@ function renderCIStatus(ci){
   const checks=Array.isArray(ci?.checks)?ci.checks:
     (Array.isArray(ci?.names)?ci.names.map(name=>({name,result:ci.state==='failed'?'failure':'pending'})):[]);
   const summary=checks.length?(ci.summary||ci.message||''):(ci?.message||'');
-  const signature=JSON.stringify([summary,checks]);
+  // Keep failures and unfinished checks visible above completed results.
+  // Stable sorting preserves the incoming order within each priority group.
+  const orderedChecks=checks.map(check=>({...check,status:ciCheckStatus(check.result)}))
+    .sort((a,b)=>ciCheckPriority[a.status]-ciCheckPriority[b.status]);
+  const signature=JSON.stringify([summary,orderedChecks]);
   if(signature===lastCIStatus)return;
   lastCIStatus=signature;
   target.textContent=summary;
   if(!checks.length)return;
   const list=document.createElement('ul');
   list.className='ci-check-list';
-  for(const {name,result} of checks){
+  for(const {name,result,status} of orderedChecks){
     const item=document.createElement('li'),label=document.createElement('span');
-    const status=result==='success'?'passed':
-      ['neutral','skipped'].includes(result)?'skipped':
-      result==='in_progress'?'running':
-      ['queued','pending','waiting','requested'].includes(result)?'pending':
-      ['failure','error','cancelled','timed_out','action_required','stale','startup_failure'].includes(result)?'failed':'unknown';
     const description=String(result||'unknown').replace(/_/g,' ');
     item.setAttribute('data-check-state',status);
     item.setAttribute('aria-label',name+' — '+description);
