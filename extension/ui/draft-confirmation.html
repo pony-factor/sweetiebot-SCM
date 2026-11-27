@@ -220,7 +220,7 @@ function showImage(index){
   displayed.hidden=false;
   el('lightbox-error').hidden=true;
   displayed.alt=image.plainLabel||image.label;
-  displayed.src=image.url;
+  displayed.src=image.displayUrl||image.url;
   renderImageCaption(el('lightbox-caption'),image.label,' · '+(index+1)+' of '+imageSources.length);
   el('lightbox-caption').title=image.plainLabel||image.label;
   el('lightbox-source').href=image.source;
@@ -249,7 +249,7 @@ async function recoverPonyImages(pony){
     return [{url,source:'https://derpibooru.org/images/'+image.id,label:'Show capture · Hasbro (via Derpibooru)'}];
   });
 }
-function imageIndex(profile,pony){
+function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
   if(lightbox.open)lightbox.close();
   const generation=++imageGeneration;
   el('images').replaceChildren();
@@ -283,13 +283,14 @@ function imageIndex(profile,pony){
       }
     }
   };
-  const addImage=(label,url,page)=>{
+  const addImage=(label,url,page,cachedKey)=>{
     const safe=safeLink(url);
     if(!safe||seen.has(safe))return;
     seen.add(safe);
     const captionText=label||'Character image';
     const sourceUrl=safeLink(page||'')||imageSourcePage(safe);
-    const source={url:safe,source:sourceUrl,label:captionText};
+    const displayUrl=cacheEnabled&&/^[a-f0-9]{64}$/.test(cachedKey||'')?root+'/artwork/'+cachedKey:safe;
+    const source={url:safe,displayUrl,source:sourceUrl,label:captionText};
     const figure=document.createElement('figure'),stage=document.createElement('div'),trigger=document.createElement('button'),img=document.createElement('img'),caption=document.createElement('figcaption');
     const candidate={source,figure,loaded:false,failed:false};
     candidates.push(candidate);
@@ -309,7 +310,7 @@ function imageIndex(profile,pony){
       stopWaiting();
       // Fandom serves a decodable missing-file graphic even for a 404.
       // Image.onload alone therefore cannot establish that artwork exists.
-      if(new URL(safe).hostname.endsWith('.wikia.nocookie.net')){
+      if(source.displayUrl===safe&&new URL(safe).hostname.endsWith('.wikia.nocookie.net')){
         try{
           const response=await fetch(safe,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(8000)});
           const unavailable=!response.ok||/filename=["']?placeholder\./i.test(response.headers.get('content-disposition')||'');
@@ -322,10 +323,16 @@ function imageIndex(profile,pony){
       source.width=img.naturalWidth;
       source.height=img.naturalHeight;
       displayLoaded();
+      if(cacheEnabled&&pony&&source.displayUrl===safe&&safe.startsWith('https:')&&sourceUrl.startsWith('https:')){
+        // Preserve only artwork actually displayed, including fallback show captures.
+        void fetch(root+'/artwork',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
+          body:JSON.stringify({url:safe,source:sourceUrl,alt:captionText,credit:source.plainLabel})}).catch(()=>{});
+      }
     };
     img.onerror=()=>{
       stopWaiting();
       if(generation!==imageGeneration)return;
+      if(source.displayUrl!==safe){source.displayUrl=safe;img.src=safe;return}
       candidate.failed=true;
       candidate.loaded=false;
       displayLoaded();
@@ -335,9 +342,10 @@ function imageIndex(profile,pony){
     trigger.append(stage);
     figure.append(trigger,caption);
     // An artwork card becomes visible only after the browser loads real image data.
-    img.src=safe;
+    img.src=source.displayUrl;
 
   };
+  for(const image of artwork||[])addImage(image.alt||image.credit,image.url,image.source,image.cached?image.key:null);
   const remaining=profile.replace(/\[!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)|!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,(whole,linkedLabel,linkedUrl,page,label,url)=>{
     label=linkedLabel??label;
     url=linkedUrl||url;
@@ -508,7 +516,7 @@ const packLabel=state.pony?.packLabel||state.pony?.packId||'';
 el('pony-status').textContent=state.errors?.ponyCache?'Cache save failed: '+state.errors.ponyCache:state.ponyCachePending?'Saving pony profile to cache…':state.profile?packLabel:state.errors.pony||'Researching the pony…';
 el('pony-status').hidden=!!state.profile&&!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache;
 el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache);
-if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile),state.pony))}
+if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile),state.pony,state.artwork,state.artworkEnabled))}
 return state;
 }catch(error){el('title').textContent='Could not update status';el('draft-status').hidden=false;el('draft-status').textContent=error.message}}
 el('merge').onclick=async()=>{
