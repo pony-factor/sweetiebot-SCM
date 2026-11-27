@@ -405,6 +405,7 @@ async function run() {
     { url: 'https://x.com/cheekibat/status/2111066237820133658', label: 'Artwork and context' },
   ];
   const cacheOperations = [];
+  const artworkLookups = [];
   let publicationFailure;
   let existingPullRequest;
   let repeatedStartingBase = false;
@@ -513,6 +514,11 @@ async function run() {
         : undefined;
     },
     showPony: async input => { shownPonies.push(input); },
+    openKefaniaArtwork: async (repositoryPath, pony) => {
+      assert.equal(repositoryPath, uri.fsPath);
+      artworkLookups.push(pony);
+      return { list: async () => [], save: async () => { throw new Error('Unexpected artwork save'); } };
+    },
     cachePony: async input => {
       cacheOperations.push(input);
       if (input.action === 'get') return cachedProfile
@@ -669,6 +675,7 @@ async function run() {
     source: chatSource
   });
   assert.equal(shownPonies.length, 0, 'Pony information appears only in the confirmation window');
+  assert.equal(artworkLookups.at(-1)?.packId, 'test-pack', 'Artwork uses the selected pony without accessing a real Kefania installation');
   assert.equal(calls.length, 3);
   assert.equal(calls[0].id, 'workbench.action.browser.open');
   assert.equal(calls[2].id, 'workbench.action.browser.open');
@@ -895,11 +902,23 @@ async function run() {
   calls.length = 0;
   cachedProfile = undefined;
   const beforeWaitReads = contextReads;
-  let releaseCommits;
-  commitWait = () => new Promise(resolve => { releaseCommits = resolve; });
+  let releaseCommits, signalWaiting, waitTimeout;
+  const waitingForCommits = new Promise(resolve => { signalWaiting = resolve; });
+  commitWait = () => new Promise(resolve => {
+    releaseCommits = resolve;
+    signalWaiting();
+  });
   const waitingPR = callback(uri, { branch: 'draft', base: 'main', remote: 'origin', source: chatSource });
-  for (let attempt = 0; attempt < 100 && !releaseCommits; attempt++) {
-    await new Promise(resolve => setImmediate(resolve));
+  try {
+    await Promise.race([
+      waitingForCommits,
+      waitingPR.then(() => { throw new Error('PR preparation completed before waiting for commits'); }),
+      new Promise((_, reject) => {
+        waitTimeout = setTimeout(() => reject(new Error('PR preparation did not reach the pending-commit checkpoint')), 5000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(waitTimeout);
   }
   assert.equal(typeof releaseCommits, 'function');
   assert.equal(contextReads, beforeWaitReads, 'Do not capture provisional commit evidence');

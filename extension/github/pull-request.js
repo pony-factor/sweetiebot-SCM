@@ -809,7 +809,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     let artworkCache, artwork = [];
     if (pony) {
       try {
-        artworkCache = await openKefaniaArtwork(repository.rootUri.fsPath, pony);
+        artworkCache = await (dependencies.openKefaniaArtwork || openKefaniaArtwork)(repository.rootUri.fsPath, pony);
         if (artworkCache) artwork = await artworkCache.list();
       } catch { /* Artwork is optional and never blocks PR drafting. */ }
     }
