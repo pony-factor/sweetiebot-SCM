@@ -1,55 +1,54 @@
-// Installed before Codex's bundle runs. Its browser-origin fallback is shared
-// by webviews, so prevent an unsent new-chat draft in localStorage from seeding
-// another repository before the scoped host sync finishes. Preserve raw data.
+// Disable the native browser fallback for composer state, which is shared by
+// webviews. The scoped extension host is the only durable store for these atoms.
 (() => {
-    // Tag queued IPC writes with the scope that rendered their composer.
-    // A delayed write from the previous branch must never populate the next one.
-    let scope, generation;
+    const atoms = new Set([
+        'composer-prompt-drafts-v1', 'composer-prompt-drafts-v2',
+        'composer-retained-documents-v1', 'draft-thread-identities-v1',
+        'sweetiebot-composer-attachments-v1'
+    ]);
+    const renderer = window.crypto?.randomUUID?.() ?? Math.random().toString(36);
+    let scope, generation, revision = 0;
+    const latestWrite = new Map();
     window.addEventListener?.('message', event => {
-        if (event.data?.type === 'persisted-atom-sync' && event.data.scmToolkitDraftScope) {
-            scope = event.data.scmToolkitDraftScope;
-            generation = event.data.scmToolkitDraftGeneration;
+        const message = event.data;
+        if (message?.type === 'persisted-atom-sync') {
+            scope = message.scmToolkitDraftScope;
+            generation = message.scmToolkitDraftGeneration;
         }
-    });
+        // Codex applies its own edits immediately. An earlier disk write can
+        // finish after the editor has already cleared or changed the draft.
+        if (message?.type === 'persisted-atom-updated' && message.scmToolkitDraftRenderer === renderer &&
+            message.scmToolkitDraftRevision < (latestWrite.get(message.key) ?? 0)) {
+            event.stopImmediatePropagation();
+        }
+    }, true);
     if (typeof window.acquireVsCodeApi === 'function') {
         const acquire = window.acquireVsCodeApi;
         window.acquireVsCodeApi = function() {
             const api = acquire();
             return Object.freeze({ getState: () => api.getState(), setState: value => api.setState(value),
-                postMessage: message => api.postMessage(message?.type === 'persisted-atom-update'
-                    && ['composer-prompt-drafts-v1', 'composer-prompt-drafts-v2', 'sweetiebot-composer-attachments-v1'].includes(message.key)
-                    ? { ...message, scmToolkitDraftScope: scope, scmToolkitDraftGeneration: generation } : message) });
+                postMessage(message) {
+                    if (message?.type === 'persisted-atom-sync-request' || message?.type === 'ready') {
+                        return api.postMessage({ ...message, scmToolkitDraftRenderer: renderer });
+                    }
+                    if (message?.type === 'persisted-atom-update' && atoms.has(message.key)) {
+                        latestWrite.set(message.key, ++revision);
+                        return api.postMessage({ ...message, scmToolkitDraftRenderer: renderer, scmToolkitDraftRevision: revision,
+                            scmToolkitDraftScope: scope, scmToolkitDraftGeneration: generation });
+                    }
+                    return api.postMessage(message);
+                } });
         };
     }
-    const storageKeys = new Set(['codex:persisted-atom:composer-prompt-drafts-v1',
-        'codex:persisted-atom:composer-prompt-drafts-v2']);
+    const storageKeys = new Set(Array.from(atoms, key => 'codex:persisted-atom:' + key));
     let storage;
     try { storage = window.localStorage; } catch { return; }
     if (!storage || typeof Storage === 'undefined') return;
-    const originalGet = Storage.prototype.getItem;
-    const originalSet = Storage.prototype.setItem;
-    if (Storage.prototype.scmToolkitDraftIsolation) return;
-    Object.defineProperty(Storage.prototype, 'scmToolkitDraftIsolation', { value: true });
-    const cleaned = value => {
-        if (typeof value !== 'string') return value;
-        try {
-            const drafts = JSON.parse(value);
-            if (!drafts || typeof drafts !== 'object' || Array.isArray(drafts)) return value;
-            const safe = { ...drafts };
-            delete safe['new-conversation'];
-            return JSON.stringify(safe);
-        } catch { return value; }
-    };
-    Storage.prototype.getItem = function(key) {
-        const value = originalGet.call(this, key);
-        if (this === storage && key === 'codex:persisted-atom:sweetiebot-composer-attachments-v1') return '{}';
-        return this === storage && storageKeys.has(key) ? cleaned(value) : value;
-    };
-    Storage.prototype.setItem = function(key, value) {
-        if (this === storage && key === 'codex:persisted-atom:sweetiebot-composer-attachments-v1') {
-            return originalSet.call(this, key, '{}');
-        }
-        return originalSet.call(this, key,
-            this === storage && storageKeys.has(key) ? cleaned(String(value)) : value);
-    };
+    for (const method of ['getItem', 'setItem', 'removeItem']) {
+        const original = Storage.prototype[method];
+        Storage.prototype[method] = function(key, ...args) {
+            if (this === storage && storageKeys.has(key)) return method === 'getItem' ? null : undefined;
+            return original.call(this, key, ...args);
+        };
+    }
 })();
