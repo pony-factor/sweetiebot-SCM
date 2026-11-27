@@ -7,7 +7,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { homedir } = require('node:os');
 const { randomUUID } = require('node:crypto');
-const { runKefania, runKefaniaPonyCache } = require('../codex/kefania/runner');
+const { runKefania, runKefaniaPonyCache, openKefaniaArtwork } = require('../codex/kefania/runner');
 const { resolveKefaniaFile } = require('../codex/kefania/paths');
 const { createDraftHandoff } = require('../codex/draft-handoff');
 const { openKefaniaMergeHelp } = require('../codex/kefania/merge-help');
@@ -806,6 +806,13 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
             && Buffer.byteLength(cached.profile, 'utf8') <= 60000) cachedProfile = cached.profile;
       } catch { /* Cache failures cannot block PR creation or pony research. */ }
     }
+    let artworkCache, artwork = [];
+    if (pony) {
+      try {
+        artworkCache = await (dependencies.openKefaniaArtwork || openKefaniaArtwork)(repository.rootUri.fsPath, pony);
+        if (artworkCache) artwork = await artworkCache.list();
+      } catch { /* Artwork is optional and never blocks PR drafting. */ }
+    }
     const draftId = randomUUID();
     if (!handoff) throw new Error('The local PR draft handoff is unavailable.');
     const localHandoff = await handoff();
@@ -822,7 +829,8 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, profile: cachedProfile,
+    localHandoff.register(draftId, { pony, profile: cachedProfile, artwork,
+      onArtwork: artworkCache?.save,
       ludicrousMode,
       appearance: async () => {
         if (!vscode.workspace.getConfiguration('sweetiebot').get('kefaniaUseThemeColors', true)) return null;

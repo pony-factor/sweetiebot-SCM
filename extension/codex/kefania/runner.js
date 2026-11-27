@@ -1,6 +1,7 @@
 'use strict';
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { reviewerIdentity, cleanGhEnvironment } = require('../../github/reviewer-account');
 const { resolveKefaniaFile } = require('./paths');
 const { createPonyPublishQueue } = require('../../commits/pony/queue');
@@ -146,4 +147,29 @@ async function runKefaniaPonyCache(repositoryPath, input) {
   });
 }
 
-module.exports = { missingAppRepositoryAccess, kefaniaChildEnvironment, runKefania, runKefaniaPonyCache };
+// Old Kefania installations continue displaying external artwork without a local cache.
+async function openKefaniaArtwork(repositoryPath, pony) {
+  if (!pony) return null;
+  try {
+    const filename = await resolveKefaniaFile(repositoryPath, path.join('src', 'pony-artwork.js'));
+    const cache = await import(pathToFileURL(filename).href);
+    const directory = path.resolve(filename, '../..');
+    const enqueue = entry => {
+      if (entry?.path) void ponyPublishQueue.enqueue(directory, pony, entry.path);
+    };
+    return {
+      list: async () => {
+        const entries = await cache.listPonyArtwork(pony);
+        for (const entry of entries) enqueue(entry);
+        return entries;
+      },
+      save: async artwork => {
+        const entry = await cache.cachePonyArtwork(pony, artwork);
+        enqueue(entry);
+        return entry;
+      },
+    };
+  } catch { return null; }
+}
+
+module.exports = { openKefaniaArtwork, missingAppRepositoryAccess, kefaniaChildEnvironment, runKefania, runKefaniaPonyCache };

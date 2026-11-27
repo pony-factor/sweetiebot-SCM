@@ -249,7 +249,7 @@ async function recoverPonyImages(pony){
     return [{url,source:'https://derpibooru.org/images/'+image.id,label:'Show capture · Hasbro (via Derpibooru)'}];
   });
 }
-function imageIndex(profile,pony){
+function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
   if(lightbox.open)lightbox.close();
   const generation=++imageGeneration;
   el('images').replaceChildren();
@@ -283,7 +283,7 @@ function imageIndex(profile,pony){
       }
     }
   };
-  const addImage=(label,url,page)=>{
+  const addImage=(label,url,page,known=false)=>{
     const safe=safeLink(url);
     if(!safe||seen.has(safe))return;
     seen.add(safe);
@@ -322,6 +322,11 @@ function imageIndex(profile,pony){
       source.width=img.naturalWidth;
       source.height=img.naturalHeight;
       displayLoaded();
+      if(cacheEnabled&&pony&&!known&&safe.startsWith('https:')&&sourceUrl.startsWith('https:')){
+        // Preserve only artwork actually displayed, including fallback show captures.
+        void fetch(root+'/artwork',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
+          body:JSON.stringify({url:safe,source:sourceUrl,alt:captionText,credit:source.plainLabel})}).catch(()=>{});
+      }
     };
     img.onerror=()=>{
       stopWaiting();
@@ -338,6 +343,7 @@ function imageIndex(profile,pony){
     img.src=safe;
 
   };
+  for(const image of artwork||[])addImage(image.alt||image.credit,image.url,image.source,true);
   const remaining=profile.replace(/\[!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)|!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,(whole,linkedLabel,linkedUrl,page,label,url)=>{
     label=linkedLabel??label;
     url=linkedUrl||url;
@@ -508,7 +514,7 @@ const packLabel=state.pony?.packLabel||state.pony?.packId||'';
 el('pony-status').textContent=state.errors?.ponyCache?'Cache save failed: '+state.errors.ponyCache:state.ponyCachePending?'Saving pony profile to cache…':state.profile?packLabel:state.errors.pony||'Researching the pony…';
 el('pony-status').hidden=!!state.profile&&!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache;
 el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache);
-if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile),state.pony))}
+if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile),state.pony,state.artwork,state.artworkEnabled))}
 return state;
 }catch(error){el('title').textContent='Could not update status';el('draft-status').hidden=false;el('draft-status').textContent=error.message}}
 el('merge').onclick=async()=>{

@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 
 const execute = promisify(execFile);
 const VALID_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/;
@@ -25,6 +25,25 @@ async function pendingDirectory(root, run) {
   return path.join(String(stdout).trim(), 'sweetiebot-pony-publish');
 }
 
+function artworkKey(pack, slug, storedPath) {
+  const prefix = `artwork-cache/${pack}/${slug}/`;
+  if (typeof storedPath !== 'string' || !storedPath.startsWith(prefix)) return null;
+  return /^([a-f0-9]{64})\.json$/.exec(storedPath.slice(prefix.length))?.[1] || null;
+}
+function validateArtworkRecord(record, pack, slug, key) {
+  if (record?.version !== 1 || record.packId !== pack || record.slug !== slug || record.key !== key ||
+      typeof record.url !== 'string' || typeof record.source !== 'string' ||
+      createHash('sha256').update(record.url).digest('hex') !== key) throw new Error('Invalid artwork reference.');
+  for (const link of [record.url, record.source]) {
+    const url = new URL(link);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || link.length > 2000)
+      throw new Error('Invalid artwork reference URL.');
+  }
+  if (Object.keys(record).some(field => !['version','packId','slug','key','url','source','alt','credit'].includes(field)) ||
+      ['alt','credit'].some(field => typeof record[field] !== 'string' || record[field].length > 500))
+    throw new Error('Unexpected artwork reference content.');
+}
+
 async function pendingPonyProfiles(directory, { run = execute } = {}) {
   const folder = await pendingDirectory(directory, run);
   let files;
@@ -36,7 +55,7 @@ async function pendingPonyProfiles(directory, { run = execute } = {}) {
       const entry = JSON.parse(await fs.readFile(path.join(folder, file), 'utf8'));
       if (typeof entry.pony?.packId === 'string' && typeof entry.pony?.slug === 'string'
           && VALID_SLUG.test(entry.pony.packId) && VALID_SLUG.test(entry.pony.slug)
-          && entry.path === `${entry.pony.packId}/${entry.pony.slug}.json`) pending.push(entry);
+          && (entry.path === `${entry.pony.packId}/${entry.pony.slug}.json` || artworkKey(entry.pony.packId, entry.pony.slug, entry.path))) pending.push(entry);
     } catch { /* A damaged queue entry must not prevent other profiles retrying. */ }
   }
   return pending;
@@ -51,13 +70,14 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   const pack = String(pony?.packId || '').trim().toLowerCase();
   let slug = String(pony?.canonicalSlug || pony?.slug || '').trim().toLowerCase();
   if (pack === 'g4-stallions' && slug === 'hoofar') slug = 'hoo-far';
-  if (!VALID_SLUG.test(pack) || !VALID_SLUG.test(slug) || storedPath !== `${pack}/${slug}.json`) {
+  const key = artworkKey(pack, slug, storedPath);
+  if (!VALID_SLUG.test(pack) || !VALID_SLUG.test(slug) || (!key && storedPath !== `${pack}/${slug}.json`)) {
     throw new Error('Kafania returned an unexpected pony profile path.');
   }
   // Only attribute a generating web model when its response supplied a number.
   const suppliedModelNumber = pony?.assistantModelNumber;
   webCoauthor(suppliedModelNumber);
-  const relativePath = `ponies/${storedPath}`;
+  const relativePath = key ? storedPath : `ponies/${storedPath}`;
   const root = path.resolve(directory);
   const git = async (...args) => {
     const { stdout } = await run(process.env.SCM_TOOLKIT_REAL_GIT || 'git', args, {
@@ -73,6 +93,11 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   }
   const info = await fs.lstat(path.join(root, relativePath));
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('The pony record must be a regular file.');
+  if (key) {
+    const real = await fs.realpath(path.join(root, relativePath));
+    if (real !== path.join(await fs.realpath(root), relativePath) || info.size > 8192) throw new Error('Invalid artwork reference path.');
+    validateArtworkRecord(JSON.parse(await fs.readFile(real, 'utf8')), pack, slug, key);
+  }
 
   if (await git('symbolic-ref', '--quiet', '--short', 'HEAD') !== 'main' ||
       await git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}') !== 'origin/main') {
@@ -80,7 +105,7 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
   }
   const status = await git('status', '--porcelain=1', '--untracked-files=all', '--', relativePath);
   const folder = await pendingDirectory(root, run);
-  const receiptPath = path.join(folder, `${pack}--${slug}.json`);
+  const receiptPath = path.join(folder, `${pack}--${slug}${key ? '--' + key : ''}.json`);
   let receipt;
   try { receipt = JSON.parse(await fs.readFile(receiptPath, 'utf8')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -181,9 +206,10 @@ async function publishPonyProfile(directory, pony, storedPath, { run = execute }
     throw new Error('The pony profile was not staged as a new file; refusing an empty commit.');
   }
 
-  const title = `🦄 Add pony profile: ${pack}/${slug}`;
+  const title = key ? `🖼️ Add pony artwork reference: ${pack}/${slug}` : `🦄 Add pony profile: ${pack}/${slug}`;
   const trailer = webCoauthor(receipt.assistantModelNumber);
-  const message = `${title}\n\nAdd the researched pony profile to Kafania's permanent library.\n\nSweetiebot-Pony-Publication: ${receipt.id}${trailer ? '\n\n' + trailer : ''}`;
+  const descriptor = key ? 'Record the attributed third-party image and source URLs without copying image bytes.' : "Add the researched pony profile to Kafania's permanent library.";
+  const message = `${title}\n\n${descriptor}\n\nSweetiebot-Pony-Publication: ${receipt.id}${trailer ? '\n\n' + trailer : ''}`;
   // --only commits just this path, preserving all other staged user changes.
   await git('commit', '--only', '-m', message, '--', relativePath);
   const sha = await git('rev-parse', 'HEAD');
