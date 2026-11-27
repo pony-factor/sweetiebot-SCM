@@ -26,7 +26,7 @@ BACKGROUND_END = '/* sweetiebot-browser-background:end */'
 BACKGROUND_ANCHOR = 'this.setupEventListeners()}static{this.MAX_CONSOLE_LOG_ENTRIES='
 STORAGE_START = '/* sweetiebot-pr-storage:start */'
 STORAGE_END = '/* sweetiebot-pr-storage:end */'
-SHARED_BROWSER_PROFILE = 5
+SHARED_BROWSER_PROFILE = 4
 
 
 def transform_storage(source, remove=False):
@@ -64,14 +64,15 @@ def transform_storage(source, remove=False):
         raise ValueError('Unsupported Integrated Browser persistent session lifecycle.')
     match = matches[0]
     cls, options = match[1], match[3]
-    electron = modern_session[13] if modern_session else session[7]
+    join, electron = (modern_session[9], modern_session[13]) if modern_session else (session[5], session[7])
     # Ordinary repository and PR windows share the same persistent profile.
     # Ephemeral and agent sessions retain their isolation and network protections.
     insertion = (
         STORAGE_START
         + f'(({options}.scope==="workspace"||{options}.scope==="global")'
-        + f'&&{options}.network===void 0&&{options}.affinity===void 0)?(()=>{{'
-        + f'let sweetiebotSession={electron}.fromPartition("persist:sweetiebot-browser");'
+        + f'&&{options}.network===void 0&&{options}.affinity===void 0)?(()=>{{let sweetiebotPath='
+        + f'{join}(this.environmentMainService.userHome,"Library","Application Support","Sweetiebot","browserStorage"),'
+        + f'sweetiebotSession={electron}.fromPath(sweetiebotPath.fsPath);'
         + '(' + ASSET.with_name('session-persistence.js').read_text() + ')(sweetiebotSession);'
         + f'return {cls}._bySession.get(sweetiebotSession)??this.instantiationService.createInstance({cls},"sweetiebot-pr",sweetiebotSession,"workspace"'
         + (',void 0,void 0' if modern_session else '') + ')})():' + STORAGE_END
