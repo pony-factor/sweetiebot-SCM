@@ -252,6 +252,74 @@ async function automaticPullDivergence(repository, head, target) {
   }
 }
 
+async function fastForwardWorktree(root, head, incoming) {
+  const git = (args, options) => promisify(execFile)('git', args, {
+    cwd: root, timeout: 120000, ...options
+  });
+  const merge = target => git(['merge', '--ff-only', '--no-autostash', target]);
+  const apply = (file, options = []) => git(['apply', '--no-ignore-whitespace', '--whitespace=nowarn',
+    ...options, file]);
+  try {
+    await merge(incoming);
+    return;
+  } catch (mergeError) {
+    // Git also refuses an unstaged edit that is already identical to the
+    // incoming file. Retry only when every overlapping edit is such a copy.
+    const diffOptions = ['--no-ext-diff', '--no-textconv', '--no-renames', '--ignore-submodules=none'];
+    const names = async args => (await git(['diff', ...diffOptions, '--name-only', '-z', ...args, '--']))
+      .stdout.split('\0').filter(Boolean);
+    const tip = (await git(['rev-parse', '--verify', incoming])).stdout.trim();
+    const ref = (await git(['symbolic-ref', '--quiet', 'HEAD'])).stdout.trim();
+    const unchangedHead = async () =>
+      (await git(['symbolic-ref', '--quiet', 'HEAD'])).stdout.trim() === ref &&
+      (await git(['rev-parse', 'HEAD'])).stdout.trim() === head;
+    if (!head || head === tip || !await unchangedHead()) throw mergeError;
+    try { await git(['merge-base', '--is-ancestor', head, tip]); }
+    catch { throw mergeError; }
+    const metadata = (await git(['rev-parse', '--absolute-git-dir'])).stdout.trim();
+    if (['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'index.lock']
+      .some(marker => existsSync(path.join(metadata, marker)))) throw mergeError;
+    const [changed, unstaged, staged, differsFromIncoming, modified] = await Promise.all([
+      names([head, tip]), names([]), names(['--cached', head]), names([tip]),
+      names(['--diff-filter=M', head, tip])
+    ]);
+    const touched = new Set(changed);
+    const overlap = unstaged.filter(name => touched.has(name));
+    const modifiedPaths = new Set(modified);
+    const mismatches = new Set(differsFromIncoming);
+    if (!overlap.length || staged.some(name => touched.has(name)) ||
+        overlap.some(name => !modifiedPaths.has(name) || mismatches.has(name))) throw mergeError;
+    if (overlap.some(name => name.includes('\ufffd'))) throw mergeError;
+
+    const { stdout: patch } = await git(['--literal-pathspecs', 'diff', ...diffOptions,
+      '--binary', '--full-index', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', head, tip, '--', ...overlap],
+    { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'sweetiebot-auto-pull-'));
+    const patchFile = path.join(temporary, 'incoming.patch');
+    let retainPatch = false;
+    try {
+      await writeFile(patchFile, patch, { mode: 0o600 });
+      if (!await unchangedHead() || await asyncCommitPending({ rootUri: { fsPath: root } })) throw mergeError;
+      // Remove only the already-merged changes from the working files. Git
+      // then owns the fast-forward and carries unrelated staging as usual.
+      await apply(patchFile, ['--reverse']);
+      try {
+        await merge(tip);
+      } catch (error) {
+        try { await apply(patchFile); }
+        catch (restoreError) {
+          retainPatch = true;
+          throw new AggregateError([error, restoreError],
+            `Could not restore the already-merged changes. Recovery patch: ${patchFile}`);
+        }
+        throw error;
+      }
+    } finally {
+      if (!retainPatch) await rm(temporary, { recursive: true, force: true });
+    }
+  }
+}
+
 async function autoPullClean(repository, { fetch = false, remote } = {}) {
   // A commit and a fast-forward both update HEAD. Never let Sweetiebot move the
   // branch ref while VS Code/Git is building or finalizing a commit.
@@ -300,9 +368,7 @@ async function autoPullClean(repository, { fetch = false, remote } = {}) {
   if (repository.rootUri?.fsPath) {
     // Let Git carry nonconflicting local edits; never create a merge commit or
     // overwrite a changed path. A failed fast-forward preserves the worktree.
-    await promisify(execFile)('git', ['merge', '--ff-only', `refs/remotes/${target.remote}/${target.name}`], {
-      cwd: repository.rootUri.fsPath, timeout: 120000
-    });
+    await fastForwardWorktree(repository.rootUri.fsPath, head.commit, `refs/remotes/${target.remote}/${target.name}`);
   } else {
     await repository.merge(`${target.remote}/${target.name}`);
   }
@@ -348,7 +414,7 @@ async function autoPullDefaultWorktree(repository, openRoots = new Set(), attemp
     .some(marker => existsSync(path.join(metadata, marker)))) return false;
   if (await git(['symbolic-ref', '--quiet', 'HEAD'], worktree) !== ref ||
       await git(['rev-parse', 'HEAD'], worktree) !== before) return false;
-  await exec('git', ['merge', '--ff-only', '--no-autostash', tip], { cwd: worktree, timeout: 120000 });
+  await fastForwardWorktree(worktree, before, tip);
   return true;
 }
 
