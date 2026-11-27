@@ -81,6 +81,8 @@ def browser_running(root):
 
 def prepare_extension(root, extension, running):
     manifest = root / "manifest.json"
+    if not manifest.is_file():
+        raise RuntimeError("The selected checkout no longer has an extension manifest.")
     try:
         current = (extension / "manifest.json").readlink()
     except FileNotFoundError:
@@ -98,9 +100,15 @@ def prepare_extension(root, extension, running):
         for entry in root.iterdir():
             if not entry.name.startswith("."):
                 (staging / entry.name).symlink_to(entry)
+        previous = Path(workspace) / "previous"
         if extension.exists():
-            extension.rename(Path(workspace) / "previous")
-        staging.rename(extension)
+            extension.rename(previous)
+        try:
+            staging.rename(extension)
+        except OSError:
+            if previous.exists():
+                previous.rename(extension)
+            raise
 
 
 def launch(root, repository, url, source=None, *, running=browser_running, run=subprocess.run):

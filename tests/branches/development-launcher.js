@@ -1,10 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, openRegularBrave, seedBraveProfile, registerDevelopmentLauncher } = require('../../extension/branches/development-launcher');
+const { parseArgs, localUrl, checkoutId, repositoryKey, suggestedArgs, waitForReady, openDevelopmentUrl, openRegularBrave, chooseBraveCookieSource, launchIsolatedBrave, registerDevelopmentLauncher } = require('../../extension/branches/development-launcher');
 
 (async () => {
   assert.deepEqual(parseArgs('["npm","run","dev","a b"]'), ['npm', 'run', 'dev', 'a b']);
@@ -15,12 +16,11 @@ const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady,
   for (const url of ['https://example.com', 'http://localhost.example.com', 'file:///tmp/test', 'http://user@localhost'])
     assert.throws(() => localUrl(url));
   assert.notEqual(checkoutId('/a/repo'), checkoutId('/b/repo'));
-  assert.deepEqual(braveArgs('/a repo', '/my profile', 'https://chatgpt.com/'), [
-    '-na', 'Brave Browser', '--args', '--user-data-dir=/my profile', '--disable-extensions-except=/a repo',
-    '--load-extension=/a repo', '--no-first-run', '--no-default-browser-check', '--new-window', 'https://chatgpt.com/'
-  ]);
+  assert.equal(await repositoryKey('/a repo', 'origin'), 'origin');
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-dev-'));
   try {
+    execFileSync('git', ['init', '--quiet', root]);
+    assert.equal(await repositoryKey(root), await fs.realpath(path.join(root, '.git')));
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { start: 'node app', dev: 'vite' } }));
     assert.deepEqual(await suggestedArgs(root), ['npm', 'run', 'dev']);
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { start: 'node app' } }));
@@ -60,22 +60,32 @@ const { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady,
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'sweetiebot-brave-seed-'));
   try {
     const runner = async (...args) => calls.push(args);
+    const normal = path.join(profile, 'normal');
+    const repository = path.join(profile, 'repository');
+    const testProfile = path.join(repository, 'profile');
+    for (const name of ['Default', 'Profile 2']) {
+      await fs.mkdir(path.join(normal, name, 'Network'), { recursive: true });
+      await fs.writeFile(path.join(normal, name, 'Network', 'Cookies'), 'synthetic');
+    }
     let choice;
-    const host = { window: { showWarningMessage: async () => choice } };
-    assert.equal(await seedBraveProfile(host, profile, runner), false);
-    assert.equal(calls.length, 0);
+    let asked = 0;
+    const host = { window: {
+      showWarningMessage: async () => { asked++; return choice; },
+      showQuickPick: async options => { assert.deepEqual(options, ['Default', 'Profile 2']); return 'Profile 2'; }
+    } };
+    assert.equal(await chooseBraveCookieSource(host, testProfile, normal), false);
     choice = 'Launch without copying';
-    await seedBraveProfile(host, profile, runner);
-    assert.equal(calls.length, 0);
+    assert.equal(await chooseBraveCookieSource(host, testProfile, normal), undefined);
     choice = 'Copy encrypted cookies';
-    await seedBraveProfile(host, profile, runner);
+    assert.equal(await chooseBraveCookieSource(host, testProfile, normal), 'Profile 2');
+    await fs.mkdir(path.join(testProfile, 'Default'), { recursive: true });
+    await fs.writeFile(path.join(testProfile, 'Default/Cookies'), 'synthetic');
+    assert.equal(await chooseBraveCookieSource(host, testProfile, normal), undefined);
+    await launchIsolatedBrave(host, '/a repo', repository, { url: 'https://chatgpt.com/', copyBraveCookies: true }, runner);
+    assert.equal(asked, 3);
     assert.equal(calls.length, 1);
     assert.equal(calls[0][0], 'python3');
-    assert.equal(calls[0][1][1], profile);
-    await fs.mkdir(path.join(profile, 'Default'));
-    await fs.writeFile(path.join(profile, 'Default/Cookies'), 'synthetic');
-    await seedBraveProfile(host, profile, runner);
-    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0][1].slice(1), ['/a repo', repository, 'https://chatgpt.com/']);
   } finally { await fs.rm(profile, { recursive: true, force: true }); }
 
   let checks = 0;

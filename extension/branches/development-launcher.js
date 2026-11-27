@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { execFile } = require('node:child_process');
@@ -25,6 +26,12 @@ function checkoutId(root) {
   return createHash('sha256').update(root).digest('hex');
 }
 
+async function repositoryKey(root, remote) {
+  if (remote) return remote;
+  const { stdout } = await promisify(execFile)('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root });
+  return fs.realpath(stdout.trim());
+}
+
 async function openDevelopmentUrl(vscode, url, browser = 'external') {
   if (browser === 'integrated') {
     if (!(await vscode.commands.getCommands(true)).includes('workbench.action.browser.open'))
@@ -38,30 +45,57 @@ async function openDevelopmentUrl(vscode, url, browser = 'external') {
   await vscode.env.openExternal(vscode.Uri.parse(url));
 }
 
-async function seedBraveProfile(vscode, profile, run = promisify(execFile)) {
-  // Never seed or overwrite a profile that already has its own cookie store.
-  for (const name of ['Default/Network/Cookies', 'Default/Cookies']) {
-    try { await fs.lstat(path.join(profile, name)); return; }
+async function hasBraveCookies(profile) {
+  for (const name of ['Network/Cookies', 'Cookies']) {
+    try { if ((await fs.stat(path.join(profile, name))).isFile()) return true; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
+  return false;
+}
+
+async function chooseBraveCookieSource(vscode, profile, normal = path.join(
+  os.homedir(), 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser')) {
+  if (await hasBraveCookies(path.join(profile, 'Default'))) return;
   const consent = await vscode.window.showWarningMessage(
-    'Copy your normal Brave login cookies into this fresh test profile? The unpacked extension may be able to access authenticated sites and sessions according to its permissions. Only continue for code you trust.',
+    'Copy your normal Brave login cookies, including ChatGPT sign-in, into this repository’s fresh test profile? Trusted checkouts you launch in this profile can access authenticated sites according to their permissions.',
     { modal: true }, 'Copy encrypted cookies', 'Launch without copying');
   if (consent === 'Launch without copying') return;
   if (consent !== 'Copy encrypted cookies') return false;
-  // The helper takes a read-only SQLite snapshot locally. Never return cookie
-  // contents or subprocess stderr to the extension host or log.
-  try {
-    await run('python3', [path.join(__dirname, 'seed-brave-profile.py'), profile], { timeout: 20000 });
-  } catch {
-    throw new Error('Could not seed Brave login cookies. Check that Python 3 and the normal Brave profile are available, or choose a separate sign-in.');
-  }
+  const entries = await fs.readdir(normal, { withFileTypes: true }).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+    return [];
+  });
+  const candidates = entries.filter(entry => entry.isDirectory() && /^(Default|Profile [1-9][0-9]*)$/.test(entry.name));
+  const available = await Promise.all(candidates.map(async entry =>
+    await hasBraveCookies(path.join(normal, entry.name)) ? entry.name : undefined));
+  const sources = available.filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  if (!sources.length) throw new Error('No normal Brave login profile was found.');
+  if (sources.length === 1) return sources[0];
+  const selected = await vscode.window.showQuickPick(sources, {
+    placeHolder: 'Choose the Brave profile signed in to ChatGPT (see Profile Path in brave://version)'
+  });
+  return selected || false;
 }
 
-function braveArgs(root, profile, url) {
-  return ['-na', 'Brave Browser', '--args', '--user-data-dir=' + profile,
-    '--disable-extensions-except=' + root, '--load-extension=' + root,
-    '--no-first-run', '--no-default-browser-check', '--new-window', url];
+async function launchIsolatedBrave(vscode, root, repository, config, run = promisify(execFile)) {
+  const source = config.copyBraveCookies
+    ? await chooseBraveCookieSource(vscode, path.join(repository, 'profile'))
+    : undefined;
+  if (source === false) return;
+  const args = [path.join(__dirname, 'seed-brave-profile.py'), root, repository, config.url];
+  if (source) args.push(source);
+  try {
+    await run('python3', args, { timeout: 30000 });
+  } catch (error) {
+    const message = error.stderr?.trim();
+    if ([
+      "Quit this repository's test Brave before switching checkouts.",
+      "This repository's test Brave is already launching.",
+      "Brave did not start with the repository's test profile.",
+      "The selected checkout no longer has an extension manifest."
+    ].includes(message)) throw new Error(message);
+    throw new Error('Could not launch test Brave. Check Python 3, Brave, and the selected login profile.');
+  }
 }
 
 async function openRegularBrave(vscode, root, url, run = promisify(execFile)) {
@@ -141,7 +175,7 @@ function registerDevelopmentLauncher(vscode, context) {
     ];
     if (process.platform === 'darwin' && extension)
       choices.unshift(
-        { label: 'Isolated Brave extension', kind: 'brave', description: 'Load this checkout in a separate browser profile' },
+        { label: 'Isolated Brave extension', kind: 'brave', description: 'Test this checkout with the repository’s separate Brave profile' },
         { label: 'Regular Brave profile', kind: 'brave', braveProfile: 'regular', description: 'Use existing Brave extensions, settings, and sign-ins' }
       );
     const selected = await vscode.window.showQuickPick(choices, { placeHolder: 'Choose a development launch preset' });
@@ -155,7 +189,7 @@ function registerDevelopmentLauncher(vscode, context) {
       if (browser === 'regular') return { kind: 'brave', url: url.href, braveProfile: 'regular' };
       const modes = [
         { label: 'Separate sign-in (default)', description: 'Keep the checkout profile independent', copyBraveCookies: false },
-        { label: 'Copy normal Brave login cookies', description: 'Seed a fresh profile with website login cookies only', copyBraveCookies: true }
+        { label: 'Copy normal Brave login cookies', description: 'Seed a fresh repository profile, including your ChatGPT sign-in', copyBraveCookies: true }
       ];
       const mode = await vscode.window.showQuickPick(modes, {
         placeHolder: existing?.copyBraveCookies ? 'Cookie copying was previously enabled; choose again' : 'Choose how to sign in to the test browser'
@@ -194,8 +228,10 @@ function registerDevelopmentLauncher(vscode, context) {
     let locked = true;
     try {
       const remote = repository.state.remotes?.find(item => item.name === 'origin')?.fetchUrl;
-      const key = 'developmentLauncher:' + checkoutId(remote || root);
-      let config = context.globalState.get(key);
+      const projectId = checkoutId(await repositoryKey(root, remote));
+      const key = 'developmentLauncher:' + projectId;
+      const existing = context.globalState.get(key) ?? context.globalState.get('developmentLauncher:' + checkoutId(root));
+      let config = existing;
       const current = running(root);
       if (current) {
         const action = await vscode.window.showQuickPick(['Stop task', 'Restart task'], { placeHolder: 'Development process already running' });
@@ -213,7 +249,7 @@ function registerDevelopmentLauncher(vscode, context) {
         if (choice.kind === 'configure') config = undefined;
       }
       if (!config) {
-        config = await configure(root, context.globalState.get(key));
+        config = await configure(root, existing);
         if (!config) return;
         await context.globalState.update(key, config);
       }
@@ -224,10 +260,8 @@ function registerDevelopmentLauncher(vscode, context) {
           await openRegularBrave(vscode, root, config.url);
           return;
         }
-        const profile = path.join(context.globalStorageUri.fsPath, 'brave-tests', checkoutId(root));
-        await fs.mkdir(profile, { recursive: true, mode: 0o700 });
-        if (config.copyBraveCookies === true && await seedBraveProfile(vscode, profile) === false) return;
-        await promisify(execFile)('/usr/bin/open', braveArgs(root, profile, config.url));
+        const testRepository = path.join(context.globalStorageUri.fsPath, 'brave-repositories', projectId);
+        await launchIsolatedBrave(vscode, root, testRepository, config);
         return;
       }
       const args = parseArgs(JSON.stringify(config.args));
@@ -255,4 +289,4 @@ function registerDevelopmentLauncher(vscode, context) {
     launch(uri).catch(error => vscode.window.showErrorMessage('Development launch: ' + error.message))));
 }
 
-module.exports = { parseArgs, localUrl, checkoutId, braveArgs, suggestedArgs, waitForReady, openDevelopmentUrl, openRegularBrave, seedBraveProfile, registerDevelopmentLauncher };
+module.exports = { parseArgs, localUrl, checkoutId, repositoryKey, suggestedArgs, waitForReady, openDevelopmentUrl, openRegularBrave, chooseBraveCookieSource, launchIsolatedBrave, registerDevelopmentLauncher };
