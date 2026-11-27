@@ -453,20 +453,37 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   layoutState={...layoutState,ci:{state:'pending',summary:'CI checks are still running or queued.',checks:allChecks}};
   await context.refresh();
   const rows=()=>getElementById('ci-status').children[0].children;
-  assert.deepEqual(rows().map(item=>item['data-check-state']),['passed','running','pending','skipped']);
-  assert.equal(rows()[0]['aria-label'],'Build — success');
+  assert.deepEqual(rows().map(item=>item['data-check-state']),['running','pending','skipped','passed']);
+  assert.equal(rows()[3]['aria-label'],'Build — success');
+  assert.deepEqual(rows().map(item=>item.textContent),['Test','Lint','Optional','Build']);
+  assert.deepEqual(allChecks.map(check=>check.name),['Build','Test','Lint','Optional'],'Rendering does not reorder the source evidence');
+  layoutState={...layoutState,ci:{...layoutState.ci,checks:[
+    {name:'Passed first',result:'success'},{name:'Skipped first',result:'neutral'},
+    {name:'Queued first',result:'queued'},{name:'Failed first',result:'timed_out'},
+    {name:'Running second',result:'in_progress'},{name:'Failed second',result:'failure'},
+    {name:'Unknown third',result:'unrecognized'},{name:'Skipped second',result:'skipped'},
+    {name:'Passed second',result:'success'}
+  ]}};
+  await context.refresh();
+  assert.deepEqual(rows().map(item=>item.textContent),[
+    'Failed first','Failed second','Queued first','Running second','Unknown third',
+    'Skipped first','Skipped second','Passed first','Passed second'
+  ],'Stable priority groups keep failures first, unfinished next, skipped next and successes last');
+  const orderedList=getElementById('ci-status').children[0];
+  await context.refresh();
+  assert.equal(getElementById('ci-status').children[0],orderedList,'Unchanged sorted polls preserve the live region');
   layoutState={...layoutState,ci:{state:'failed',summary:'CI checks failed.',checks:allChecks.map(check=>check.name==='Test'?{...check,result:'failure'}:check)},mergeIssue:{kind:'ci-failed',message:'Test failed.'}};
   await context.refresh();
   assert.equal(getElementById('ci-status').hidden,false,'CI details remain visible beside a merge blocker');
-  assert.deepEqual(rows().map(item=>item['data-check-state']),['passed','failed','pending','skipped']);
+  assert.deepEqual(rows().map(item=>item['data-check-state']),['failed','pending','skipped','passed']);
   layoutState={...layoutState,ci:{state:'passed',summary:'CI checks passed.',checks:allChecks.map(check=>check.result==='skipped'?check:{...check,result:'success'})},mergeIssue:undefined};
   await context.refresh();
-  assert.deepEqual(rows().map(item=>item.textContent),allChecks.map(check=>check.name),'Completed checks remain visible');
-  assert.deepEqual(rows().map(item=>item['data-check-state']),['passed','passed','passed','skipped']);
+  assert.deepEqual(rows().map(item=>item.textContent),['Optional','Build','Test','Lint'],'Completed checks remain visible in priority order');
+  assert.deepEqual(rows().map(item=>item['data-check-state']),['skipped','passed','passed','passed']);
   layoutState={...layoutState,merging:true,mergeProgress:{stage:'checks-polled',ci:{state:'pending',message:'Waiting for CI checks.',checks:allChecks}}};
   await context.refresh();
   assert.equal(getElementById('ci-status').hidden,false,'Live merge polling displays individual checks');
-  assert.deepEqual(rows().map(item=>item['data-check-state']),['passed','running','pending','skipped']);
+  assert.deepEqual(rows().map(item=>item['data-check-state']),['running','pending','skipped','passed']);
   layoutState={...layoutState,merging:false,mergeProgress:undefined};
   assert.equal(getElementById('merge-issue').hidden,true);
   layoutState={errors:{merge:'Resolve the overlapping edits.'},result:{number:479,url:'https://github.com/pony-factor/sweetiebot-SCM/pull/479'},mergeIssue:{kind:'conflict',message:'Resolve the overlapping edits.'},mergeHelpAvailable:true};
