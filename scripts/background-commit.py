@@ -69,9 +69,9 @@ def retry_network_read(operation):
 
 
 class SyncConflicts(RuntimeError):
-    def __init__(self, paths):
+    def __init__(self, paths, method='Lindsey sync'):
         self.paths = paths
-        super().__init__('Lindsey sync found merge conflicts: ' + ', '.join(paths)
+        super().__init__(method + ' found merge conflicts: ' + ', '.join(paths)
                          + '. Your local commit and working files are preserved. '
                          'Stop the background push before resolving these conflicts.')
 
@@ -140,7 +140,7 @@ def recover_finalization(meta):
                 result = git('read-tree', '-u', '-m', move['before'], move['after'],
                              check=False, env=env)
                 if result.returncode:
-                    raise RuntimeError('Local edits changed during Lindsey sync; publication was paused.')
+                    raise RuntimeError('Local edits changed during branch sync; publication was paused.')
         commands.append(f"update {move['branch']} {move['after']} {actual}")
     commands += ['prepare', 'commit']
     git('update-ref', '-m', 'sweetiebot: finalize queued commit messages', '--stdin',
@@ -929,30 +929,10 @@ def permanent_push_error(job, result):
             "changes are preserved.")
 
 
-def rejected_push_error(job, result, remote_tip):
-    """Diagnose history rejection without exposing Git output or touching the index."""
-    rejected = any(line.startswith('!\t') and line.endswith(
+def push_needs_sync(result):
+    """Recognize a non-fast-forward rejection in Git's porcelain output."""
+    return any(line.startswith('!\t') and line.endswith(
         ('(fetch first)', '(non-fast-forward)')) for line in result.stdout.splitlines())
-    if not rejected:
-        return None  # Network failures retain the durable automatic retry.
-    message = ('Push rejected: the remote branch has newer commits. '
-               'Cancel the background job, sync the branch, then push again. '
-               'Your local commit and uncommitted changes are preserved.')
-    if not remote_tip or not re.fullmatch(r'[0-9a-f]{40,64}', remote_tip):
-        return message
-    if git('cat-file', '-e', remote_tip + '^{commit}', check=False).returncode:
-        fetched = git('fetch', '--no-tags', '--no-write-fetch-head', job['remote'],
-                      remote_tip, check=False, timeout=120)
-        if fetched.returncode:
-            return message
-    # merge-tree creates only temporary Git objects: no merge, commit, or checkout.
-    preview = git('merge-tree', '--write-tree', '--name-only', job['sha'], remote_tip,
-                  check=False, timeout=30)
-    if preview.returncode == 1:
-        return ('Push rejected: local and remote changes have merge conflicts. '
-                'Cancel the background job, sync the branch and resolve the conflicts, '
-                'then push again. Your local commit and uncommitted changes are preserved.')
-    return message
 
 
 def adopt_published_fast_forward(job, remote_tip):
@@ -997,15 +977,61 @@ def adopt_published_fast_forward(job, remote_tip):
             return True
 
 
+def merge_for_background_push(meta, job, before, remote_tip, env, check_worktrees):
+    """Merge the exact queued push tip with Git when Lindsey is unavailable."""
+    preview = git('merge-tree', '--write-tree', '--name-only', '-z', before, remote_tip,
+                  check=False, timeout=30, env=env, encoding='utf-8', errors='replace')
+    tree, *paths = preview.stdout.split('\0')
+    if preview.returncode == 1 and '' in paths:
+        raise SyncConflicts(paths[:paths.index('')], 'Git sync')
+    if preview.returncode or not re.fullmatch(r'[0-9a-f]{40,64}', tree):
+        raise RuntimeError('Git could not merge the remote branch. Your local commits and files are preserved.')
+    with repository_lock(meta):
+        recover_finalization(meta)
+        if branch_tip(job['branch']) != before:
+            raise RuntimeError('The branch changed while Git prepared the sync; publication was paused.')
+        check_worktrees()
+        entries, jobs = captured_chain(meta / MARKER, job['branch'], allow_extension=True,
+                                       allow_finalized_advance=True)
+        if any(item.get('provisional') for item in jobs):
+            return False
+        latest = jobs[-1]
+        if not latest['push'] or before != latest.get('publish_sha', latest['sha']):
+            raise RuntimeError('Git sync needs the current branch tip queued for push. '
+                               'Stop the background push and sync before publishing your branch.')
+        destination = (job['remote'], job['destination'])
+        pushing_jobs = [(entry, item) for entry, item in zip(entries, jobs) if item['push']]
+        if any((item['remote'], item['destination']) != destination for _, item in pushing_jobs):
+            raise RuntimeError('Git sync paused because the queued pushes target different destinations. '
+                               'Stop the background push and sync the intended destination before publishing.')
+        active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
+        if active == job['branch'] and git('status', '--porcelain', env=env):
+            raise RuntimeError('Git sync is waiting for your uncommitted changes. '
+                               'Commit or stash them before retrying; your files are preserved.')
+        args = ['commit-tree', tree, '-p', before, '-p', remote_tip]
+        if latest['sign'] or commit_has_signature(before):
+            args.append('-S')
+        after = git(*args, '-m', '🔀 Merge upstream changes before pushing', env=env)
+        updates = [dict(directory=entry['directory'], values={'publish_sha': after})
+                   for entry, _ in pushing_jobs]
+        write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
+                      after=after, updates=updates, checkout=True))
+        recover_finalization(meta)
+        job['publish_sha'] = after
+    return True
+
+
 def sync_with_lindsey(job, remote_tip):
-    """Replay unpublished history through Lindsey, then atomically adopt its plan."""
+    """Integrate the remote tip using Lindsey when available or a native Git merge."""
     meta = Path(job['gitdir'])
     with branch_sync_lock(meta, job['branch']):
         with repository_lock(meta):
             recover_finalization(meta)
-            entries, jobs = captured_chain(meta / MARKER, job['branch'], allow_extension=True)
+            entries, jobs = captured_chain(meta / MARKER, job['branch'], allow_extension=True,
+                                           allow_finalized_advance=True)
             if any(item.get('provisional') for item in jobs):
-                return False  # Let all queued titles finish before rebasing the chain.
+                return False  # Let all queued titles finish before integrating the remote tip.
+            job.update(next(item for item in jobs if item['id'] == job['id']))
             before = branch_tip(job['branch'])
         # Network and replay planning must not hold the shared queue lock.
         configured = os.environ.get('LINDSEY_SYNC_REPO')
@@ -1016,14 +1042,15 @@ def sync_with_lindsey(job, remote_tip):
                        if (root / 'scripts/sync-local.js').is_file()), None)
         node = shutil.which('node') or next((str(path) for path in (
             Path('/opt/homebrew/bin/node'), Path('/usr/local/bin/node')) if path.is_file()), None)
-        if not script or not node:
-            raise RuntimeError('Push needs sync, but Lindsey local sync is unavailable. Install Lindsey Sync and Node, then retry.')
         if not re.fullmatch(r'[0-9a-f]{40,64}', remote_tip or ''):
-            raise RuntimeError('Lindsey could not verify the remote branch; retry when it is reachable.')
+            raise RuntimeError('Could not verify the remote branch; retry when it is reachable.')
         if git('cat-file', '-e', remote_tip + '^{commit}', check=False).returncode:
             if git('fetch', '--no-tags', '--no-write-fetch-head', job['remote'], remote_tip,
                    check=False, timeout=120).returncode:
-                raise RuntimeError('Lindsey could not fetch the remote branch; retry when it is reachable.')
+                raise RuntimeError('Could not fetch the remote branch; retry when it is reachable.')
+        if job.get('publish_sha') and not git('merge-base', '--is-ancestor', remote_tip, job['publish_sha'],
+                   check=False).returncode:
+            return True  # Another queued push already integrated this tip.
         env = os.environ.copy()
         env.pop('GIT_INDEX_FILE', None)
         # Do not update a branch checked out in another linked worktree.
@@ -1031,8 +1058,10 @@ def sync_with_lindsey(job, remote_tip):
             worktrees = git('worktree', 'list', '--porcelain').split('\n\n')
             for worktree in worktrees:
                 if '\nbranch ' + job['branch'] in worktree and not worktree.startswith('worktree ' + job['root'] + '\n'):
-                    raise RuntimeError('Lindsey sync paused because the branch is open in another worktree.')
+                    raise RuntimeError('Branch sync paused because the branch is open in another worktree.')
         check_worktrees()
+        if not script or not node or job.get('publish_sha'):
+            return merge_for_background_push(meta, job, before, remote_tip, env, check_worktrees)
         result = subprocess.run([node, str(script), job['root'], before, remote_tip, core.REAL_GIT],
                                 capture_output=True, text=True, timeout=180, env=env)
         if result.returncode:
@@ -1356,16 +1385,18 @@ def work(directory, commit_only=False):
             with repository_lock(job['gitdir']):
                 captured_chain(marker, job['branch'], allow_extension=True, allow_finalized_advance=True)
                 job = read_journal(file)
-            pushed = job['push']
+                pushed = job['push']
+                if pushed:
+                    job['phase'] = 'pushing'
+                    write_journal(file, job)
             if pushed:
                 from merged_branch import require_unmerged
                 retry_network_read(lambda: require_unmerged(job['branch'], job['remote']))
-                job['phase'] = 'pushing'
-                write_journal(file, job)
                 env = commit_hook_environment()
                 env.setdefault('GIT_SSH_COMMAND', 'ssh -oBatchMode=yes')
+                publish_sha = job.get('publish_sha', job['sha'])
                 result = git('-c', 'credential.interactive=false', 'push', '--porcelain', job['remote'],
-                             job['sha'] + ':' + job['destination'], check=False, timeout=120, env=env)
+                             publish_sha + ':' + job['destination'], check=False, timeout=120, env=env)
                 if result.returncode:
                     permanent = permanent_push_error(job, result)
                     if permanent:
@@ -1373,25 +1404,23 @@ def work(directory, commit_only=False):
                     # A later finalized job may already have published this one.
                     published = git('ls-remote', job['remote'], job['destination'], check=False, timeout=30)
                     tip = published.stdout.split()[0] if published.returncode == 0 and published.stdout.strip() else ''
-                    included = tip and git('merge-base', '--is-ancestor', job['sha'], tip, check=False).returncode == 0
+                    included = tip and git('merge-base', '--is-ancestor', publish_sha, tip, check=False).returncode == 0
                     if included and job.get('published_title_unapplied'):
                         adopt_published_fast_forward(job, tip)
                     if not included:
-                        error = rejected_push_error(job, result, tip)
-                        if error:
+                        if push_needs_sync(result):
                             if not sync_with_lindsey(job, tip):
                                 return
                             # One recovery attempt per push; never force-push.
                             result = git('-c', 'credential.interactive=false', 'push', '--porcelain',
-                                         job['remote'], job['sha'] + ':' + job['destination'],
+                                         job['remote'], job.get('publish_sha', job['sha']) + ':' + job['destination'],
                                          check=False, timeout=120, env=env)
                             if result.returncode:
                                 permanent = permanent_push_error(job, result)
                                 if permanent:
                                     raise RuntimeError(permanent)
-                                error = rejected_push_error(job, result, '')
-                                if error:
-                                    raise RuntimeError('The remote advanced again after Lindsey sync. Retry the background job.')
+                                if push_needs_sync(result):
+                                    raise RuntimeError('The remote advanced again after branch sync. Retry the background job.')
                                 log_event('background_commit', 'push_pending', outcome='retry')
                                 return
                         else:
