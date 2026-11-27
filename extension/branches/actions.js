@@ -15,6 +15,7 @@ const { reviewSyncConflicts, queueSyncReport, registerSyncReportPublisher } = re
 const { createResolutionCommits, validateDecisions } = require('../merge/resolution-commits');
 const { loadBranchNameHistory, chooseBranchName, saveBranchNameHistory } = require('./name-selection');
 const { listBranchStrip, checkoutBranchStrip } = require('./strip');
+const { preparePullRequestBranch } = require('./pr-checkout');
 const { resolvePythonExecutable } = require('../ui/python-runtime');
 const { recoveryPlan } = require('../commits/recovery/finalized');
 const { mergedBranchAction, mergedBranchStatus, warnMergedBranch } = require('./merged-branch');
@@ -1752,6 +1753,12 @@ function registerBranchCommands(vscode, context) {
         const repository = await resolveRepository(uri);
         return await queueRepositoryOperation(repository, async () => {
           await requireFinalizedCommit(repository, { background: false });
+          if (options.pullRequest) {
+            const branch = await preparePullRequestBranch(repository.rootUri.fsPath, options.pullRequest);
+            if (!await routeBranch(vscode, repository, { branch }))
+              throw new Error('Could not open the PR worktree; the source checkout was preserved.');
+            return true;
+          }
           if (await routeBranch(vscode, repository, options)) return options.branch;
           if (options.existingOnly) return false;
           return checkoutBranchStrip(repository, {

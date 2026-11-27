@@ -18,6 +18,8 @@ An explicit checkout handoff transfers the captured draft once and retires the m
 
 **New Branch** moves staged, unstaged, partially staged, and untracked changes into the new worktree, preserving the index even when no Codex chat is open. It verifies the copied changes before cleaning the source. A `.sweetiebot-handoff-backup` directory beside the destination repository retains the original index/worktree patches and untracked files for recovery. Switching to an existing branch leaves each worktree's pending edits in place.
 
+GitHub Pull Requests **Checkout** routes to an existing PR worktree or prepares the verified PR branch and opens a separate managed worktree in the current window. It never switches the source checkout in place. Existing local PR work is preserved; previously unseen fork PRs without a configured head remote use the base repository's pull-request head ref and a local review branch. A changed remote head or failed workspace handoff stops checkout rather than falling back to native Git.
+
 ## Prepared branch worktrees
 
 Trusted local repositories prepare up to three detached checkouts at their local default-branch tip while VS Code is open. These checkouts share the Git object database; they are not remote clones, temporary named branches, or new GitHub refs. A clean standby advances incrementally as local main advances. When New Branch requests exactly that commit, Sweetiebot atomically reserves and moves the checkout into the normal branch-named directory. It still saves editor changes, backs up pending files, verifies their transfer, and preserves the existing Codex handoff. Pending-title forks, unavailable, stale or contaminated slots, and stacked adoption continue through their established paths.

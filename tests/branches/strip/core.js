@@ -8,6 +8,7 @@ const { execFileSync } = require('node:child_process');
 const { groupBranchRefs, parseGitHubRemote, checkoutBranchStrip, pullRequestCacheKey,
   omitMergedBranches } = require('../../../extension/branches/strip');
 const { worktreeLocations } = require('../../../extension/branches/worktree-registry');
+const { preparePullRequestBranch } = require('../../../extension/branches/pr-checkout');
 
 assert.equal(parseGitHubRemote('git@github.com:pony-factor/sweetiebot-SCM.git'),
   'github.com/pony-factor/sweetiebot-SCM');
@@ -152,6 +153,32 @@ assert(unknown.branches.every(item => item.hasPr === null));
     assert.equal(await checkoutBranchStrip(repository, { branch: 'main' }), 'main',
       'Normal checkout remains available for a branch owned by this worktree');
     assert.equal(checkoutCalls, 1);
+    // Prepare a previously unseen PR using a real remote and a dirty main.
+    const bare = path.join(temporary, 'remote.git');
+    git('init', '--bare', bare);
+    git('-C', root, 'push', bare, mergedTip + ':refs/heads/new-pr');
+    git('-C', root, 'push', bare, mergedTip + ':refs/pull/43/head');
+    git('-C', root, 'remote', 'add', 'origin', 'https://github.com/example/repo.git');
+    git('-C', root, 'config', 'url.' + bare + '.insteadOf', 'https://github.com/example/repo.git');
+    await fs.writeFile(path.join(root, 'main-draft.txt'), 'untouched\n');
+    git('-C', root, 'add', 'main-draft.txt');
+    const before = git('-C', root, 'status', '--porcelain');
+    const index = git('-C', root, 'write-tree');
+    const base = { ref: 'main', repositoryCloneUrl: { host: 'github.com', owner: 'example', repositoryName: 'repo' } };
+    const pr = { number: 42, base, head: { ...base, ref: 'new-pr', sha: mergedTip } };
+    assert.equal(await preparePullRequestBranch(root, pr), 'new-pr');
+    assert.equal(git('-C', root, 'rev-parse', 'new-pr'), mergedTip);
+    assert.equal(git('-C', root, 'config', 'branch.new-pr.remote'), 'origin');
+    assert.equal(await preparePullRequestBranch(root, pr), 'new-pr');
+    const fork = { number: 43, base, head: { ref: 'main', sha: mergedTip,
+      repositoryCloneUrl: { host: 'github.com', owner: 'contributor', repositoryName: 'repo' } } };
+    assert.equal(await preparePullRequestBranch(root, fork), 'pr/contributor/43');
+    assert.equal(git('-C', root, 'rev-parse', 'pr/contributor/43'), mergedTip);
+    assert.equal(git('-C', root, 'branch', '--show-current'), 'main');
+    assert.equal(git('-C', root, 'rev-parse', 'HEAD'), baseTip);
+    assert.equal(git('-C', root, 'write-tree'), index);
+    assert.equal(git('-C', root, 'status', '--porcelain'), before);
+
   } finally {
     await fs.rm(temporary, { recursive: true, force: true });
   }
