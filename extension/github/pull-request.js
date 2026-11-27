@@ -13,7 +13,7 @@ const { createDraftHandoff } = require('../codex/draft-handoff');
 const { openKefaniaMergeHelp } = require('../codex/kefania/merge-help');
 const { squashMergePullRequest, readPullRequestCI } = require('../merge/pull-request');
 const { displayName } = require('../codex/pony-profile');
-const { prRules, ponyPrompt, boundedLaunch, openWorkflow } = require('./pr-workflows');
+const { prRules, ponyPrompt, ponyArtworkPrompt, boundedLaunch, openWorkflow } = require('./pr-workflows');
 const { launchPRSession, closePRSession } = require('./pr-session');
 const { pendingPRCommits } = require('./pr-commit-wait');
 const { chatgptPullRequestUrl, resolveChatgptActionProject } = require('../codex/chatgpt-project');
@@ -829,7 +829,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const closers = new Map();
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
-    localHandoff.register(draftId, { pony, profile: cachedProfile, artwork,
+    localHandoff.register(draftId, { pony, profile: cachedProfile, artwork, artworkRefreshPending: Boolean(cachedProfile),
       onArtwork: artworkCache?.save,
       ludicrousMode,
       appearance: async () => {
@@ -878,7 +878,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       clearTimeout(timers.get(kind));
       timers.delete(kind);
       await closers.get(kind)?.();
-      if (kind === 'pony' && pony && typeof profile === 'string') {
+      if (kind === 'pony' && pony && !cachedProfile && typeof profile === 'string') {
         // The callback remains active until the cache is stored and its
         // durable Git publication job is handed off. PR merging is independent.
         try {
@@ -926,7 +926,9 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
       });
     });
     if (!waitForCommits) prepareDraft();
-    if (pony && !cachedProfile) prepare('pony', () => boundedLaunch(() => ponyPrompt(pony, instructions, profileCallback),
+    if (pony) prepare('pony', () => boundedLaunch(() => cachedProfile
+      ? ponyArtworkPrompt(pony, cachedProfile, artwork, profileCallback)
+      : ponyPrompt(pony, instructions, profileCallback),
       prompt => chatgptPullRequestUrl(prompt, projectUrl, profileCallback)));
     for (const [id, draft] of pendingDrafts) if (draft.expires < Date.now()) pendingDrafts.delete(id);
     if (evidence) pendingDrafts.set(draftId, { repository, input: { ...input, expectedHeadSha: evidence.headSha }, expires: Date.now() + 3600000 });
