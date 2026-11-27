@@ -210,27 +210,16 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
         if (sandbox === original || sandbox.startsWith(original + path.sep)) {
             throw new Error('The experiment must be outside the original checkout.');
         }
-        const direction = 'A separate, disposable Sweetiebot experiment is now open in another VS Code window.\n' +
+        const direction = 'Sweetiebot opened a disposable experiment in another VS Code window.\n' +
             'Original checkout: ' + JSON.stringify(original) + '\n' +
             'Original branch: ' + JSON.stringify(sourceBranch || null) + '\n' +
             'Experimental checkout: ' + JSON.stringify(sandbox) + '\n' +
             'Copied branch: ' + JSON.stringify(branch) + '\n\n' +
-            'Run tests, builds, destructive resets, trial edits, and other experimental commands ONLY in the experimental checkout. ' +
-            'Use that exact directory as the working directory and check pwd before running destructive commands. ' +
-            'When the task requires window-specific or interactive testing, use the already-open experimental VS Code window and its experimental checkout for live UI, webview, focus, reload, restart, and window-lifecycle checks as applicable; do not use the original window as the test target. ' +
-            'Exercise the actual behavior there when needed, not just shell tests or static inspection. Verify the test window and checkout identity first; if testing requires installing or patching shared application files, use an isolated test instance or profile with isolated application files as appropriate, not changes that would affect the original window. ' +
-            'If live window testing is unavailable, report the specific blocker and any remaining manual checks rather than claiming they passed. ' +
-            'During experimentation, preserve the original checkout, its index, working files, and current Codex conversation. ' +
-            'The experiment contains a snapshot of committed, staged, unstaged, and non-ignored untracked files. ' +
-            'Do not run git reset/clean/checkout against the original repository. ' +
-            'After validating the solution in the experimental checkout, apply the final intended code changes to the original checkout and original branch above as part of this task; no additional request to copy them back is needed. ' +
-            'Before applying them, verify the original checkout and branch identity and inspect its current changes. ' +
-            'Transfer only the changes made for this task relative to the initial experiment snapshot, including intended new files and deletions; do not replay copied pre-existing edits or unrelated trial changes. ' +
-            'Preserve existing user edits and staging, and reconcile overlapping edits without overwriting user work. Do not stage, commit, push, or rewrite history unless separately requested. ' +
-            'Verify that the final changes are present in the original checkout before reporting completion. Work left only in the trial checkout is not completion. ' +
-            'Keep the experimental checkout and its work intact until the transfer is verified; if access or a conflict prevents transfer, preserve the work and report the exact blocker. ' +
-            'Do not publish experimental commits. ' +
-            'The separate window is available for its own Codex session if sandbox permissions prevent access from this one.';
+            'Run tests, builds, trial edits and destructive commands only in the experimental checkout; verify cwd before destructive commands. ' +
+            'For interactive tests, verify and use the experimental VS Code window for actual UI, webview, focus, reload, restart and lifecycle checks, not the original window or just static/shell checks. Isolate shared app files or profiles; report blocked live tests and remaining manual checks. ' +
+            'Preserve the original checkout, index, files and chat. The trial includes committed, staged, unstaged and non-ignored untracked files. Never reset, clean or checkout the original during testing. ' +
+            'After validation, verify the original checkout/branch and inspect current changes. Apply only this task’s changes relative to the initial experiment snapshot, including new files/deletions, back to the original branch without asking again. Preserve user edits and staging; reconcile overlaps. ' +
+            'Do not stage, commit, push or rewrite history unless requested; never publish trial commits. Verify changes in the original before reporting completion. Keep the trial intact until verified; preserve work and report blockers if transfer fails. If sandbox access is blocked, the trial window can run its own Codex session.';
         const input = [{ type: 'text', text: direction, text_elements: [] }];
         if (thread.status?.type === 'active') {
             const turns = await send('thread/turns/list', {
@@ -370,7 +359,7 @@ function scmToolkitRegisterCodexWorkspaceHandoff(provider, vscode, queueSupporte
                     if (admitted && !handoff?.userStopped) {
                         await send('turn/start', {
                             threadId: plan.threadId, cwd, clientUserMessageId: plan.id,
-                            input: [{ type: 'text', text: plan.continuationText || 'The user moved this same chat to the selected Git checkout. Continue the existing task here. Working directory: ' + cwd + '. Use this checkout for subsequent file operations; preserve the user’s existing commit and staging instructions.', text_elements: [] }]
+                            input: [{ type: 'text', text: plan.continuationText || 'Continue this task in the selected Git checkout: ' + cwd + '. Use it for file operations; preserve existing commit and staging instructions.', text_elements: [] }]
                         });
                     }
                 }
