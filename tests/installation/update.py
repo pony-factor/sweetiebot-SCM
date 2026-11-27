@@ -295,7 +295,7 @@ class UpdateTests(unittest.TestCase):
             payload = {'scripts/install.py': 'installer', 'scripts/update.py': 'updater',
                        'scripts/repair.py': 'repair --core-only',
                        update.THINKING_ASSET.as_posix(): 'thinking guard'}
-            for profile in (None, 'SHARED_BROWSER_PROFILE = 2', update.SHARED_PROFILE_MARKER):
+            for profile in (None, 'SHARED_BROWSER_PROFILE = 5', update.SHARED_PROFILE_MARKER):
                 if profile is not None:
                     payload[update.SHARED_PROFILE_SOURCE.as_posix()] = profile
                 for force in (False, True):

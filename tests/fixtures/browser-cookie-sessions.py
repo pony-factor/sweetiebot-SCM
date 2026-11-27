@@ -37,8 +37,9 @@ def main():
             profile.mkdir()
             patched = browser_pr.transform_storage(fixture)
             injection = patched.split(browser_pr.STORAGE_START)[1].split(browser_pr.STORAGE_END)[0]
+            factory = patched.split('static getOrCreateWorkspace', 1)[0]
             config = profile / 'routing.json'
-            config.write_text(json.dumps({'root': str(profile), 'injections': [injection]}))
+            config.write_text(json.dumps({'root': str(profile), 'injection': injection, 'factory': factory}))
             for phase in ('seed', 'restart'):
                 subprocess.run([sys.argv[1], str(Path(__file__).with_suffix('.cjs')), str(config), phase],
                                cwd=ROOT, env=env, check=True, timeout=45)

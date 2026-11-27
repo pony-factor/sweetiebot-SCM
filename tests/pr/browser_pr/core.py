@@ -18,13 +18,19 @@ import browser_pr
 
 
 class BrowserPullRequestPatchTests(unittest.TestCase):
+    GLOBAL_FACTORY = (
+        'static getOrCreateGlobal(n){let e=electron.fromPartition("persist:vscode-browser");'
+        'return Sessions._bySession.get(e)??n.createInstance(Sessions,"global",e,"global"%s)}'
+    )
     STORAGE_FIXTURE = (
+        (GLOBAL_FACTORY % '') +
         'static getOrCreateWorkspace(n,e,t){let r=join(t,e,"browserStorage"),'
         'o=electron.fromPath(r.fsPath);return Sessions._bySession.get(o)}'
         'return Sessions.getOrCreate(this.instantiationService,e,r,'
         'this.environmentMainService.workspaceStorageHome,o.openedWorkspace?.id,t)'
     )
     AFFINITY_STORAGE_FIXTURE = (
+        (GLOBAL_FACTORY % ',void 0,void 0') +
         'static getOrCreateWorkspace(n,e,t,r,o){let s=o===void 0?void 0:hash("sha256").update(o).digest("hex"),'
         'a=s?join(Sessions.getWorkspaceAffinityStorageHome(t,e),s):join(t,e,"browserStorage"),'
         'l=s?`workspace:${e}:${s}`:`workspace:${e}`,c=electron.fromPath(a.fsPath);'
@@ -40,6 +46,7 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
             self.assertEqual(browser_pr.transform_storage(installed), installed)
             self.assertEqual(browser_pr.transform_storage(installed, remove=True), original)
         for source in ('unknown main', browser_pr.STORAGE_START, browser_pr.STORAGE_END,
+                       browser_pr.GLOBAL_STORAGE_START, browser_pr.GLOBAL_STORAGE_END,
                        original + original):
             with self.assertRaises(ValueError):
                 browser_pr.transform_storage(source)
@@ -52,6 +59,7 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
     def check_shared_sessions(self, fixture):
         installed = browser_pr.transform_storage(fixture)
         injected = installed.split(browser_pr.STORAGE_START)[1].split(browser_pr.STORAGE_END)[0]
+        factory = installed.split('static getOrCreateWorkspace', 1)[0]
         script = r'''
 const assert = require('node:assert/strict');
 const sessions = new Map();
@@ -60,28 +68,36 @@ const electron = {fromPartition(partition) {
   return sessions.get(partition);
 }};
 const Sessions = {_bySession: new Map()};
+Sessions.getOrCreateGlobal = new Function('electron', 'Sessions',
+  'return class {' + FACTORY + '}')(electron, Sessions).getOrCreateGlobal;
 const host = {instantiationService: {createInstance(cls, id, session, scope) {
     const instance = {id, session, scope}; cls._bySession.set(session, instance); return instance;
   }}};
-const resolve = new Function('r', 'o', 'return ' + INJECTION + '"isolated";');
+const resolve = new Function('r', 'o', 'return ' + INJECTION +
+  '(r.scope === "global" ? Sessions.getOrCreateGlobal(this.instantiationService) : "isolated");');
 const windowFor = name => ({openedWorkspace:{configPath:{path:
   '/repo/.git/sweetiebot-pr-sessions/session-' + name + '/Pony PR.code-workspace'}}});
+const normalGlobal = Sessions.getOrCreateGlobal(host.instantiationService);
 const first = resolve.call(host, {scope:'workspace'}, windowFor('one'));
 const second = resolve.call(host, {scope:'workspace'}, windowFor('two'));
 assert.equal(first, second);
 assert.equal(first.session.partition, 'persist:sweetiebot-browser');
+assert.equal(normalGlobal, first);
+assert.equal(first.scope, 'global');
 for (const scope of ['ephemeral', 'agent'])
   assert.equal(resolve.call(host, {scope}, windowFor('three')), 'isolated');
-for (const scope of ['workspace', 'global']) {
-  for (const options of [{network:{authority:'remote'}}, {affinity:'isolated'}, {affinity:''}])
-    assert.equal(resolve.call(host, {scope, ...options}, windowFor('three')), 'isolated');
+for (const options of [{network:{authority:'remote'}}, {affinity:'isolated'}, {affinity:''}]) {
+  assert.equal(resolve.call(host, {scope:'workspace', ...options}, windowFor('three')), 'isolated');
+  const native = resolve.call(host, {scope:'global', ...options}, windowFor('three'));
+  assert.equal(native.session.partition, 'persist:vscode-browser');
+  assert.notEqual(native, first);
 }
 for (const window of [{}, {openedWorkspace:{id:'repo'}},
   {openedWorkspace:{configPath:{path:'/repo/ordinary.code-workspace'}}}])
   for (const scope of ['workspace', 'global'])
     assert.equal(resolve.call(host, {scope}, window), first);
-assert.equal(sessions.size, 1);
-'''.replace('INJECTION', json.dumps(injected))
+assert.equal(sessions.size, 2);
+'''.replace('INJECTION', json.dumps(injected)).replace('FACTORY', json.dumps(factory))
         subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
 
     def test_affinity_resolver_preserves_native_network_bookkeeping(self):
@@ -93,6 +109,7 @@ const electron = {fromPartition:partition => ({partition})};
 let nativeCalls = 0;
 const makeSession = () => ({setNetwork(value) {this.network = value;}});
 const Sessions = {_bySession:new Map(), getOrCreate() {nativeCalls++; return makeSession();}};
+Sessions.getOrCreateGlobal = () => makeSession();
 const normalize = r => r.network;
 const host = {environmentMainService:{workspaceStorageHome:{}},
   instantiationService:{createInstance:() => makeSession()}};

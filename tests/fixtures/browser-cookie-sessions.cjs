@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
-const {root, injections} = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const {root, injection, factory} = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const phase = process.argv[3];
 app.setPath('userData', root);
 app.on('window-all-closed', () => {});
@@ -53,20 +53,25 @@ app.whenReady().then(async () => {
       win.destroy();
     }
   }
-  for (const [index, injection] of injections.entries()) {
+  {
     const Sessions = {_bySession: new Map()};
+    Sessions.getOrCreateGlobal = new Function('electron', 'Sessions',
+      'return class {' + factory + '}')(electron, Sessions).getOrCreateGlobal;
     const host = {instantiationService: {createInstance(cls, id, session, scope) {
         const instance = {id, session, scope};
         cls._bySession.set(session, instance);
         return instance;
       }}};
     let isolatedCount = 0;
-    const fallback = () => ({session: electron.fromPartition(`cookie-ci-isolated-${index}-${isolatedCount++}`)});
+    const fallback = options => options.scope === 'global'
+      ? Sessions.getOrCreateGlobal(host.instantiationService)
+      : {session: electron.fromPartition(`cookie-ci-isolated-${isolatedCount++}`)};
     const resolve = new Function('r', 'o', 'electron', 'Sessions', 'fallback',
-      'return ' + injection + 'fallback();');
+      'return ' + injection + 'fallback(r);');
     const windowFor = id => ({openedWorkspace: {id}});
     const browser = (options, id) => resolve.call(host, options, windowFor(id), electron, Sessions, fallback).session;
     const repository = browser({scope: 'workspace'}, 'repository');
+    assert.equal(Sessions.getOrCreateGlobal(host.instantiationService).session, repository);
     assert.equal(repository.storagePath, path.join(app.getPath('sessionData'), 'Partitions', 'sweetiebot-browser'));
     if (phase === 'seed') {
       await visit(repository, '/before-login', 'anonymous');
@@ -85,7 +90,8 @@ app.whenReady().then(async () => {
     await visit(browser({scope: 'global'}, 'global'), '/global', 'authenticated');
     for (const options of [{scope: 'ephemeral'}, {scope: 'agent'},
       {scope: 'workspace', affinity: 'separate'},
-      {scope: 'workspace', network: {authority: 'remote'}}]) {
+      {scope: 'workspace', network: {authority: 'remote'}},
+      {scope: 'global', network: {authority: 'remote'}}]) {
       await visit(browser(options, 'isolated'), '/isolated', 'anonymous');
     }
   }

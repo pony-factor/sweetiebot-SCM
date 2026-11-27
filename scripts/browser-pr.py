@@ -26,57 +26,60 @@ BACKGROUND_END = '/* sweetiebot-browser-background:end */'
 BACKGROUND_ANCHOR = 'this.setupEventListeners()}static{this.MAX_CONSOLE_LOG_ENTRIES='
 STORAGE_START = '/* sweetiebot-pr-storage:start */'
 STORAGE_END = '/* sweetiebot-pr-storage:end */'
-SHARED_BROWSER_PROFILE = 5
+GLOBAL_STORAGE_START = '/* sweetiebot-global-storage:start */'
+GLOBAL_STORAGE_END = '/* sweetiebot-global-storage:end */'
+SHARED_BROWSER_PROFILE = 6
 
 
 def transform_storage(source, remove=False):
-    if (source.count(STORAGE_START) != source.count(STORAGE_END)
-            or source.count(STORAGE_START) > 1):
-        raise ValueError('Incomplete Sweetiebot PR browser storage patch.')
-    if STORAGE_START in source:
-        before, remainder = source.split(STORAGE_START, 1)
-        _, after = remainder.split(STORAGE_END, 1)
-        source = before + after
+    for start, end, original in ((STORAGE_START, STORAGE_END, ''),
+                                 (GLOBAL_STORAGE_START, GLOBAL_STORAGE_END, '){')):
+        if source.count(start) != source.count(end) or source.count(start) > 1:
+            raise ValueError('Incomplete Sweetiebot browser storage patch.')
+        if start in source:
+            before, remainder = source.split(start, 1)
+            _, after = remainder.split(end, 1)
+            source = before + original + after
     if remove:
         return source
     ident = r'[A-Za-z_$][\w$]*'
-    session = re.search(
-        rf'static getOrCreateWorkspace\(({ident}),({ident}),({ident})\)'
-        rf'\{{let ({ident})=({ident})\(\3,\2,"browserStorage"\),'
-        rf'({ident})=({ident})\.fromPath\(\4\.fsPath\);return ({ident})\._bySession',
-        source,
-    )
-    modern_session = re.search(
-        rf'static getOrCreateWorkspace\(({ident}),({ident}),({ident}),({ident}),({ident})\)'
-        rf'\{{let ({ident})=\5===void 0\?void 0:({ident})\("sha256"\)\.update\(\5\)\.digest\("hex"\),'
-        rf'({ident})=\6\?({ident})\(({ident})\.getWorkspaceAffinityStorageHome\(\3,\2\),\6\):\9\(\3,\2,"browserStorage"\),'
-        rf'({ident})=\6\?`workspace:\$\{{\2\}}:\$\{{\6\}}`:`workspace:\$\{{\2\}}`,'
-        rf'({ident})=({ident})\.fromPath\(\8\.fsPath\);return \10\._bySession',
-        source,
+    global_factory = re.compile(
+        rf'static getOrCreateGlobal\((?P<service>{ident})(?P<header>\)\{{)'
+        rf'let (?P<session>{ident})=(?P<electron>{ident})\.fromPartition\("persist:vscode-browser"\);'
+        rf'return (?P<cls>{ident})\._bySession\.get\((?P=session)\)\?\?'
+        r'(?P=service)\.createInstance\((?P=cls),"global",(?P=session),"global"(?P<extra>(?:,void 0)*)\)\}'
     )
     resolver = re.compile(
         rf'({ident})\.getOrCreate\(this\.instantiationService,({ident}),({ident}),'
         rf'this\.environmentMainService\.workspaceStorageHome,({ident})\.openedWorkspace\?\.id,({ident})\)'
     )
+    factories = list(global_factory.finditer(source))
     matches = list(resolver.finditer(source))
-    cls = modern_session[10] if modern_session else session[8] if session else None
-    if cls is None or len(matches) != 1 or cls != matches[0][1]:
+    if len(factories) != 1 or len(matches) != 1 or factories[0]['cls'] != matches[0][1]:
         raise ValueError('Unsupported Integrated Browser persistent session lifecycle.')
+    factory = factories[0]
     match = matches[0]
     cls, options = match[1], match[3]
-    electron = modern_session[13] if modern_session else session[7]
-    # Ordinary repository and PR windows share the same persistent profile.
-    # Ephemeral and agent sessions retain their isolation and network protections.
+    # Override the global factory itself so native callers, including Clear Global
+    # Storage, resolve the same store as ordinary workspace browser tabs.
+    global_insertion = (
+        GLOBAL_STORAGE_START + ',sweetiebotUseNative=false){if(!sweetiebotUseNative){'
+        + f'let sweetiebotSession={factory["electron"]}.fromPartition("persist:sweetiebot-browser");'
+        + '(' + ASSET.with_name('session-persistence.js').read_text() + ')(sweetiebotSession);'
+        + f'return {cls}._bySession.get(sweetiebotSession)??{factory["service"]}.createInstance('
+        + f'{cls},"sweetiebot-pr",sweetiebotSession,"global"{factory["extra"]})}}' + GLOBAL_STORAGE_END
+    )
+    isolated = f'({options}.network!==void 0||{options}.affinity!==void 0)'
     insertion = (
         STORAGE_START
-        + f'(({options}.scope==="workspace"||{options}.scope==="global")'
-        + f'&&{options}.network===void 0&&{options}.affinity===void 0)?(()=>{{'
-        + f'let sweetiebotSession={electron}.fromPartition("persist:sweetiebot-browser");'
-        + '(' + ASSET.with_name('session-persistence.js').read_text() + ')(sweetiebotSession);'
-        + f'return {cls}._bySession.get(sweetiebotSession)??this.instantiationService.createInstance({cls},"sweetiebot-pr",sweetiebotSession,"workspace"'
-        + (',void 0,void 0' if modern_session else '') + ')})():' + STORAGE_END
+        + f'{options}.scope==="workspace"&&!{isolated}?{cls}.getOrCreateGlobal(this.instantiationService):'
+        + f'{options}.scope==="global"&&{isolated}?{cls}.getOrCreateGlobal(this.instantiationService,true):'
+        + STORAGE_END
     )
-    return source[:match.start()] + insertion + source[match.start():]
+    for start, end, text in sorted(((match.start(), match.start(), insertion),
+                                   (*factory.span('header'), global_insertion)), reverse=True):
+        source = source[:start] + text + source[end:]
+    return source
 
 
 def transform_background(source, remove=False):

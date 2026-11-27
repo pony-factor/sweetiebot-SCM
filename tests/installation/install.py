@@ -321,6 +321,8 @@ class IndependentRepairTests(WorkbenchFixture):
         self.preload.write_text('"vscode:browserView:preloadReady";')
         self.native_main = resources / 'out/mainImpl.js'
         self.native_main.write_text(
+            'static getOrCreateGlobal(n){let e=electron.fromPartition("persist:vscode-browser");'
+            'return Sessions._bySession.get(e)??n.createInstance(Sessions,"global",e,"global")}'
             'static getOrCreateWorkspace(n,e,t){let r=join(t,e,"browserStorage"),'
             'o=electron.fromPath(r.fsPath);return Sessions._bySession.get(o)}'
             'return Sessions.getOrCreate(this.instantiationService,e,r,'
