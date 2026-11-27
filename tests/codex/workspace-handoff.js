@@ -152,17 +152,28 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert(requests.at(-1).params.input[0].text.includes('Run tests'));
     const experimentDirection = requests.at(-1).params.input[0].text;
     assert(experimentDirection.includes('Original branch: "original-topic"'));
-    assert(experimentDirection.includes('use the already-open experimental VS Code window and its experimental checkout'));
-    assert(experimentDirection.includes('live UI, webview, focus, reload, restart, and window-lifecycle checks'));
-    assert(experimentDirection.includes('do not use the original window as the test target'));
-    assert(experimentDirection.includes('not just shell tests or static inspection'));
-    assert(experimentDirection.includes('isolated test instance or profile with isolated application files'));
-    assert(experimentDirection.includes('report the specific blocker and any remaining manual checks'));
-    assert(experimentDirection.includes('apply the final intended code changes to the original checkout and original branch'));
-    assert(experimentDirection.includes('relative to the initial experiment snapshot'));
-    assert(experimentDirection.includes('Preserve existing user edits and staging'));
-    assert(experimentDirection.includes('Work left only in the trial checkout is not completion'));
-    assert(!experimentDirection.includes('copy experimental edits back without explicit permission'));
+    for (const requirement of [
+      "only in the experimental checkout",
+      "verify cwd before destructive commands",
+      "verify and use the experimental VS Code window",
+      "actual UI, webview, focus, reload, restart and lifecycle checks",
+      "not the original window or just static/shell checks",
+      "Isolate shared app files or profiles",
+      "report blocked live tests and remaining manual checks",
+      "Preserve the original checkout, index, files and chat",
+      "committed, staged, unstaged and non-ignored untracked files",
+      "Never reset, clean or checkout the original",
+      "verify the original checkout/branch and inspect current changes",
+      "relative to the initial experiment snapshot",
+      "including new files/deletions, back to the original branch without asking again",
+      "Preserve user edits and staging; reconcile overlaps",
+      "Do not stage, commit, push or rewrite history unless requested",
+      "never publish trial commits",
+      "Verify changes in the original before reporting completion",
+      "Keep the trial intact until verified",
+      "preserve work and report blockers if transfer fails",
+      "the trial window can run its own Codex session"
+    ]) assert(experimentDirection.includes(requirement), requirement);
     active = true; turnStatus = 'inProgress';
     const beforeNotice = requests.length;
     assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic', expectedThreadId: threadId }), true);
@@ -218,6 +229,8 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal((await visibility(threadId)).needsNewWindow, false,
       'A rebound worker in the current checkout must not show the shortcut');
     assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
+    assert.equal(requests.at(-1).params.input[0].text,
+      'Continue this task in the selected Git checkout: ' + destination + '. Use it for file operations; preserve existing commit and staging instructions.');
 
     await resume({ ...plan, destination });
     assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1,
