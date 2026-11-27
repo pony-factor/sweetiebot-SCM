@@ -10,13 +10,15 @@ Once the final one-commit change is visible on the remote branch, Sweetiebot ver
 
 ## Dedicated AI reviewer account
 
-Authenticate a separate GitHub machine user with `gh auth login --hostname github.com` and then set the local user-level preference:
+Authenticate a separate GitHub machine user with `gh auth login --hostname github.com`, then open Magic Settings → AI Review Responder, enter its GitHub username and click Test connection. Alternatively set the same local user-level preference:
 
 ```sh
 git config --global sweetiebot.ai-review-account YOUR_REVIEWER_USERNAME
 ```
 
 The value is a GitHub login, not a token. Give the machine user access to the relevant repositories and verify its permissions to reply and resolve threads. Sweetiebot explicitly selects that user's stored GitHub CLI credential, independently verifies the authenticated login, and never switches the active account or falls back to the normal VS Code session. Missing credentials, a changed reviewer, or insufficient permissions stop publication. Cancel and re-select any pending review created before this setting existed.
+
+For cross-repository upstream PRs, Kefania's App remains the first choice. If the App has no access to the upstream repository, Sweetiebot uses this verified dedicated account for the same upstream head/base comparison and publication, never the active human CLI account. Missing credentials or verification failures stop that fallback; no automatic retargeting or human-account retry occurs.
 
 For Codex-generated standalone reviews or conversation comments, run from the Sweetiebot checkout:
 

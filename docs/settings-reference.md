@@ -71,4 +71,4 @@ Use the live settings page for remaining settings and effective values; a manual
 
 ### Dedicated AI reviewer
 
-Set `git config --global sweetiebot.ai-review-account YOUR_REVIEWER_USERNAME` to select the separately authenticated GitHub CLI account for automatic AI review replies and the explicit Codex review command. The setting is local to the user's Git configuration, not a repository preference. See [AI review replies](ai-review-reply.md) for authentication and usage.
+Open Magic Settings → AI Review Responder to enter and test the dedicated GitHub CLI account, or set `git config --global sweetiebot.ai-review-account YOUR_REVIEWER_USERNAME`. The account is used for automatic AI review replies, the explicit Codex review command, and upstream PR publication when Kefania lacks App access. The setting is local to the user's Git configuration, not a repository preference. See [AI review replies](ai-review-reply.md) for authentication and usage.
