@@ -185,13 +185,13 @@ class BackgroundCommitFixture(unittest.TestCase):
         entry = worker.queue_entries(self.repo / '.git' / worker.MARKER)[0]
         return hook, Path(entry['directory'])
 
-    def check_divergent_push(self, conflict, dirty=True, descendants=False, crash=None, signed=False):
-        lindsey = Path(os.environ.get('LINDSEY_SYNC_REPO', Path(__file__).resolve().parents[3] / 'lindsey-sync'))
-        if not (lindsey / 'scripts/sync-local.js').is_file():
-            self.skipTest('The local Lindsey Sync checkout is required for this integration check')
-        self.env_lindsey = patch.dict(os.environ, {'LINDSEY_SYNC_REPO': str(lindsey)})
-        self.env_lindsey.start()
-        self.addCleanup(self.env_lindsey.stop)
+    def check_divergent_push(self, conflict, dirty=True, descendants=False, crash=None,
+                             signed=False, local_only_descendant=False):
+        is_file = Path.is_file
+        no_lindsey = patch.object(Path, 'is_file',
+                                   lambda path: path.name != 'sync-local.js' and is_file(path))
+        no_lindsey.start()
+        self.addCleanup(no_lindsey.stop)
         (self.repo / 'story.txt').write_bytes(b'base\x00binary\n')
         self.git('add', 'story.txt')
         self.git('commit', '-qm', 'Base')
@@ -211,10 +211,10 @@ class BackgroundCommitFixture(unittest.TestCase):
         self.git('add', 'story.txt')
         directory = self.queue(push=True)
         second = None
-        if descendants:
+        if descendants or local_only_descendant:
             (self.repo / 'next.txt').write_text('Next queued change\n')
             self.git('add', 'next.txt')
-            second = self.queue(push=True)
+            second = self.queue(push=not local_only_descendant)
         sha = self.git('rev-parse', 'HEAD')
         if dirty:
             (self.repo / 'story.txt').write_bytes(b'later staged\x00change\n')
@@ -234,13 +234,14 @@ class BackgroundCommitFixture(unittest.TestCase):
             self.assertTrue((self.repo / '.git' / worker.TRANSACTION).exists())
         worker.work(directory)
         job = self.job(directory)
-        if not conflict and not dirty:
+        if not conflict and not dirty and not local_only_descendant:
             self.assertEqual(job['phase'], 'done')
-            self.assertNotEqual(self.git('rev-parse', 'HEAD'), sha)
+            upstream = self.git('-C', str(other), 'rev-parse', 'HEAD')
+            self.assertEqual(self.git('show', '-s', '--format=%P', 'HEAD'), f'{sha} {upstream}')
+            self.assertEqual(job['publish_sha'], self.git('rev-parse', 'HEAD'))
             self.assertEqual(self.git('status', '--porcelain'), '')
             self.assertEqual((self.repo / 'remote.txt').read_bytes(), b'remote\x00binary\n')
             self.assertEqual(self.git('rev-parse', 'HEAD:story.txt'), self.git('rev-parse', sha + ':story.txt'))
-            self.assertEqual(self.git('show', 'refs/sweetiebot/recovery/' + directory.name + '/' + sha + ':story.txt'), 'local\x00binary')
             if second:
                 worker.work(second)
                 self.assertEqual(self.job(second)['phase'], 'done')
@@ -251,9 +252,14 @@ class BackgroundCommitFixture(unittest.TestCase):
                 self.assert_signed('HEAD')
             return
         self.assertEqual(job['phase'], 'blocked')
-        expected = 'merge conflicts' if conflict else 'uncommitted changes'
+        expected = ('merge conflicts' if conflict else
+                    'current branch tip queued for push' if local_only_descendant else
+                    'uncommitted changes')
         self.assertIn(expected, job['error'])
-        self.assertIn('Lindsey', job['error'])
+        self.assertIn('Git sync', job['error'])
+        if local_only_descendant:
+            self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'),
+                             self.git('-C', str(other), 'rev-parse', 'HEAD'))
         if conflict:
             self.assertEqual(job['conflictPaths'], ['story.txt'])
             status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
@@ -267,7 +273,7 @@ class BackgroundCommitFixture(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, expected) as blocked:
             worker.wait_for_background('/usr/bin/git', [])
         self.assertIn('repo (main):', str(blocked.exception))
-        with patch.object(worker, 'rejected_push_error', side_effect=AssertionError('Must not retry')):
+        with patch.object(worker, 'push_needs_sync', side_effect=AssertionError('Must not retry')):
             worker.work(directory)
         self.assertEqual(self.job(directory), job)
 

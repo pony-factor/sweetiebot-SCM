@@ -74,7 +74,7 @@ function blockedNotification(root, status) {
     message: uncommitted
       ? `Sweetiebot: Commit paused. ${status.error || 'The local commit failed; your changes remain staged.'}`
       : conflict
-      ? `Sweetiebot: Push blocked by merge conflicts${count}. Lindsey could not sync this branch.`
+      ? `Sweetiebot: Push blocked by merge conflicts${count}. Your local commit is preserved.`
       : `Sweetiebot: Commit & Push paused. ${status.error || 'The background job needs attention.'}`,
     action: conflict ? 'View conflicting files' : 'View details',
     detail: [

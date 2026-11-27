@@ -215,19 +215,22 @@ class BackgroundCommitPushTests(BackgroundCommitFixture):
     def test_rejected_push_reports_clean_divergence(self):
         self.check_divergent_push(conflict=False)
 
-    def test_lindsey_rebases_clean_divergence_and_pushes(self):
+    def test_git_merges_clean_divergence_and_pushes(self):
         self.check_divergent_push(conflict=False, dirty=False)
 
-    def test_lindsey_rebases_all_finalized_queued_descendants(self):
+    def test_git_merges_all_finalized_queued_descendants(self):
         self.check_divergent_push(conflict=False, dirty=False, descendants=True)
 
-    def test_lindsey_recovers_checkout_before_ref_move(self):
+    def test_git_recovery_does_not_push_a_local_only_descendant(self):
+        self.check_divergent_push(conflict=False, dirty=False, local_only_descendant=True)
+
+    def test_git_recovers_checkout_before_ref_move(self):
         self.check_divergent_push(conflict=False, dirty=False, crash='before-ref')
 
-    def test_lindsey_recovers_ref_move_before_job_checkpoint(self):
+    def test_git_recovers_ref_move_before_job_checkpoint(self):
         self.check_divergent_push(conflict=False, dirty=False, crash='after-ref')
 
-    def test_lindsey_preserves_signed_commits(self):
+    def test_git_preserves_signed_commits(self):
         self.check_divergent_push(conflict=False, dirty=False, signed=True)
 
     def test_restart_after_git_commit_before_checkpoint_is_idempotent(self):
