@@ -44,7 +44,7 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 browser_pr.transform_storage(source)
 
-    def test_repo_and_pr_windows_share_one_path_without_reusing_isolated_sessions(self):
+    def test_repo_and_pr_windows_share_one_partition_without_reusing_isolated_sessions(self):
         for fixture in (self.STORAGE_FIXTURE, self.AFFINITY_STORAGE_FIXTURE):
             with self.subTest(affinity=fixture == self.AFFINITY_STORAGE_FIXTURE):
                 self.check_shared_sessions(fixture)
@@ -54,13 +54,13 @@ class BrowserPullRequestPatchTests(unittest.TestCase):
         injected = installed.split(browser_pr.STORAGE_START)[1].split(browser_pr.STORAGE_END)[0]
         script = r'''
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const join = (root, ...parts) => ({fsPath: path.join(root.fsPath, ...parts)});
 const sessions = new Map();
-const electron = {fromPath(p) { if (!sessions.has(p)) sessions.set(p, {path:p}); return sessions.get(p); }};
+const electron = {fromPartition(partition) {
+  if (!sessions.has(partition)) sessions.set(partition, {partition});
+  return sessions.get(partition);
+}};
 const Sessions = {_bySession: new Map()};
-const host = {environmentMainService: {userHome:{fsPath:'/Users/test'}},
-  instantiationService: {createInstance(cls, id, session, scope) {
+const host = {instantiationService: {createInstance(cls, id, session, scope) {
     const instance = {id, session, scope}; cls._bySession.set(session, instance); return instance;
   }}};
 const resolve = new Function('r', 'o', 'return ' + INJECTION + '"isolated";');
@@ -69,7 +69,7 @@ const windowFor = name => ({openedWorkspace:{configPath:{path:
 const first = resolve.call(host, {scope:'workspace'}, windowFor('one'));
 const second = resolve.call(host, {scope:'workspace'}, windowFor('two'));
 assert.equal(first, second);
-assert.equal(first.session.path, '/Users/test/Library/Application Support/Sweetiebot/browserStorage');
+assert.equal(first.session.partition, 'persist:sweetiebot-browser');
 for (const scope of ['ephemeral', 'agent'])
   assert.equal(resolve.call(host, {scope}, windowFor('three')), 'isolated');
 for (const scope of ['workspace', 'global']) {
@@ -89,13 +89,12 @@ assert.equal(sessions.size, 1);
         resolver = installed.rsplit('let s=', 1)[1]
         script = r'''
 const assert = require('node:assert/strict');
-const join = (...parts) => ({fsPath:parts.map(p => p.fsPath || p).join('/')});
-const electron = {fromPath:p => p};
+const electron = {fromPartition:partition => ({partition})};
 let nativeCalls = 0;
 const makeSession = () => ({setNetwork(value) {this.network = value;}});
 const Sessions = {_bySession:new Map(), getOrCreate() {nativeCalls++; return makeSession();}};
 const normalize = r => r.network;
-const host = {environmentMainService:{userHome:{fsPath:'/home'},workspaceStorageHome:{}},
+const host = {environmentMainService:{workspaceStorageHome:{}},
   instantiationService:{createInstance:() => makeSession()}};
 const resolve = new Function('e', 'r', 'o', 't', 'let s=' + RESOLVER);
 assert.equal(resolve.call(host, 'view', {scope:'workspace'}, {}, 1).network, undefined);

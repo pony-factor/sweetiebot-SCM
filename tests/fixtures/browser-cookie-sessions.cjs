@@ -40,7 +40,6 @@ app.whenReady().then(async () => {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const join = (base, ...parts) => ({fsPath: path.join(base.fsPath, ...parts)});
   async function visit(ses, route, expected) {
     const win = new BrowserWindow({show: false,
       webPreferences: {session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false}});
@@ -56,23 +55,19 @@ app.whenReady().then(async () => {
   }
   for (const [index, injection] of injections.entries()) {
     const Sessions = {_bySession: new Map()};
-    const home = path.join(root, `lifecycle-${index}`);
-    // Match launchSession's creation of the shared profile's parent directories.
-    fs.mkdirSync(path.join(home, 'Library', 'Application Support', 'Sweetiebot', 'browserStorage'),
-      {recursive: true, mode: 0o700});
-    const host = {environmentMainService: {userHome: {fsPath: home}},
-      instantiationService: {createInstance(cls, id, session, scope) {
+    const host = {instantiationService: {createInstance(cls, id, session, scope) {
         const instance = {id, session, scope};
         cls._bySession.set(session, instance);
         return instance;
       }}};
     let isolatedCount = 0;
     const fallback = () => ({session: electron.fromPartition(`cookie-ci-isolated-${index}-${isolatedCount++}`)});
-    const resolve = new Function('r', 'o', 'join', 'electron', 'Sessions', 'fallback',
+    const resolve = new Function('r', 'o', 'electron', 'Sessions', 'fallback',
       'return ' + injection + 'fallback();');
-    const windowFor = id => ({openedWorkspace: {id, configPath: {path: `${home}/${id}.code-workspace`}}});
-    const browser = (options, id) => resolve.call(host, options, windowFor(id), join, electron, Sessions, fallback).session;
+    const windowFor = id => ({openedWorkspace: {id}});
+    const browser = (options, id) => resolve.call(host, options, windowFor(id), electron, Sessions, fallback).session;
     const repository = browser({scope: 'workspace'}, 'repository');
+    assert.equal(repository.storagePath, path.join(app.getPath('sessionData'), 'Partitions', 'sweetiebot-browser'));
     if (phase === 'seed') {
       await visit(repository, '/before-login', 'anonymous');
       await visit(repository, '/seed', 'anonymous');
@@ -93,7 +88,6 @@ app.whenReady().then(async () => {
       {scope: 'workspace', network: {authority: 'remote'}}]) {
       await visit(browser(options, 'isolated'), '/isolated', 'anonymous');
     }
-    await repository.cookies.flushStore();
   }
   finish();
 }).catch(finish);
