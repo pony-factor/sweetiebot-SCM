@@ -749,7 +749,7 @@ async function run() {
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
       assert.equal(git('rev-parse', 'HEAD'), syncHead);
       // Even an incorporated target must not bypass divergent local main.
-      git('update-ref', 'refs/remotes/origin/main', syncHead);
+      git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD^1'));
       await assert.rejects(syncBranch(repository, syncOptions), /has diverged/);
       assert.equal(git('rev-parse', 'HEAD'), syncHead);
 
