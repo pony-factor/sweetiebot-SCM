@@ -83,6 +83,45 @@ async function run() {
   await assert.rejects(() => checkPublished(job, async (root, ...args) =>
     args[0] === 'diff' && args.includes('--name-only') ? 'src/other.js' : fake(root, ...args)),
   /does not change the file/);
+  const { cleanGhEnvironment, reviewerIdentity, reviewArguments } = require('../../extension/github/reviewer-account');
+  const inherited = { PATH: '/bin', GH_TOKEN: 'human', GITHUB_TOKEN: 'human2', GH_HOST: 'other', GH_DEBUG: 'api' };
+  const cleaned = cleanGhEnvironment(inherited);
+  assert.equal(cleaned.GH_TOKEN, undefined);
+  assert.equal(cleaned.GITHUB_TOKEN, undefined);
+  assert.equal(cleaned.GH_HOST, undefined);
+  assert.equal(cleaned.GH_DEBUG, undefined);
+  assert.equal(inherited.GH_TOKEN, 'human');
+  const authCalls = [];
+  const auth = async (command, args, options) => {
+    authCalls.push({ command, args, env: options.env });
+    if (command === 'git') return { stdout: 'example-reviewer\\n' };
+    if (args[0] === 'auth') {
+      assert.deepEqual(args, ['auth', 'token', '--hostname', 'github.com', '--user', 'example-reviewer']);
+      assert.equal(options.env.GH_TOKEN, undefined);
+      return { stdout: 'bot-token\\n' };
+    }
+    assert.equal(options.env.GH_TOKEN, 'bot-token');
+    return { stdout: 'example-reviewer\\n' };
+  };
+  // Use actual newline characters in mock CLI output.
+  const fakeAuth = async (...args) => {
+    const result = await auth(...args);
+    return { stdout: result.stdout.replace(/\\n/g, '\n') };
+  };
+  assert.equal((await reviewerIdentity('example-reviewer', fakeAuth, inherited)).login, 'example-reviewer');
+  assert.equal(authCalls.length, 3);
+  await assert.rejects(() => reviewerIdentity('other-reviewer', fakeAuth, inherited), /changed/);
+  await assert.rejects(() => reviewerIdentity(undefined, async () => { throw Error('missing'); }, inherited), /Configure/);
+  await assert.rejects(() => reviewerIdentity(undefined, async (...args) =>
+    args[1][0] === 'api' ? { stdout: 'human' } : fakeAuth(...args), inherited), /different account/);
+  await assert.rejects(() => reviewerIdentity(undefined, async (...args) => {
+    if (args[1][0] === 'auth') throw Error('missing');
+    return fakeAuth(...args);
+  }, inherited), /not authenticated/);
+  assert.deepEqual(reviewArguments(['review', '12', '--repo', 'owner/repo', '--body', 'AI review']),
+    ['pr', 'review', '12', '--repo', 'owner/repo', '--comment', '--body', 'AI review']);
+  assert.throws(() => reviewArguments(['review', '12', '--repo', 'owner/repo', '--approve', 'yes']), /Invalid/);
+  assert.throws(() => reviewArguments(['comment', '12', '--repo', 'owner/repo', '--edit-last', 'yes']), /Invalid/);
   console.log('AI review reply safeguards OK');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
