@@ -79,7 +79,7 @@ document.title = 'Kefania confirmation · ' + confirmationToken;
 const fragment = new URLSearchParams(location.hash.slice(1));
 history.replaceState(null, '', location.pathname);
 const el = id => document.getElementById(id);
-let lastProfile, lastBody;
+let lastProfile, lastPonyArt, lastBody;
 let imageSources=[],currentImage=-1,focusBeforeLightbox,imageGeneration=0;
 const lightbox=el('image-lightbox');
 // Round expanded artwork only, including when object-fit adds letterboxing.
@@ -388,7 +388,7 @@ function applyAppearance(colors){
     else root.style.removeProperty('--kefania-'+key);
   }
 }
-function keepOpenForPony(state){return Boolean(state?.pony&&(!state.profile||state.ponyCachePending||state.errors?.ponyCache))}
+function keepOpenForPony(state){return Boolean(state?.pony&&(!state.profile||state.ponyCachePending||state.artworkRefreshPending||state.errors?.ponyCache))}
 const mergeStageLabels={
   starting:'Starting merge…',authenticating:'Authenticating with GitHub…',
   'reading-pr':'Checking pull request…','checking-base':'Checking the target branch…',
@@ -511,10 +511,10 @@ const subtitle=state.result?(state.mergeResult?(state.mergeResult.merged?'Pull r
 document.querySelector('.subtitle').textContent=subtitle+(state.pony?' and supporting character research':'')+'.';
 if(state.pony)el('pony-title').textContent=state.pony.name||String(state.pony.slug).split('-').map(part=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');
 const packLabel=state.pony?.packLabel||state.pony?.packId||'';
-el('pony-status').textContent=state.errors?.ponyCache?'Cache save failed: '+state.errors.ponyCache:state.ponyCachePending?'Saving pony profile to cache…':state.profile?packLabel:state.errors.pony||'Researching the pony…';
-el('pony-status').hidden=!!state.profile&&!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache;
-el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel&&!state.ponyCachePending&&!state.errors?.ponyCache);
-if(state.profile&&state.profile!==lastProfile){lastProfile=state.profile;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile),state.pony,state.artwork,state.artworkEnabled))}
+el('pony-status').textContent=state.errors?.ponyCache?'Cache save failed: '+state.errors.ponyCache:state.ponyCachePending?'Saving pony profile to cache…':state.artworkRefreshPending?'Looking for more fan art…':state.profile?(state.errors?.pony?'Fan art refresh unavailable · '+packLabel:packLabel):state.errors.pony||'Researching the pony…';
+el('pony-status').hidden=!!state.profile&&!packLabel&&!state.ponyCachePending&&!state.artworkRefreshPending&&!state.errors?.ponyCache&&!state.errors?.pony;
+el('pony-status').classList.toggle('pack-tag',!!state.profile&&!!packLabel&&!state.ponyCachePending&&!state.artworkRefreshPending&&!state.errors?.ponyCache&&!state.errors?.pony);
+if(state.profile&&(state.profile!==lastProfile||state.ponyArt!==lastPonyArt)){lastProfile=state.profile;lastPonyArt=state.ponyArt;renderMarkdown(el('profile'),imageIndex(cleanProfileReferences(state.profile)+(state.ponyArt?'\n\n'+state.ponyArt:''),state.pony,state.artwork,state.artworkEnabled))}
 return state;
 }catch(error){el('title').textContent='Could not update status';el('draft-status').hidden=false;el('draft-status').textContent=error.message}}
 el('merge').onclick=async()=>{
