@@ -368,13 +368,12 @@ const css = name => fs.readFileSync(path.join(__dirname, '../../assets/workbench
     }
     const clock = page.locator('.scm-toolkit-auto-commit');
     await clock.evaluate(node => node.setAttribute('aria-pressed', 'false'));
-    assert.equal(await clock.evaluate(node => getComputedStyle(node).filter), 'grayscale(1)');
+    assert.equal(await controlColor('auto-commit'), await controlColor('home'));
     assert.equal(await clock.evaluate(node => getComputedStyle(node, '::after').content), 'none');
     await clock.evaluate(node => {
       node.setAttribute('aria-pressed', 'true');
       node.classList.add('scm-toolkit-auto-commit-active');
     });
-    assert.equal(await clock.evaluate(node => getComputedStyle(node).filter), 'none');
     assert.equal(await clock.evaluate(node => getComputedStyle(node, '::after').content), '"✓"');
     assert.equal(await controlColor('auto-commit'), 'rgb(50, 100, 220)');
     await page.locator('.scm-toolkit-post-spellcheck').evaluate(node => node.classList.add('scm-toolkit-post-spellcheck-active'));
