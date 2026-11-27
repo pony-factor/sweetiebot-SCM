@@ -35,6 +35,14 @@ async function run() {
   assert.equal(context.syncButton.disabled, true);
   await context.click({ stopPropagation() {} });
   assert.equal(calls.length, 1);
+  context.pending = false;
+  context.currentBranch = 'topic';
+  context.refresh();
+  assert.equal(context.syncButton.title, 'Merge origin/main into topic');
+  await context.click({ stopPropagation() {} });
+  assert.equal(calls[1][2].branch, 'topic');
+  assert.equal(calls[1][2].strategy, undefined);
+  assert.equal(notices[1], "Synced 'topic' with 'main'.");
 
   // Pull real upstream commits through the command and verify subsequent push.
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sweetiebot-main-sync-'));

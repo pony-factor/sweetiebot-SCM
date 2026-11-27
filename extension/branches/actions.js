@@ -1352,7 +1352,7 @@ async function confirmUnverifiedLocalDeletion(vscode, repository, {
   });
 }
 
-async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'squash', reviewConflicts,
+async function syncBranch(repository, { branch, defaultBranch, remote, strategy = 'merge', reviewConflicts,
   resolveConflicts, createPublisher = require('./sync-main').syncPublisher }) {
   if (!branch) throw new Error('Select a branch to sync.');
   if (!['squash', 'merge'].includes(strategy)) throw new Error('Unknown branch synchronization strategy.');
@@ -1515,8 +1515,8 @@ async function syncBranch(repository, { branch, defaultBranch, remote, strategy 
     const commitSync = async headBefore => {
       const finalTree = await git(['write-tree']);
       if (finalTree === await git(['rev-parse', headBefore + '^{tree}'])) {
-        // Clear a prepared merge without manufacturing an ancestry-only commit.
-        if (strategy === 'merge') await git(['merge', '--quit']);
+        // A merge can advance the comparison base even if its files are already present.
+        if (strategy === 'merge') return commit(routineCommitMessage);
         return;
       }
       if (!resolution) return commit(resolved
