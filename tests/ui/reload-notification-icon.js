@@ -19,10 +19,10 @@ for (const directory of roots) {
   assert.match(css, /\.notification-list-item\.scm-toolkit-lindsey-notice \.notification-list-item-icon\.codicon-info::before,[\s\S]*?content: '🤖';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-pr-merged \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🎉';/);
   assert.match(css, /\.notification-list-item\.scm-toolkit-pr-queued \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '⏳';/);
-  assert.match(css, /\.notification-list-item\.scm-toolkit-branch-squash-synced \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🔄';/);
-  assert.match(css, /\.notification-list-item\.scm-toolkit-branch-squash-synced \.notification-list-item-icon\.codicon-info::before,/);
-  assert(javascript.includes(": `Squash synced '${branch}' with '${currentDefaultBranch}'`"),
-    'Squash sync notice must quote both branches without a period or commit-count suffix');
+  assert.match(css, /\.notification-list-item\.scm-toolkit-branch-synced \.notification-list-item-icon\.codicon-info::before\s*\{\s*content: '🔄';/);
+  assert.match(css, /\.notification-list-item\.scm-toolkit-branch-synced \.notification-list-item-icon\.codicon-info::before,/);
+  assert(javascript.includes(": `Synced '${branch}' with '${currentDefaultBranch}'.`"),
+    'Branch sync notice must quote both branches');
 
   const start = javascript.indexOf('// Notification rows are reused, so update the marker whenever their message changes.');
   assert(start >= 0, `Missing notification observer in ${directory}`);
@@ -78,13 +78,13 @@ for (const directory of roots) {
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(classes.has('scm-toolkit-pr-queued'), `Queue icon class not added in ${directory}`);
   assert(!classes.has('scm-toolkit-pr-merged'), `Reused notification retained merge icon in ${directory}`);
-  currentMessage = "Squash synced 'cinnamon-sugar' with 'main'";
+  currentMessage = "Synced 'cinnamon-sugar' with 'main'.";
   observeMutations([{ target: row, addedNodes: [] }]);
-  assert(classes.has('scm-toolkit-branch-squash-synced'), `Squash-sync icon class not added in ${directory}`);
+  assert(classes.has('scm-toolkit-branch-synced'), `Sync icon class not added in ${directory}`);
   assert(!classes.has('scm-toolkit-pr-queued'), `Reused notification retained queued icon in ${directory}`);
   currentMessage = 'Synced cinnamon-sugar with main (single commit).';
   observeMutations([{ target: row, addedNodes: [] }]);
-  assert(!classes.has('scm-toolkit-branch-squash-synced'), `Legacy sync text retained squash icon in ${directory}`);
+  assert(!classes.has('scm-toolkit-branch-synced'), `Legacy sync text retained sync icon in ${directory}`);
   currentMessage = 'Unrelated information notification.';
   observeMutations([{ target: row, addedNodes: [] }]);
   assert(!classes.has('scm-toolkit-reload-ready'), `Reused notification retained robot icon in ${directory}`);
@@ -92,7 +92,7 @@ for (const directory of roots) {
   assert(!classes.has('scm-toolkit-preparing-lindsey'), 'Reused notification retained queue-preparation icon');
   assert(!classes.has('scm-toolkit-pr-queued'), `Reused notification retained queue icon in ${directory}`);
   assert(!classes.has('scm-toolkit-pr-merged'), `Reused notification retained merge icon in ${directory}`);
-  assert(!classes.has('scm-toolkit-branch-squash-synced'), `Reused notification retained squash-sync icon in ${directory}`);
+  assert(!classes.has('scm-toolkit-branch-synced'), `Reused notification retained sync icon in ${directory}`);
 }
 
 const refresh = fs.readFileSync(path.join(root, 'extension/codex/refresh.js'), 'utf8');

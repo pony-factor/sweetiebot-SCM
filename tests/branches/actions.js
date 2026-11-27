@@ -733,7 +733,7 @@ async function run() {
 
       const { repository } = fixture();
       repository.rootUri = { fsPath: root };
-      const syncOptions = { ...options, branch: 'topic' };
+      const syncOptions = { ...options, branch: 'topic', createPublisher: async () => null };
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
       const syncHead = git('rev-parse', 'HEAD');
       assert.equal(git('log', '-1', '--format=%s'), '🔄 Sync brach to main');
