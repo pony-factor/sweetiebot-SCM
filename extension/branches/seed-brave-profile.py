@@ -1,6 +1,7 @@
-"""Opt-in, local-only Brave cookie-store seeding for a fresh test profile."""
+"""Launch a repository's isolated Brave profile, with optional cookie seeding."""
 
 from contextlib import closing
+import fcntl
 import os
 from pathlib import Path
 import re
@@ -78,6 +79,72 @@ def browser_running(root):
     return result.returncode == 0
 
 
+def prepare_extension(root, extension, running):
+    manifest = root / "manifest.json"
+    try:
+        current = (extension / "manifest.json").readlink()
+    except FileNotFoundError:
+        current = None
+    if running:
+        if current != manifest:
+            raise RuntimeError("Quit this repository's test Brave before switching checkouts.")
+        return
+
+    # Keep the unpacked path and its derived extension ID stable across branches.
+    # Link resources without copying checkout files or touching Git state.
+    with tempfile.TemporaryDirectory(prefix=".extension-", dir=extension.parent) as workspace:
+        staging = Path(workspace) / "next"
+        staging.mkdir()
+        for entry in root.iterdir():
+            if not entry.name.startswith("."):
+                (staging / entry.name).symlink_to(entry)
+        if extension.exists():
+            extension.rename(Path(workspace) / "previous")
+        staging.rename(extension)
+
+
+def launch(root, repository, url, source=None, *, running=browser_running, run=subprocess.run):
+    root = Path(root).resolve(strict=True)
+    repository = Path(repository).resolve()
+    repository.mkdir(parents=True, exist_ok=True, mode=0o700)
+    profile = repository / "profile"
+    extension = repository / "extension"
+    with (repository / ".launch.lock").open("ab") as lease:
+        try:
+            fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("This repository's test Brave is already launching.") from None
+        active = running(profile)
+        prepare_extension(root, extension, active)
+        if source is not None and not active:
+            seed(source, profile, running)
+        # Wait until the browser has claimed the profile before another window
+        # can change the checkout behind its running extension.
+        run(["/usr/bin/open", "-na", "Brave Browser", "--args",
+             "--user-data-dir=" + str(profile), "--disable-extensions-except=" + str(extension),
+             "--load-extension=" + str(extension), "--no-first-run", "--no-default-browser-check",
+             "--new-window", url], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            if running(profile):
+                return
+            time.sleep(0.1)
+        raise RuntimeError("Brave did not start with the repository's test profile.")
+
+
 if __name__ == "__main__":
-    normal = Path.home() / "Library/Application Support/BraveSoftware/Brave-Browser/Default"
-    seed(normal, sys.argv[1], browser_running)
+    normal = Path.home() / "Library/Application Support/BraveSoftware/Brave-Browser"
+    if len(sys.argv) == 2:
+        seed(normal / "Default", sys.argv[1], browser_running)
+    else:
+        root, repository, url, *profile = sys.argv[1:]
+        source = None
+        if profile:
+            if len(profile) != 1 or not re.fullmatch(r"Default|Profile [1-9][0-9]*", profile[0]):
+                raise SystemExit("Invalid normal Brave profile.")
+            source = normal / profile[0]
+        try:
+            launch(root, repository, url, source)
+        except RuntimeError as error:
+            raise SystemExit(str(error)) from None
+        except (OSError, ValueError, sqlite3.Error, subprocess.SubprocessError):
+            raise SystemExit("Could not launch test Brave. Check the checkout and selected Brave profile.") from None
