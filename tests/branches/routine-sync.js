@@ -179,6 +179,23 @@ async function run() {
       assert.equal(fs.readFileSync(path.join(root, 'draft.txt'), 'utf8'), 'Unreviewed local edit\n');
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   }
+  {
+    const { root, git, repository, options } = setup();
+    try {
+      await syncBranch(repository, { ...options, strategy: 'squash' });
+      const squashTip = git('rev-parse', 'HEAD');
+      const tree = git('rev-parse', 'HEAD^{tree}');
+      assert.equal(git('diff', '--name-only', 'origin/main...HEAD'), 'main.txt\ntopic.txt');
+      await syncBranch(repository, options);
+      const syncTip = git('rev-parse', 'HEAD');
+      assert.equal(git('rev-parse', 'HEAD^1'), squashTip);
+      assert.equal(git('rev-parse', 'HEAD^2'), git('rev-parse', 'origin/main'));
+      assert.equal(git('rev-parse', 'HEAD^{tree}'), tree);
+      assert.equal(git('diff', '--name-only', 'origin/main...HEAD'), 'topic.txt');
+      await syncBranch(repository, options);
+      assert.equal(git('rev-parse', 'HEAD'), syncTip);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  }
   // Conflicts must not be committed automatically under a routine sync title.
   const { root, git, repository, options } = setup();
   try {

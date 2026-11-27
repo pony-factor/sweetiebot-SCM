@@ -2366,7 +2366,7 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
 
         const description = branch === currentDefaultBranch
             ? `Sync ${branch} with its upstream branch (pull updates and push local commits)`
-            : `Sync ${branch ?? 'current branch'} with ${settings.remote}/${currentDefaultBranch} as one commit (Alt-click to preserve merge ancestry)`;
+            : `Merge ${settings.remote}/${currentDefaultBranch} into ${branch ?? 'current branch'}`;
         syncButton.title = description;
         syncButton.setAttribute('aria-label', description);
     };
@@ -2397,14 +2397,11 @@ function scmToolkitCreateControls(widget, observe, commands, notifications, conf
                 branch,
                 defaultBranch: currentDefaultBranch,
                 remote: settings.remote,
-                strategy: event.altKey ? 'merge' : 'squash',
             });
             if (result) {
                 notifications.info(branch === currentDefaultBranch
                     ? `Synced ${branch} with its upstream branch.`
-                    : event.altKey
-                        ? `Synced ${branch} with ${currentDefaultBranch} (merge).`
-                        : `Squash synced '${branch}' with '${currentDefaultBranch}'`);
+                    : `Synced ${branch} with ${currentDefaultBranch}.`);
             }
         } catch (error) {
             // Leave merge conflicts untouched and keep the sync message for the manual commit.

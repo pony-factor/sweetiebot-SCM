@@ -705,7 +705,7 @@ async function run() {
     assert.equal(await commands.get('sweetiebot.autoPullClean')(uri), false,
       'A failed operation must not block subsequent background work');
   }
-  // Exercise the default squash path against a real disposable Git repository.
+  // Exercise the default merge path against a real disposable Git repository.
   // The mocked VS Code Git API cannot validate index behavior or commit ancestry.
   {
     const fs = require('node:fs');
@@ -735,28 +735,29 @@ async function run() {
       repository.rootUri = { fsPath: root };
       const syncOptions = { ...options, branch: 'topic' };
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
-      const squashHead = git('rev-parse', 'HEAD');
+      const syncHead = git('rev-parse', 'HEAD');
       assert.equal(git('log', '-1', '--format=%s'), '🔄 Sync brach to main');
       assert.doesNotMatch(git('log', '-1', '--format=%B'), /Co-authored-by:/);
-      assert.equal(git('rev-list', '--count', 'HEAD'), '3', 'Exactly one squash commit on the topic branch');
+      assert.equal(git('rev-parse', 'HEAD^2'), git('rev-parse', 'origin/main'));
+      assert.equal(git('diff', '--name-only', 'origin/main...HEAD'), 'topic.txt');
       assert.equal(fs.readFileSync(path.join(root, 'shared.txt'), 'utf8'), 'upstream change\\n');
       assert.equal(fs.readFileSync(path.join(root, 'topic.txt'), 'utf8'), 'topic change\\n');
       assert.equal(git('status', '--porcelain'), '');
       assert.equal(repository.inputBox.value, 'Existing draft');
 
-      // Repeating an unchanged squash must not create another commit.
+      // Repeating a sync must not create another commit after main is an ancestor.
       assert.equal(await syncBranch(repository, syncOptions), 'topic');
-      assert.equal(git('rev-parse', 'HEAD'), squashHead);
+      assert.equal(git('rev-parse', 'HEAD'), syncHead);
       // Even an incorporated target must not bypass divergent local main.
-      git('update-ref', 'refs/remotes/origin/main', squashHead);
+      git('update-ref', 'refs/remotes/origin/main', syncHead);
       await assert.rejects(syncBranch(repository, syncOptions), /has diverged/);
-      assert.equal(git('rev-parse', 'HEAD'), squashHead);
+      assert.equal(git('rev-parse', 'HEAD'), syncHead);
 
       // Never swallow or rewrite local edits to the workspace.
       fs.writeFileSync(path.join(root, 'untracked.txt'), 'keep this\\n');
       await assert.rejects(syncBranch(repository, syncOptions), /Commit or stash your changes/);
       assert.equal(fs.readFileSync(path.join(root, 'untracked.txt'), 'utf8'), 'keep this\\n');
-      assert.equal(git('rev-parse', 'HEAD'), squashHead);
+      assert.equal(git('rev-parse', 'HEAD'), syncHead);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
