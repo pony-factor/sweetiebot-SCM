@@ -222,7 +222,7 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal(cachedState.profile,'Previously sourced character.','Cache hits are visible without a pony callback');
     assert.equal(cachedState.draft,undefined);
     assert.equal(writes,3,'A cache hit never publishes a PR');
-    const enrichmentId = '44444444-2222-4333-8444-555555555555';
+    const enrichmentId = 'bbbbbbbb-2222-4333-8444-555555555555';
     let enrichmentResults = 0;
     handoff.register(enrichmentId, {pony:{slug:'bushel'},profile:'Saved [source](https://example.com/old-post).',
       artwork:[{url:'https://example.com/old.png',source:'https://example.com/old-art'}],
