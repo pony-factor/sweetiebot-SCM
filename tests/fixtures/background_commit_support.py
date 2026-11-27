@@ -186,7 +186,7 @@ class BackgroundCommitFixture(unittest.TestCase):
         return hook, Path(entry['directory'])
 
     def check_divergent_push(self, conflict, dirty=True, descendants=False, crash=None,
-                             signed=False, local_only_descendant=False):
+                             signed=False, local_only_descendant=False, different_destination=False):
         is_file = Path.is_file
         no_lindsey = patch.object(Path, 'is_file',
                                    lambda path: path.name != 'sync-local.js' and is_file(path))
@@ -211,10 +211,16 @@ class BackgroundCommitFixture(unittest.TestCase):
         self.git('add', 'story.txt')
         directory = self.queue(push=True)
         second = None
-        if descendants or local_only_descendant:
+        if descendants or local_only_descendant or different_destination:
+            remote = 'origin'
+            if different_destination:
+                remote = 'backup'
+                self.git('init', '--bare', '-q', str(self.root / remote))
+                self.git('remote', 'add', remote, str(self.root / remote))
+                self.git('branch', '--unset-upstream')
             (self.repo / 'next.txt').write_text('Next queued change\n')
             self.git('add', 'next.txt')
-            second = self.queue(push=not local_only_descendant)
+            second = self.queue(push=not local_only_descendant, remote=remote)
         sha = self.git('rev-parse', 'HEAD')
         if dirty:
             (self.repo / 'story.txt').write_bytes(b'later staged\x00change\n')
@@ -234,7 +240,7 @@ class BackgroundCommitFixture(unittest.TestCase):
             self.assertTrue((self.repo / '.git' / worker.TRANSACTION).exists())
         worker.work(directory)
         job = self.job(directory)
-        if not conflict and not dirty and not local_only_descendant:
+        if not conflict and not dirty and not local_only_descendant and not different_destination:
             self.assertEqual(job['phase'], 'done')
             upstream = self.git('-C', str(other), 'rev-parse', 'HEAD')
             self.assertEqual(self.git('show', '-s', '--format=%P', 'HEAD'), f'{sha} {upstream}')
@@ -254,12 +260,19 @@ class BackgroundCommitFixture(unittest.TestCase):
         self.assertEqual(job['phase'], 'blocked')
         expected = ('merge conflicts' if conflict else
                     'current branch tip queued for push' if local_only_descendant else
+                    'queued pushes target different destinations' if different_destination else
                     'uncommitted changes')
         self.assertIn(expected, job['error'])
         self.assertIn('Git sync', job['error'])
-        if local_only_descendant:
+        if local_only_descendant or different_destination:
             self.assertEqual(self.git('--git-dir=' + str(self.root / 'remote'), 'rev-parse', 'main'),
                              self.git('-C', str(other), 'rev-parse', 'HEAD'))
+        if different_destination:
+            self.assertNotIn('publish_sha', self.job(second))
+            self.assertEqual(self.git('--git-dir=' + str(self.root / 'backup'), 'show-ref', '--head',
+                                      '--exists', 'refs/heads/main', stderr=subprocess.DEVNULL)
+                             if False else self.git('--git-dir=' + str(self.root / 'backup'),
+                                                   'for-each-ref', '--format=%(refname)'), '')
         if conflict:
             self.assertEqual(job['conflictPaths'], ['story.txt'])
             status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))

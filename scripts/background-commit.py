@@ -999,6 +999,11 @@ def merge_for_background_push(meta, job, before, remote_tip, env, check_worktree
         if not latest['push'] or before != latest.get('publish_sha', latest['sha']):
             raise RuntimeError('Git sync needs the current branch tip queued for push. '
                                'Stop the background push and sync before publishing your branch.')
+        destination = (job['remote'], job['destination'])
+        pushing_jobs = [(entry, item) for entry, item in zip(entries, jobs) if item['push']]
+        if any((item['remote'], item['destination']) != destination for _, item in pushing_jobs):
+            raise RuntimeError('Git sync paused because the queued pushes target different destinations. '
+                               'Stop the background push and sync the intended destination before publishing.')
         active = git('symbolic-ref', '--quiet', 'HEAD', check=False, env=env).stdout.strip()
         if active == job['branch'] and git('status', '--porcelain', env=env):
             raise RuntimeError('Git sync is waiting for your uncommitted changes. '
@@ -1008,7 +1013,7 @@ def merge_for_background_push(meta, job, before, remote_tip, env, check_worktree
             args.append('-S')
         after = git(*args, '-m', '🔀 Merge upstream changes before pushing', env=env)
         updates = [dict(directory=entry['directory'], values={'publish_sha': after})
-                   for entry, item in zip(entries, jobs) if item['push']]
+                   for entry, _ in pushing_jobs]
         write_journal(meta / TRANSACTION, dict(branch=job['branch'], before=before,
                       after=after, updates=updates, checkout=True))
         recover_finalization(meta)

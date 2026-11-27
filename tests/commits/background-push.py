@@ -224,6 +224,9 @@ class BackgroundCommitPushTests(BackgroundCommitFixture):
     def test_git_recovery_does_not_push_a_local_only_descendant(self):
         self.check_divergent_push(conflict=False, dirty=False, local_only_descendant=True)
 
+    def test_git_recovery_does_not_combine_different_push_destinations(self):
+        self.check_divergent_push(conflict=False, dirty=False, different_destination=True)
+
     def test_git_recovers_checkout_before_ref_move(self):
         self.check_divergent_push(conflict=False, dirty=False, crash='before-ref')
 
