@@ -93,6 +93,20 @@ const api = {workspace: {
 """
         # Run the injected Git model code with two independent checkout paths.
         subprocess.run(['node', '-'], input=script, check=True, text=True)
+
+    def test_native_git_repository_limit_preserves_folder_location_switch(self):
+        method = 'async onDidChangeWorkspaceFolders({added:e,removed:t}){'
+        switch = (
+            'let r=this.workspaceFolderRepositories.getFolderLocationSwitches({added:e,removed:t});'
+            'if(r){try{await this.applyRepositoryChanges(r)}catch(n){this.logger.warn(n)}return}'
+        )
+        discovery = 'try{let n=e.filter(c=>!this.getOpenRepository(c.uri));'
+        native = GIT_MODEL_FIXTURE.replace(method + 'try{', method + switch + discovery)
+        installed = install.transform_git_repository_limit(native)
+        self.assertIn(method + switch + 'try{/* sweetiebot-repository-limit:start */', installed)
+        self.assertEqual(install.transform_git_repository_limit(installed), installed)
+        self.assertEqual(install.transform_git_repository_limit(installed, remove=True), native)
+
     def test_window_title_uses_single_repository_before_editor_selection(self):
         native = '''class Title {
 getWindowTitle(){let e=this.editorService.activeEditor,t=this.contextService.getWorkspace();let v='',p='',b='';return {rootName:v,rootPath:p,rootNameShort:b}}

@@ -49,7 +49,11 @@ class BrowserAndExplorerTransformTests(unittest.TestCase):
                   'if(e.getContextualBrowserViews().size>0){'
                   'await t.executeCommand(Fc.QuickOpen);return}'
                   'await t.executeCommand(Fc.Open)}')
-        original = workbench_fixture() + action + browser_open_action_fixture()
+        # A later browser action reuses Open's telemetry variable name for
+        # its own editor service, as seen in VS Code 1.148.
+        next_action = ('id:Fc.OpenFile,title:O(3,"Open in Integrated Browser")}'
+                       'async run(o,n){let b=o.get(EditorService);await b.openEditor(n)}')
+        original = workbench_fixture() + action + browser_open_action_fixture() + next_action
         enabled = dict(SETTINGS, browserGlobeNewTab=True)
         patched = install.transform(original, "base-css", settings=enabled)
         self.assertIn(

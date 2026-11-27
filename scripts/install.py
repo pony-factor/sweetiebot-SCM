@@ -387,11 +387,16 @@ def browser_globe_new_tab_edits(js, home_url=None):
     # Open accepts URL/side options, but ordinarily resolves the main/default
     # editor group. Honor our opt-in group hint using the active editor pane.
     # Explicit open-to-side still wins, and other calls remain unchanged.
-    open_anchor = rf'id:{re.escape(match.group("commands"))}\.Open,'
+    command_prefix = rf'id:{re.escape(match.group("commands"))}\.'
+    open_anchor = command_prefix + 'Open,'
     opens = list(re.finditer(open_anchor, js))
     if len(opens) != 1:
         raise ValueError("Unsupported VS Code build: browser open action does not match.")
     open_segment = js[opens[0].end():opens[0].end() + 8500]
+    # A neighboring action can reuse a minified local name for its editor service.
+    next_action = re.search(rf'{command_prefix}{ident},', open_segment)
+    if next_action:
+        open_segment = open_segment[:next_action.start()]
     run = re.search(
         rf'async run\((?P<accessor>{ident}),(?P<arg>{ident})\)\{{',
         open_segment[:2500],
@@ -1422,7 +1427,9 @@ def transform_git_repository_limit(source, remove=False):
 
     ident = r'[A-Za-z_$][\w$]*'
     workspace_change = (
-        rf'async onDidChangeWorkspaceFolders\(\{{added:({ident}),removed:{ident}\}}\)\{{try\{{'
+        rf'async onDidChangeWorkspaceFolders\(\{{added:({ident}),removed:{ident}\}}\)\{{'
+        rf'(?:try\{{|let {ident}=this\.workspaceFolderRepositories\.getFolderLocationSwitches\('
+        rf'.{{0,800}}?try\{{(?=let {ident}=\1\.filter\())'
     )
     contains_path = re.search(rf'\.some\(({ident})=>({ident})\(\1\.uri\.fsPath,{ident}\.repository\.root\)\)', source)
     configuration_listener = (
