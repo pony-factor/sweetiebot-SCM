@@ -5,7 +5,7 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { resolveCommitRepository } = require('../commits/codex/manual');
-const { githubSession } = require('../github/session');
+const { reviewerIdentity } = require('../github/reviewer-account');
 const runFile = promisify(execFile);
 const STATE_KEY = 'sweetiebot.aiReviewReplyPending.v1';
 const SHA = /^[a-f0-9]{40}$/i;
@@ -239,7 +239,8 @@ function registerAiReviewReply(vscode, context) {
     try {
       const commit = await checkPublished(job);
       if (!commit) return;
-      const session = await githubSession(vscode);
+      if (!job.reviewerLogin) throw new Error('This pending review predates dedicated reviewer identities. Cancel and re-select it.');
+      const session = await reviewerIdentity(job.reviewerLogin);
       if (!job.explanation || job.sha !== commit.sha) {
         const assessment = await assessWithOllama(vscode, job, commit.patch);
         if (!assessment.resolved) {
@@ -300,7 +301,7 @@ function registerAiReviewReply(vscode, context) {
         }
         return;
       }
-      const session = await githubSession(vscode);
+      const session = await reviewerIdentity();
       const prs = await findReviewPullRequests(session.accessToken, headRepository, branch);
       if (!prs.length) throw new Error('No open PR uses this repository and branch as its head.');
       const choice = prs.length === 1 ? prs[0] : (await vscode.window.showQuickPick(
@@ -328,11 +329,12 @@ function registerAiReviewReply(vscode, context) {
       const before = await git(root, 'rev-parse', 'HEAD');
       pending.push({
         root, remote, repo, headRepository, branch, before, number: choice.number,
+        reviewerLogin: session.login,
         threadId: selected.thread.id, path: selected.thread.path,
         comment: selected.thread.comments.nodes[0].body
       });
       await persist();
-      void vscode.window.showInformationMessage('Review linked to this branch. Make the fix, then use the normal Commit & Push button. Sweetiebot will reply inline only after the final commit reaches GitHub.');
+      void vscode.window.showInformationMessage('Review linked to this branch. Make the fix, then use the normal Commit & Push button. Sweetiebot will reply inline as ' + session.login + ' only after the final commit reaches GitHub.');
     } catch (error) { void vscode.window.showErrorMessage('AI review: ' + error.message); }
   }));
   // Restores selected reviews after VS Code reload and background push recovery.

@@ -68,3 +68,7 @@ The repo-level `sweetiebot.postCommitSpellcheck` **does not turn the global spel
 ```
 
 Use the live settings page for remaining settings and effective values; a manual edit may require app repair/reload before a patched control updates.
+
+### Dedicated AI reviewer
+
+Set `git config --global sweetiebot.ai-review-account YOUR_REVIEWER_USERNAME` to select the separately authenticated GitHub CLI account for automatic AI review replies and the explicit Codex review command. The setting is local to the user's Git configuration, not a repository preference. See [AI review replies](ai-review-reply.md) for authentication and usage.
