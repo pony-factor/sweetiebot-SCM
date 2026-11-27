@@ -202,30 +202,55 @@ def transform_checkout(source, remove=False):
     if CHECKOUT_START in source:
         before, remainder = source.split(CHECKOUT_START)
         metadata, after = remainder.split(CHECKOUT_END)
-        original, replacement = json.loads(metadata.removeprefix('/* edit:').removesuffix(' */'))
+        edits = json.loads(metadata.removeprefix('/* edit:').removesuffix(' */'))
+        # Older installations stored a single pair rather than a list of pairs.
+        if isinstance(edits[0], str):
+            edits = [edits]
         source = before + after
-        if source.count(replacement) != 1:
-            raise ValueError('GitHub PR checkout patch changed; refusing to overwrite it.')
-        source = source.replace(replacement, original, 1)
+        for original, replacement in reversed(edits):
+            if source.count(replacement) != 1:
+                raise ValueError('GitHub PR checkout patch changed; refusing to overwrite it.')
+            source = source.replace(replacement, original, 1)
     if remove:
         return source
-    # Hook after GitHub has matched the PR's head repository to a local remote.
-    # Both the tree and the PR description use this shared checkout method.
-    pattern = re.compile(r'const ([\w$]+)=([\w$]+)\.head\.ref,([\w$]+)=([\w$]+)\.remoteName;let ([\w$]+),([\w$]+)=\1;')
-    matches = list(pattern.finditer(source))
-    methods = list(re.finditer(r'async fetchAndCheckout\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)', source))
+    # Intercept both native entry points before either can change the source
+    # checkout. The three/four-argument helpers are distinct from the wrappers.
     vscode = re.search(r'([\w$]+)\.commands\.executeCommand\("pr\.pick"', source)
-    if len(matches) != 1 or len(methods) != 1 or not vscode:
-        raise ValueError('Unsupported GitHub PR checkout build: expected one matching anchor.')
-    match = matches[0]
-    if match.start() < methods[0].end():
-        raise ValueError('Unsupported GitHub PR checkout build: invalid method order.')
-    original = match.group()
-    prefix, suffix = original.split(';', 1)
-    replacement = (prefix + ';if(await ' + vscode[1] + '.commands.executeCommand('
-                   '"sweetiebot.checkoutBranchStrip",' + methods[0][1] + '.rootUri,'
-                   '{branch:' + match[1] + ',existingOnly:true}))return;' + suffix)
-    return source.replace(original, replacement, 1) + CHECKOUT_START + '/* edit:' + json.dumps([original, replacement]) + ' */' + CHECKOUT_END
+    edits = []
+    for name, arguments, pr_index in [('checkoutExistingPullRequestBranch', 3, 1),
+                                      ('fetchAndCheckout', 4, 2)]:
+        signature = r'async ' + name + r'\((' + r'),('.join([r'[\w$]+'] * arguments) + r')\)\{'
+        methods = list(re.finditer(signature, source))
+        if len(methods) != 1 or not vscode:
+            raise ValueError('Unsupported GitHub PR checkout build: expected both helper anchors.')
+        method = methods[0]
+        repository, pr = method[1], method[pr_index + 1]
+        original = method.group()
+        command = (vscode[1] + '.commands.executeCommand("sweetiebot.checkoutBranchStrip",'
+                   + repository + '.rootUri,{pullRequest:{number:' + pr + '.number,head:'
+                   + pr + '.head,base:' + pr + '.base}})')
+        replacement = original + 'return await ' + command + ';'
+        edits.append([original, replacement])
+    # The review manager can merge/update the base after its checkout helper
+    # returns. Exit the entire switch before that native code can touch main.
+    switches = []
+    for method in re.finditer(r'async switch\(([\w$]+)\)\{', source):
+        body = source[method.end():method.end() + 1800]
+        if ('this._switchedToPullRequest' in body and
+                'this._folderRepoManager.checkoutExistingPullRequestBranch(' in body):
+            switches.append(method)
+    if len(switches) != 1:
+        raise ValueError('Unsupported GitHub PR checkout build: expected review switch anchor.')
+    method = switches[0]
+    pr = method[1]
+    original = method.group()
+    command = (vscode[1] + '.commands.executeCommand("sweetiebot.checkoutBranchStrip",'
+               + 'this._repository.rootUri,{pullRequest:{number:' + pr + '.number,head:'
+               + pr + '.head,base:' + pr + '.base}})')
+    edits.append([original, original + 'return await ' + command + ';'])
+    for original, replacement in edits:
+        source = source.replace(original, replacement, 1)
+    return source + CHECKOUT_START + '/* edit:' + json.dumps(edits) + ' */' + CHECKOUT_END
 
 
 def patch_files(extension_path=None, remove=False):

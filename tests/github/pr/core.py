@@ -31,10 +31,12 @@ STICKY_LINK_0180 = ('href:pr.url,title:pr.url,"data-vscode-context":JSON.stringi
 
 
 class GitHubPRTests(unittest.TestCase):
-    def test_checkout_routes_occupied_branch_before_native_git(self):
-        source = ('class Checkout { async fetchAndCheckout(repo,remotes,pr,progress){'
-                  'const branch=pr.head.ref,remote=matched.remoteName;let local,name=branch;'
-                  'nativeCalls++;} } const pick=()=>v.commands.executeCommand("pr.pick");')
+    def test_checkout_routes_both_pr_entry_points_without_native_git(self):
+        source = ('class Checkout { async fetchAndCheckout(repo,remotes,pr,progress){nativeCalls++;}'
+                  'async checkoutExistingPullRequestBranch(repo,pr,progress){nativeCalls++;return false;} }'
+                  'class Review {async switch(pr){this._switchedToPullRequest=pr;'
+                  'await this._folderRepoManager.checkoutExistingPullRequestBranch(pr,{});nativeCalls++;}}'
+                  'const pick=()=>v.commands.executeCommand("pr.pick");')
         patched = github_pr.transform_checkout(source)
         self.assertEqual(github_pr.transform_checkout(patched), patched)
         self.assertEqual(github_pr.transform_checkout(patched, remove=True), source)
@@ -42,22 +44,30 @@ class GitHubPRTests(unittest.TestCase):
             github_pr.transform_checkout(source + source)
         script = '''
 const assert=require('node:assert/strict');
-let occupied=true,nativeCalls=0;
-const matched={remoteName:'origin'};
+let nativeCalls=0,calls=0,fail=false;
 const repo={rootUri:{fsPath:'/selected-window'}};
+const pr={number:42,head:{ref:'topic'},base:{ref:'main'}};
 const v={commands:{async executeCommand(id,uri,options){
  assert.equal(id,'sweetiebot.checkoutBranchStrip');
  assert.equal(uri,repo.rootUri);
- assert.deepEqual(options,{branch:'topic',existingOnly:true});
- return occupied?'topic':false;
+ assert.deepEqual(options,{pullRequest:pr});
+ calls++;
+ if(fail) throw new Error('handoff failed');
+ return true;
 }}};
 PATCHED
 (async()=>{
- await new Checkout().fetchAndCheckout(repo,[],{head:{ref:'topic'}},{});
- assert.equal(nativeCalls,0,'An occupied branch never reaches native checkout');
- occupied=false;
- await new Checkout().fetchAndCheckout(repo,[],{head:{ref:'topic'}},{});
- assert.equal(nativeCalls,1,'Unoccupied branches retain native fetch/checkout');
+ const checkout=new Checkout();
+ assert.equal(await checkout.checkoutExistingPullRequestBranch(repo,pr,{}),true);
+ await checkout.fetchAndCheckout(repo,[],pr,{});
+ const review=new Review();
+ review._repository=repo;
+ await review.switch(pr);
+ assert.equal(calls,3);
+ assert.equal(nativeCalls,0,'Neither helper nor review switch may modify the original checkout');
+ fail=true;
+ await assert.rejects(checkout.fetchAndCheckout(repo,[],pr,{}),/handoff failed/);
+ assert.equal(nativeCalls,0,'Failed routing never falls back to native checkout');
 })().catch(error=>{console.error(error);process.exitCode=1});
 '''.replace('PATCHED', patched)
         subprocess.run(['node', '-e', script], check=True)
