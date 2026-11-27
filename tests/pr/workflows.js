@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { boundedLaunch, ponyPrompt, prRules, MAX_LAUNCH_BYTES, openWorkflow } = require('../../extension/github/pr-workflows');
+const { boundedLaunch, ponyPrompt, ponyArtworkPrompt, prRules, MAX_LAUNCH_BYTES, openWorkflow } = require('../../extension/github/pr-workflows');
 const { chatgptPullRequestUrl } = require('../../extension/codex/chatgpt-project');
 
 (async () => {
@@ -47,6 +47,17 @@ const { chatgptPullRequestUrl } = require('../../extension/codex/chatgpt-project
   assert.match(profile, /standalone clip is optional and not required/, 'A standalone clip is not required when a full episode is available');
   assert.match(profile, /PR confirmation window can render the section/, 'Moment links are intended for the existing confirmation UI');
   assert.match(profile, /must not be copied into the PR description/, 'Independent character research remains local');
+  const enrichment = ponyArtworkPrompt({slug:'bushel'}, 'Saved text https://example.com/old-post', [
+    {url:'https://example.com/old.png', source:'https://example.com/old-art'}
+  ], 'http://127.0.0.1:1234/kefania-draft/test/pony');
+  assert.match(enrichment, /already-cached pony/);
+  assert.match(enrichment, /Do not rewrite the biography/);
+  assert.match(enrichment, /4–8 or more distinct/);
+  assert(enrichment.includes('https://example.com/old-post'));
+  assert(enrichment.includes('https://example.com/old.png'));
+  assert(enrichment.includes('https://example.com/old-art'));
+  assert(!enrichment.includes('Saved text'), 'Only known URLs are needed, not the saved biography');
+  assert(!enrichment.includes('Important moments'), 'Enrichment does not repeat canonical scene research');
   const userTab = {name:'User work'}, workflowTab = {name:'Draft'}, anotherTab = {name:'Later user work'};
   const group = {tabs:[userTab]};
   const closed = [];
