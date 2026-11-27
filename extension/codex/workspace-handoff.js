@@ -2,6 +2,7 @@
 
 const { createHash, randomUUID } = require('node:crypto');
 const path = require('node:path');
+const { handoffDraftAtoms, attachmentsAtom } = require('./drafts');
 const keyFor = workspace => 'sweetiebot.codexHandoff.' + createHash('sha256').update(path.resolve(workspace)).digest('hex');
 
 function handoffAttachments(plan) {
@@ -45,18 +46,21 @@ async function prepareCodexHandoff(vscode, from) {
     throw new Error('Reload this window before switching checkouts so the same Codex chat can follow the branch.');
   }
   // Read the draft before interrupting, so a draft-provider failure leaves the worker running.
-  const saved = commands.includes('sweetiebot.codexDraft.read')
-    ? await vscode.commands.executeCommand('sweetiebot.codexDraft.read') : null;
-  const attachments = commands.includes('sweetiebot.codexDraft.readAttachments')
+  const scoped = commands.includes('sweetiebot.codexDraft.readAtoms');
+  const saved = scoped ? await vscode.commands.executeCommand('sweetiebot.codexDraft.readAtoms')
+    : commands.includes('sweetiebot.codexDraft.read') ? await vscode.commands.executeCommand('sweetiebot.codexDraft.read') : null;
+  const attachments = !scoped && commands.includes('sweetiebot.codexDraft.readAttachments')
     ? await vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments') : null;
-  const draft = saved?.draft ?? null;
-  const attachmentDrafts = attachments?.enabled ? attachments.drafts : undefined;
   if (saved?.scope && attachments?.scope && (saved.scope !== attachments.scope || saved.generation !== attachments.generation)) {
     throw Error('The branch changed while capturing the Codex draft. Retry the checkout switch.');
   }
   const plan = await vscode.commands.executeCommand('sweetiebot.codex.prepareWorkspaceHandoff', { from });
-  if (!plan && !draft && !Object.keys(attachmentDrafts || {}).length) return null;
+  const composerDrafts = saved?.atoms && handoffDraftAtoms(saved.atoms, plan?.threadId);
+  const draft = composerDrafts && plan?.threadId ? null : saved?.draft ?? null;
+  const attachmentDrafts = composerDrafts?.[attachmentsAtom] ?? (attachments?.enabled ? attachments.drafts : undefined);
+  if (!plan && !draft && !Object.keys(composerDrafts || attachmentDrafts || {}).length) return null;
   return { ...(plan || { draftOnly: true }), source: from, draft, attachmentDrafts,
+    ...(composerDrafts ? { composerDrafts } : {}),
     ...(saved?.scope || attachments?.scope ? { draftScope: saved?.scope || attachments.scope,
       draftGeneration: saved?.generation ?? attachments?.generation ?? 0, draftTransferId: randomUUID() } : {}) };
 }

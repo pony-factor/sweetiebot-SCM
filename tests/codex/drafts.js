@@ -17,6 +17,7 @@ function scope(root, saved = new Map(), configuration = {}) {
   const context = {globalState:{get:key=>saved.get(key), async update(key,value){
     if(value===undefined) saved.delete(key); else saved.set(key,value);
   }},subscriptions:[]};
+  if (configuration.storage) context.globalStorageUri = { fsPath: configuration.storage };
   if (configuration.workspace) vscode.workspace.workspaceFile={fsPath:configuration.workspace,toString:()=>configuration.workspace};
   registerCodexDraftCommands(vscode,context, configuration.branch ? {
     resolveBranches:async()=>[[root,configuration.branch]]
@@ -31,7 +32,11 @@ function providerFor(scoped) {
   const provider = {
     initializeWebview() {},
     sendPersistedAtomState(webview) { return webview.postMessage({type:'persisted-atom-sync',state:{'composer-prompt-drafts-v2':{}}}); },
-    handleMessage(webview,message) { forwarded.push(message); return message; }
+    handleMessage(webview,message) {
+      if (message.type === 'persisted-atom-sync-request') return this.sendPersistedAtomState(webview);
+      forwarded.push(message);
+      return message;
+    }
   };
   const script = fs.readFileSync(path.join(__dirname,'../../assets/codex/drafts-host.js'),'utf8');
   const host = vm.createContext({Promise});
@@ -46,127 +51,117 @@ async function run() {
   const noRepo=scope(null,shared);
   assert.notEqual(codexDraftStorageKey(repoA.vscode),codexDraftStorageKey(repoB.vscode));
   assert.equal(codexDraftStorageKey(noRepo.vscode),undefined);
-  const a=providerFor(repoA),b=providerFor(repoB);
-  const atom='composer-prompt-drafts-v1';
-  const updates=(repo, draft)=>repo.provider.handleMessage(repo.webview,{
-    type:'persisted-atom-update',key:atom,
-    value:{'new-conversation':draft,'local:thread-id':'Thread draft'}
+  const a = providerFor(repoA), b = providerFor(repoB);
+  const atom = 'composer-prompt-drafts-v1';
+  const atomV2 = 'composer-prompt-drafts-v2';
+  const retained = 'composer-retained-documents-v1';
+  const attachmentAtom = 'sweetiebot-composer-attachments-v1';
+  const thread = 'local:thread-id';
+  const slot = 'new-conversation';
+  const rich = { prompt: { document: { type: 'doc', content: [{ type: 'text', text: 'Home A' }] },
+    plainTextMode: false }, pullRequestChecks: [], usedDictation: true };
+  const threadA = { prompt: 'Thread A', pullRequestChecks: [] };
+  const threadB = { prompt: 'Thread B', pullRequestChecks: [] };
+  const update = (view, key, fields) => {
+    const snapshot = view.seen.findLast(message => message.type === 'persisted-atom-sync');
+    return view.provider.handleMessage(view.webview, {
+      type: 'persisted-atom-update', key, ...fields,
+      scmToolkitDraftScope: snapshot?.scmToolkitDraftScope,
+      scmToolkitDraftGeneration: snapshot?.scmToolkitDraftGeneration
+    });
+  };
+  const record = (view, key, entries) => update(view, key, {
+    recordUpdate: { entries, ...(key === atomV2 ? { legacyStorageKey: atom } : {}) }
   });
-  await updates(a,'Draft for A');
-  await updates(b,'Draft for B');
-  assert.equal((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,'Draft for A');
-  assert.equal((await repoB.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,'Draft for B');
-  assert(!('new-conversation' in a.forwarded[0].value));
-  assert.equal(a.forwarded[0].value['local:thread-id'],'Thread draft');
-  const originalState={feature:true,[atom]:{'new-conversation':'Leaked legacy draft','local:thread-id':'Thread draft'}};
-  await a.webview.postMessage({type:'persisted-atom-sync',state:originalState});
-  await b.webview.postMessage({type:'persisted-atom-sync',state:originalState});
-  assert.equal(a.seen[0].state[atom]['new-conversation'],'Draft for A');
-  assert.equal(b.seen[0].state[atom]['new-conversation'],'Draft for B');
-  assert.equal(originalState[atom]['new-conversation'],'Leaked legacy draft');
-  assert.equal(b.seen[0].state[atom]['local:thread-id'],'Thread draft');
-  await b.webview.postMessage({type:'persisted-atom-updated',key:atom,value:originalState[atom]});
-  assert.equal(b.seen[1].value['new-conversation'],'Draft for B');
-  await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.write',null);
-  await a.webview.postMessage({type:'persisted-atom-sync',state:originalState});
-  assert(!('new-conversation' in a.seen[1].state[atom]));
-  assert.equal(b.seen[0].state.feature,true,'Unrelated atoms intact');
-  assert.deepEqual(await noRepo.vscode.commands.executeCommand('sweetiebot.codexDraft.read'),{enabled:false});
-  assert.equal(await noRepo.vscode.commands.executeCommand('sweetiebot.codexDraft.write','ignored'),false);
+  const originalState = { feature: true, [atomV2]: { [slot]: 'Shared home', [thread]: 'Shared thread' },
+    [retained]: { [slot]: 'Shared retained document' },
+    'draft-thread-identities-v1': { [slot]: 'Shared pending thread' } };
+  const sync = async view => {
+    await view.webview.postMessage({ type: 'persisted-atom-sync', state: originalState });
+    return view.seen.at(-1).state;
+  };
+  for (const view of [a, b]) {
+    const state = await sync(view);
+    assert(!Object.hasOwn(state, atomV2));
+    assert(!Object.hasOwn(state, retained));
+    assert(!Object.hasOwn(state, 'draft-thread-identities-v1'));
+    assert.equal(state.feature, true);
+  }
+  await update(a, atom, { value: { [slot]: rich } });
+  await record(a, atomV2, { [thread]: { value: threadA } });
+  await record(b, atomV2, { [slot]: { value: { prompt: 'Home B' } }, [thread]: { value: threadB } });
+  const doc = { document: { type: 'doc' }, prompt: 'Home A retained' };
+  await record(a, retained, { [slot]: { value: doc }, [thread]: { value: { prompt: 'Thread A retained' } } });
+  const reopened = providerFor(scope('file:///workspace/a', shared));
+  assert.deepEqual((await sync(reopened))[atomV2], { [slot]: rich, [thread]: threadA });
+  assert.deepEqual((await sync(b))[atomV2], { [slot]: { prompt: 'Home B' }, [thread]: threadB });
+  assert.deepEqual((await sync(a))[retained], { [slot]: doc, [thread]: { prompt: 'Thread A retained' } });
+  assert.equal((await sync(b))[retained], undefined);
+  assert.equal(originalState[atomV2][slot], 'Shared home');
+  const before = b.seen.length;
+  await b.webview.postMessage({ type: 'persisted-atom-updated', key: atomV2, value: originalState[atomV2] });
+  assert.equal(b.seen.length, before, 'Ignore stale account-wide broadcasts');
+  assert.deepEqual(a.forwarded, [], 'No composer data is written to the shared store');
+  await a.provider.handleMessage(a.webview, { type: 'persisted-atom-update', key: 'unrelated', value: 'keep' });
+  assert.equal(a.forwarded.at(-1).value, 'keep');
+  assert.deepEqual(await noRepo.vscode.commands.executeCommand('sweetiebot.codexDraft.read'), { enabled: false });
+  assert.equal(await noRepo.vscode.commands.executeCommand('sweetiebot.codexDraft.write', 'ignored'), false);
 
-  // A broken or unsupported atom value is forwarded without altering thread state.
-  await a.provider.handleMessage(a.webview,{type:'persisted-atom-update',key:atom,value:'broken-json'});
-  assert.equal(a.forwarded.at(-1).value,'broken-json');
+  const newer = { prompt: 'New unsent draft', pullRequestChecks: [] };
+  await record(a, atomV2, { [slot]: { value: newer }, [thread]: { value: 'updated thread' } });
+  await record(a, atomV2, { [slot]: { delete: true, expectedValue: rich } });
+  assert.deepEqual((await sync(a))[atomV2][slot], newer, 'Do not delete a newer draft');
+  await record(a, retained, { [slot]: { value: doc, expectedValue: doc,
+    deleteIfRecordEntryMatches: { recordKey: atomV2, entryKey: slot, expectedValue: newer } } });
+  assert(!Object.hasOwn((await sync(a))[retained], slot), 'Discard redundant retained document');
+  await record(a, atomV2, { [slot]: { delete: true, expectedValue: newer } });
+  assert.deepEqual((await sync(reopened))[atomV2], { [thread]: 'updated thread' }, 'Sending home leaves the thread draft');
+  await record(a, retained, { [thread]: null });
+  assert.deepEqual(Object.keys((await sync(a))[retained]), []);
 
-  // Current Codex persists rich draft objects and sends incremental record updates.
-  const atomV2='composer-prompt-drafts-v2';
-  const rich={prompt:{document:{type:'doc',content:[{type:'text',text:'Unsent rich prompt'}]},plainTextMode:false},
-    pullRequestChecks:[],usedDictation:true};
-  const record=(entries,value={})=>a.provider.handleMessage(a.webview,{
-    type:'persisted-atom-update',key:atomV2,value,recordUpdate:{entries,legacyStorageKey:atom}
-  });
-  await record({'new-conversation':{value:rich}},{'new-conversation':rich});
-  assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,rich);
-  assert(!('new-conversation' in a.forwarded.at(-1).value));
-  assert.equal(a.forwarded.at(-1).recordUpdate.entries['new-conversation'].delete,true);
-  await record({'local:thread-id':{value:{prompt:'Thread follow-up',pullRequestChecks:[]}}});
-  assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,rich,
-    'A thread-only record update must not clear an unsent new-chat draft');
-  const reopenedRich=providerFor(scope('file:///workspace/a',shared));
-  await reopenedRich.webview.postMessage({type:'persisted-atom-sync',state:{[atomV2]:{'new-conversation':'Global stale text'}}});
-  assert.deepEqual(reopenedRich.seen.at(-1).state[atomV2]['new-conversation'],rich);
-  await b.webview.postMessage({type:'persisted-atom-sync',state:{[atomV2]:{'new-conversation':rich}}});
-  assert.equal(b.seen.at(-1).state[atomV2]['new-conversation'],'Draft for B');
-  await record({'new-conversation':{delete:true,expectedValue:rich}});
-  const afterSend=providerFor(scope('file:///workspace/a',shared));
-  await afterSend.webview.postMessage({type:'persisted-atom-sync',state:{[atomV2]:{'new-conversation':rich}}});
-  assert(!('new-conversation' in afterSend.seen.at(-1).state[atomV2]),
-    'Sending clears the scoped cache before a new workspace hydrates');
-  await record({'new-conversation':{value:rich}});
-  const newer={prompt:'New unsent draft',pullRequestChecks:[]};
-  await record({'new-conversation':{value:newer}});
-  await record({'new-conversation':{delete:true,expectedValue:rich}});
-  assert.deepEqual((await repoA.vscode.commands.executeCommand('sweetiebot.codexDraft.read')).draft,newer,
-    'A late send/delete cannot erase a newer draft');
-  await record({'new-conversation':{delete:true,expectedValue:{pullRequestChecks:[],prompt:newer.prompt}}});
-  await afterSend.webview.postMessage({type:'persisted-atom-updated',key:atomV2,value:{'new-conversation':rich}});
-  assert(!('new-conversation' in afterSend.seen.at(-1).value),'A global broadcast cannot resurrect sent text');
-
-  let memory = new Map([['codex:persisted-atom:composer-prompt-drafts-v1', JSON.stringify(originalState[atom])],
-    ['other', 'keep']]);
+  const memory = new Map(Object.entries(originalState).map(([key, value]) =>
+    ['codex:persisted-atom:' + key, JSON.stringify(value)]));
+  memory.set('other', 'keep');
   class Storage {
-    getItem(k){return memory.get(k)??null;}
-    setItem(k,v){memory.set(k,String(v));}
+    getItem(key) { return memory.get(key) ?? null; }
+    setItem(key, value) { memory.set(key, String(value)); }
+    removeItem(key) { memory.delete(key); }
   }
   const store = new Storage();
-  const webJs=fs.readFileSync(path.join(__dirname,'../../assets/codex/drafts-webview.js'),'utf8');
-  vm.runInNewContext(webJs,{Storage,window:{localStorage:store}});
-  assert.equal(JSON.parse(store.getItem('codex:persisted-atom:composer-prompt-drafts-v1'))['new-conversation'],undefined);
-  assert.equal(JSON.parse(memory.get('codex:persisted-atom:composer-prompt-drafts-v1'))['new-conversation'],'Leaked legacy draft');
-  store.setItem('codex:persisted-atom:composer-prompt-drafts-v1',JSON.stringify({'new-conversation':'Draft C','local:thread-id':'Thread C'}));
-  assert.equal(JSON.parse(memory.get('codex:persisted-atom:composer-prompt-drafts-v1'))['new-conversation'],undefined);
-  assert.equal(JSON.parse(store.getItem('codex:persisted-atom:composer-prompt-drafts-v1'))['local:thread-id'],'Thread C');
-  memory.set('codex:persisted-atom:'+atomV2,JSON.stringify({'new-conversation':rich,'local:thread-id':newer}));
-  assert(!('new-conversation' in JSON.parse(store.getItem('codex:persisted-atom:'+atomV2))));
-  store.setItem('codex:persisted-atom:'+atomV2,JSON.stringify({'new-conversation':rich,'local:thread-id':newer}));
-  assert(!('new-conversation' in JSON.parse(memory.get('codex:persisted-atom:'+atomV2))));
-  assert.deepEqual(JSON.parse(store.getItem('codex:persisted-atom:'+atomV2))['local:thread-id'],newer);
-  assert.equal(store.getItem('other'),'keep');
+  const webJs = fs.readFileSync(path.join(__dirname, '../../assets/codex/drafts-webview.js'), 'utf8');
+  vm.runInNewContext(webJs, { Storage, window: { localStorage: store } });
+  for (const atomKey of [atom, atomV2, retained, 'draft-thread-identities-v1', attachmentAtom]) {
+    const key = 'codex:persisted-atom:' + atomKey;
+    const legacy = memory.get(key);
+    assert.equal(store.getItem(key), null);
+    store.setItem(key, '{"new-conversation":"Do not share"}');
+    store.removeItem(key);
+    assert.equal(memory.get(key), legacy, 'Legacy values are left intact');
+  }
+  assert.equal(store.getItem('other'), 'keep');
 
-  const attachmentAtom = 'sweetiebot-composer-attachments-v1';
-  const attachmentDrafts = { 'new-conversation': {
+  const attachmentDrafts = { [slot]: {
     imageAttachments: [{ id:'image-1', src:'data:image/png;base64,aGVsbG8=', localPath:'/tmp/pasted-image.png', filename:'pasted.png' }],
     fileAttachments: ['/workspace/a/report.pdf'],
     uploadedFileAttachments: [{ id:'upload-1', name:'notes.txt', status:'uploaded' }],
     attachmentOrder: ['["image","image-1"]','["file","/workspace/a/report.pdf"]']
   }};
-  await a.provider.handleMessage(a.webview,{type:'persisted-atom-update',key:attachmentAtom,value:attachmentDrafts});
-  assert(!a.forwarded.some(message=>message.key===attachmentAtom),'Never write attachments to the native account-wide store');
-  await a.webview.postMessage({type:'persisted-atom-sync',state:{[attachmentAtom]:{leaked:'Other workspace'}}});
-  await b.webview.postMessage({type:'persisted-atom-sync',state:{[attachmentAtom]:attachmentDrafts}});
-  assert.deepEqual(a.seen.at(-1).state[attachmentAtom],attachmentDrafts);
-  assert.deepEqual(b.seen.at(-1).state[attachmentAtom],{},'Attachments cannot leak between worktrees');
-  const reopened=providerFor(scope('file:///workspace/a',shared));
-  await reopened.webview.postMessage({type:'persisted-atom-sync',state:{}});
-  assert.deepEqual(reopened.seen.at(-1).state[attachmentAtom],attachmentDrafts,'Image payloads and file order survive reopening');
-  const destination=scope('file:///workspace/c',shared);
-  const workspace='/workspace/c/draft.code-workspace';
-  destination.vscode.workspace.workspaceFile={fsPath:workspace};
-  shared.set(require('../../extension/codex/workspace-handoff').keyFor(workspace),{
-    source:'/workspace/a',destination:'/workspace/c',attachmentDrafts
+  await update(a, attachmentAtom, { value: attachmentDrafts });
+  assert.deepEqual((await sync(reopened))[attachmentAtom], attachmentDrafts, 'Attachments survive reopening');
+  assert.deepEqual(Object.keys((await sync(b))[attachmentAtom]), []);
+  const destination = scope('file:///workspace/c', shared);
+  const workspace = '/workspace/c/draft.code-workspace';
+  destination.vscode.workspace.workspaceFile = { fsPath: workspace };
+  shared.set(require('../../extension/codex/workspace-handoff').keyFor(workspace), {
+    source: '/workspace/a', destination: '/workspace/c', attachmentDrafts
   });
-  const destinationProvider=providerFor(destination);
-  await destinationProvider.webview.postMessage({type:'persisted-atom-sync',state:{}});
-  assert.equal(destinationProvider.seen.at(-1).state[attachmentAtom]['new-conversation'].fileAttachments[0],'/workspace/c/report.pdf',
-    'Initial composer hydration sees the pending handoff before extension activation finishes');
-  const failing=scope('file:///workspace/failing');
-  failing.context.globalState.update=async()=>{throw new Error('Storage unavailable');};
-  const failingProvider=providerFor(failing);
-  await assert.rejects(failingProvider.provider.handleMessage(failingProvider.webview,
-    {type:'persisted-atom-update',key:attachmentAtom,value:attachmentDrafts}),/Storage unavailable/);
-  await assert.rejects(failing.vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments'),/Storage unavailable/);
-  store.setItem('codex:persisted-atom:'+attachmentAtom,JSON.stringify(attachmentDrafts));
-  assert.equal(store.getItem('codex:persisted-atom:'+attachmentAtom),'{}','Global browser fallback cannot leak attachments');
+  assert.equal((await sync(providerFor(destination)))[attachmentAtom][slot].fileAttachments[0], '/workspace/c/report.pdf');
+  const failing = scope('file:///workspace/failing');
+  failing.context.globalState.update = async () => { throw new Error('Storage unavailable'); };
+  const failingProvider = providerFor(failing);
+  await sync(failingProvider);
+  await assert.rejects(update(failingProvider, attachmentAtom, { value: attachmentDrafts }), /Storage unavailable/);
+  await assert.rejects(failing.vscode.commands.executeCommand('sweetiebot.codexDraft.readAttachments'), /Storage unavailable/);
   const attachmentHost=vm.createContext({});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../../assets/codex/composer/attachments.js'),'utf8'),attachmentHost);
   let records={}; const signal={};
@@ -196,7 +191,7 @@ async function run() {
   configA.branch='topic';
   await command(windowA,'refresh');
   assert.notEqual(liveA.seen.at(-1).scmToolkitDraftScope,scopeMain);
-  assert(!('new-conversation' in liveA.seen.at(-1).state[atomV2]),'A branch refresh replaces the visible old-branch draft');
+  assert.equal(liveA.seen.at(-1).state[atomV2]?.['new-conversation'], undefined,'A branch refresh replaces the visible old-branch draft');
   await liveA.provider.handleMessage(liveA.webview,{type:'persisted-atom-update',key:atomV2,
     scmToolkitDraftScope:scopeMain,recordUpdate:{entries:{'new-conversation':{value:'Late old text'}}},value:{}});
   assert.equal((await command(windowA,'read')).draft,null,'Changing branch selects an independent slot');
@@ -209,6 +204,24 @@ async function run() {
   assert.equal((await command(windowA,'read')).draft,'Window A main draft');
   assert.deepEqual((await command(windowA,'readAttachments')).drafts,attachmentDrafts);
   assert.equal((await command(windowB,'read')).draft,'Window B main draft');
+  configA.branch = 'topic';
+  const rendererSync = renderer => liveA.provider.handleMessage(liveA.webview,
+    { type: 'persisted-atom-sync-request', scmToolkitDraftRenderer: renderer });
+  await rendererSync('previous-renderer');
+  configA.branch = 'main';
+  liveA.webview.html = '<html>Coded editor</html>';
+  liveA.provider.scmToolkitReadDraftThread = async view => {
+    assert.equal(view, liveA.webview);
+    return '4ad80a10-27cb-4175-93de-222222222222';
+  };
+  await command(windowA, 'refresh');
+  assert.match(liveA.webview.html, /sweetiebot-draft-refresh 1/, 'Changing scope rebuilds the mounted editor');
+  await rendererSync('previous-renderer');
+  assert.notEqual(liveA.seen.at(-1).scmToolkitDraftScope, scopeMain, 'A stale renderer cannot hydrate the new scope');
+  await rendererSync('next-renderer');
+  assert.equal(liveA.seen.at(-1).scmToolkitDraftThread, '4ad80a10-27cb-4175-93de-222222222222');
+  assert.equal(liveA.seen.at(-1).scmToolkitDraftScope, scopeMain);
+  assert.equal(liveA.seen.at(-1).state[atom]['new-conversation'], 'Window A main draft');
 
   const transfer={draftScope:scopeMain,draftTransferId:require('node:crypto').randomUUID(),
     source:'/workspace/a',destination:'/shared/destination',draft:'Window A main draft',attachmentDrafts};
@@ -249,6 +262,26 @@ async function run() {
   assert.equal((await command(windowE,'read')).draft,newerSourcePlan.draft);
   assert.equal((await command(windowA,'read')).draft,'Newer source work','Retiring a transfer cannot erase newer source edits');
 
+  const threadId = '4ad80a10-27cb-4175-93de-222222222222';
+  const selectedThread = 'local:' + threadId;
+  const independentThread = 'local:another-thread';
+  const sourceView = providerFor(windowA);
+  await sync(sourceView);
+  await record(sourceView, atomV2, { [selectedThread]: { value: threadA }, [independentThread]: { value: threadB } });
+  await record(sourceView, retained, { [selectedThread]: { value: doc } });
+  const sourceAtoms = await command(windowA, 'readAtoms');
+  const composerDrafts = require('../../extension/codex/drafts').handoffDraftAtoms(sourceAtoms.atoms, threadId);
+  assert.deepEqual(composerDrafts[atomV2], { [selectedThread]: threadA });
+  await command(windowD, 'adopt', { ...transfer, draft: null, attachmentDrafts: undefined, composerDrafts,
+    draftGeneration: sourceAtoms.generation, draftTransferId: require('node:crypto').randomUUID() });
+  assert.equal((await command(windowD, 'read')).draft, 'Independent destination work');
+  assert.deepEqual((await command(windowD, 'readAtoms')).atoms[atomV2][selectedThread], threadA);
+  assert.deepEqual((await command(windowD, 'readAtoms')).atoms[retained][selectedThread], doc);
+  const remaining = (await command(windowA, 'readAtoms')).atoms;
+  assert.equal(remaining[atomV2][slot], 'Newer source work');
+  assert.deepEqual(remaining[atomV2][independentThread], threadB);
+  assert(!Object.hasOwn(remaining[atomV2], selectedThread));
+
   const listeners={},ipc=[];
   const native=Object.freeze({getState:()=>({keep:true}),setState:value=>value,postMessage:message=>ipc.push(message)});
   const bridgeWindow={localStorage:store,acquireVsCodeApi:()=>native,addEventListener:(name,listener)=>{listeners[name]=listener;}};
@@ -260,6 +293,27 @@ async function run() {
   bridge.postMessage({type:'unrelated',value:'keep'});
   assert.equal(ipc.at(-1).scmToolkitDraftScope,undefined);
   assert.equal(bridge.getState().keep,true);
+
+  const storage = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'codex-draft-storage-'));
+  try {
+    const first = scope('file:///shared/main', new Map(), configA);
+    const second = scope('file:///shared/main', new Map(), { ...configB, storage });
+    await command(first, 'write', 'A previous scoped draft');
+    const firstLocal = scope('file:///shared/main', first.saved, { ...configA, storage });
+    assert.equal((await command(firstLocal, 'read')).draft, 'A previous scoped draft');
+    await command(first, 'write', 'A on disk');
+    await Promise.all([
+      command(firstLocal, 'write', 'Buffered A edit'),
+      command(second, 'write', 'Buffered B edit')
+    ]);
+    const reopened = scope('file:///shared/main', new Map(), { ...configA, storage });
+    assert.equal((await command(reopened, 'read')).draft, 'Buffered A edit');
+    assert.equal((await command(second, 'read')).draft, 'Buffered B edit');
+    assert.deepEqual(fs.readdirSync(path.join(storage, 'codex-drafts')).map(file =>
+      fs.statSync(path.join(storage, 'codex-drafts', file)).mode & 0o777), [0o600, 0o600]);
+  } finally {
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
 
   const gitRoot=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'codex-draft-branch-'));
   try {

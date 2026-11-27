@@ -88,7 +88,7 @@ function scmToolkitRegisterCodexSnapshot(api) {
         if (request?.type === 'persisted-atom-sync' && !restored) {
             restored = true;
             const state = api.getState?.();
-            const saved = state?.[reloadKey];
+            const saved = request.scmToolkitDraftThread ?? state?.[reloadKey];
             if (saved !== undefined) {
                 const next = { ...state };
                 delete next[reloadKey];

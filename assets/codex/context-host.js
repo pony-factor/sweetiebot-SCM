@@ -373,7 +373,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return originalInitialize.call(this, webview, role, onDispose, ...args);
     };
 
-    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker, composerFocus, copyMode = 'combined', expectedThreadId) => {
+    const captureRaw = (includeSource, identityOnly = false, modelOnly = false, shareOnly = false, clipboard, reloadState = false, clipboardMarker, composerFocus, copyMode = 'combined', expectedThreadId, targetWebview) => {
         const panels = [...provider.editorPanels.keys()].filter(panel => provider.getWebviewForPanel(panel));
         const activePanel = panels.find(panel => {
             try { return panel.active; } catch { return false; }
@@ -385,7 +385,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         const sidebar = sidebars.find(view => view.visible) ?? provider.sidebarView ?? sidebars[0];
         // Background windows and hidden views must not reopen a previous chat.
         if (reloadState && !activePanel && !sidebar?.visible) return Promise.resolve(false);
-        const webview = focusedWebview ?? (activePanel ? provider.getWebviewForPanel(activePanel) : sidebar?.webview)
+        const webview = targetWebview ?? focusedWebview ?? (activePanel ? provider.getWebviewForPanel(activePanel) : sidebar?.webview)
             ?? (panels.length === 1 ? provider.getWebviewForPanel(panels[0]) : undefined);
         if (!webview) {
             if (reloadState) return Promise.resolve(false);
@@ -505,6 +505,9 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         return capture(false, false, false, threadId);
     });
     const identityCommand = vscode.commands.registerCommand('sweetiebot.readCodexIdentity', () => capture(false, true));
+    provider.scmToolkitReadDraftThread = webview =>
+        captureRaw(false, true, false, false, undefined, false, undefined, undefined, 'combined', undefined, webview)
+            .then(identity => identity.threadId);
     const focusCommand = vscode.commands.registerCommand('sweetiebot.codex.restoreComposerFocus', value =>
         capture(false, false, false, false, undefined, false, value));
     const modelCommand = vscode.commands.registerCommand('sweetiebot.readCodexModel', () => capture(false, false, true));
@@ -532,6 +535,7 @@ function scmToolkitRegisterCodexSnapshotProvider(provider, vscode) {
         legacySourceCommand.dispose();
         resumeSubscription?.dispose();
         checkoutSubscription?.dispose();
+        delete provider.scmToolkitReadDraftThread;
         provider.initializeWebview = originalInitialize;
         provider.handleMessage = originalHandleMessage;
         for (const listener of listeners) listener.dispose();

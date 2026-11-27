@@ -91,6 +91,7 @@
     "onCommand:sweetiebot.endCommit",
     "onCommand:scmToolkit.endCommit",
     "onCommand:sweetiebot.codexDraft.read",
+    "onCommand:sweetiebot.codexDraft.readAtoms",
     "onCommand:sweetiebot.codexDraft.write",
     "onCommand:sweetiebot.respondToAiReview"
   ],
