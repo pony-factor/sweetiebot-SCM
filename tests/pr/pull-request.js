@@ -718,8 +718,12 @@ async function run() {
   calls.length = 0;
   await callback(uri, { branch: 'draft', remote: 'origin', base: 'main', source: chatSource });
   assert.deepEqual(calls.map(call => call.id), [
-    'workbench.action.browser.open', 'workbench.action.browser.open'
-  ], 'Cache hits omit the independent pony research ChatGPT tab');
+    'workbench.action.browser.open', 'workbench.action.browser.open', 'workbench.action.browser.open'
+  ], 'Cache hits open an independent artwork-only research tab');
+  const enrichmentPrompt = new URLSearchParams(new URL(calls[2].args[0].url).hash.slice(1)).get('q');
+  assert.match(enrichmentPrompt, /already-cached pony/);
+  assert(enrichmentPrompt.includes('https://example.org/pony'), 'Previously known links are excluded');
+  assert(!enrichmentPrompt.includes('headSha'));
   const cachedConfirmation = calls[0].args[0].url;
   const cachedState = await (await fetch(cachedConfirmation + '/state')).json();
   assert.equal(cachedState.profile, savedProfile, 'Cached results immediately appear in the new confirmation');
@@ -728,6 +732,18 @@ async function run() {
   assert.equal((await (await fetch(cachedConfirmation + '/state')).json()).ludicrousMode, true, 'The Kefania dialog reads the current magic-wand preference');
   ludicrousMode = false;
   assert.equal(cachedState.draft, undefined, 'PR drafting remains independent');
+  assert.equal(cachedState.artworkRefreshPending, true);
+  const priorPuts = cacheOperations.filter(item => item.action === 'put').length;
+  const artMarkdown = '[![Artist](https://example.com/new.png)](https://example.com/new-post)';
+  const artResponse = await fetch(cachedConfirmation + '/pony', {method:'POST',
+    headers:{Origin:new URL(cachedConfirmation).origin,'Content-Type':'application/json'},
+    body:JSON.stringify({profile:artMarkdown})});
+  assert.equal(artResponse.status, 200);
+  const enrichedState = await (await fetch(cachedConfirmation + '/state')).json();
+  assert.equal(enrichedState.profile, savedProfile);
+  assert.equal(enrichedState.ponyArt, artMarkdown);
+  assert.equal(enrichedState.artworkRefreshPending, false);
+  assert.equal(cacheOperations.filter(item => item.action === 'put').length, priorPuts, 'Enrichment cannot overwrite the saved biography');
   cachedProfile = undefined;
   const draftPath = openedPrompt.match(/http:\/\/127\.0\.0\.1:\d+(\/kefania-draft\/[0-9a-f-]{36})/)[1];
   assert.equal(browserOptions.openToSide, false);
