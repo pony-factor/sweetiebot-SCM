@@ -179,7 +179,9 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal(await notifyExperiment({ source: from, destination: sandbox, branch: 'topic', expectedThreadId: threadId }), true);
     assert.equal(requests.at(-1).method, 'turn/steer', 'In-flight chats receive a steer, not an interruption');
     assert.equal(requests.at(-1).params.expectedTurnId, 'running-turn');
-    assert(requests.at(-1).params.input[0].text.includes('use the already-open experimental VS Code window'));
+    assert.equal(requests.at(-1).params.input[0].text,
+      experimentDirection.replace('Original branch: "original-topic"', 'Original branch: null'),
+      'Active and idle chats receive the same safety directions');
     assert.deepEqual(requests.slice(beforeNotice).map(request => request.method),
       ['thread/read', 'thread/turns/list', 'turn/steer'],
       'A notice does not resume, interrupt or drain the native follow-up queue');
@@ -229,7 +231,7 @@ const { prepareCodexHandoff, registerCodexWorkspaceHandoff, retryCodexComposerFo
     assert.equal((await visibility(threadId)).needsNewWindow, false,
       'A rebound worker in the current checkout must not show the shortcut');
     assert.equal(requests.filter(request => request.method === 'turn/start').length, beforeResumption + 1);
-    assert.equal(requests.at(-1).params.input[0].text,
+    assert.equal(requests.filter(request => request.method === 'turn/start').at(-1).params.input[0].text,
       'Continue this task in the selected Git checkout: ' + destination + '. Use it for file operations; preserve existing commit and staging instructions.');
 
     await resume({ ...plan, destination });
