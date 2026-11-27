@@ -33,7 +33,9 @@ async function openedRoot(result) {
     git('-C', root, 'config', 'user.email', 'test@example.invalid');
     await fs.writeFile(path.join(root, 'file.txt'), 'committed main\n');
     await fs.writeFile(path.join(root, 'mixed.txt'), 'committed mixed\n');
-    git('-C', root, 'add', 'file.txt', 'mixed.txt');
+    const document = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x0a, 0xff, 0x0a]);
+    await fs.writeFile(path.join(root, 'old.pdf'), document);
+    git('-C', root, 'add', 'file.txt', 'mixed.txt', 'old.pdf');
     git('-C', root, 'commit', '-m', 'Fixture');
     git('-C', root, 'remote', 'add', 'origin', 'https://github.com/owner/repo.git');
 
@@ -48,8 +50,11 @@ async function openedRoot(result) {
     await fs.writeFile(path.join(root, 'file.txt'), 'pending shared main\n');
     assert.equal(await fs.readFile(path.join(await openedRoot(second), 'file.txt'), 'utf8'), 'pending shared main\n');
     await fs.writeFile(path.join(root, 'staged.txt'), 'staged addition\n');
+    await fs.writeFile(path.join(root, 'staged.pdf'), document);
     await fs.writeFile(path.join(root, 'mixed.txt'), 'staged mixed\n');
-    git('-C', root, 'add', 'staged.txt', 'mixed.txt');
+    git('-C', root, 'add', 'staged.txt', 'staged.pdf', 'mixed.txt');
+    await fs.rename(path.join(root, 'old.pdf'), path.join(root, 'new.pdf'));
+    assert.equal(git('-C', root, 'diff', '--numstat', '--', 'old.pdf'), '0\t2\told.pdf');
     await fs.appendFile(path.join(root, 'mixed.txt'), 'unstaged mixed\n');
     await fs.writeFile(path.join(root, 'untracked.txt'), 'untracked addition\n');
     const initialStatus = git('-C', root, 'status', '--porcelain');
@@ -108,6 +113,8 @@ async function openedRoot(result) {
       'New Branch transfers staged, unstaged, partially staged and untracked changes without Codex');
     assert.equal(git('-C', topic, 'diff', '--cached', '--binary'), initialIndex);
     assert.equal(git('-C', topic, 'diff', '--binary'), savedWorktree);
+    assert.deepEqual(await fs.readFile(path.join(topic, 'new.pdf')), document);
+    assert.deepEqual(execFileSync('git', ['-C', topic, 'show', ':staged.pdf']), document);
     assert.equal(git('-C', root, 'status', '--porcelain'), '', 'Verified transfer cleans main');
     const recovery = path.join(path.dirname(topic), '.sweetiebot-handoff-backup');
     assert.equal((await fs.readFile(path.join(recovery, 'index.patch'), 'utf8')).trim(), initialIndex);

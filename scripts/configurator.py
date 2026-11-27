@@ -435,6 +435,7 @@ SETTINGS = (
     Setting("mergeTimelineTimestampMode", "sweetiebot.merge-timeline-timestamp-mode", "Activity timeline timestamps", "Choose hidden, relative elapsed time, or local clock time in Lindsey’s activity timeline.", "Lindsey", "select", ("hidden", "relative", "clock")),
     Setting("mergeSidebarWidthPercent", "sweetiebot.merge-sidebar-width-percent", "PR list width (%)", "Starting share of the dashboard for the PR list. Drag the vertical divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=75),
     Setting("mergeTimelineHeightPercent", "sweetiebot.merge-timeline-height-percent", "Activity timeline height (%)", "Starting share of the left pane below its heading. Drag the timeline’s top divider to adjust it while reviewing.", "Lindsey", "integer", minimum=15, maximum=80),
+    Setting("aiReviewAccount", "sweetiebot.ai-review-account", "Dedicated GitHub account", "GitHub username for AI review replies and upstream PRs when Kefania lacks App access. Authenticate separately with gh auth login --hostname github.com. Leave blank to disable this identity; your normal account is never used for the upstream fallback.", "AI Review Responder", "optional_text"),
     Setting("kefaniaAutoShareCodexChat", "sweetiebot.kefania-auto-share-codex-chat", "Publicly share Codex chat when launching Kefania", "OFF by default. Clicking Kefania publishes a public snapshot of the currently open Codex chat, including your prompts and AI replies. Anyone with the link may read it, and the link goes into the PR Source details. Sweetiebot cannot unpublish or revoke a shared chat; treat sharing as permanent. Even when sharing is off, captured chat text is still sent to Kefania in your ChatGPT account as context for drafting the PR.", "Kefania"),
     Setting("kefaniaUseThemeColors", "sweetiebot.kefania-use-theme-colors", "Use VS Code theme colors", "Use the current theme for Kefania buttons, close icons, image controls, and page colors.", "Kefania"),
     Setting("kefaniaCloseAfterMerge", "sweetiebot.kefania-close-after-merge", "Close Kefania after squash and merge", "Close the Kefania confirmation window after GitHub confirms a successful squash and merge.", "Kefania"),
@@ -595,6 +596,8 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
             continue
 
         value = raw_value.strip()
+        if setting.name == "aiReviewAccount" and value and not re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?", value):
+            raise ValueError("Enter a valid GitHub username, not a token or email address.")
         if setting.kind == "chatgpt_project_url":
             if value:
                 url = urllib.parse.urlsplit(value)
@@ -680,6 +683,32 @@ def parse_submission(values: dict[str, list[str]]) -> dict[str, bool | str]:
     if parsed.get("workspaceSearchAskOllama") and not parsed.get("workspaceSearchChatModel"):
         raise ValueError("Ask Ollama requires a chat model.")
     return parsed
+
+
+def check_ai_reviewer(account: str) -> dict:
+    """Verify the explicitly selected GitHub CLI login without switching accounts."""
+    if not re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?", account):
+        raise ValueError("Enter a valid GitHub username first.")
+    env = dict(os.environ)
+    for key in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN",
+                "GITHUB_ENTERPRISE_TOKEN", "GH_HOST", "GH_DEBUG", "DEBUG"):
+        env.pop(key, None)
+    env["GH_PROMPT_DISABLED"] = "1"
+    env["PATH"] = os.pathsep.join(filter(None, (env.get("PATH"), "/opt/homebrew/bin", "/usr/local/bin")))
+    options = dict(capture_output=True, text=True, timeout=15, check=True)
+    try:
+        token = subprocess.run(["gh", "auth", "token", "--hostname", "github.com", "--user", account],
+                               env=env, **options).stdout.strip()
+        if not token or any(char.isspace() for char in token):
+            raise RuntimeError("GitHub CLI returned no usable credential.")
+        verified_env = dict(env, GH_TOKEN=token, GH_HOST="github.com")
+        login = subprocess.run(["gh", "api", "user", "--hostname", "github.com", "--jq", ".login"],
+                               env=verified_env, **options).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        raise RuntimeError("Could not verify this account. Run gh auth login --hostname github.com.") from None
+    if login.lower() != account.lower():
+        raise RuntimeError("GitHub authenticated a different account.")
+    return {"login": login}
 
 
 def save_settings(settings: dict[str, bool | str]) -> None:
@@ -1047,7 +1076,7 @@ SIDEBAR_CATEGORIES = (
     ("Source Control & Commits", ("Message bar", "Source control", "Commits")),
     ("Branches & Workspaces", ("Branch names",)),
     ("AI & Spellcheck", ("AI", "Spellchecker", "Search")),
-    ("GitHub & Pull Requests", ("Pull requests", "Kefania", "Lindsey", "GitHub", "GitHub Apps")),
+    ("GitHub & Pull Requests", ("Pull requests", "Kefania", "AI Review Responder", "Lindsey", "GitHub", "GitHub Apps")),
     ("Interface & Customization", ("Codex", "Window", "Browser")),
     ("System & Diagnostics", ("Initialization", "Diagnostics")),
 )
@@ -1104,6 +1133,11 @@ def render_form(
                 '<div class="settings-group"><h3>AI commit generation</h3>'
                 + _commit_instructions_control() + controls + '</div>'
             )
+        if section == "AI Review Responder":
+            controls += ('<div class="setting"><span><strong>Account connection</strong>'
+                         '<small>Verify the selected login without changing the active GitHub account. Repository permissions are checked when publishing.</small></span>'
+                         '<button type="button" id="ai-review-check">Test connection</button>'
+                         '<output id="ai-review-status" role="status" aria-live="polite">Not checked</output></div>')
         if section == "Diagnostics":
             controls = DIAGNOSTICS_PANEL
         if section == "GitHub Apps":
@@ -1507,6 +1541,25 @@ async function runLocalSetupAction(path, values = {{}}) {{
   }}
 }}
 
+const aiReviewAccount = document.querySelector('[name="aiReviewAccount"]');
+const aiReviewStatus = document.getElementById('ai-review-status');
+const aiReviewCheck = document.getElementById('ai-review-check');
+aiReviewAccount?.addEventListener('input', () => {{ aiReviewStatus.textContent = 'Not checked'; }});
+aiReviewCheck?.addEventListener('click', async () => {{
+  const account = aiReviewAccount.value.trim();
+  aiReviewCheck.disabled = true;
+  aiReviewStatus.textContent = 'Checking…';
+  try {{
+    const response = await fetch('/ai-review/check' + location.search, {{
+      method: 'POST', body: new URLSearchParams({{account}})
+    }});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not verify account.');
+    if (aiReviewAccount.value.trim() === account) aiReviewStatus.textContent = 'Authenticated as ' + result.login;
+  }} catch (error) {{
+    if (aiReviewAccount.value.trim() === account) aiReviewStatus.textContent = error.message;
+  }} finally {{ aiReviewCheck.disabled = false; }}
+}});
 const useSigningKey = document.getElementById('use-signing-key');
 const signingKey = document.getElementById('signing-key');
 if (useSigningKey && signingKey) {{
@@ -2037,7 +2090,7 @@ def run_configurator(
                 self._send("<h1>Not found</h1>", 404)
                 return
             if (urllib.parse.urlsplit(self.path).path.startswith("/github-apps/")
-                    or urllib.parse.urlsplit(self.path).path == "/kefania-setup/open"):
+                    or urllib.parse.urlsplit(self.path).path in {"/kefania-setup/open", "/ai-review/check"}):
                 expected = f"http://127.0.0.1:{self.server.server_port}"
                 if self.headers.get("Origin") != expected or self.headers.get("Host") != expected[7:]:
                     self._send_json({"error": "Invalid settings origin."}, 403)
@@ -2147,6 +2200,12 @@ def run_configurator(
                     self.wfile.write(b'{"error":"Download interrupted. Retry the download."}\n')
                 return
             path = urllib.parse.urlsplit(self.path).path
+            if path == "/ai-review/check":
+                try:
+                    self._send_json(check_ai_reviewer(values.get("account", [""])[0].strip()))
+                except (RuntimeError, ValueError) as error:
+                    self._send_json({"error": str(error)}, 400)
+                return
             if path.startswith("/github-apps/"):
                 try:
                     with app_lock:

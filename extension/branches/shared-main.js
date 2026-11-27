@@ -209,7 +209,9 @@ async function replaceRepository(vscode, root, destination, options) {
 }
 
 async function capturePendingFiles(root, run) {
-  const patch = (await exec('git', ['-C', root, 'diff', '--binary', 'HEAD', '--'], { maxBuffer: 32 * 1024 * 1024 })).stdout;
+  // Git's text hunks can contain non-UTF-8 bytes even with --binary.
+  const patchOptions = { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 };
+  const patch = (await exec('git', ['-C', root, 'diff', '--binary', 'HEAD', '--'], patchOptions)).stdout;
   const names = (await run(['-C', root, 'ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
   const files = [];
   for (const name of names) {
@@ -221,17 +223,17 @@ async function capturePendingFiles(root, run) {
   }
   const head = await run(['-C', root, 'rev-parse', 'HEAD']);
   const ref = await run(['-C', root, 'symbolic-ref', 'HEAD']);
-  const index = (await exec('git', ['-C', root, 'diff', '--cached', '--binary', 'HEAD', '--'],
-    { maxBuffer: 32 * 1024 * 1024 })).stdout;
-  const tracked = (await run(['-C', root, 'diff', '--name-only', '-z', 'HEAD', '--']))
+  const index = (await exec('git', ['-C', root, 'diff', '--cached', '--binary', 'HEAD', '--'], patchOptions)).stdout;
+  // Cleanup needs both paths of a rename, including the deleted preimage.
+  const tracked = (await run(['-C', root, 'diff', '--no-renames', '--name-only', '-z', 'HEAD', '--']))
     .split('\0').filter(Boolean);
-  const staged = (await run(['-C', root, 'diff', '--cached', '--name-only', '-z', 'HEAD', '--']))
+  const staged = (await run(['-C', root, 'diff', '--cached', '--no-renames', '--name-only', '-z', 'HEAD', '--']))
     .split('\0').filter(Boolean);
   return { patch, files, head, ref, index, tracked: [...new Set([...tracked, ...staged])] };
 }
 
 async function backupPendingFiles(root, directory, snapshot) {
-  if (!snapshot.patch && !snapshot.index && !snapshot.files.length) return null;
+  if (!snapshot.patch.length && !snapshot.index.length && !snapshot.files.length) return null;
   const recovery = path.join(directory, '.sweetiebot-handoff-backup');
   await fs.mkdir(recovery, { mode: 0o700 });
   await fs.writeFile(path.join(recovery, 'worktree.patch'), snapshot.patch, { mode: 0o600, flag: 'wx' });
@@ -252,7 +254,7 @@ async function backupPendingFiles(root, directory, snapshot) {
 // preimage when main has no such path, so its pending edit can travel alone.
 async function seedMissingPreimages(root, destination, snapshot) {
   if (!snapshot.tracked.length) return;
-  const staged = new Set((await exec('git', ['-C', root, 'diff', '--cached', '--name-only', '-z', 'HEAD', '--'])).stdout.split('\0').filter(Boolean));
+  const staged = new Set((await exec('git', ['-C', root, 'diff', '--cached', '--no-renames', '--name-only', '-z', 'HEAD', '--'])).stdout.split('\0').filter(Boolean));
   for (const name of snapshot.tracked) {
     const source = (await exec('git', ['-C', root, 'ls-tree', '-z', snapshot.head, '--', name])).stdout;
     if (!source) continue; // A newly added file already has an addition patch.
@@ -279,14 +281,14 @@ async function copyPendingFiles(root, destination, directory, snapshot) {
       throw error;
     })) throw new Error('A pending file already exists in the destination; the source files were preserved.');
   }
-  if (snapshot.patch) {
+  if (snapshot.patch.length) {
     const patchFile = path.join(directory, '.sweetiebot-handoff.patch');
     try {
       await fs.writeFile(patchFile, snapshot.patch, { mode: 0o600, flag: 'wx' });
       await exec('git', ['-C', destination, 'apply', '--binary', patchFile]);
     } finally { await fs.rm(patchFile, { force: true }); }
   }
-  if (snapshot.index) {
+  if (snapshot.index.length) {
     const patchFile = path.join(directory, '.sweetiebot-handoff-index.patch');
     try {
       await fs.writeFile(patchFile, snapshot.index, { mode: 0o600, flag: 'wx' });
@@ -308,18 +310,20 @@ async function copyPendingFiles(root, destination, directory, snapshot) {
 async function removeTransferredFiles(root, destination, directory, snapshot, run) {
   // Validate both copies before removing anything. A changed source or index
   // belongs to the user and must stay in place, even if copying succeeded.
-  const current = await capturePendingFiles(root, run);
-  if (JSON.stringify(current) !== JSON.stringify(snapshot)) {
+  const { patch, index, ...current } = await capturePendingFiles(root, run);
+  const { patch: originalPatch, index: originalIndex, ...original } = snapshot;
+  if (!patch.equals(originalPatch) || !index.equals(originalIndex) ||
+      JSON.stringify(current) !== JSON.stringify(original)) {
     throw new Error('Source files or staging changed during checkout handoff; both checkouts were preserved.');
   }
   const patchFile = path.join(directory, '.sweetiebot-handoff-verify.patch');
-  if (snapshot.patch) {
+  if (snapshot.patch.length) {
     try {
       await fs.writeFile(patchFile, snapshot.patch, { mode: 0o600, flag: 'wx' });
       await exec('git', ['-C', destination, 'apply', '--reverse', '--check', '--binary', patchFile]);
     } finally { await fs.rm(patchFile, { force: true }); }
   }
-  if (snapshot.index) {
+  if (snapshot.index.length) {
     const indexPatch = path.join(directory, '.sweetiebot-handoff-index-verify.patch');
     try {
       await fs.writeFile(indexPatch, snapshot.index, { mode: 0o600, flag: 'wx' });
