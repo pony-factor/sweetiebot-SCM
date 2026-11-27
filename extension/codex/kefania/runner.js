@@ -2,6 +2,7 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { reviewerIdentity, cleanGhEnvironment } = require('../../github/reviewer-account');
 const { resolveKefaniaFile } = require('./paths');
 const { createPonyPublishQueue } = require('../../commits/pony/queue');
 const { separateAppsEnabled, stripAppSecrets, getRoleInstallationToken } = require('../../github/app-identity');
@@ -14,11 +15,20 @@ function missingAppRepositoryAccess(error) {
 // Independent pony research tabs may finish together; Git index and ref edits must be serialized.
 const ponyPublishQueue = createPonyPublishQueue();
 
-async function kefaniaChildEnvironment(repository, { botOnly = false, personalCli = false,
-  env = process.env, roleToken = getRoleInstallationToken } = {}) {
-  const child = stripAppSecrets(env);
+async function kefaniaChildEnvironment(repository, { botOnly = false, personalCli = false, reviewerCli = false,
+  env = process.env, roleToken = getRoleInstallationToken, reviewer = reviewerIdentity } = {}) {
+  const child = reviewerCli ? cleanGhEnvironment(stripAppSecrets(env)) : stripAppSecrets(env);
   child.PATH = [env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter);
-  if (personalCli) {
+  if (reviewerCli) {
+    const identity = await reviewer(undefined, undefined, child);
+    delete child.KEFANIA_GITHUB_PRIVATE_KEY;
+    delete child.KEFANIA_GITHUB_APP_ID;
+    delete child.KEFANIA_GITHUB_INSTALLATION_ID;
+    child.KEFANIA_GITHUB_AUTH = 'cli';
+    child.GH_HOST = 'github.com';
+    child.GH_TOKEN = identity.accessToken;
+    child.GITHUB_TOKEN = identity.accessToken;
+  } else if (personalCli) {
     // Let gh read the user's saved local authentication. Inherited tokens may
     // belong to a different App or a CI session; never use those as a fallback.
     delete child.GH_TOKEN;
@@ -43,9 +53,9 @@ async function kefaniaChildEnvironment(repository, { botOnly = false, personalCl
   return child;
 }
 
-async function runKefaniaAttempt(repositoryPath, input, { botOnly = false, personalCli = false } = {}) {
+async function runKefaniaAttempt(repositoryPath, input, { botOnly = false, personalCli = false, reviewerCli = false } = {}) {
   const runner = await resolveKefaniaFile(repositoryPath, path.join('src', 'local-pr.js'));
-  const env = await kefaniaChildEnvironment(input?.repository, { botOnly, personalCli });
+  const env = await kefaniaChildEnvironment(input?.repository, { botOnly, personalCli, reviewerCli });
   return new Promise((resolve, reject) => {
     const child = spawn('node', [runner], { cwd: repositoryPath, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '', error = '';
@@ -68,7 +78,11 @@ async function runKefania(repositoryPath, input, { botOnly = false, attempt = ru
     // Only missing repository access allows changing the PR opener identity.
     // No retry for other authentication, publication or transport failures.
     if (!missingAppRepositoryAccess(error)) throw error;
-    return attempt(repositoryPath, input, { botOnly, personalCli: true });
+    const upstream = input?.headRepository && input?.repository &&
+      input.headRepository.toLowerCase() !== input.repository.toLowerCase();
+    // Cross-repository PRs must never fall back to the active human account.
+    return attempt(repositoryPath, input, upstream
+      ? { botOnly, reviewerCli: true } : { botOnly, personalCli: true });
   }
 }
 
