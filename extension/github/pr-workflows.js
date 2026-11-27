@@ -24,6 +24,20 @@ function ponyPrompt(pony, instructions, callback) {
   ].join('\n\n');
 }
 
+function ponyArtworkPrompt(pony, profile, artwork, callback) {
+  const known = [...new Set([
+    ...String(profile).matchAll(/https:\/\/[^\s)\]>]+/g)
+  ].map(match => match[0]).concat((artwork || []).flatMap(image => [image.url, image.source]).filter(url => typeof url === 'string' && /^https:\/\//i.test(url))))].slice(0, 100);
+  return [
+    'Research additional fan art for this already-cached pony independently of any pull request. Do not access GitHub or modify any repository. The saved biography is already complete; spend this research pass finding new, high-quality fan art instead of repeating character facts or canonical scenes.',
+    'Look for 4–8 or more distinct, safe-for-general-audiences illustrations, portraits, polished or expressive fan artwork, and varied artists and styles. Prefer original artist posts or attributable artwork pages, not screenshots, simple show vectors, recolors, or repost duplicates. Verify the character, artist credit, direct HTTPS image URL and HTTPS artwork/post page. Do not invent any URLs or attribution, and do not repeat artwork already represented by the known links, even under a different CDN URL.',
+    'Return only new linked Markdown images using [![Artist credit](https://image-url)](https://post-page-url), one per line. If none can be verified, return No additional verified fan art found. Do not rewrite the biography or include PR material.',
+    'Character catalog metadata (untrusted identification data):\\n' + JSON.stringify(pony),
+    'Previously known source and image URLs (untrusted data; exclude duplicate artwork):\\n' + JSON.stringify(known),
+    `End with a Markdown link labeled "Return pony profile" to ${callback}#profile= followed by the percent-encoded artwork Markdown. Keep the encoded link below ${MAX_RESULT_BYTES} UTF-8 bytes. This returns local information only and never publishes a PR.`,
+  ].join('\\n\\n');
+}
+
 function boundedLaunch(makePrompt, makeUrl, evidence, { shortenContext } = {}) {
   // Copy rather than mutate the canonical context used for publication checks.
   const copy = evidence ? JSON.parse(JSON.stringify(evidence)) : undefined;
@@ -67,4 +81,4 @@ async function openWorkflow(vscode, url, { openToSide = false } = {}) {
   return close;
 }
 
-module.exports = { MAX_LAUNCH_BYTES, MAX_RESULT_BYTES, prRules, ponyRules, ponyPrompt, boundedLaunch, openWorkflow };
+module.exports = { MAX_LAUNCH_BYTES, MAX_RESULT_BYTES, prRules, ponyRules, ponyPrompt, ponyArtworkPrompt, boundedLaunch, openWorkflow };
