@@ -80,6 +80,35 @@ async function run() {
   assert.equal(git(local, 'show', ':staged.txt'), 'Keep my staged note');
   assert.equal(git(local, 'diff', '--name-only'), 'note.txt');
   assert.equal(git(local, 'diff', '--cached', '--name-only'), 'staged.txt');
+  for (const [label, pull] of [
+    ['open main window', () => autoPullClean(repository, { fetch: true })],
+    ['separate main worktree', () => autoPullDefaultWorktree(topicRepository)]
+  ]) {
+    const mergedEdit = `Already merged from the ${label}\n`;
+    fs.writeFileSync(path.join(local, 'incoming.txt'), mergedEdit);
+    fs.writeFileSync(path.join(other, 'incoming.txt'), mergedEdit);
+    fs.writeFileSync(path.join(other, 'merged-test.txt'), label);
+    git(other, 'add', 'incoming.txt', 'merged-test.txt');
+    git(other, 'commit', '-m', `Merge edits from the ${label}`);
+    git(other, 'push');
+    if (label === 'open main window') {
+      const untracked = path.join(local, 'merged-test.txt');
+      const oldHead = git(local, 'rev-parse', 'HEAD');
+      fs.writeFileSync(untracked, 'Keep my untracked file');
+      await assert.rejects(pull(), /overwritten by merge/);
+      assert.equal(git(local, 'rev-parse', 'HEAD'), oldHead);
+      assert.equal(fs.readFileSync(untracked, 'utf8'), 'Keep my untracked file');
+      assert.equal(fs.readFileSync(path.join(local, 'incoming.txt'), 'utf8'), mergedEdit,
+        'A failed retry restores the already-merged edit');
+      fs.unlinkSync(untracked);
+    }
+    assert.equal(await pull(), true);
+    assert.equal(git(local, 'rev-parse', 'HEAD'), git(other, 'rev-parse', 'HEAD'));
+    assert.equal(fs.readFileSync(path.join(local, 'incoming.txt'), 'utf8'), mergedEdit);
+    assert.equal(fs.readFileSync(path.join(local, 'merged-test.txt'), 'utf8'), label);
+    assert.equal(git(local, 'diff', '--name-only'), 'note.txt');
+    assert.equal(git(local, 'diff', '--cached', '--name-only'), 'staged.txt');
+  }
   const before = git(local, 'rev-parse', 'HEAD');
   fs.writeFileSync(path.join(other, 'note.txt'), 'Overlapping incoming change\n');
   git(other, 'add', 'note.txt'); git(other, 'commit', '-m', 'Overlap'); git(other, 'push');
@@ -88,6 +117,6 @@ async function run() {
   assert.equal(git(local, 'rev-parse', 'HEAD'), before);
   assert.equal(fs.readFileSync(path.join(local, 'note.txt'), 'utf8'), 'Keep my unstaged note\n');
   assert.equal(git(local, 'diff', '--cached', '--name-only'), 'staged.txt');
-  console.log('Automatic fast-forward preserves staged and unstaged edits and refuses overlapping incoming paths.');
+  console.log('Automatic fast-forward absorbs identical merged edits and preserves unrelated or conflicting changes.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => fs.rmSync(directory, { recursive: true, force: true }));

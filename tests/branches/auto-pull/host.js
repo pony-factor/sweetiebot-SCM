@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 let tick, mainChange, topicChange, enabled = true, fetches = 0, merges = 0, cleared = false, clock = 0, mergeError = false;
-let topicFetches = 0, topicMerges = 0;
+let topicFetches = 0, topicMerges = 0, conflictProbes = 0;
 const fetchCalls = [];
 const fetchReceipts = [];
 const main = { rootUri: { scheme: 'file', fsPath: '/repo' }, state: {
@@ -38,15 +38,40 @@ const sandbox = { module: { exports: {} }, __dirname: path.dirname(require.resol
       } else if (args[0] === 'rev-list') {
         assert.deepEqual(Array.from(args), ['rev-list', '--left-right', '--count', 'HEAD...refs/remotes/upstream/main']);
         callback(null, '0\t1\n', '');
+      } else if (mergeError && options.cwd === '/repo' && args[0] === 'rev-parse') {
+        if (args[1] === '--verify') {
+          assert.deepEqual(Array.from(args), ['rev-parse', '--verify', 'refs/remotes/upstream/main']);
+          callback(null, 'incoming\n', '');
+        } else if (args[1] === '--absolute-git-dir') {
+          callback(null, '/repo/.git\n', '');
+        } else {
+          assert.deepEqual(Array.from(args), ['rev-parse', 'HEAD']);
+          callback(null, 'base\n', '');
+        }
+      } else if (mergeError && options.cwd === '/repo' && args[0] === 'symbolic-ref') {
+        assert.deepEqual(Array.from(args), ['symbolic-ref', '--quiet', 'HEAD']);
+        callback(null, 'refs/heads/main\n', '');
+      } else if (mergeError && options.cwd === '/repo' && args[0] === 'merge-base') {
+        assert.deepEqual(Array.from(args), ['merge-base', '--is-ancestor', 'base', 'incoming']);
+        callback(null, '', '');
+      } else if (mergeError && options.cwd === '/repo' && args[0] === 'diff') {
+        assert.deepEqual(Array.from(args.slice(1, 7)), [
+          '--no-ext-diff', '--no-textconv', '--no-renames', '--ignore-submodules=none', '--name-only', '-z'
+        ]);
+        const comparison = args.slice(7, -1);
+        assert.equal(args.at(-1), '--');
+        // The incoming and unstaged changes touch the same file but differ.
+        if (comparison.length === 1 && comparison[0] === 'incoming') conflictProbes++;
+        callback(null, comparison[0] === '--cached' ? '' : 'conflict.txt\0', '');
       } else {
         if (options.cwd === '/topic') {
-          assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/origin/kefania']);
+          assert.deepEqual(Array.from(args), ['merge', '--ff-only', '--no-autostash', 'refs/remotes/origin/kefania']);
           topicMerges++;
           topic.state.HEAD.behind = 0;
           callback(null, '', '');
           return;
         }
-        assert.deepEqual(Array.from(args), ['merge', '--ff-only', 'refs/remotes/upstream/main']);
+        assert.deepEqual(Array.from(args), ['merge', '--ff-only', '--no-autostash', 'refs/remotes/upstream/main']);
         merges++;
         if (mergeError) callback(new Error('local changes would be overwritten by merge'), '', '');
         else { main.state.HEAD.behind = 0; callback(null, '', ''); }
@@ -160,6 +185,7 @@ const vscode = {
   main.state.HEAD.behind = 1;
   tick(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(merges, 5);
+  assert.equal(conflictProbes, 1, 'A genuine overlapping edit is inspected without a second merge');
   clock += 1000;
   tick(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(merges, 5, 'An overlapping local edit does not cause a retry every second');
