@@ -119,6 +119,21 @@ async function run() {
   await record(a, retained, { [thread]: null });
   assert.deepEqual(Object.keys((await sync(a))[retained]), []);
 
+  // A send can remove the prompt before the native editor's separate retained
+  // document update reaches this host. Retire the matching copy in one write.
+  const equivalentDocument = { ...rich.prompt, prompt: 'Home A' };
+  const newerThreadDocument = { document: { type: 'doc', content: [{ type: 'text', text: 'New typing' }] },
+    plainTextMode: false, prompt: 'New typing' };
+  await record(a, atomV2, { [slot]: { value: rich }, [thread]: { value: rich } });
+  await record(a, retained, { [slot]: { value: equivalentDocument }, [thread]: { value: newerThreadDocument } });
+  await record(a, atomV2, { [slot]: { delete: true, expectedValue: newer } });
+  assert.deepEqual((await sync(a))[retained][slot], equivalentDocument, 'A rejected delete cannot retire the document');
+  await record(a, atomV2, { [slot]: { delete: true, expectedValue: rich }, [thread]: { delete: true, expectedValue: rich } });
+  const afterSend = await sync(reopened);
+  assert.deepEqual(Object.keys(afterSend[atomV2]), [], 'The sent prompt stays cleared on reopen');
+  assert(!Object.hasOwn(afterSend[retained], slot), 'The same document cannot restore sent text');
+  assert.deepEqual(afterSend[retained][thread], newerThreadDocument, 'Keep a separate newer edit');
+
   const memory = new Map(Object.entries(originalState).map(([key, value]) =>
     ['codex:persisted-atom:' + key, JSON.stringify(value)]));
   memory.set('other', 'keep');
@@ -219,6 +234,9 @@ async function run() {
   await rendererSync('previous-renderer');
   assert.notEqual(liveA.seen.at(-1).scmToolkitDraftScope, scopeMain, 'A stale renderer cannot hydrate the new scope');
   await rendererSync('next-renderer');
+  assert.equal(liveA.seen.at(-1).scmToolkitDraftThread, undefined, 'Wait for the native router before restoring the thread');
+  await liveA.provider.handleMessage(liveA.webview, { type: 'ready', scmToolkitDraftRenderer: 'next-renderer' });
+  await rendererSync('next-renderer');
   assert.equal(liveA.seen.at(-1).scmToolkitDraftThread, '4ad80a10-27cb-4175-93de-222222222222');
   assert.equal(liveA.seen.at(-1).scmToolkitDraftScope, scopeMain);
   assert.equal(liveA.seen.at(-1).state[atom]['new-conversation'], 'Window A main draft');
@@ -290,6 +308,22 @@ async function run() {
   listeners.message({data:{type:'persisted-atom-sync',scmToolkitDraftScope:scopeMain}});
   bridge.postMessage({type:'persisted-atom-update',key:atomV2,value:{}});
   assert.equal(ipc.at(-1).scmToolkitDraftScope,scopeMain,'Queued writes carry their original rendered scope');
+  const beforeSendWrite = ipc.at(-1);
+  bridge.postMessage({ type: 'persisted-atom-update', key: atomV2,
+    recordUpdate: { entries: { [slot]: { delete: true } } } });
+  const afterSendWrite = ipc.at(-1);
+  const deliver = (key, write) => {
+    let stopped = false;
+    listeners.message({ data: { ...write, type: 'persisted-atom-updated', key },
+      stopImmediatePropagation() { stopped = true; } });
+    return stopped;
+  };
+  assert(deliver(atomV2, beforeSendWrite), 'A delayed echo of the typed text must not undo the clear');
+  assert(!deliver(atomV2, afterSendWrite), 'Accept the latest persisted clear');
+  bridge.postMessage({ type: 'persisted-atom-update', key: retained, value: { [slot]: doc } });
+  assert(deliver(retained, afterSendWrite), 'A send cannot overwrite an editor document typed afterward');
+  assert(!deliver(atomV2, { ...beforeSendWrite, scmToolkitDraftRenderer: 'different-renderer' }),
+    'A different pane still receives the scoped state');
   bridge.postMessage({type:'unrelated',value:'keep'});
   assert.equal(ipc.at(-1).scmToolkitDraftScope,undefined);
   assert.equal(bridge.getState().keep,true);

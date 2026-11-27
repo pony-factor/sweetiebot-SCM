@@ -11,8 +11,9 @@ const exec = promisify(execFile);
 const promptV1 = 'composer-prompt-drafts-v1';
 const promptV2 = 'composer-prompt-drafts-v2';
 const attachmentsAtom = 'sweetiebot-composer-attachments-v1';
+const retainedDocuments = 'composer-retained-documents-v1';
 const composerAtoms = new Set([
-  promptV1, promptV2, 'composer-retained-documents-v1', 'draft-thread-identities-v1', attachmentsAtom
+  promptV1, promptV2, retainedDocuments, 'draft-thread-identities-v1', attachmentsAtom
 ]);
 const home = 'new-conversation';
 const isRecord = value => value != null && typeof value === 'object' && !Array.isArray(value);
@@ -31,6 +32,25 @@ function handoffDraftAtoms(atoms, threadId) {
     const entries = Object.entries(drafts || {}).filter(([key]) => keys.includes(key));
     return entries.length ? [[atom, Object.fromEntries(entries)]] : [];
   }));
+}
+
+function clearMatchingRetainedDocuments(atoms, previousDrafts, remainingDrafts) {
+  const retained = atoms[retainedDocuments];
+  if (!retained) return false;
+  const next = { ...retained };
+  for (const [key, draft] of Object.entries(previousDrafts || {})) {
+    if (Object.hasOwn(remainingDrafts || {}, key)) continue;
+    const saved = retained[key];
+    if (!saved) continue;
+    const prompt = typeof draft === 'string' ? draft : draft?.prompt;
+    const matches = typeof prompt === 'string' ? prompt === saved.prompt
+      : prompt?.document != null && prompt.plainTextMode === saved.plainTextMode
+        && isDeepStrictEqual(prompt.document, saved.document);
+    if (matches) delete next[key];
+  }
+  if (Object.keys(next).length === Object.keys(retained).length) return false;
+  atoms[retainedDocuments] = next;
+  return true;
 }
 
 function applyDraftEntries(atoms, key, update) {
@@ -209,7 +229,8 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
   register('sweetiebot.codexDraft.writeAtom', (message, options) => update(options, async (scope, saved) => {
     const { key, recordUpdate, deleted } = message;
     if (!composerAtoms.has(key)) return false;
-    const atoms = draftAtoms(saved);
+    const previous = draftAtoms(saved);
+    const atoms = { ...previous };
     let value = message.value;
     if (recordUpdate) {
       if (!isRecord(recordUpdate.entries)) return false;
@@ -223,11 +244,16 @@ function registerCodexDraftCommands(vscode, context, { resolveBranches = branchS
       storageError = Error('Invalid or oversized Codex composer draft.');
       throw storageError;
     }
+    const changedKeys = [key];
     if (key === promptV2) delete atoms[promptV1]; // v2 consumes the scoped v1 fallback.
     if (value === undefined) delete atoms[key];
     else atoms[key] = value;
-    if (!isDeepStrictEqual(atoms, draftAtoms(saved))) await persist(scope, storeAtoms(saved, atoms));
-    return { scope, generation: saved.generation || 0, atoms };
+    const previousDrafts = key === promptV2 ? previous[promptV2] ?? previous[promptV1] : previous[key];
+    if ((key === promptV2 || key === promptV1) && clearMatchingRetainedDocuments(atoms, previousDrafts, value)) {
+      changedKeys.push(retainedDocuments);
+    }
+    if (!isDeepStrictEqual(atoms, previous)) await persist(scope, storeAtoms(saved, atoms));
+    return { scope, generation: saved.generation || 0, atoms, changedKeys };
   }));
   register('sweetiebot.codexDraft.adopt', plan => enqueue(async () => {
     const scope = await keyForScope();

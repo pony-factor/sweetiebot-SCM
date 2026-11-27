@@ -7,24 +7,33 @@
         'sweetiebot-composer-attachments-v1'
     ]);
     const renderer = window.crypto?.randomUUID?.() ?? Math.random().toString(36);
-    let scope, generation;
+    let scope, generation, revision = 0;
+    const latestWrite = new Map();
     window.addEventListener?.('message', event => {
-        if (event.data?.type === 'persisted-atom-sync') {
-            scope = event.data.scmToolkitDraftScope;
-            generation = event.data.scmToolkitDraftGeneration;
+        const message = event.data;
+        if (message?.type === 'persisted-atom-sync') {
+            scope = message.scmToolkitDraftScope;
+            generation = message.scmToolkitDraftGeneration;
         }
-    });
+        // Codex applies its own edits immediately. An earlier disk write can
+        // finish after the editor has already cleared or changed the draft.
+        if (message?.type === 'persisted-atom-updated' && message.scmToolkitDraftRenderer === renderer &&
+            message.scmToolkitDraftRevision < (latestWrite.get(message.key) ?? 0)) {
+            event.stopImmediatePropagation();
+        }
+    }, true);
     if (typeof window.acquireVsCodeApi === 'function') {
         const acquire = window.acquireVsCodeApi;
         window.acquireVsCodeApi = function() {
             const api = acquire();
             return Object.freeze({ getState: () => api.getState(), setState: value => api.setState(value),
                 postMessage(message) {
-                    if (message?.type === 'persisted-atom-sync-request') {
+                    if (message?.type === 'persisted-atom-sync-request' || message?.type === 'ready') {
                         return api.postMessage({ ...message, scmToolkitDraftRenderer: renderer });
                     }
                     if (message?.type === 'persisted-atom-update' && atoms.has(message.key)) {
-                        return api.postMessage({ ...message, scmToolkitDraftRenderer: renderer,
+                        latestWrite.set(message.key, ++revision);
+                        return api.postMessage({ ...message, scmToolkitDraftRenderer: renderer, scmToolkitDraftRevision: revision,
                             scmToolkitDraftScope: scope, scmToolkitDraftGeneration: generation });
                     }
                     return api.postMessage(message);

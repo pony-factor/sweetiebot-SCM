@@ -17,6 +17,9 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
             view.renderer = message.scmToolkitDraftRenderer;
             view.remounting = false;
         }
+        if (view && message?.type === 'ready' && message.scmToolkitDraftRenderer === view.renderer) {
+            view.routeReady = true;
+        }
         if (message?.type !== 'persisted-atom-update' || !atoms.has(message.key)) {
             return originalHandle.call(this, webview, message, ...rest);
         }
@@ -27,8 +30,13 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
         if (!result) return;
         for (const receiver of views.values()) {
             if (receiver.scope !== result.scope || receiver.generation !== result.generation) continue;
-            const value = result.atoms[message.key];
-            void receiver.post({ type: 'persisted-atom-updated', key: message.key, value, deleted: value === undefined });
+            if (receiver === view && receiver.renderer !== message.scmToolkitDraftRenderer) continue;
+            for (const key of result.changedKeys) {
+                const value = result.atoms[key];
+                void receiver.post({ type: 'persisted-atom-updated', key, value, deleted: value === undefined,
+                    ...(receiver === view ? { scmToolkitDraftRenderer: message.scmToolkitDraftRenderer,
+                        scmToolkitDraftRevision: message.scmToolkitDraftRevision } : {}) });
+            }
         }
     };
     const originalInitialize = provider.initializeWebview;
@@ -50,6 +58,7 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
                     view.scope = undefined;
                     view.generation = undefined;
                     view.remounting = true;
+                    view.routeReady = false;
                     view.retiredRenderer = view.renderer;
                     view.renderer = undefined;
                     try { view.thread = await provider.scmToolkitReadDraftThread?.(webview); }
@@ -63,8 +72,8 @@ function scmToolkitProtectCodexDrafts(provider, vscode) {
                 Object.assign(state, result?.atoms);
                 view.scope = result?.scope;
                 view.generation = result?.generation;
-                const thread = view.thread;
-                view.thread = undefined;
+                const thread = view.routeReady ? view.thread : undefined;
+                if (thread) view.thread = undefined;
                 return post({ ...message, state, scmToolkitDraftScope: view.scope,
                     scmToolkitDraftGeneration: view.generation, scmToolkitDraftThread: thread }, ...rest);
             };
