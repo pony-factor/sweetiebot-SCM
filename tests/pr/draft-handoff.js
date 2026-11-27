@@ -222,6 +222,26 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal(cachedState.profile,'Previously sourced character.','Cache hits are visible without a pony callback');
     assert.equal(cachedState.draft,undefined);
     assert.equal(writes,3,'A cache hit never publishes a PR');
+    const enrichmentId = '44444444-2222-4333-8444-555555555555';
+    let enrichmentResults = 0;
+    handoff.register(enrichmentId, {pony:{slug:'bushel'},profile:'Saved [source](https://example.com/old-post).',
+      artwork:[{url:'https://example.com/old.png',source:'https://example.com/old-art'}],
+      artworkRefreshPending:true,onResult:()=>{enrichmentResults++;}});
+    const enrichmentUrl = handoff.origin+'/kefania-draft/'+enrichmentId;
+    const readEnrichment = async () => (await fetch(enrichmentUrl+'/state')).json();
+    const postEnrichment = profile => fetch(enrichmentUrl+'/pony',{method:'POST',
+      headers:{Origin:handoff.origin,'Content-Type':'application/json'},body:JSON.stringify({profile})});
+    assert.equal((await readEnrichment()).artworkRefreshPending,true);
+    const freshArt = '[![New artist](https://example.com/new.png)](https://example.com/new-art)';
+    const duplicateArt = '[![Different asset](https://example.com/other.png)](https://example.com/old-art)';
+    assert.equal((await postEnrichment('Replacement biography.\\n'+duplicateArt+'\\n'+freshArt+'\\n'+freshArt)).status,200);
+    const enriched = await readEnrichment();
+    assert.equal(enriched.profile,'Saved [source](https://example.com/old-post).');
+    assert.equal(enriched.ponyArt,freshArt,'Only unique, newly linked images are accepted');
+    assert.equal(enriched.artworkRefreshPending,false);
+    assert.equal((await postEnrichment('[![Later](https://example.com/later.png)](https://example.com/later-art)')).status,200);
+    assert.equal((await readEnrichment()).ponyArt,freshArt,'Repeated callbacks do not append or replace artwork');
+    assert.equal(enrichmentResults,1);
     const choiceId = '99999999-2222-4333-8444-555555555555';
     let preserved = 0;
     handoff.register(choiceId, { autoPublish: true,
