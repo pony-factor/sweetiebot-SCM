@@ -71,7 +71,7 @@ async function chooseForkPullRequestTarget(vscode, repositoryPath, target, branc
   if (priorDecision === 'upstream') return target;
   if (await checkApp(target.repository) !== true) {
     const choice = await vscode.window.showWarningMessage(
-      `This checkout is a fork of ${target.repository}. Kefania's GitHub App access to upstream is missing or unverified. Sweetiebot will try an upstream PR from ${target.headRepository} using your authenticated GitHub account, not silently open one against your fork.`,
+      `This checkout is a fork of ${target.repository}. Kefania's GitHub App access to upstream is missing or unverified. Sweetiebot will try an upstream PR from ${target.headRepository} using your configured dedicated AI reviewer account (Magic Settings → AI Review Responder), not silently open one against your fork.`,
       { modal: true }, 'Try upstream');
     if (choice !== 'Try upstream') return undefined;
   }

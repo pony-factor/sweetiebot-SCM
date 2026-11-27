@@ -75,6 +75,30 @@ class SettingsPreferencesTests(unittest.TestCase):
             if name not in {"branchNameDisabledPacks", "kefaniaShowCloseButton"}:
                 self.assertIn(f'name="{name}"', page)
 
+    def test_ai_reviewer_has_independent_tab_and_validates_login(self):
+        values = form_values()
+        self.assertEqual(configurator.parse_submission(values)["aiReviewAccount"], "")
+        values["aiReviewAccount"] = ["dedicated-reviewer"]
+        parsed = configurator.parse_submission(values)
+        self.assertEqual(parsed["aiReviewAccount"], "dedicated-reviewer")
+        page = configurator.render_form(parsed, [], "Ready", "test-token", "Save")
+        self.assertIn(">AI Review Responder</button>", page)
+        self.assertIn('name="aiReviewAccount"', page)
+        self.assertIn('id="ai-review-check"', page)
+        self.assertIn('id="ai-review-status"', page)
+        for invalid in ("someone@example.com", "bad username", "-leading", "a" * 40):
+            values["aiReviewAccount"] = [invalid]
+            with self.assertRaises(ValueError):
+                configurator.parse_submission(values)
+        with patch.object(configurator.subprocess, "run", side_effect=[
+                SimpleNamespace(stdout="secret-token\n"),
+                SimpleNamespace(stdout="dedicated-reviewer\n")]) as run:
+            self.assertEqual(configurator.check_ai_reviewer("dedicated-reviewer"),
+                             {"login": "dedicated-reviewer"})
+            self.assertEqual(run.call_args_list[0].args[0][-1], "dedicated-reviewer")
+            self.assertNotIn("GH_TOKEN", run.call_args_list[0].kwargs["env"])
+            self.assertEqual(run.call_args_list[1].kwargs["env"]["GH_TOKEN"], "secret-token")
+
     def test_kefania_chat_publication_is_opt_in_and_warns_before_saving(self):
         values = form_values()
         self.assertFalse(configurator.parse_submission(values)["kefaniaAutoShareCodexChat"])
