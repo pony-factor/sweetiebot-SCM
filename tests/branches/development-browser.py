@@ -13,6 +13,46 @@ spec.loader.exec_module(helper)
 
 
 class DevelopmentBrowserTests(unittest.TestCase):
+    def test_launch_reuses_profile_and_extension_path_without_mixing_checkouts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            one, two = root / "one", root / "two"
+            repository = root / "repository"
+            extension = repository / "extension"
+            active = False
+            calls = []
+
+            def run(args, **kwargs):
+                nonlocal active
+                calls.append(args)
+                active = True
+
+            def launch(checkout):
+                helper.launch(checkout, repository, "https://chatgpt.com/",
+                              running=lambda _: active, run=run)
+
+            for checkout in (one, two):
+                checkout.mkdir()
+                (checkout / "manifest.json").write_text("{}")
+            (one / "old.js").touch()
+            (two / "new.js").touch()
+            (two / ".git").touch()
+            launch(one)
+            self.assertEqual((extension / "manifest.json").readlink(), one / "manifest.json")
+            with self.assertRaisesRegex(RuntimeError, "Quit .* test Brave"):
+                launch(two)
+            self.assertEqual(len(calls), 1)
+            active = False
+            launch(two)
+            self.assertEqual(calls[0], calls[1])
+            self.assertIn("--user-data-dir=" + str(repository / "profile"), calls[1])
+            self.assertIn("--load-extension=" + str(extension), calls[1])
+            self.assertEqual(calls[1][-1], "https://chatgpt.com/")
+            self.assertEqual((extension / "manifest.json").readlink(), two / "manifest.json")
+            self.assertFalse((extension / "old.js").exists())
+            self.assertTrue((extension / "new.js").is_symlink())
+            self.assertFalse((extension / ".git").exists())
+
     @unittest.skipUnless(sys.platform == "darwin", "uses macOS pgrep")
     def test_process_check_accepts_profile_flag_as_pattern(self):
         with tempfile.TemporaryDirectory(prefix="sweetiebot profile ") as directory:
