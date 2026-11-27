@@ -760,8 +760,24 @@
     cursor: default;
 }
 
+.scm-view .scm-editor > .scm-toolkit-auto-commit[aria-pressed="false"] {
+    filter: grayscale(1);
+}
+
 .scm-view .scm-editor > .scm-toolkit-auto-commit-active {
     color: var(--vscode-textLink-foreground);
+}
+
+.scm-view .scm-editor > .scm-toolkit-auto-commit-active::after {
+    content: '✓';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    background: var(--vscode-input-background);
+    color: inherit;
+    font-size: 10px;
+    font-weight: bold;
+    line-height: 10px;
 }
 
 .scm-view .scm-editor > .scm-toolkit-auto-publish-active::after {
