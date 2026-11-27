@@ -299,9 +299,15 @@ function createBulkRepairRuntime(vscode, context, root, selection, api, execute)
               if (settled) setTimeout(finish,0);
             }
           });
-          if (!batch.url || disposed) {finish();return {done,dispose:finish};}
+          if (disposed) throw Error('The bulk repair queue was closed.');
+          if (!batch.url) {
+            const state = batch.state();
+            throw Error(state.rateLimit?.message || state.deferred[0]?.reason ||
+              'Lindsey could not prepare the PR repair.');
+          }
           close=await layout.openInlineRepairRunner(vscode,batch.url,'repair:'+selection.repository+'#'+number);
-          if (close.tab) mergeWorkerTabs.set(slot,close.tab);
+          if (!close.tab) throw Error('VS Code did not open the PR repair tab.');
+          mergeWorkerTabs.set(slot,close.tab);
           tabListener=vscode.window.tabGroups?.onDidChangeTabs?.(()=>{
             if (close.tab && !vscode.window.tabGroups.all.some(group=>group.tabs.includes(close.tab))) finish();
           });

@@ -763,8 +763,9 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   await dashboard.refresh();
   const repairState = { repository: selection.repository,
     pullRequests: [{ ...selection.pullRequests[0], headSha: nextSha, baseSha: 'b'.repeat(40) }],
-    history: [{ number: 12, status: 'checks_failed', sourceHeadSha: sha }],
-    deferred: [{ number: 12, reason: 'Integrated checks failed twice.' }] };
+    history: [],
+    deferred: [{ number: 12, kind: 'failed_checks', headSha: nextSha,
+      reason: 'Review found failing checks on the selected head.' }] };
   const autoStart = actionLaunches.length;
   checkConclusion = null;
   dashboard.recordBatchState(repairState);
@@ -785,7 +786,8 @@ const { allPullRequestsMerged } = require('../../extension/merge/celebration');
   info = { ...info, mergeable: false, mergeable_state: 'dirty',base:{...info.base,sha:'d'.repeat(40)} };
   const conflictState = { ...repairState,
     pullRequests: repairState.pullRequests.map(pr => ({...pr, baseSha:'b'.repeat(40)})),
-    history: [{ number: 12, status: 'needs_resolution', conflictPaths: ['feature.js'] }] };
+    history: [{ number: 12, status: 'needs_resolution', conflictPaths: ['feature.js'] }],
+    deferred: [{ number: 12, kind: 'conflict', reason: 'Local execution found conflicts.' }] };
   const beforeConflicts = actionLaunches.length;
   dashboard.recordBatchState(conflictState);
   await new Promise(resolve => setTimeout(resolve, 10));
