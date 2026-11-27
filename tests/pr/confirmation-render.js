@@ -273,13 +273,13 @@ assert.equal(getElementById('lightbox-image').src,'https://example.com/art.png',
 assert.equal(getElementById('lightbox-source').href,'https://example.com/posts/42','The source opens the contextual artwork page');
 lightbox.close();
 const offlineKey='a'.repeat(64);
-context.imageIndex('Previously sourced pony.',{slug:'happy-trails'},[{key:offlineKey,cached:true,url:'https://derpicdn.net/cache.png',source:'https://derpibooru.org/images/42',credit:'Hasbro'}],true);
+context.imageIndex('Previously sourced pony.',{slug:'happy-trails'},[{key:offlineKey,url:'https://derpicdn.net/cache.png',source:'https://derpibooru.org/images/42',credit:'Hasbro'}],true);
 const offlineArt=pendingImages.at(-1);
-assert(offlineArt.src.endsWith('/artwork/'+offlineKey),'Cached artwork is loaded locally before any remote attempt');
+assert.equal(offlineArt.src,'https://derpicdn.net/cache.png','Stored references load from their original hosts');
 offlineArt.naturalWidth=300;
 offlineArt.onload();
 images.children[0].children[0].fire('click');
-assert(getElementById('lightbox-image').src.endsWith('/artwork/'+offlineKey));
+assert.equal(getElementById('lightbox-image').src,'https://derpicdn.net/cache.png');
 assert.equal(getElementById('lightbox-source').href,'https://derpibooru.org/images/42');
 lightbox.close();
 assert.equal(context.imageSourcePage('https://derpicdn.net/img/download/2022/9/26/2954957__safe.png'),'https://derpibooru.org/images/2954957');

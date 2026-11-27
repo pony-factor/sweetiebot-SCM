@@ -220,7 +220,7 @@ function showImage(index){
   displayed.hidden=false;
   el('lightbox-error').hidden=true;
   displayed.alt=image.plainLabel||image.label;
-  displayed.src=image.displayUrl||image.url;
+  displayed.src=image.url;
   renderImageCaption(el('lightbox-caption'),image.label,' · '+(index+1)+' of '+imageSources.length);
   el('lightbox-caption').title=image.plainLabel||image.label;
   el('lightbox-source').href=image.source;
@@ -283,14 +283,13 @@ function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
       }
     }
   };
-  const addImage=(label,url,page,cachedKey)=>{
+  const addImage=(label,url,page,known=false)=>{
     const safe=safeLink(url);
     if(!safe||seen.has(safe))return;
     seen.add(safe);
     const captionText=label||'Character image';
     const sourceUrl=safeLink(page||'')||imageSourcePage(safe);
-    const displayUrl=cacheEnabled&&/^[a-f0-9]{64}$/.test(cachedKey||'')?root+'/artwork/'+cachedKey:safe;
-    const source={url:safe,displayUrl,source:sourceUrl,label:captionText};
+    const source={url:safe,source:sourceUrl,label:captionText};
     const figure=document.createElement('figure'),stage=document.createElement('div'),trigger=document.createElement('button'),img=document.createElement('img'),caption=document.createElement('figcaption');
     const candidate={source,figure,loaded:false,failed:false};
     candidates.push(candidate);
@@ -310,7 +309,7 @@ function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
       stopWaiting();
       // Fandom serves a decodable missing-file graphic even for a 404.
       // Image.onload alone therefore cannot establish that artwork exists.
-      if(source.displayUrl===safe&&new URL(safe).hostname.endsWith('.wikia.nocookie.net')){
+      if(new URL(safe).hostname.endsWith('.wikia.nocookie.net')){
         try{
           const response=await fetch(safe,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(8000)});
           const unavailable=!response.ok||/filename=["']?placeholder\./i.test(response.headers.get('content-disposition')||'');
@@ -323,7 +322,7 @@ function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
       source.width=img.naturalWidth;
       source.height=img.naturalHeight;
       displayLoaded();
-      if(cacheEnabled&&pony&&source.displayUrl===safe&&safe.startsWith('https:')&&sourceUrl.startsWith('https:')){
+      if(cacheEnabled&&pony&&!known&&safe.startsWith('https:')&&sourceUrl.startsWith('https:')){
         // Preserve only artwork actually displayed, including fallback show captures.
         void fetch(root+'/artwork',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
           body:JSON.stringify({url:safe,source:sourceUrl,alt:captionText,credit:source.plainLabel})}).catch(()=>{});
@@ -332,7 +331,6 @@ function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
     img.onerror=()=>{
       stopWaiting();
       if(generation!==imageGeneration)return;
-      if(source.displayUrl!==safe){source.displayUrl=safe;img.src=safe;return}
       candidate.failed=true;
       candidate.loaded=false;
       displayLoaded();
@@ -342,10 +340,10 @@ function imageIndex(profile,pony,artwork=[],cacheEnabled=false){
     trigger.append(stage);
     figure.append(trigger,caption);
     // An artwork card becomes visible only after the browser loads real image data.
-    img.src=source.displayUrl;
+    img.src=safe;
 
   };
-  for(const image of artwork||[])addImage(image.alt||image.credit,image.url,image.source,image.cached?image.key:null);
+  for(const image of artwork||[])addImage(image.alt||image.credit,image.url,image.source,true);
   const remaining=profile.replace(/\[!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)|!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,(whole,linkedLabel,linkedUrl,page,label,url)=>{
     label=linkedLabel??label;
     url=linkedUrl||url;

@@ -78,8 +78,8 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     const key = 'a'.repeat(64), art = {url:'https://derpicdn.net/art.png',source:'https://derpibooru.org/images/42',credit:'Hasbro'};
     let artWrites = 0;
     handoff.register(artId, {pony:{slug:'bushel'},profile:'Cached biography.',onArtwork:async input=>{
-      artWrites++; assert.equal(input.credit, art.credit); return {...art,key,cached:true};
-    },onReadArtwork:async id=>{assert.equal(id,key);return {bytes:Buffer.from('art'),type:'image/png'}}});
+      artWrites++; assert.equal(input.credit, art.credit); return {...art,key};
+    }});
     const artUrl = handoff.origin+'/kefania-draft/'+artId;
     const artPost = origin => fetch(artUrl+'/artwork',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(art)});
     assert.equal((await artPost('https://example.com')).status,403);
@@ -90,10 +90,8 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal(artState.artworkEnabled,true);
     assert.equal(artState.artwork[0].source,art.source);
     assert.equal(artState.profile,'Cached biography.');
-    const cachedArt = await fetch(artUrl+'/artwork/'+key);
-    assert.equal(cachedArt.headers.get('content-type'),'image/png');
-    assert.equal(await cachedArt.text(),'art');
-    assert.equal((await fetch(artUrl+'/artwork/'+'b'.repeat(64))).status,404);
+    assert.equal((await fetch(artUrl+'/artwork')).status,405);
+    assert.equal((await fetch(artUrl+'/artwork/'+key)).status,404,'No image byte endpoint exists');
     assert.equal(writes,0,'Artwork collection cannot publish a PR');
     const detailsId = '44444444-2222-4333-8444-555555555555';
     handoff.register(detailsId, {decorateDraft: draft => ({

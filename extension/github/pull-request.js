@@ -830,7 +830,7 @@ function registerPullRequestCommand(vscode, context, dependencies = {}) {
     const timers = new Map();
     context.subscriptions.push({ dispose() { for (const timer of timers.values()) clearTimeout(timer); } });
     localHandoff.register(draftId, { pony, profile: cachedProfile, artwork,
-      onArtwork: artworkCache?.save, onReadArtwork: artworkCache?.read,
+      onArtwork: artworkCache?.save,
       ludicrousMode,
       appearance: async () => {
         if (!vscode.workspace.getConfiguration('sweetiebot').get('kefaniaUseThemeColors', true)) return null;

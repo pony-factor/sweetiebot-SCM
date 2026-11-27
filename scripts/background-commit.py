@@ -360,23 +360,32 @@ def enqueue_pony(request, start=True):
         slug = 'hoo-far'
     if not all(re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,127}', value) for value in (pack, slug)):
         raise ValueError('Invalid pony identity.')
-    stored = f'{pack}/{slug}.json'
-    if request.get('path') != stored:
+    stored = request.get('path')
+    match = re.fullmatch(r'artwork-cache/' + re.escape(pack) + '/' + re.escape(slug) + r'/([a-f0-9]{64})\.json', stored or '')
+    key = match.group(1) if match else None
+    if not key and stored != f'{pack}/{slug}.json':
         raise ValueError('Unexpected pony profile path.')
     root = str(Path(git('rev-parse', '--show-toplevel')).resolve())
     meta = Path(git('rev-parse', '--absolute-git-dir'))
-    relative = 'ponies/' + stored
+    relative = stored if key else 'ponies/' + stored
     profile = Path(root) / relative
     if not profile.is_file() or profile.is_symlink():
         raise ValueError('The pony profile must be a regular file.')
     # This path is exclusively a validated pony record, never an arbitrary file.
     record = json.loads(profile.read_text())
-    if (record.get('packId') != pack or record.get('slug') != slug
-            or not isinstance(record.get('profile'), str) or not record['profile'].strip()):
+    if record.get('packId') != pack or record.get('slug') != slug:
         raise ValueError('Pony profile identity does not match its path.')
+    if key:
+        if (profile.resolve() != Path(root).resolve() / relative or profile.stat().st_size > 8192
+                or record.get('version') != 1 or record.get('key') != key
+                or not isinstance(record.get('url'), str)
+                or hashlib.sha256(record['url'].encode()).hexdigest() != key):
+            raise ValueError('Artwork reference identity does not match its path.')
+    elif not isinstance(record.get('profile'), str) or not record['profile'].strip():
+        raise ValueError('Invalid pony profile.')
     with repository_lock(meta):
         status = git('status', '--porcelain=1', '--untracked-files=all', '--', relative)
-        receipt = meta / 'sweetiebot-pony-publish' / f'{pack}--{slug}.json'
+        receipt = meta / 'sweetiebot-pony-publish' / (f'{pack}--{slug}' + (f'--{key}' if key else '') + '.json')
         if status not in (f'?? {relative}', f'A  {relative}') and not receipt.exists():
             return {'queued': False, 'reason': 'existing-profile-preserved'}
         job_id = 'pony-' + hashlib.sha256((root + '\0' + stored).encode()).hexdigest()[:24]

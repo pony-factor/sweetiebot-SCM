@@ -139,10 +139,21 @@ async function openKefaniaArtwork(repositoryPath, pony) {
   try {
     const filename = await resolveKefaniaFile(repositoryPath, path.join('src', 'pony-artwork.js'));
     const cache = await import(pathToFileURL(filename).href);
+    const directory = path.resolve(filename, '../..');
+    const enqueue = entry => {
+      if (entry?.path) void ponyPublishQueue.enqueue(directory, pony, entry.path);
+    };
     return {
-      list: () => cache.listPonyArtwork(pony),
-      save: artwork => cache.cachePonyArtwork(pony, artwork),
-      read: key => cache.readPonyArtwork(pony, key),
+      list: async () => {
+        const entries = await cache.listPonyArtwork(pony);
+        for (const entry of entries) enqueue(entry);
+        return entries;
+      },
+      save: async artwork => {
+        const entry = await cache.cachePonyArtwork(pony, artwork);
+        enqueue(entry);
+        return entry;
+      },
     };
   } catch { return null; }
 }
