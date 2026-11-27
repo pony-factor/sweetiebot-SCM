@@ -86,7 +86,9 @@ async function run() {
             return;
           }
           if (declineEnqueue) {
-            child.stdout.emit('data', JSON.stringify({ queued: false }));
+            const request = JSON.parse(input);
+            child.stdout.emit('data', JSON.stringify({ queued: false,
+              ...(request.deferDiffInspection ? { requireFullPreflight: true } : {}) }));
             child.emit('close', 0);
             return;
           }
@@ -210,6 +212,16 @@ async function run() {
   assert.equal(preparations.length, 1, 'staged-only commits preserve unstaged changes');
   await commit(root, { message: 'Tracked selection', all: 'tracked' });
   assert.equal(preparations[1].all, 'tracked');
+
+  const fastEvents = events.length;
+  const fastStatus = statusCalls;
+  await commit(root);
+  assert.deepEqual(events.slice(fastEvents), ['enqueue'],
+    'a placeholder does not normalize or render a diff in the extension host');
+  assert.equal(jobs.at(-1).deferDiffInspection, true);
+  assert.equal(jobs.at(-1).expectedTree, undefined);
+  assert.equal(jobs.at(-1).validatedSnapshot, undefined);
+  assert.equal(statusCalls - fastStatus, 2, 'one initial refresh and one detached repaint');
 
   declineEnqueue = true;
   const jobsBeforeDecline = jobs.length;

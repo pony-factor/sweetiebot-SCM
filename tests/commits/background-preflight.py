@@ -38,6 +38,44 @@ from tests.fixtures.background_commit_support import BackgroundCommitFixture
 
 
 class BackgroundCommitPreflightTests(BackgroundCommitFixture):
+    def test_fast_placeholder_captures_once_before_diff_or_spellcheck(self):
+        calls = []
+        real_git = worker.git
+        def recording_git(*args, **kwargs):
+            calls.append(args)
+            return real_git(*args, **kwargs)
+        with patch.object(worker, 'git', side_effect=recording_git), \
+                patch.object(worker, 'captured_diff_warnings') as inspect, \
+                patch.object(worker, 'start_spellcheck') as spellcheck, \
+                patch.object(worker.core, 'generate_message') as generate:
+            directory = self.queue(message='', deferDiffInspection=True)
+            self.assertTrue(self.job(directory)['provisional'])
+            self.assertEqual(calls.count(('write-tree',)), 1)
+            inspect.assert_not_called()
+            spellcheck.assert_not_called()
+            generate.assert_not_called()
+        with patch.object(worker, 'captured_diff_warnings', return_value=['large patch']) as inspect, \
+                patch.object(worker.core, 'generate_message') as generate:
+            worker.work(directory)
+            inspect.assert_called_once()
+            generate.assert_not_called()
+        self.assertEqual(self.job(directory)['phase'], 'blocked')
+        self.assertEqual(self.job(directory)['diffWarnings'], ['large patch'])
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.job(directory)['sha'])
+        with self.assertRaisesRegex(RuntimeError, 'Explicitly approve'):
+            worker.control('retry')
+        worker.control('approve-diff', directory.name)
+        with patch.object(worker.core, 'generate_message', return_value=('🧪 Final title', '')):
+            worker.work(directory)
+        self.assertEqual(self.job(directory)['phase'], 'done')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), '🧪 Final title')
+
+    def test_fast_placeholder_large_file_uses_existing_preflight(self):
+        with patch.object(worker, 'snapshot_file_sizes', return_value=[('story.txt', 51 * 1024**2)]):
+            result = worker.enqueue({'message': '', 'deferDiffInspection': True}, start=False)
+        self.assertEqual(result, {'queued': False, 'requireFullPreflight': True})
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), 'story.txt')
+
     def test_spellcheck_starts_before_title_generation_and_is_not_repeated(self):
         import post_commit_spellcheck
         (self.repo / 'note.md').write_text('A speling mistake.\n')

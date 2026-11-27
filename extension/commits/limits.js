@@ -330,7 +330,7 @@ async function stagedBlobSizes(cwd, files) {
 
 function stagedDiffMetrics(cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', ['diff', '--cached', '--no-ext-diff', '--no-color'], {
+    const child = spawn('git', ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-color'], {
       cwd, stdio: ['ignore', 'pipe', 'pipe']
     });
     const scanner = createDiffMetricsScanner();

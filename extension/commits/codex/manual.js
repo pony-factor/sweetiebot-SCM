@@ -258,6 +258,8 @@ function registerCodexCommitCommand(vscode, extensionContext) {
       .filter(change => !trackedOnly || change.status !== 7 /* Git Status.UNTRACKED */)
       .map(change => change.uri.fsPath);
     if (paths.length) await repository.add([...new Set(paths)]);
+    // The durable worker validates the actual index, not a second SCM refresh.
+    if (options.deferStatus === true) return;
     await repository.status();
     if (!repository.state.indexChanges.length) throw new Error('No changes were staged.');
   }));

@@ -592,6 +592,64 @@ def commit_failure_message(result):
     return f'Background Git commit failed (exit {result.returncode}). {reason}'
 
 
+def snapshot_file_sizes(base, tree):
+    """Inspect changed object metadata without rendering a patch or finding renames."""
+    raw = core.git_bytes('diff-tree', '--no-commit-id', '-r', '--raw', '-z',
+                         '--no-renames', base, tree)
+    if raw.returncode:
+        raise RuntimeError('Could not inspect captured file metadata.')
+    fields = raw.stdout.split(b'\0')[:-1]
+    if len(fields) % 2:
+        raise RuntimeError('Invalid captured file metadata.')
+    changed = {}
+    for metadata, path in zip(fields[::2], fields[1::2]):
+        _old_mode, mode, _old_sha, sha, _status = metadata.split()
+        if mode in (b'100644', b'100755', b'120000'):
+            changed[os.fsdecode(path)] = sha
+    sizes = {}
+    if changed:
+        checked = core.git_bytes('cat-file', '--batch-check=%(objectname) %(objectsize)',
+                                 input_data=b'\n'.join(dict.fromkeys(changed.values())) + b'\n')
+        if checked.returncode:
+            raise RuntimeError('Could not measure captured Git objects.')
+        for line in checked.stdout.splitlines():
+            sha, size = line.split()
+            sizes[sha] = int(size)
+    return [(path, sizes[sha]) for path, sha in changed.items()]
+
+
+def captured_diff_warnings(job):
+    """GitHub display limits are advisory; inspect only the immutable snapshot."""
+    base = job['parent'] or git('hash-object', '-w', '-t', 'tree', '--stdin', input='')
+    args = ('diff', '--no-ext-diff', '--no-textconv', '--no-color')
+    patch = core.git_bytes(*args, base, job['tree'])
+    names = core.git_bytes(*args, '--name-only', '-z', base, job['tree'])
+    if patch.returncode or names.returncode:
+        raise RuntimeError('Could not validate the captured diff.')
+    raw = patch.stdout
+    files = [os.fsdecode(name) for name in names.stdout.split(b'\0') if name]
+    def lines(data):
+        return data.count(b'\n') + int(bool(data) and not data.endswith(b'\n'))
+    starts = [match.start() for match in re.finditer(rb'^diff --git ', raw, re.MULTILINE)]
+    sections = [raw[start:end] for start, end in zip(starts, starts[1:] + [len(raw)])]
+    warnings = []
+    if lines(raw) > 20000:
+        warnings.append('the diff exceeds 20,000 lines')
+    if len(raw) > 1000000:
+        warnings.append('the raw diff exceeds 1 MB')
+    if len(files) > 300:
+        warnings.append('more than 300 files are changed')
+    renderable = {'.avif', '.bmp', '.gif', '.heic', '.jpeg', '.jpg', '.png', '.svg',
+                  '.tif', '.tiff', '.webp', '.pdf', '.geojson'}
+    if sum(Path(path).suffix.lower() in renderable for path in files) > 25:
+        warnings.append('more than 25 renderable files are changed')
+    if any(lines(section) > 20000 for section in sections):
+        warnings.append('a file diff exceeds 20,000 lines')
+    if any(len(section) > 500000 for section in sections):
+        warnings.append('a file diff exceeds 500 KB')
+    return warnings
+
+
 def enqueue(request, start=True):
     root = git('rev-parse', '--show-toplevel')
     meta = Path(git('rev-parse', '--absolute-git-dir'))
@@ -599,6 +657,9 @@ def enqueue(request, start=True):
     with (meta / (MARKER + '.lock')).open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         branch, parent = state()
+        expected_branch = request.get('expectedBranch')
+        if expected_branch is not None and branch != 'refs/heads/' + expected_branch:
+            raise RuntimeError('The branch changed before background commit capture.')
         retire_failed_uncommitted_job(meta, branch, parent)
         dependencies = related_pending_jobs(core.REAL_GIT, [])
         # A branch explicitly forked under the background finalizer may queue
@@ -637,6 +698,8 @@ def enqueue(request, start=True):
         # The VS Code command inspected the exact staged tree once. Reject
         # later staged edits without rescanning its diff or blob sizes; this
         # also protects the time spent capturing optional Codex context.
+        defer_diff = (request.get('deferDiffInspection') is True and not message.strip()
+                      and request.get('paths') is None and request.get('expectedTree') is None)
         expected_tree = request.get('expectedTree')
         if expected_tree is not None:
             if (not isinstance(expected_tree, str)
@@ -671,7 +734,18 @@ def enqueue(request, start=True):
             if expected_tree is None:
                 raise ValueError('A staged-inspection snapshot requires an approved tree.')
             blob_sizes = validated_preflight_files(snapshot, tree, parent)
-        if not message.strip():
+        if defer_diff:
+            baseline = git('rev-parse', parent + '^{tree}') if parent else git(
+                'hash-object', '-w', '-t', 'tree', '--stdin', input='')
+            if tree == baseline:
+                raise RuntimeError('Stage the intended changes before queuing a commit.')
+            blob_sizes = snapshot_file_sizes(baseline, tree)
+            # Preserve the interactive large-file warning/splitting flow for
+            # exceptional payloads. No placeholder has been created yet.
+            if (any(size > 50 * 1024**2 for _, size in blob_sizes)
+                    or (not trailer and sum(size for _, size in blob_sizes) > core.AUTO_SPLIT_TARGET_BYTES)):
+                return {'queued': False, 'requireFullPreflight': True}
+        if not message.strip() and not defer_diff:
             if blob_sizes is None:
                 files = [name for name in core.git_output(
                     'diff', '--cached', '--name-only', '-z').split('\x00') if name]
@@ -696,9 +770,10 @@ def enqueue(request, start=True):
                 git('read-tree', parent, env=env)
                 git('update-index', '-z', '--index-info', input=entries_for_paths + ('\x00' if not entries_for_paths.endswith('\x00') else ''), env=env)
                 tree = git('write-tree', env=env)
-        baseline = git('rev-parse', 'HEAD^{tree}', check=False).stdout.strip()
-        if tree == baseline or not git('diff', '--cached', '--name-only'):
-            raise RuntimeError('Stage the intended changes before queuing a commit.')
+        if not defer_diff:
+            baseline = git('rev-parse', 'HEAD^{tree}', check=False).stdout.strip()
+            if tree == baseline or not git('diff', '--cached', '--name-only'):
+                raise RuntimeError('Stage the intended changes before queuing a commit.')
         upstream = git('for-each-ref', '--format=%(upstream:remotename)|%(upstream:remoteref)', branch)
         remote, _, destination = upstream.partition('|')
         tracking = bool(remote and destination)
@@ -720,6 +795,7 @@ def enqueue(request, start=True):
                    sign=request.get('sign') is True, signoff=request.get('signoff') is True,
                    no_verify=request.get('noVerify') is True,
                    skip_spellcheck=request.get('skipSpellcheck') is True,
+                   defer_diff_inspection=defer_diff,
                    include_description=core.should_add_default_branch_description(),
                    phase='preparing', enqueue_pid=os.getpid())
         write_journal(directory / 'job.json', job)
@@ -891,7 +967,7 @@ def finalize_message(directory, job):
 
 def captured_diff(job):
     base = job['parent'] or git('hash-object', '-w', '-t', 'tree', '--stdin', input='')
-    args = ['diff', '--no-ext-diff', '--no-color']
+    args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color']
     # Git can emit non-UTF-8 text from blobs it treats as text. Replace invalid
     # bytes in the title prompt without changing the snapshot or its paths.
     stat = git(*args, '--stat', base, job['tree'], encoding='utf-8', errors='replace')
@@ -1292,6 +1368,17 @@ def work(directory, commit_only=False):
                     raise RuntimeError('A hook changed the captured tree; push was paused.')
                 job.update(sha=sha, phase='committed')
                 write_journal(file, job)
+            if commit_only and job.get('defer_diff_inspection'):
+                return  # Acknowledge the durable placeholder before optional processing.
+            if job.get('defer_diff_inspection') and not job.get('diff_inspection_approved'):
+                warnings = captured_diff_warnings(job)
+                if warnings:
+                    job['diffWarnings'] = warnings
+                    write_journal(file, job)
+                    raise RuntimeError('GitHub may truncate this commit: ' + '; '.join(warnings)
+                                       + '. Review the local commit and explicitly continue.')
+                job['diff_inspection_approved'] = True
+                write_journal(file, job)
             try:
                 start_spellcheck(job, file)
             except (OSError, RuntimeError) as error:
@@ -1468,7 +1555,7 @@ def dismiss_merged_push(job_id):
     return True
 
 
-def control(action):
+def control(action, expected_id=None):
     marker = Path(git('rev-parse', '--absolute-git-dir')) / MARKER
     entries = queue_entries(marker)
     if not entries:
@@ -1480,6 +1567,15 @@ def control(action):
         except BlockingIOError:
             raise RuntimeError('The background worker is active; try again after it finishes.')
         job = read_journal(directory / 'job.json')
+        if expected_id is not None and job['id'] != expected_id:
+            raise RuntimeError('The queued job changed. Review the current warning.')
+        if action == 'approve-diff':
+            if job['phase'] != 'blocked' or not job.get('diffWarnings') or not job.get('sha'):
+                raise RuntimeError('There is no pending diff warning for this commit.')
+            job['diff_inspection_approved'] = True
+            job.pop('diffWarnings', None)
+        elif action == 'retry' and job.get('diffWarnings'):
+            raise RuntimeError('Explicitly approve the diff warnings before continuing.')
         if action == 'cancel':
             if job.get('provisional') and job.get('sha'):
                 # Removing an unresolved ancestor would release placeholders to
@@ -1826,6 +1922,9 @@ if __name__ == '__main__':
         elif len(sys.argv) == 3 and sys.argv[1] == '--dismiss-merged':
             dismiss_merged_push(sys.argv[2])
             resume()
+        elif len(sys.argv) == 3 and sys.argv[1] == '--approve-diff':
+            control('approve-diff', sys.argv[2])
+            resume()
         elif sys.argv[1:] in (['--retry'], ['--cancel']):
             control(sys.argv[1][2:])
             if sys.argv[1] == '--retry':
@@ -1835,7 +1934,7 @@ if __name__ == '__main__':
             reconcile_published_jobs(marker.parent)
             pending = read_journal(marker)
             job = read_journal(Path(pending['directory']) / 'job.json') if pending else None
-            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths', 'mergedBranch') if key in job} if job else {}
+            status = {key: job[key] for key in ('id', 'phase', 'error', 'branch', 'conflictPaths', 'mergedBranch', 'diffWarnings') if key in job} if job else {}
             if job:
                 status['hasLocalCommit'] = bool(job.get('sha'))
             recoverable = False

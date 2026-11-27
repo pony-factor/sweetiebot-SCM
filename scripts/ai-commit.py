@@ -858,11 +858,20 @@ def normalize_staged_final_newlines() -> list[str]:
                 lines[index] = line.rstrip(b" \t")
         return b"\n".join(lines)
 
-    changed = repo_git("diff", "--cached", "--name-only", "--no-relative",
+    changed = repo_git("diff", "--cached", "--name-status", "--no-relative",
+                       "--find-renames=100%", "--no-ext-diff", "--no-textconv",
                        "--diff-filter=ACMR", "-z", "--")
     if changed.returncode != 0:
         raise RuntimeError("could not list staged files for final-newline normalization")
-    staged_paths = {os.fsdecode(path) for path in changed.stdout.split(b"\0") if path}
+    records = iter(changed.stdout.split(b"\0")[:-1])
+    staged_paths = set()
+    for status in records:
+        path = next(records)
+        if status.startswith((b"R", b"C")):
+            path = next(records)
+            if status == b"R100":
+                continue  # A content-identical rename has no new whitespace to normalize.
+        staged_paths.add(os.fsdecode(path))
     if not staged_paths:
         return []
 

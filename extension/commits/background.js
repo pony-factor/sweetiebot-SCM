@@ -63,7 +63,7 @@ function readStatus(script, cwd) {
 
 function blockedNotification(root, status) {
   const uncommitted = status.hasLocalCommit === false;
-  const retryAction = uncommitted ? 'Retry captured commit' : 'Retry sync and push';
+  const retryAction = status.diffWarnings?.length ? 'Continue despite diff warnings' : uncommitted ? 'Retry captured commit' : 'Retry sync and push';
   const stopAction = uncommitted ? 'Dismiss failed commit' : 'Stop background push';
   const conflict = /merge conflicts?/i.test(status.error || '');
   const files = Array.isArray(status.conflictPaths) ? status.conflictPaths : [];
@@ -210,7 +210,10 @@ function registerBackgroundCommit(vscode, context) {
                 output.appendLine(notice.detail + '\n');
                 output.show(true);
               }
-              if (choice === notice.retryAction) control(root, 'retry');
+              if (choice === notice.retryAction) {
+                if (status.diffWarnings?.length) control(root, 'approve-diff', status.id);
+                else control(root, 'retry');
+              }
               if (choice === notice.stopAction) control(root, 'cancel');
             });
         } else if (previous?.id && !status.id) {
@@ -259,13 +262,14 @@ function registerBackgroundCommit(vscode, context) {
       throw new Error('The branch changed before automatic commit preparation.');
     }
     if (repository.state.mergeChanges.length) throw new Error('Resolve conflicts before queuing a commit.');
+    const fastPlaceholder = !String(options.message ?? '').trim() && !options.paths;
     if (!repository.state.indexChanges.length || options.all) {
       // Preparation reuses the fresh status and refreshes once after staging.
       await vscode.commands.executeCommand('sweetiebot.prepareCodexCommit', root, {
-        all: options.all, statusFresh: true
+        all: options.all, statusFresh: true, ...(fastPlaceholder ? { deferStatus: true } : {})
       });
     }
-    if (!repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
+    if (!fastPlaceholder && !repository.state.indexChanges.length) throw new Error('There are no changes to commit.');
     let snapshot = '';
     if (options.codex && options.codexCommitContext !== false && !String(options.message ?? '').trim()) {
       try {
@@ -278,10 +282,29 @@ function registerBackgroundCommit(vscode, context) {
     }
     const configuration = vscode.workspace.getConfiguration('git', root);
     let result;
+    const request = {
+      message: options.message ?? '', context: typeof snapshot === 'string' ? snapshot.slice(-6000) : '',
+      trailer: options.trailer ?? '', push: options.push ?? configuration.get('postCommitCommand') === 'push',
+      sign: options.sign ?? configuration.get('enableCommitSigning') === true,
+      signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
+      noVerify: options.noVerify === true,
+      ...(options.paths ? {paths: options.paths} : {}), description: options.description ?? '',
+      skipSpellcheck: options.skipSpellcheck === true,
+      remote: vscode.workspace.getConfiguration('sweetiebot', root).get('remote', 'origin')
+    };
+    if (fastPlaceholder) {
+      // The worker owns the one authoritative tree capture under its queue lock.
+      // Ordinary placeholder commits never render a diff on this UI path.
+      result = await enqueue(script, root.fsPath, {
+        ...request, deferDiffInspection: true,
+        expectedBranch: options.expectedBranch ?? repository.state.HEAD?.name
+      });
+      if (result.requireFullPreflight) result = undefined;
+    }
     // Normalize first, then inspect the exact staged content that will be
     // committed. Concurrent staging requires another normalization/inspection
     // pair; no approval can be reused across distinct trees.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; !result && attempt < 3; attempt++) {
       const normalizedTree = await normalizeStage(script, root.fsPath);
       const limits = await vscode.commands.executeCommand(
         'sweetiebot.checkCommitLimits', root, { captureTree: true }
@@ -307,15 +330,8 @@ function registerBackgroundCommit(vscode, context) {
       }
       try {
         result = await enqueue(script, root.fsPath, {
-          message: options.message ?? '', context: typeof snapshot === 'string' ? snapshot.slice(-6000) : '',
-          trailer: options.trailer ?? '', push: options.push ?? configuration.get('postCommitCommand') === 'push',
-          sign: options.sign ?? configuration.get('enableCommitSigning') === true,
-          signoff: options.signoff ?? configuration.get('alwaysSignOff') === true,
-          noVerify: options.noVerify === true, expectedTree: limits.stagedTree,
-          normalizedTree, validatedSnapshot: limits.validatedSnapshot,
-          ...(options.paths ? {paths: options.paths} : {}), description: options.description ?? '',
-          skipSpellcheck: options.skipSpellcheck === true,
-          remote: vscode.workspace.getConfiguration('sweetiebot', root).get('remote', 'origin')
+          ...request, expectedTree: limits.stagedTree,
+          normalizedTree, validatedSnapshot: limits.validatedSnapshot
         });
         if (result.queued === false) {
           // The worker declined after a validated preflight. The direct Git
@@ -344,7 +360,8 @@ function registerBackgroundCommit(vscode, context) {
       if (options.push ?? configuration.get('postCommitCommand') === 'push') {
         await setPushPending(root.fsPath, true);
       }
-      await repository.status();
+      // The durable commit is already recorded; repaint without blocking acknowledgement.
+      void Promise.resolve().then(() => repository.status()).catch(() => {});
       if (!String(options.message ?? '').trim()) showGeneration(root.fsPath);
     }
     return result;
