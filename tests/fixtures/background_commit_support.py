@@ -269,10 +269,8 @@ class BackgroundCommitFixture(unittest.TestCase):
                              self.git('-C', str(other), 'rev-parse', 'HEAD'))
         if different_destination:
             self.assertNotIn('publish_sha', self.job(second))
-            self.assertEqual(self.git('--git-dir=' + str(self.root / 'backup'), 'show-ref', '--head',
-                                      '--exists', 'refs/heads/main', stderr=subprocess.DEVNULL)
-                             if False else self.git('--git-dir=' + str(self.root / 'backup'),
-                                                   'for-each-ref', '--format=%(refname)'), '')
+            self.assertEqual(self.git('--git-dir=' + str(self.root / 'backup'),
+                                      'for-each-ref', '--format=%(refname)'), '')
         if conflict:
             self.assertEqual(job['conflictPaths'], ['story.txt'])
             status = json.loads(subprocess.check_output([sys.executable, worker.__file__, '--status'], text=True))
