@@ -68,7 +68,7 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.match(pageHtml, /id="merge-progress" class="merge-progress" role="status" aria-live="polite" hidden/,
       'Merge confirmation exposes an accessible, initially hidden live progress indicator');
     assert.match(pageHtml, /function renderMergeMarkdown\(/, 'The browser page uses the shared Markdown renderer');
-    assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\),state\.pony,state\.artwork,state\.artworkEnabled\)\)/, 'The confirmation window renders the independent pony profile as Markdown, including timestamped moment links');
+    assert.match(pageHtml, /renderMarkdown\(el\('profile'\),imageIndex\(cleanProfileReferences\(state\.profile\)\+\(state\.ponyArt\?'\\n\\n'\+state\.ponyArt:''\),state\.pony,state\.artwork,state\.artworkEnabled\)\)/, 'The confirmation window renders the independent pony profile and additional fan art as Markdown, including timestamped moment links');
     assert.doesNotMatch(pageHtml, /__MARKDOWN_RENDERER__/, 'Shared renderer is inserted before serving');
     assert.match(pageHtml, /function keepOpenForPony\(state\)/, 'Automatic merge close must inspect pony research and pending cache writes');
     assert.equal((pageHtml.match(/!keepOpenForPony\(state\)&&updated&&!keepOpenForPony\(updated\)/g)||[]).length, 2,
@@ -234,7 +234,7 @@ const {createDraftHandoff} = require('../../extension/codex/draft-handoff');
     assert.equal((await readEnrichment()).artworkRefreshPending,true);
     const freshArt = '[![New artist](https://example.com/new.png)](https://example.com/new-art)';
     const duplicateArt = '[![Different asset](https://example.com/other.png)](https://example.com/old-art)';
-    assert.equal((await postEnrichment('Replacement biography.\\n'+duplicateArt+'\\n'+freshArt+'\\n'+freshArt)).status,200);
+    assert.equal((await postEnrichment('Replacement biography.\n'+duplicateArt+'\n'+freshArt+'\n'+freshArt)).status,200);
     const enriched = await readEnrichment();
     assert.equal(enriched.profile,'Saved [source](https://example.com/old-post).');
     assert.equal(enriched.ponyArt,freshArt,'Only unique, newly linked images are accepted');
