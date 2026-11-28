@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { boundedLaunch, ponyPrompt, prRules, MAX_LAUNCH_BYTES, openWorkflow } = require('../../extension/github/pr-workflows');
+const { boundedLaunch, ponyPrompt, ponyArtworkPrompt, prRules, MAX_LAUNCH_BYTES, openWorkflow } = require('../../extension/github/pr-workflows');
 const { chatgptPullRequestUrl } = require('../../extension/codex/chatgpt-project');
 
 (async () => {
@@ -34,6 +34,12 @@ const { chatgptPullRequestUrl } = require('../../extension/codex/chatgpt-project
   assert.match(profile, /Format ordinary HTTPS references as descriptive Markdown links/, 'Readable link labels must be part of the research prompt');
   assert.match(profile, /never native citation tokens/, 'Returned profiles require portable source links');
   assert(!profile.includes('Preserve creator attribution and distinguish the artist from the uploader.'), 'Old generic uploader warning is superseded');
+  assert.match(profile, /prioritize fan art over canonical screenshots/, 'Fan art is the default image source');
+  assert.match(profile, /4–8 distinct attributed fan-art images/, 'Research encourages several distinct fan illustrations');
+  assert.match(profile, /this is a target, not a maximum/, 'Additional verified artwork is welcome');
+  assert.match(profile, /Do not require fan art to illustrate a canonical event/, 'Standalone fan art is welcome');
+  assert.match(profile, /Include canonical screenshots only when/, 'Show captures remain available for factual context');
+  assert.match(profile, /takes precedence over any conflicting image-count or selection guidance/, 'Legacy image limits cannot override fan-art preferences');
   assert.match(profile, /dedicated `## Important moments` section/, 'Pony research includes a separate character-moment section');
   assert.match(profile, /2–5 character-defining scenes/, 'Moment research prioritizes a small number of meaningful scenes');
   assert.match(profile, /full-episode video with a direct timestamp link/, 'Moment links should open the full episode at the scene');
@@ -41,6 +47,17 @@ const { chatgptPullRequestUrl } = require('../../extension/codex/chatgpt-project
   assert.match(profile, /standalone clip is optional and not required/, 'A standalone clip is not required when a full episode is available');
   assert.match(profile, /PR confirmation window can render the section/, 'Moment links are intended for the existing confirmation UI');
   assert.match(profile, /must not be copied into the PR description/, 'Independent character research remains local');
+  const enrichment = ponyArtworkPrompt({slug:'bushel'}, 'Saved text https://example.com/old-post', [
+    {url:'https://example.com/old.png', source:'https://example.com/old-art'}
+  ], 'http://127.0.0.1:1234/kefania-draft/test/pony');
+  assert.match(enrichment, /already-cached pony/);
+  assert.match(enrichment, /Do not rewrite the biography/);
+  assert.match(enrichment, /4–8 or more distinct/);
+  assert(enrichment.includes('https://example.com/old-post'));
+  assert(enrichment.includes('https://example.com/old.png'));
+  assert(enrichment.includes('https://example.com/old-art'));
+  assert(!enrichment.includes('Saved text'), 'Only known URLs are needed, not the saved biography');
+  assert(!enrichment.includes('Important moments'), 'Enrichment does not repeat canonical scene research');
   const userTab = {name:'User work'}, workflowTab = {name:'Draft'}, anotherTab = {name:'Later user work'};
   const group = {tabs:[userTab]};
   const closed = [];

@@ -92,7 +92,7 @@ async function createDraftHandoff(publish) {
     if (request.method === 'GET') {
       if (kind === 'artwork') return fail(405, 'Artwork references are collected by POST.');
       if (kind === 'state') refreshCI(state, now);
-      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, artwork: state.artwork, artworkEnabled: typeof state.onArtwork === 'function', result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), mergeProgress: state.mergeProgress, ci: state.ci, ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
+      if (kind === 'state') return json(200, { draft: state.draft, pony: state.pony, profile: state.profile, ponyArt: state.ponyArt, artworkRefreshPending: Boolean(state.artworkRefreshPending), artwork: state.artwork, artworkEnabled: typeof state.onArtwork === 'function', result: state.result, mergeResult: state.mergeResult, merging: Boolean(state.merging), mergeProgress: state.mergeProgress, ci: state.ci, ponyCachePending: Boolean(state.ponyCachePending), errors: state.errors, mergeChoice: state.mergeChoice, localSignedMergeAvailable: typeof state.onMergeLocalSigned === 'function', mergeIssue: state.mergeIssue, mergeHelpOpening: Boolean(state.mergeHelpOpening), mergeHelpOpened: Boolean(state.mergeHelpOpened), mergeHelpAvailable: typeof state.onMergeHelp === 'function', publishing: Boolean(state.publishing), attempted: Boolean(state.attempted), autoPublish: state.autoPublish, closeAfterMerge: (typeof state.closeAfterMerge === 'function' ? await state.closeAfterMerge() : state.closeAfterMerge) === true, ludicrousMode: (typeof state.ludicrousMode === 'function' ? await state.ludicrousMode() : state.ludicrousMode) === true, showKefaniaCloseButton: (typeof state.showKefaniaCloseButton === 'function' ? await state.showKefaniaCloseButton() : state.showKefaniaCloseButton) !== false, appearance: typeof state.appearance === 'function' ? await state.appearance() : state.appearance, kefaniaCloseButtonPosition: normalizeKefaniaClosePosition(typeof state.kefaniaCloseButtonPosition === 'function' ? await state.kefaniaCloseButtonPosition() : state.kefaniaCloseButtonPosition) });
       if (kind === 'close' || kind === 'merge' || kind === 'merge-history' || kind === 'merge-local-signed' || kind === 'merge-help') return fail(405, 'Use the confirmation page controls.');
       response.writeHead(200, {'Content-Type':'text/html; charset=utf-8'}); response.end(page); return;
     }
@@ -180,6 +180,28 @@ async function createDraftHandoff(publish) {
       let newPonyProfile = false;
       if (kind === 'pony') {
         if (typeof input.profile !== 'string' || !input.profile.trim() || Buffer.byteLength(input.profile) > 60000) return fail(400, 'Invalid pony profile.');
+        if (state.profile && state.artworkRefreshRequested) {
+          if (state.ponyArt !== undefined) return json(200, { collected: kind });
+          // Treat the result exclusively as new gallery entries, never as a biography.
+          const known = new Set([...state.profile.matchAll(/https:\/\/[^\s)\]>]+/g)].map(match => match[0]));
+          for (const item of state.artwork) { known.add(item.url); known.add(item.source); }
+          const images = [];
+          for (const match of input.profile.matchAll(/\[!\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)\]\((https:\/\/[^\s)]+)\)/g)) {
+            const [, , url, source] = match;
+            if (known.has(url) || known.has(source)) continue;
+            try {
+              if ([url, source].some(value => { const parsed = new URL(value); return parsed.protocol !== 'https:' || parsed.username || parsed.password; })) continue;
+            } catch { continue; }
+            known.add(url); known.add(source);
+            images.push(match[0]);
+          }
+          state.ponyArt = images.join('\n');
+          state.artworkRefreshPending = false;
+          delete state.errors.pony;
+          json(200, { collected: kind });
+          void Promise.resolve().then(() => state.onResult?.(kind)).catch(() => {});
+          return;
+        }
         newPonyProfile = !state.profile;
         if (newPonyProfile) {
           state.profile = input.profile;
@@ -221,8 +243,8 @@ async function createDraftHandoff(publish) {
   // Draft writes expire, but the close control lives until this host is disposed.
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
-    register(id, {pony, profile, artwork = [], onArtwork, onResult, onClose, onMerge, onReadCI, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, artwork, artworkAttempts: new Set(), onArtwork, onResult, onClose, onMerge, onReadCI, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
-    reportError(id, kind, error) { const state = drafts.get(id); if (state) state.errors[kind] = String(error); },
+    register(id, {pony, profile, artwork = [], artworkRefreshPending = false, onArtwork, onResult, onClose, onMerge, onReadCI, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish = false, closeAfterMerge = false, ludicrousMode = false, showKefaniaCloseButton = true, kefaniaCloseButtonPosition, kefaniaCloseButtonLeft = true, appearance} = {}) { const registeredAt = Date.now(); drafts.set(id, {pony, profile, artwork, artworkRefreshPending: Boolean(profile && artworkRefreshPending), artworkRefreshRequested: Boolean(profile && artworkRefreshPending), artworkAttempts: new Set(), onArtwork, onResult, onClose, onMerge, onReadCI, decorateDraft, onMergePreservingCommits, onMergeLocalSigned, onMergeHelp, autoPublish, closeAfterMerge, ludicrousMode, showKefaniaCloseButton, kefaniaCloseButtonPosition: kefaniaCloseButtonPosition ?? (kefaniaCloseButtonLeft === false ? 'right' : 'left'), appearance, errors: {}, registeredAt, expires: registeredAt + DRAFT_IDLE_MS}); },
+    reportError(id, kind, error) { const state = drafts.get(id); if (state) { state.errors[kind] = String(error); if (kind === 'pony') state.artworkRefreshPending = false; } },
     dispose() { drafts.clear(); server.close(); }
   };
 }

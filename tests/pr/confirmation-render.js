@@ -662,6 +662,10 @@ console.log('Confirmation Markdown, lightbox, image fallback, and close action c
   await getElementById('merge').onclick();
   assert.equal(closes,1,'Pending pony cache storage keeps the confirmation visible');
   state.ponyCachePending=false;
+  state.artworkRefreshPending=true;
+  await getElementById('merge').onclick();
+  assert.equal(closes,1,'Pending fan art enrichment keeps a merged confirmation visible');
+  state.artworkRefreshPending=false;
   state.errors={ponyCache:'Publication failed'};
   await getElementById('merge').onclick();
   assert.equal(closes,1,'Failed pony cache publication remains inspectable');
